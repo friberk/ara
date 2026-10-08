@@ -123,10 +123,16 @@ class PaperSummary(Base):
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
+    __table_args__ = (
+        CheckConstraint("title_source IN ('default','auto','manual')", name="chat_title_source"),
+    )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     paper_id: Mapped[UUID] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"))
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"))
     title: Mapped[str] = mapped_column(String(200), default="Paper discussion")
+    title_source: Mapped[str] = mapped_column(
+        String(20), default="default", server_default="default"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -150,6 +156,7 @@ class ChatMessage(Base):
             unique=True,
             postgresql_where=text("role = 'assistant' AND state = 'processing'"),
         ),
+        Index("ix_chat_message_activity", "session_id", "created_at"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     session_id: Mapped[UUID] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"))
@@ -185,3 +192,20 @@ class DocumentUploadRequest(Base):
     request_id: Mapped[UUID] = mapped_column(primary_key=True)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SearchHistory(Base):
+    __tablename__ = "search_history"
+    __table_args__ = (
+        UniqueConstraint("provider", "normalized_query", name="uq_search_history_query"),
+        Index("ix_search_history_recent", "last_searched_at"),
+    )
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    provider: Mapped[str] = mapped_column(String(40))
+    query: Mapped[str] = mapped_column(Text)
+    # Casefolding can expand a character into three, so 300 input characters need 900.
+    normalized_query: Mapped[str] = mapped_column(String(900))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_searched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
