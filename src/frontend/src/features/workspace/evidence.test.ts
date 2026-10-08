@@ -1,4 +1,4 @@
-import { findEvidenceItems, selectEvidence } from './evidence'
+import { findEvidence, selectEvidence } from './evidence'
 import { headsClaim, interpretability, page7 } from './evidence.fixtures'
 import type { TextItem } from './text-highlight'
 
@@ -67,7 +67,7 @@ describe('selectEvidence', () => {
   })
 })
 
-describe('findEvidenceItems', () => {
+describe('findEvidence', () => {
   /** One pdf.js text item per printed line, as the text layer renders a simple single-column page. */
   const lines = (...rows: string[]): TextItem[] => rows.map((str) => ({ str, hasEOL: true }))
   const page = lines(
@@ -83,27 +83,31 @@ describe('findEvidenceItems', () => {
     'This section describes the training regime for our models.',
   )
   const excerpt = page.slice(1).map((item) => item.str).join('\n')
-  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  const whole = (item: number, rows: TextItem[] = page) => ({ item, start: 0, end: rows[item]!.str.length })
+  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((item) => whole(item))
 
-  test('Given a claim, Then the lines of its supporting sentence are strong and the rest of the excerpt is context', () => {
-    expect(findEvidenceItems(page, excerpt, headsClaim)).toEqual({ strong: [4, 5, 6, 7], context: [1, 2, 3, 8, 9] })
+  test('Given a claim whose sentence begins mid-line, Then the strong mark starts at that sentence, not at the start of the printed line', () => {
+    expect(findEvidence(page, excerpt, headsClaim)).toEqual({
+      strong: [{ item: 4, start: page[4]!.str.indexOf('Not only'), end: page[4]!.str.length }, whole(5), whole(6), whole(7)],
+      context: [1, 2, 3, 8, 9],
+    })
   })
 
   test('Given no claim, Then the whole excerpt is strong, as before claims existed', () => {
-    expect(findEvidenceItems(page, excerpt)).toEqual({ strong: all, context: [] })
-    expect(findEvidenceItems(page, excerpt, '')).toEqual({ strong: all, context: [] })
+    expect(findEvidence(page, excerpt)).toEqual({ strong: all, context: [] })
+    expect(findEvidence(page, excerpt, '')).toEqual({ strong: all, context: [] })
   })
 
   test('Given a claim no sentence supports, Then the whole excerpt is strong', () => {
-    expect(findEvidenceItems(page, excerpt, 'The authors thank their colleagues for comments.')).toEqual({ strong: all, context: [] })
+    expect(findEvidence(page, excerpt, 'The authors thank their colleagues for comments.')).toEqual({ strong: all, context: [] })
   })
 
   test('Given the supporting sentence is missing from the text layer, Then the whole located excerpt is strong', () => {
     const imageOnly = page.map((item, index) => (index >= 4 && index <= 7 ? { ...item, str: '' } : item))
-    expect(findEvidenceItems(imageOnly, excerpt, headsClaim)).toEqual({ strong: [1, 2, 3, 4, 5, 6, 7, 8, 9], context: [] })
+    expect(findEvidence(imageOnly, excerpt, headsClaim)).toEqual({ strong: [1, 2, 3, 4, 5, 6, 7, 8, 9].map((item) => whole(item, imageOnly)), context: [] })
   })
 
   test('Given an excerpt that is not on the page, Then nothing is marked', () => {
-    expect(findEvidenceItems(page, 'The measured answer accuracy in this synthetic experiment is 86 percent.', 'Accuracy is 86 percent.')).toEqual({ strong: [], context: [] })
+    expect(findEvidence(page, 'The measured answer accuracy in this synthetic experiment is 86 percent.', 'Accuracy is 86 percent.')).toEqual({ strong: [], context: [] })
   })
 })

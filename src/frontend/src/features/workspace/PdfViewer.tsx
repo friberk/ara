@@ -9,7 +9,7 @@ import type { Citation } from '@/api/types'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import type { PdfNavigation } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
-import { findEvidenceItems } from './evidence'
+import { findEvidence } from './evidence'
 import type { HighlightOutcome, SourceRequest } from './workspace-context'
 
 // The worker comes from the same pdfjs-dist that react-pdf resolves, so API and worker versions always agree.
@@ -108,7 +108,9 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!layer?.querySelector('.endOfContent')) return
     const spans = Array.from(layer.querySelectorAll<HTMLElement>('span[role="presentation"]'))
     const items = spans.map((span) => ({ str: span.textContent ?? '', hasEOL: span.nextElementSibling?.tagName === 'BR' }))
-    const { strong, context } = findEvidenceItems(items, active.citation.excerpt, active.claim)
+    const evidence = findEvidence(items, active.citation.excerpt, active.claim)
+    const strong = evidence.strong.map((range) => range.item)
+    const { context } = evidence
     root.querySelectorAll('[data-citation-highlight]').forEach((element) => {
       element.removeAttribute('data-citation-highlight')
       element.removeAttribute('data-citation-pulse')
