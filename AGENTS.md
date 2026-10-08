@@ -13,7 +13,7 @@ Single-user CS 59300 homework application. `hw1.md` is the assignment authority;
 
 ## Workflow
 
-Work on `feat/ai-research-assistant` in this initially uncommitted checkout. There is no HEAD for a linked worktree; record this isolation limitation rather than moving user reference files. Do not modify `hw1.md`, `hw1.pdf`, or existing writing skills.
+The verified implementation is on `main`. Retain `feat/ai-research-assistant` as an archive at `526ef68`; use new feature branches for subsequent changes. The initial checkout had no HEAD, so implementation began in place; that historical limitation is recorded in the journal. Do not modify `hw1.md`, `hw1.pdf`, or existing writing skills.
 
 Use Given/When/Then acceptance criteria and practical red-green-refactor cycles. Log actual failures and corrections; never invent interactions or claim a test passed without output. Track work in `issue_tracker/` using `ARA-*` IDs. Record relevant prompts, decisions, errors and evidence in `docs/agent-development-log.md`.
 

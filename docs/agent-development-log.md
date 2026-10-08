@@ -61,3 +61,7 @@ The demonstration records real external access; deterministic test fixtures rema
 The lead initially created one large local implementation commit. The user requested focused groups and Conventional Commits. The unpublished history was regrouped by planning, tooling, infrastructure, jobs, research search, PDF ingestion, AI, frontend, tests, skill and project records. This reorganizes the verified snapshot; it does not invent historical red/green commits. Actual failing output and corrective checks remain in the journal and reports. Source contents and persistent application data are preserved. No remote was configured or pushed.
 
 The staged audit checked all 169 source/configuration/documentation files against the locally configured secret values; none matched. Original assignment files and pre-existing writing skills remain untouched and untracked. Generated recordings/PDFs remain ignored. Publication, the student reflection and Brightspace submission remain pending.
+
+### Main integration and archive
+
+The user instructed: “Merge to main. Keep the branch for archival purposes.” No main branch existed, so the lead created it at the verified feature tip `526ef68`. The complete implementation history is now on main; `feat/ai-research-assistant` remains unchanged at that tip. Branch SHA equality and a clean tracked tree were verified before the documentation update. Application source did not change, so the passing tests remain applicable without another run. No branch was deleted or pushed.

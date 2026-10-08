@@ -1,6 +1,6 @@
 # Implementation status
 
-The approved plan's core application is implemented on `feat/ai-research-assistant`. All five homework workflows have been exercised through the GUI, including real OpenAlex search and real OpenAI generation. GitHub publication is deferred at the user's request. The student's reflection and Brightspace submission remain separate deliverables.
+The approved plan's core application is integrated into `main`. The user requested retaining `feat/ai-research-assistant`, which remains archived at `526ef68`. All five homework workflows have been exercised through the GUI, including real OpenAlex search and real OpenAI generation. GitHub publication is deferred at the user's request. The student's reflection and Brightspace submission remain separate deliverables.
 
 ## Milestones
 
