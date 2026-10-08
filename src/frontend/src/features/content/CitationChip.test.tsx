@@ -17,9 +17,16 @@ test('Given onSelect, When the chip is clicked, Then the citation is handed over
   const { calls } = mockApi({})
   const { user } = renderWithProviders(<CitationChip citation={citation} onSelect={onSelect} />)
   await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
-  expect(onSelect).toHaveBeenCalledWith(citation)
+  expect(onSelect).toHaveBeenCalledWith(citation, undefined)
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(calls.filter((call) => call.path.includes('/chunks/'))).toHaveLength(0)
+})
+
+test('Given a claim, When the chip is clicked, Then onSelect receives the citation with that claim', async () => {
+  const onSelect = vi.fn()
+  const { user } = renderWithProviders(<CitationChip citation={citation} claim="Attention heads capture syntax." onSelect={onSelect} />)
+  await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
+  expect(onSelect).toHaveBeenCalledWith(citation, 'Attention heads capture syntax.')
 })
 
 test('Given no onSelect, When the chip is clicked, Then a dialog shows the verified excerpt and links to the PDF page', async () => {

@@ -18,8 +18,8 @@ export type MarkdownProps = {
   citations?: Citation[]
   /** Only citations from this document may render; markers for any other document render nothing. */
   documentId?: string
-  /** Called when a reader activates an inline citation chip. */
-  onCitation?: (citation: Citation) => void
+  /** Called when a reader activates an inline citation chip, with the claim the chip stands after. */
+  onCitation?: (citation: Citation, claim?: string) => void
   className?: string
 }
 
@@ -72,11 +72,12 @@ export function Markdown({ content, citations, documentId, onCitation, className
   }, [citations, documentId])
   const components = useMemo<Components>(() => ({
     ...prose,
-    // remark-citations emits <cite data-chunk-id> only for chunks in `sources`.
+    // remark-citations emits <cite data-chunk-id data-claim> only for chunks in `sources`.
     cite: ({ node }) => {
       const chunkId = node?.properties.dataChunkId
+      const claim = node?.properties.dataClaim
       const citation = typeof chunkId === 'string' ? sources.get(chunkId) : undefined
-      return citation ? <CitationChip citation={citation} onSelect={onCitation} className="ml-1 align-[0.1em]" /> : null
+      return citation ? <CitationChip citation={citation} claim={typeof claim === 'string' ? claim : undefined} onSelect={onCitation} className="ml-1 align-[0.1em]" /> : null
     },
   }), [sources, onCitation])
   const allowed = useMemo(() => new Map([...sources].map(([chunkId, citation]) => [chunkId, citation.page])), [sources])

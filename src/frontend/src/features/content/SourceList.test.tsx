@@ -40,5 +40,14 @@ test('Given a keyboard user, Then every source can be reached and opened without
   await user.keyboard('{Enter}')
   await user.keyboard(' ')
   expect(onSelect).toHaveBeenCalledTimes(2)
-  expect(onSelect).toHaveBeenLastCalledWith(citations[1])
+  expect(onSelect).toHaveBeenLastCalledWith(citations[1], undefined)
+})
+
+test('Given the text the sources support, When a source is opened, Then onSelect also receives that text without its markers', async () => {
+  const onSelect = vi.fn()
+  const citations = [cite('11111111-1111-4111-8111-111111111111', 4)]
+  const context = `Heads capture syntax [source:${citations[0]!.chunk_id}]. They also track **semantics**. [source:${citations[0]!.chunk_id}]`
+  const { user } = renderWithProviders(<SourceList documentId="d1" citations={citations} context={context} onSelect={onSelect} />)
+  await user.click(screen.getByRole('button', { name: 'Source, page 4' }))
+  expect(onSelect).toHaveBeenCalledWith(citations[0], 'Heads capture syntax. They also track **semantics**.')
 })

@@ -9,7 +9,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useCitationSource } from '@/hooks/queries/documents'
 import { cn } from '@/lib/utils'
 
-export type CitationChipProps = { citation: Citation; onSelect?: (citation: Citation) => void; className?: string }
+export type CitationChipProps = {
+  citation: Citation
+  /** The text this chip supports, handed to onSelect so the reader can mark just the sentences behind it. */
+  claim?: string
+  onSelect?: (citation: Citation, claim?: string) => void
+  className?: string
+}
 
 /** After a click or tap, or the focus a closing dialog hands back, no preview opens for this long. */
 const previewPause = 600
@@ -25,9 +31,10 @@ const useTouchOnly = () => useSyncExternalStore(subscribeTouchOnly, () => window
 
 /**
  * A page chip for one cited passage. Hovering or focusing it previews the passage; activating it hands the
- * citation to onSelect (the workspace jumps the PDF there) or, without onSelect, opens the passage in a dialog.
+ * citation and its claim to onSelect (the workspace jumps the PDF there) or, without onSelect, opens the passage in
+ * a dialog.
  */
-export function CitationChip({ citation, onSelect, className }: CitationChipProps) {
+export function CitationChip({ citation, claim, onSelect, className }: CitationChipProps) {
   const [preview, setPreview] = useState(false)
   const [reading, setReading] = useState(false)
   const touchOnly = useTouchOnly()
@@ -50,7 +57,7 @@ export function CitationChip({ citation, onSelect, className }: CitationChipProp
       onClick={() => {
         pause()
         setPreview(false)
-        onSelect?.(citation)
+        onSelect?.(citation, claim)
       }}
     >
       p. {citation.page}

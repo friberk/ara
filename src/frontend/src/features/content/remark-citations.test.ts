@@ -7,17 +7,28 @@ const c = '33333333-3333-4333-8333-333333333333'
 const unknown = '99999999-9999-4999-8999-999999999999'
 const pages = new Map([[a, 3], [b, 7], [c, 7]])
 
-function transform(children: PhrasingContent[], allowed: ReadonlyMap<string, number> = pages) {
-  const paragraph: Paragraph = { type: 'paragraph', children }
-  const tree: Root = { type: 'root', children: [paragraph] }
+function transformAll(paragraphs: PhrasingContent[][], allowed: ReadonlyMap<string, number> = pages) {
+  const tree: Root = { type: 'root', children: paragraphs.map((children): Paragraph => ({ type: 'paragraph', children })) }
   remarkCitations({ allowed })(tree)
-  return paragraph.children
+  return tree.children.map((paragraph) => (paragraph as Paragraph).children)
 }
+const transform = (children: PhrasingContent[], allowed?: ReadonlyMap<string, number>) => transformAll([children], allowed)[0]!
 const text = (value: string): PhrasingContent => ({ type: 'text', value })
-const chip = (chunkId: string) => ({ type: 'citationMarker', chunkId, data: { hName: 'cite', hProperties: { dataChunkId: chunkId } } })
+const chip = (chunkId: string, claim?: string) => ({ type: 'citationMarker', chunkId, data: { hName: 'cite', hProperties: claim === undefined ? { dataChunkId: chunkId } : { dataChunkId: chunkId, dataClaim: claim } } })
+
+/** The marker sequence with nowrap groups unwrapped and neighbouring text joined, for tests about resolution only. */
+function flat(nodes: PhrasingContent[]): PhrasingContent[] {
+  const out: PhrasingContent[] = []
+  for (const node of nodes.flatMap((child) => ((child.type as string) === 'citationGroup' ? (child as unknown as { children: PhrasingContent[] }).children : [child]))) {
+    const last = out.at(-1)
+    if (node.type === 'text' && last?.type === 'text') out[out.length - 1] = text(last.value + node.value)
+    else out.push('children' in node ? { ...node, children: flat(node.children as PhrasingContent[]) } as PhrasingContent : node)
+  }
+  return out
+}
 
 test('Given a marker for a known chunk, Then it becomes a citation node where it was written', () => {
-  expect(transform([text(`Attention replaces recurrence [source:${a}]. It also parallelises.`)])).toMatchObject([
+  expect(flat(transform([text(`Attention replaces recurrence [source:${a}]. It also parallelises.`)]))).toMatchObject([
     text('Attention replaces recurrence'), chip(a), text('. It also parallelises.'),
   ])
 })
@@ -27,21 +38,21 @@ test('Given unknown markers, Then they disappear with the space before them', ()
 })
 
 test('Given repeated markers in one run, Then each chunk appears once and order is kept', () => {
-  expect(transform([text(`Shown [source:${a}][source:${a}] [source:${b}] [source:${unknown}] [source:${a}].`)])).toMatchObject([
+  expect(flat(transform([text(`Shown [source:${a}][source:${a}] [source:${b}] [source:${unknown}] [source:${a}].`)]))).toMatchObject([
     text('Shown'), chip(a), chip(b), text('.'),
   ])
 })
 
 test('Given two passages from one page in a run, Then one chip stands for that page', () => {
-  expect(transform([text(`Both [source:${b}] [source:${c}] [source:${a}].`)])).toMatchObject([text('Both'), chip(b), chip(a), text('.')])
+  expect(flat(transform([text(`Both [source:${b}] [source:${c}] [source:${a}].`)]))).toMatchObject([text('Both'), chip(b), chip(a), text('.')])
 })
 
 test('Given the same chunk cited in separate sentences, Then each sentence keeps its chip', () => {
-  expect(transform([text(`One [source:${a}]. Two [source:${a}].`)])).toMatchObject([text('One'), chip(a), text('. Two'), chip(a), text('.')])
+  expect(flat(transform([text(`One [source:${a}]. Two [source:${a}].`)]))).toMatchObject([text('One'), chip(a), text('. Two'), chip(a), text('.')])
 })
 
 test('Given uppercase hex, Then the marker resolves to the lowercase chunk; other spellings stay text', () => {
-  expect(transform([text(`Upper [source:${a.toUpperCase()}].`)])).toMatchObject([text('Upper'), chip(a), text('.')])
+  expect(flat(transform([text(`Upper [source:${a.toUpperCase()}].`)]))).toMatchObject([text('Upper'), chip(a), text('.')])
   const literal = `[SOURCE:${a}] and [source:not-a-uuid] stay.`
   expect(transform([text(literal)])).toEqual([text(literal)])
 })
@@ -52,7 +63,38 @@ test('Given a marker inside link text, Then it is removed without nesting a chip
 })
 
 test('Given markers inside emphasis, Then the chip stays inside that emphasis', () => {
-  expect(transform([{ type: 'emphasis', children: [text(`key point [source:${b}]`)] }])).toMatchObject([
+  expect(flat(transform([{ type: 'emphasis', children: [text(`key point [source:${b}]`)] }]))).toMatchObject([
     { type: 'emphasis', children: [text('key point'), chip(b)] },
   ])
+})
+
+describe('claims (test-first)', () => {
+  test('Given a marker, Then it records the text from the previous sentence boundary as the claim it supports', () => {
+    expect(flat(transform([text(`Intro sentence. Attention replaces recurrence [source:${a}]. It also parallelises.`)]))).toMatchObject([
+      text('Intro sentence. Attention replaces recurrence'), chip(a, 'Attention replaces recurrence'), text('. It also parallelises.'),
+    ])
+  })
+
+  test('Given a marker after the full stop, Then the claim is that whole sentence', () => {
+    const [, marker] = flat(transform([text(`Intro sentence! Heads capture syntax. [source:${a}]`)]))
+    expect(marker).toMatchObject(chip(a, 'Heads capture syntax.'))
+  })
+
+  test('Given emphasis, code and math inside the sentence, Then the claim is their plain text', () => {
+    const children = transform([
+      text('Is it new? It presents '), { type: 'strong', children: [text('self-attention')] }, text(' and '),
+      { type: 'emphasis', children: [text('multi-head')] }, text(' attention with '), { type: 'inlineCode', value: 'd_k' },
+      text(` scaling [source:${a}].`),
+    ])
+    expect(JSON.stringify(children)).toContain('"dataClaim":"It presents self-attention and multi-head attention with d_k scaling"')
+  })
+
+  test('Given a run of markers, Then every chip in it shares one claim', () => {
+    expect(flat(transform([text(`Shown here [source:${a}] [source:${b}].`)]))).toMatchObject([text('Shown here'), chip(a, 'Shown here'), chip(b, 'Shown here'), text('.')])
+  })
+
+  test('Given a claim at the start of a paragraph, Then the previous paragraph is not part of it', () => {
+    const [, second] = transformAll([[text('An earlier paragraph without a full stop')], [text(`It scores 28.4 BLEU [source:${a}].`)]])
+    expect(flat(second!)).toMatchObject([text('It scores 28.4 BLEU'), chip(a, 'It scores 28.4 BLEU'), text('.')])
+  })
 })

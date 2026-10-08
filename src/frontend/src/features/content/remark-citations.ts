@@ -1,4 +1,4 @@
-import type { PhrasingContent, Root } from 'mdast'
+import type { Parent, PhrasingContent, Root } from 'mdast'
 import type { Node } from 'unist'
 import { SKIP, visit } from 'unist-util-visit'
 
@@ -7,16 +7,25 @@ import { SKIP, visit } from 'unist-util-visit'
 // a chip sits against its claim and a dropped marker leaves no gap before the punctuation.
 const markerPattern = '\\s*\\[source:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\\]'
 
-/** An inline citation. It becomes <cite data-chunk-id>, which Markdown replaces with a page chip. */
+/**
+ * An inline citation. It becomes <cite data-chunk-id data-claim>, which Markdown replaces with a page chip. The claim
+ * is the plain text of its paragraph from the previous sentence boundary up to the marker, which the reader uses
+ * to mark only the sentences of the cited passage that support it.
+ */
 export interface CitationMarker extends Node {
   type: 'citationMarker'
   chunkId: string
-  data: { hName: 'cite'; hProperties: { dataChunkId: string } }
+  data: { hName: 'cite'; hProperties: { dataChunkId: string; dataClaim?: string } }
 }
 
 declare module 'mdast' {
   interface PhrasingContentMap { citationMarker: CitationMarker }
   interface RootContentMap { citationMarker: CitationMarker }
+}
+
+/** Text with every valid [source:UUID] marker removed, as the reader sees it. */
+export function stripCitationMarkers(text: string) {
+  return text.replace(new RegExp(markerPattern, 'g'), '')
 }
 
 export type RemarkCitationsOptions = {
@@ -37,7 +46,33 @@ export function remarkCitations({ allowed }: RemarkCitationsOptions) {
       ;(parent.children as PhrasingContent[]).splice(index, 1, ...parts)
       return index + parts.length
     })
+    visit(tree, ['paragraph', 'heading', 'tableCell'], (block) => {
+      recordClaims(block as Parent)
+      return SKIP
+    })
   }
+}
+
+// A sentence ends at . ! or ?, perhaps followed by closing quotes or brackets, and then whitespace.
+const sentenceEnd = /[.!?]["'”’)\]]*\s+/g
+
+/** Gives each marker the text since the last sentence boundary of its block; a run of markers shares one claim. */
+function recordClaims(block: Parent) {
+  let text = ''
+  const walk = (parent: Parent) => {
+    for (const child of parent.children) {
+      if (child.type === 'citationMarker') {
+        const sentence = text.trimEnd()
+        let start = 0
+        for (const match of sentence.matchAll(sentenceEnd)) start = match.index + match[0].length
+        const claim = sentence.slice(start).trim()
+        if (claim) child.data.hProperties.dataClaim = claim
+      } else if (child.type === 'break') text += ' '
+      else if ('value' in child && typeof child.value === 'string' && child.type !== 'html') text += child.value
+      else if ('children' in child) walk(child)
+    }
+  }
+  walk(block)
 }
 
 function split(value: string, allowed: ReadonlyMap<string, number>) {

@@ -120,10 +120,10 @@ test('Given unknown or other-document markers, Then they render nothing', () => 
   expect(container).not.toHaveTextContent('[source:')
 })
 
-test('Given an inline chip, When the reader activates it, Then onCitation receives that citation', async () => {
+test('Given an inline chip, When the reader activates it, Then onCitation receives that citation and the claim it stands after', async () => {
   const onCitation = vi.fn()
-  const { user } = renderWithProviders(<Markdown documentId={documentId} citations={[first, second]} onCitation={onCitation} content={`Claim [source:${second.chunk_id}].`} />)
+  const { user } = renderWithProviders(<Markdown documentId={documentId} citations={[first, second]} onCitation={onCitation} content={`First point. The **model** trains faster [source:${second.chunk_id}].`} />)
   await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
-  expect(onCitation).toHaveBeenCalledWith(second)
+  expect(onCitation).toHaveBeenCalledWith(second, 'The model trains faster')
   expect(screen.queryByRole('dialog')).toBeNull()
 })
