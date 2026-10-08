@@ -4,13 +4,14 @@ import type { Citation, Paper } from '@/api/types'
 /**
  * Contract between the conversation pane and the reader (owned by the lead; ARA-036/ARA-037).
  *
- * - Citation chips call showSource(citation). The reader scrolls to citation.page of citation.document_id
- *   (which may be an earlier PDF than the paper's active document) and highlights citation.excerpt.
+ * - Citation chips call showSource(citation, claim). The reader scrolls to citation.page of citation.document_id
+ *   (which may be an earlier PDF than the paper's active document) and highlights the sentences of
+ *   citation.excerpt that support claim, the text the chip stands after; without a claim it highlights the excerpt.
  * - On narrow screens showSource also switches the view to 'pdf'.
  * - sourceRequest changes identity on every call (nonce), so clicking the same chip twice re-runs the jump.
  */
 export type WorkspaceView = 'chat' | 'pdf' | 'details'
-export type SourceRequest = { citation: Citation; nonce: number }
+export type SourceRequest = { citation: Citation; claim?: string; nonce: number }
 export type HighlightOutcome = 'highlighted' | 'page-only'
 
 export type WorkspaceContextValue = {
@@ -22,7 +23,7 @@ export type WorkspaceContextValue = {
   readerTab: 'pdf' | 'details'
   setReaderTab: (tab: 'pdf' | 'details') => void
   sourceRequest: SourceRequest | null
-  showSource: (citation: Citation) => void
+  showSource: (citation: Citation, claim?: string) => void
   /** The reader reports whether the excerpt was found in the text layer, so the UI can say so. */
   highlightOutcome: HighlightOutcome | null
   reportHighlight: (outcome: HighlightOutcome) => void

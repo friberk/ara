@@ -14,6 +14,7 @@ vi.mock('./PdfViewer', async () => {
       return (
         <div role="group" aria-label="PDF viewer">
           <p>{`Showing ${documentId}${highlight ? ` at page ${highlight.citation.page}` : ''}`}</p>
+          {highlight?.claim && <p>{`Supporting “${highlight.claim}”`}</p>}
           <p>{`Zoom ${zoom}${navigation ? `, asked for page ${navigation.page}` : ''}`}</p>
           <button type="button" onClick={() => onHighlight('highlighted')}>Report passage found</button>
           <button type="button" onClick={() => onHighlight('page-only')}>Report passage not found</button>
@@ -36,6 +37,7 @@ vi.mock('@/features/chat', async () => {
         <section aria-label="Conversation">
           <button type="button" onClick={() => showSource(current)}>Page 2</button>
           <button type="button" onClick={() => showSource(earlier)}>Page 1 of an earlier PDF</button>
+          <button type="button" onClick={() => showSource(current, 'Accuracy reached 86 percent.')}>Page 2 for a claim</button>
         </section>
       )
     },
@@ -210,6 +212,16 @@ test('Given a citation, When the reader marks its passage, Then the outcome is a
   await user.click(await screen.findByRole('button', { name: 'Report passage found' }))
   expect(screen.getByText('Highlighted the cited passage on page 2.')).toHaveAttribute('role', 'status')
   expect(screen.queryByText('Couldn’t pinpoint the passage, so showing page 2.')).not.toBeInTheDocument()
+})
+
+test('Given a chip that names its claim, When it asks for its source, Then the reader receives the claim with the citation', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('button', { name: 'Page 2 for a claim' }))
+  expect(await screen.findByText('Showing doc-1 at page 2')).toBeVisible()
+  expect(screen.getByText('Supporting “Accuracy reached 86 percent.”')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Page 2' }))
+  expect(screen.queryByText(/^Supporting/)).not.toBeInTheDocument()
 })
 
 test('Given a citation from an earlier PDF, When its source is shown, Then the reader opens that version and says so', async () => {

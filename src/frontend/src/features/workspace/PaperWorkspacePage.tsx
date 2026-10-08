@@ -55,8 +55,8 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
     }, { replace: true })
   }, [setSearchParams])
 
-  const showSource = useCallback((citation: Citation) => {
-    setSourceRequest((previous) => ({ citation, nonce: (previous?.nonce ?? 0) + 1 }))
+  const showSource = useCallback((citation: Citation, claim?: string) => {
+    setSourceRequest((previous) => ({ citation, claim, nonce: (previous?.nonce ?? 0) + 1 }))
     setHighlightOutcome(null)
     setEarlierDocumentId(citation.document_id === paper.active_document_id ? null : citation.document_id)
     setReaderTab('pdf')

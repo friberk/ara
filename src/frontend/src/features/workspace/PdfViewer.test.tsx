@@ -52,7 +52,7 @@ function renderViewer(highlight: PdfViewerProps['highlight']) {
   const view = render(element(highlight))
   return { ...handlers, view, rehighlight: (next: PdfViewerProps['highlight']) => view.rerender(element(next)) }
 }
-const marked = (page: number) => Array.from(screen.getByRole('group', { name: `Page ${page}` }).querySelectorAll('[data-citation-highlight]')).map((span) => span.textContent)
+const marked = (page: number, kind = '') => Array.from(screen.getByRole('group', { name: `Page ${page}` }).querySelectorAll(kind ? `[data-citation-highlight="${kind}"]` : '[data-citation-highlight]')).map((span) => span.textContent)
 
 // The shared setup defines ResizeObserver as writable but not configurable, so it is swapped by assignment.
 const SetupResizeObserver = window.ResizeObserver
@@ -75,7 +75,8 @@ describe('PdfViewer evidence jump (test-after, mutation-verified)', () => {
     const { onHighlight } = renderViewer({ citation: onMethod, nonce: 1 })
     await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
     expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
-    expect(screen.getByText(methodLines[1]!)).toHaveAttribute('data-citation-highlight', 'pulse')
+    expect(screen.getByText(methodLines[1]!)).toHaveAttribute('data-citation-highlight', 'strong')
+    expect(screen.getByText(methodLines[1]!)).toHaveAttribute('data-citation-pulse')
     expect(onHighlight).toHaveBeenCalledTimes(1)
   })
 
@@ -91,7 +92,7 @@ describe('PdfViewer evidence jump (test-after, mutation-verified)', () => {
     rehighlight({ citation: onMethod, nonce: 2 })
     await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(2))
     expect(onHighlight).toHaveBeenLastCalledWith('highlighted')
-    expect(screen.getByText(methodLines[1]!)).toHaveAttribute('data-citation-highlight', 'pulse')
+    expect(screen.getByText(methodLines[1]!)).toHaveAttribute('data-citation-pulse')
   })
 
   test('Given the cited page cannot render its text layer, Then the jump reports "page-only"', async () => {
@@ -110,5 +111,42 @@ describe('PdfViewer evidence jump (test-after, mutation-verified)', () => {
     const { onHighlight } = renderViewer({ citation: onMethod, nonce: 1 })
     await waitFor(() => expect(onHighlight).toHaveBeenCalled())
     expect(screen.getByRole('region', { name: 'PDF document' })).toHaveFocus()
+  })
+})
+
+describe('PdfViewer passage-level evidence (test-first)', () => {
+  // A whole stored chunk is cited; the claim the chip stands after is supported by its last sentence only.
+  const prose = ['The method first extracts page text, then retrieves relevant', 'chunks. It generates answers grounded in those passages. The', 'experiment uses the Orion-12 dataset with twelve examples.']
+  const chunk = cite(2, prose.join('\n'))
+  const claim = 'The study evaluates on the Orion-12 dataset.'
+  beforeEach(() => { fixture.pages[2] = prose })
+  afterEach(() => vi.restoreAllMocks())
+
+  test('Given a claim, When the passage is marked, Then the lines of the supporting sentence are strong and the rest of the excerpt is context', async () => {
+    const { onHighlight } = renderViewer({ citation: chunk, claim, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    expect(marked(2, 'strong')).toEqual([prose[1], prose[2]])
+    expect(marked(2, 'context')).toEqual([prose[0]])
+    expect(screen.getByText(prose[2]!)).toHaveAttribute('data-citation-pulse')
+    expect(screen.getByText(prose[0]!)).not.toHaveAttribute('data-citation-pulse')
+  })
+
+  test('Given no claim, Then the whole excerpt is strong and nothing is context', async () => {
+    const { onHighlight } = renderViewer({ citation: chunk, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    expect(marked(2, 'strong')).toEqual(prose)
+    expect(marked(2, 'context')).toEqual([])
+  })
+
+  test('Given the passage lands, Then the first strong line is scrolled to the vertical centre of the reader', async () => {
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.getAttribute('data-citation-highlight') === 'strong' ? new DOMRect(0, 1000, 300, 20) : new DOMRect(0, 0, 0, 0)
+    })
+    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo')
+    const { onHighlight } = renderViewer({ citation: chunk, claim, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    // The line's centre (1000 + 20 / 2) sits half the reader's height (600 / 2) below the top of the view.
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 710, behavior: 'smooth' })
   })
 })

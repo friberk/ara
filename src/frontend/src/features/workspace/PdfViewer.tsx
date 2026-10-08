@@ -9,7 +9,7 @@ import type { Citation } from '@/api/types'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import type { PdfNavigation } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
-import { findExcerptItems } from './text-highlight'
+import { findEvidenceItems } from './evidence'
 import type { HighlightOutcome, SourceRequest } from './workspace-context'
 
 // The worker comes from the same pdfjs-dist that react-pdf resolves, so API and worker versions always agree.
@@ -25,14 +25,14 @@ export type PdfViewerProps = {
   /** 1 fits the page to the panel width. */
   zoom: number
   navigation: PdfNavigation | null
-  /** A citation in this document to scroll to and mark; a new nonce repeats the jump. */
+  /** A citation in this document to scroll to and mark, with the claim it supports; a new nonce repeats the jump. */
   highlight: SourceRequest | null
   onDocumentLoad: (numPages: number) => void
   onPageChange: (page: number) => void
   onHighlight: (outcome: HighlightOutcome) => void
 }
 
-type ActiveHighlight = { citation: Citation; nonce: number; reported: boolean }
+type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean }
 type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -58,8 +58,9 @@ const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTex
 
 /**
  * Every page in one scroll column. Pages are placeholders sized from the PDF until they come near the viewport,
- * so long papers stay light. A highlight request scrolls to its page and, once that page's text layer exists,
- * marks the excerpt's spans with data-citation-highlight.
+ * so long papers stay light. A highlight request scrolls to its page and, once that page's text layer exists, marks
+ * the spans of the sentences that support the claim data-citation-highlight="strong" and the rest of the excerpt
+ * "context" (the whole excerpt is strong without a claim).
  */
 export default function PdfViewer(props: PdfViewerProps) {
   const { documentId, zoom, navigation, highlight } = props
@@ -106,15 +107,26 @@ export default function PdfViewer(props: PdfViewerProps) {
     // react-pdf appends .endOfContent when a text layer finishes; it is removed again when the layer re-renders.
     if (!layer?.querySelector('.endOfContent')) return
     const spans = Array.from(layer.querySelectorAll<HTMLElement>('span[role="presentation"]'))
-    const indexes = findExcerptItems(spans.map((span) => ({ str: span.textContent ?? '', hasEOL: span.nextElementSibling?.tagName === 'BR' })), active.citation.excerpt)
-    root.querySelectorAll('[data-citation-highlight]').forEach((element) => element.removeAttribute('data-citation-highlight'))
+    const items = spans.map((span) => ({ str: span.textContent ?? '', hasEOL: span.nextElementSibling?.tagName === 'BR' }))
+    const { strong, context } = findEvidenceItems(items, active.citation.excerpt, active.claim)
+    root.querySelectorAll('[data-citation-highlight]').forEach((element) => {
+      element.removeAttribute('data-citation-highlight')
+      element.removeAttribute('data-citation-pulse')
+    })
     const first = !active.reported
     if (first) void layer.getBoundingClientRect() // flush styles so marking the same passage again restarts the pulse
-    for (const index of indexes) spans[index]?.setAttribute('data-citation-highlight', first ? 'pulse' : '')
+    for (const index of context) spans[index]?.setAttribute('data-citation-highlight', 'context')
+    for (const index of strong) {
+      spans[index]?.setAttribute('data-citation-highlight', 'strong')
+      if (first) spans[index]?.setAttribute('data-citation-pulse', '')
+    }
     if (!first) return
-    settle(indexes.length ? 'highlighted' : 'page-only', active.nonce)
-    const start = indexes.length ? spans[indexes[0]!] : undefined
-    if (start) root.scrollTo({ top: Math.max(0, offsetIn(root, start) - root.clientHeight * 0.2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+    settle(strong.length ? 'highlighted' : 'page-only', active.nonce)
+    const start = strong.length ? spans[strong[0]!] : undefined
+    if (start) {
+      const middle = offsetIn(root, start) + start.getBoundingClientRect().height / 2
+      root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+    }
     // A chip in a now-hidden tab had focus; keep keyboard users in the document they were sent to.
     const focused = document.activeElement
     if (!(focused instanceof HTMLElement) || focused === document.body || !focused.offsetParent) root.focus({ preventScroll: true })
@@ -183,8 +195,8 @@ export default function PdfViewer(props: PdfViewerProps) {
 
   useEffect(() => {
     if (!highlight) return
-    const { citation, nonce } = highlight
-    request.current = { citation, nonce, reported: false }
+    const { citation, claim, nonce } = highlight
+    request.current = { citation, claim, nonce, reported: false }
     pendingPage.current = citation.page
     flushPendingPage()
     markPage(citation.page)
