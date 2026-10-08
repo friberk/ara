@@ -161,3 +161,14 @@ The conversation agent built the chat-first pane test-first (9 chat tests red ag
 **Integration.** The merge into `feat/ui-overhaul` passed 162 tests and lint had 0 errors.
 
 **Open item.** The agent's E2E spec assumes a reader region and a highlight status text. That contract was sent to the workspace agent before its merge, so the two are built to the same names.
+
+### First browser run of the research spec (ARA-039)
+
+The lead ran `research.spec.ts` against the e2e fixture stack.
+
+- **E2E-01:** passed.
+- **E2E-02:** failed on a rerun because the earlier run had already saved the fixture paper. The spec assumes a fresh database. After resetting only the `ara-e2e` volumes, it passed in 3.7s.
+- **Mobile test:** timed out. The Playwright trace showed `<a>Skip to content</a> intercepts pointer events` 106 times: while focused, the skip link sat on top of the mobile sidebar toggle. It moved to top-centre.
+- **Mobile test, second failure:** the next run failed at `toBeHidden`, because one Escape did not close the sheet. The screenshot showed focus on a sidebar item. A new unit test reproduced it (red). The cause was shadcn's `SidebarMenuButton`, which always mounts a Tooltip and only hides its content on mobile or when expanded, so the invisible tooltip took the first Escape. Tooltips now mount only on the collapsed desktop rail. A guard test keeps the rail labels; it was first wrong (it matched two "Toggle Sidebar" buttons) and was fixed, then confirmed red by disabling tooltips.
+
+The mobile E2E now passes in 5.1s and Vitest passes 225/225. The legacy `workflows.spec.ts` was retired in favour of the per-feature specs.

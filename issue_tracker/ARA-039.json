@@ -20,14 +20,16 @@
     "npm run check",
     "CI contract cmp"
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/e2e",
     "src/frontend/src/test",
     "src/frontend/src/api/generated.ts"
   ],
-  "commits": [],
+  "commits": [
+    "78aa856"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "research.spec: E2E-01 passed; E2E-02 passed on a fresh e2e DB (3.7s); mobile passed after the skip-link and sidebar-tooltip fixes (5.1s). workflows.spec.ts retired. Pending: workspace.spec and conversation.spec after the workspace merge, and a final full serial run on a fresh e2e DB.",
   "updated_at": "2026-10-08"
 }
