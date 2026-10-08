@@ -1,0 +1,32 @@
+{
+  "id": "ARA-017",
+  "title": "CI, README and public GitHub repository",
+  "type": "documentation",
+  "priority": "P0",
+  "description": "CI, README and public GitHub repository for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-003",
+    "ARA-004"
+  ],
+  "acceptance_criteria": [
+    "Clean setup passes; lockfiles and license notices present; no secrets; public remote verified."
+  ],
+  "test_cases": [
+    "Bootstrap and clean isolated Compose startup",
+    "Generated OpenAPI comparison and local CI step commands; remote publication pending"
+  ],
+  "status": "in_progress",
+  "related_files": [
+    ".github/workflows/ci.yaml",
+    "README.md",
+    "LICENSE",
+    "docs/third-party-notices.md"
+  ],
+  "commits": [
+    "7a16711c4d9fc444af9be4d1effd73d222f1f723",
+    "0e641971f8876799f71ec459d8d39861170ebd1e"
+  ],
+  "pull_requests": [],
+  "verification": "Local setup/checks, pinned dependencies, license notices and CI prepared. GitHub publication explicitly deferred by user; no remote CI run or verified public URL.",
+  "updated_at": "2026-10-08"
+}

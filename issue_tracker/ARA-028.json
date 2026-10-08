@@ -1,0 +1,26 @@
+{
+  "id": "ARA-028",
+  "title": "Exhausted ingestion leaves paper processing",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during actual integration or independent source review; see development journal and review evidence.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Original trigger reproduced and targeted regression passes after correction."
+  ],
+  "test_cases": [
+    "test_terminal_ingest_failure_updates_document_and_job_atomically: exhausted lease and actor failure"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/repositories/jobs.py",
+    "src/backend/tests/test_research_integration.py"
+  ],
+  "commits": [
+    "bccd016d3ed65ff554f85c949a0f52928b8c4e2d",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Exhausted lease and actor failure atomically fail job+document; eligible retry restores processing. Both regressions pass, independent review confirmed.",
+  "updated_at": "2026-10-08"
+}

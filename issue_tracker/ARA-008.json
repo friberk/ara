@@ -1,0 +1,33 @@
+{
+  "id": "ARA-008",
+  "title": "Durable jobs, outbox and recovery",
+  "type": "infrastructure",
+  "priority": "P0",
+  "description": "Durable jobs, outbox and recovery for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-004"
+  ],
+  "acceptance_criteria": [
+    "Canary succeeds; duplicate delivery, transient failure and expired leases are safe."
+  ],
+  "test_cases": [
+    "test_durable_job_claim_duplicate_generation_and_final_write_fencing",
+    "test_expired_lease_recovers_with_new_generation_and_total_attempt_cap",
+    "test_broker_outage_leaves_outbox_pending_and_redelivery_is_safe",
+    "test_real_redis_worker_canary_end_to_end"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/repositories/jobs.py",
+    "src/backend/app/services/dispatcher.py",
+    "src/backend/app/jobs/actors.py",
+    "src/backend/tests/test_integration.py"
+  ],
+  "commits": [
+    "bccd016d3ed65ff554f85c949a0f52928b8c4e2d",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Real Redis worker canary, duplicate claims, lease fencing, broker outage/recovery and retry caps passed.",
+  "updated_at": "2026-10-08"
+}

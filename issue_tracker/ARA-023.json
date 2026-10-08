@@ -1,0 +1,26 @@
+{
+  "id": "ARA-023",
+  "title": "Optional OCR",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Optional OCR for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-010"
+  ],
+  "acceptance_criteria": [
+    "Scanned documents handled with explicitly enabled OCR and provenance."
+  ],
+  "test_cases": [
+    "Scanned documents handled with explicitly enabled OCR and provenance."
+  ],
+  "status": "deferred",
+  "related_files": [
+    "docs/implementation-plan.md"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+  ],
+  "pull_requests": [],
+  "verification": "P2 OCR deferred; scanned/image-only PDFs report actionable OCR_REQUIRED failure.",
+  "updated_at": "2026-10-08"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "ARA-027",
+  "title": "Incorrect metadata fallback import",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during actual integration or independent source review; see development journal and review evidence.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Original trigger reproduced and targeted regression passes after correction."
+  ],
+  "test_cases": [
+    "test_configured_metadata_fallback_uses_actual_http_and_copies_evidence"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/ingestion.py",
+    "src/backend/tests/test_research_integration.py"
+  ],
+  "commits": [
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Metadata fallback imports actual adapter; realHTTP structured-output regression persists evidence candidates/provenance. Independently reviewed.",
+  "updated_at": "2026-10-08"
+}

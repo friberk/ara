@@ -1,0 +1,28 @@
+{
+  "id": "ARA-005",
+  "title": "Live provider and model access verification",
+  "type": "testing",
+  "priority": "P0",
+  "description": "Live provider and model access verification for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-003"
+  ],
+  "acceptance_criteria": [
+    "Actual provider/model results or honest access errors recorded without credentials."
+  ],
+  "test_cases": [
+    "Live GUI OpenAlex search/save/upload/summary/question; record actual external responses separately from fixtures."
+  ],
+  "status": "completed",
+  "related_files": [
+    "docs/verification-final.md",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [
+    "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Live OpenAlex200; live SemanticScholar429 handled; account listed all3 requested IDs; actual Luna/low summary and streamed chat via GUI, refresh persisted.",
+  "updated_at": "2026-10-08"
+}

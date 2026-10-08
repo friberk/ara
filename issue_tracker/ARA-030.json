@@ -1,0 +1,28 @@
+{
+  "id": "ARA-030",
+  "title": "Mobile grid track exceeds viewport",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during actual integration or independent source review; see development journal and review evidence.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Original trigger reproduced and targeted regression passes after correction."
+  ],
+  "test_cases": [
+    "Mobile workspace and keyboard controls remain usable",
+    "Live paper390px document/viewport equality"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/index.css",
+    "src/frontend/e2e/workflows.spec.ts"
+  ],
+  "commits": [
+    "8e6fe9607839262df855e4591fb4628e727175dc",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Observed390px viewport/409px document; minmax(0,1fr)/min-width0 fix measured390/390; mobile browser scenario passes.",
+  "updated_at": "2026-10-08"
+}

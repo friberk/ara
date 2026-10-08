@@ -1,0 +1,33 @@
+{
+  "id": "ARA-009",
+  "title": "Validated PDF upload and original storage",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Validated PDF upload and original storage for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-007",
+    "ARA-008"
+  ],
+  "acceptance_criteria": [
+    "PDF limits/signature enforced; original checksums retained in MinIO; records/jobs created."
+  ],
+  "test_cases": [
+    "test_pdf_upload_child_extraction_original_download_and_paper_isolated_chunks",
+    "test_pdf_upload_size_limit_rejects_before_persisting_document",
+    "test_upload_can_resume_after_real_storage_connection_failure"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/uploads.py",
+    "src/backend/app/routes/documents.py",
+    "src/backend/app/integrations/storage.py"
+  ],
+  "commits": [
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "8e6fe9607839262df855e4591fb4628e727175dc",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Signature/size checks, original byte retention, storage-failure recovery and UUID binding passed against real MinIO; E2E-03 passes.",
+  "updated_at": "2026-10-08"
+}

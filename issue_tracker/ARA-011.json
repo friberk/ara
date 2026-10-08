@@ -1,0 +1,32 @@
+{
+  "id": "ARA-011",
+  "title": "Paper-scoped lexical retrieval",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Paper-scoped lexical retrieval for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-010"
+  ],
+  "acceptance_criteria": [
+    "Relevant evidence retrieved only from selected document; absence explicit; citation refs valid."
+  ],
+  "test_cases": [
+    "test_given_two_documents_when_retrieving_then_scope_is_immutable",
+    "test_given_invented_citation_when_stream_finishes_then_fail_with_safe_grounding_code",
+    "test_citation_excerpt_preserves_late_evidence_and_denies_another_document"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/retrieval.py",
+    "src/backend/tests/test_ai_integration.py",
+    "src/frontend/src/components/Citations.tsx"
+  ],
+  "commits": [
+    "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "FTS and follow-up context remain document-scoped; invalid citations fail; full selected passage and PDF page visible. Identity checks do not prove semantic entailment.",
+  "updated_at": "2026-10-08"
+}

@@ -1,0 +1,35 @@
+{
+  "id": "ARA-010",
+  "title": "Page extraction, metadata and correction",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Page extraction, metadata and correction for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-009"
+  ],
+  "acceptance_criteria": [
+    "Known PDF fields and page chunks extracted; nullable uncertainty/correction preserved; E2E-03."
+  ],
+  "test_cases": [
+    "test_isolated_pdf_parser_preserves_pages_and_nullable_publication_metadata",
+    "test_parser_reports_scanned_encrypted_and_malformed_failures",
+    "test_parser_timeout_kills_and_waits_for_child",
+    "test_configured_metadata_fallback_uses_actual_http_and_copies_evidence",
+    "E2E-03 upload and ready metadata"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/jobs/pdf_parser.py",
+    "src/backend/app/services/ingestion.py",
+    "src/frontend/src/components/MetadataEditor.tsx"
+  ],
+  "commits": [
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4",
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de"
+  ],
+  "pull_requests": [],
+  "verification": "Page boundaries/chunks and known nullable fields verified; malformed/scanned/encrypted/oversized/page-limit/timeout tests pass; metadata correction preserves untouched provenance.",
+  "updated_at": "2026-10-08"
+}

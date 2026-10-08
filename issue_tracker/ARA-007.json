@@ -1,0 +1,32 @@
+{
+  "id": "ARA-007",
+  "title": "Persistent library and cross-provider identity",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Persistent library and cross-provider identity for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-006"
+  ],
+  "acceptance_criteria": [
+    "Saved papers survive refresh/restart; matching DOI/source records do not duplicate; E2E-02."
+  ],
+  "test_cases": [
+    "test_concurrent_canonical_save_deduplicates_doi_and_preserves_manual_overrides",
+    "E2E-02 save both providers, refresh and single matching paper"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/repositories/papers.py",
+    "src/frontend/src/pages/LibraryPage.tsx",
+    "src/backend/tests/test_research_integration.py"
+  ],
+  "commits": [
+    "aa2d48b09a0f50c82471021fbee86eb291c19f53",
+    "8e6fe9607839262df855e4591fb4628e727175dc",
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Concurrent canonical DOI deduplication and manual overrides pass; E2E-02 saves both provider identities to one library paper; live refresh persists.",
+  "updated_at": "2026-10-08"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "ARA-001",
+  "title": "Plan, issue tracker, agent guide and journal",
+  "type": "documentation",
+  "priority": "P0",
+  "description": "Plan, issue tracker, agent guide and journal for the approved research-assistant workflows.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Approved plan and traceability saved; issues have stable IDs; actual evidence journal started."
+  ],
+  "test_cases": [
+    "Approved plan and traceability saved; issues have stable IDs; actual evidence journal started."
+  ],
+  "status": "completed",
+  "related_files": [
+    "docs/implementation-plan.md",
+    "AGENTS.md",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+  ],
+  "pull_requests": [],
+  "verification": "Approved plan persisted; traceability/backlog/journal maintained.",
+  "updated_at": "2026-10-08"
+}

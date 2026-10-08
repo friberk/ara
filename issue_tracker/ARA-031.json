@@ -1,0 +1,31 @@
+{
+  "id": "ARA-031",
+  "title": "Chat response omits recorded model and reasoning",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during final real workflow review; preserve original trigger and correction in the agent journal.",
+  "dependencies": [
+    "ARA-014",
+    "ARA-015"
+  ],
+  "acceptance_criteria": [
+    "Given a saved Luna/low answer and current Terra/high selection, then the saved answer still displays Luna/low.",
+    "Streaming responses display the generation settings used for that request."
+  ],
+  "test_cases": [
+    "Saved response displays recorded Luna/low while form chooses Terra/high",
+    "Streaming partial response displays request model/reasoning"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/components/ChatPanel.tsx",
+    "src/frontend/src/pages/workflows.test.tsx"
+  ],
+  "commits": [
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de"
+  ],
+  "pull_requests": [],
+  "verification": "Two observed rendering reds; correction passed21frontend tests/typecheck/lint/build and6browser scenarios; live saved model label verified.",
+  "updated_at": "2026-10-08"
+}

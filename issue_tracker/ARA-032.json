@@ -1,0 +1,31 @@
+{
+  "id": "ARA-032",
+  "title": "Citation source truncation hides supporting evidence",
+  "type": "bug",
+  "priority": "P1",
+  "description": "Observed during final real workflow review; preserve original trigger and correction in the agent journal.",
+  "dependencies": [
+    "ARA-011"
+  ],
+  "acceptance_criteria": [
+    "Given supporting text after character1200 in a bounded stored chunk, then opening its source returns the complete chunk.",
+    "A citation requested under another document returns404 without exposing its text."
+  ],
+  "test_cases": [
+    "test_citation_excerpt_preserves_late_evidence_and_denies_another_document",
+    "Live page7 dialog contains WMT support beyond char1200"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/routes/documents.py",
+    "src/backend/tests/test_research_integration.py",
+    "docs/citation-review-report.md"
+  ],
+  "commits": [
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "ActualAPI/PostgreSQL red1failed; fullsuitegreen58passed13.60s; Ruff passed. Live page7 source now3200chars and contains WMT dataset evidence, no paid regeneration.",
+  "updated_at": "2026-10-08"
+}

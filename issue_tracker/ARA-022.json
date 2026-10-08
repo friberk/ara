@@ -1,0 +1,27 @@
+{
+  "id": "ARA-022",
+  "title": "Optional local model serving",
+  "type": "infrastructure",
+  "priority": "P2",
+  "description": "Optional local model serving for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-012"
+  ],
+  "acceptance_criteria": [
+    "Exact artifacts/engine/license/code reviewed; streaming/context/memory verified before enablement."
+  ],
+  "test_cases": [
+    "Exact artifacts/engine/license/code reviewed; streaming/context/memory verified before enablement."
+  ],
+  "status": "deferred",
+  "related_files": [
+    "docs/implementation-plan.md",
+    "docs/ai-report.md"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+  ],
+  "pull_requests": [],
+  "verification": "P2 local inference investigated against Mac/CUDA/quantization constraints; no weights downloaded or local model/Compose profile implemented.",
+  "updated_at": "2026-10-08"
+}

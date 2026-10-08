@@ -1,0 +1,26 @@
+{
+  "id": "ARA-002",
+  "title": "Install working local PyMuPDF skill",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Install working local PyMuPDF skill for the approved research-assistant workflows.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Supplied CLI works; all referenced resources exist; synthetic PDF and validation tests pass."
+  ],
+  "test_cases": [
+    "Supplied CLI works; all referenced resources exist; synthetic PDF and validation tests pass."
+  ],
+  "status": "completed",
+  "related_files": [
+    ".agents/skills/pymupdf-pdf/SKILL.md",
+    ".agents/skills/pymupdf-pdf/scripts/pymupdf_parse.py",
+    ".agents/skills/pymupdf-pdf/tests/test_parser.py"
+  ],
+  "commits": [
+    "8b7dd794cb66335a49dccce9c27851ce7dd1db45"
+  ],
+  "pull_requests": [],
+  "verification": "Six synthetic CLI tests, skill validation, locked CLI and actual local demo-paper extraction passed.",
+  "updated_at": "2026-10-08"
+}

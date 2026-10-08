@@ -1,0 +1,30 @@
+{
+  "id": "ARA-018",
+  "title": "Demo video, reflection evidence and submission",
+  "type": "documentation",
+  "priority": "P0",
+  "description": "Demo video, reflection evidence and submission for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-016",
+    "ARA-017"
+  ],
+  "acceptance_criteria": [
+    "Five-flow video and student reflection prepared; actual screenshots and submission references supplied."
+  ],
+  "test_cases": [
+    "Review ignored actual live-demo.webm and final source/model screenshots",
+    "Student checks authentic reflection and Brightspace submission manually"
+  ],
+  "status": "in_progress",
+  "related_files": [
+    "docs/submission-checklist.md",
+    "docs/agent-development-log.md",
+    "docs/verification-final.md"
+  ],
+  "commits": [
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Actual five-workflow live recording/screenshots retained in ignored local evidence; student-written reflection, publication and Brightspace submission remain pending.",
+  "updated_at": "2026-10-08"
+}

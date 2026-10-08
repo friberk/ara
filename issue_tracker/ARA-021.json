@@ -1,0 +1,26 @@
+{
+  "id": "ARA-021",
+  "title": "Optional pgvector and embeddings",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Optional pgvector and embeddings for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-011"
+  ],
+  "acceptance_criteria": [
+    "Versioned semantic/hybrid retrieval evaluated without breaking lexical search."
+  ],
+  "test_cases": [
+    "Versioned semantic/hybrid retrieval evaluated without breaking lexical search."
+  ],
+  "status": "deferred",
+  "related_files": [
+    "docs/implementation-plan.md"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+  ],
+  "pull_requests": [],
+  "verification": "P2 embeddings/pgvector/hybrid retrieval deferred; verified lexical retrieval remains default.",
+  "updated_at": "2026-10-08"
+}

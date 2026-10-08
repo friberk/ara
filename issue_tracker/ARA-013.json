@@ -1,0 +1,36 @@
+{
+  "id": "ARA-013",
+  "title": "Content-grounded summary jobs",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Content-grounded summary jobs for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-008",
+    "ARA-011",
+    "ARA-012"
+  ],
+  "acceptance_criteria": [
+    "Actual text with full coverage drives persistent summaries and provenance; E2E-04."
+  ],
+  "test_cases": [
+    "test_given_summary_fixture_when_generated_then_domain_and_job_complete_together",
+    "test_given_over_budget_document_when_summarized_then_map_reduce_covers_all_chunks",
+    "test_given_summary_unknown_paid_outcome_when_worker_recovers_then_no_new_generation",
+    "E2E-04 stored summary and source after refresh"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/summarization.py",
+    "src/frontend/src/components/SummaryPanel.tsx",
+    "src/backend/tests/test_ai_integration.py"
+  ],
+  "commits": [
+    "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4",
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Full coverage/direct and map-reduce, checkpoints, no ambiguous paid replay and transactional persistence pass; E2E-04 and real15-page summary passed.",
+  "updated_at": "2026-10-08"
+}

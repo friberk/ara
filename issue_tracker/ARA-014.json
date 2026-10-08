@@ -1,0 +1,35 @@
+{
+  "id": "ARA-014",
+  "title": "Persistent streaming paper conversations",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Persistent streaming paper conversations for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-011",
+    "ARA-012"
+  ],
+  "acceptance_criteria": [
+    "Multi-turn histories/citations persist; UUID replay and API crash recovery safe; E2E-05."
+  ],
+  "test_cases": [
+    "test_given_stream_when_completed_then_final_persisted_and_uuid_replay_is_free",
+    "test_given_asgi_level_cancellation_when_disconnected_then_database_retains_partial",
+    "test_given_partial_request_when_expired_then_replay_never_reserves_again",
+    "E2E-05 streaming two turns, citations and refreshed history"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/chat.py",
+    "src/backend/app/routes/chat.py",
+    "src/frontend/src/components/ChatPanel.tsx"
+  ],
+  "commits": [
+    "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4",
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Multi-turn SSE, scoped citations, saved/partial history, AnyIO cancellation, expiry, UUID replay and cost controls pass; E2E-05 and real streamed question passed.",
+  "updated_at": "2026-10-08"
+}

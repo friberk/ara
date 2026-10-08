@@ -1,0 +1,35 @@
+{
+  "id": "ARA-004",
+  "title": "Typed API contracts and test foundations",
+  "type": "testing",
+  "priority": "P0",
+  "description": "Typed API contracts and test foundations for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-003"
+  ],
+  "acceptance_criteria": [
+    "OpenAPI types are generated; deterministic backend/frontend tests execute."
+  ],
+  "test_cases": [
+    "Generate TypeScript from /openapi.json and compare it byte-for-byte with src/frontend/src/api/generated.ts.",
+    "Backend pytest and frontend check run against their locked environments."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/schemas/research.py",
+    "src/frontend/src/api/generated.ts",
+    "tests/fixtures/server.py",
+    ".github/workflows/ci.yaml"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15",
+    "8ff066eaa6fe3254ad01364a19485011e22e8155",
+    "bccd016d3ed65ff554f85c949a0f52928b8c4e2d",
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de",
+    "0e641971f8876799f71ec459d8d39861170ebd1e"
+  ],
+  "pull_requests": [],
+  "verification": "OpenAPI TypeScript generated from real API; current contract comparison and frontend/backend suites pass.",
+  "updated_at": "2026-10-08"
+}

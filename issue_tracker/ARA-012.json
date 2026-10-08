@@ -1,0 +1,33 @@
+{
+  "id": "ARA-012",
+  "title": "Hosted LLM adapters and capability registry",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Hosted LLM adapters and capability registry for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-004",
+    "ARA-005"
+  ],
+  "acceptance_criteria": [
+    "Requested models/settings supported; structured outputs and streaming parsed; errors safe."
+  ],
+  "test_cases": [
+    "test_given_responses_fixture_when_complete_then_store_false_and_exact_model",
+    "test_given_provider_outage_when_request_fails_then_safe_error_and_no_retry",
+    "test_given_stream_events_when_provider_completes_then_yield_only_text",
+    "test_given_concurrent_budget_reservations_when_cap_exceeded_then_one_allowed"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/schemas/ai.py",
+    "src/backend/tests/test_ai.py"
+  ],
+  "commits": [
+    "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Official Responses integration, exact IDs/capabilities, byte budgets, safe errors and HTTP streaming fixtures pass; all3 account IDs listed, live Luna exercised.",
+  "updated_at": "2026-10-08"
+}

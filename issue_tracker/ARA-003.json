@@ -1,0 +1,31 @@
+{
+  "id": "ARA-003",
+  "title": "Docker, migrations and object storage foundation",
+  "type": "infrastructure",
+  "priority": "P0",
+  "description": "Docker, migrations and object storage foundation for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-001"
+  ],
+  "acceptance_criteria": [
+    "Six services start; migration/bucket gates work; storage and data survive restart; source reload works."
+  ],
+  "test_cases": [
+    "Six services start; migration/bucket gates work; storage and data survive restart; source reload works."
+  ],
+  "status": "completed",
+  "related_files": [
+    "compose.yaml",
+    "docker/minio.Dockerfile",
+    "scripts/bootstrap.py",
+    "scripts/test-stack.py",
+    "docs/verification-phase0.md"
+  ],
+  "commits": [
+    "8ff066eaa6fe3254ad01364a19485011e22e8155",
+    "7a16711c4d9fc444af9be4d1effd73d222f1f723"
+  ],
+  "pull_requests": [],
+  "verification": "Six-service ARM64 build, init gates, real worker canary, S3/DB/Redis restart persistence and API/worker reload passed; browser CSS HMR preserved input without navigation.",
+  "updated_at": "2026-10-08"
+}

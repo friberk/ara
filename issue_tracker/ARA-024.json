@@ -1,0 +1,27 @@
+{
+  "id": "ARA-024",
+  "title": "Context7 connection status mismatch",
+  "type": "bug",
+  "priority": "P1",
+  "description": "Context7 connection status mismatch for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-001"
+  ],
+  "acceptance_criteria": [
+    "Observed installed/enabled vs USER_NOT_LOGGED_IN mismatch recorded; fallback honest."
+  ],
+  "test_cases": [
+    "Observed installed/enabled vs USER_NOT_LOGGED_IN mismatch recorded; fallback honest."
+  ],
+  "status": "observed",
+  "related_files": [
+    "docs/agent-development-log.md",
+    "docs/implementation-plan.md"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+  ],
+  "pull_requests": [],
+  "verification": "Installed/enabled Context7 returned USER_NOT_LOGGED_IN/connection-layer errors; official documentation used. Connector repair not claimed.",
+  "updated_at": "2026-10-08"
+}

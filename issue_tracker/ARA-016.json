@@ -1,0 +1,34 @@
+{
+  "id": "ARA-016",
+  "title": "Integrated verification and security corrections",
+  "type": "testing",
+  "priority": "P0",
+  "description": "Integrated verification and security corrections for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-007",
+    "ARA-010",
+    "ARA-015"
+  ],
+  "acceptance_criteria": [
+    "Five deterministic E2Es, real core-service integration and safe source/error boundaries checked."
+  ],
+  "test_cases": [
+    "Full isolated backend pytest and frontend check/build",
+    "Six actual-stack Chromium scenarios and independent defect rereview"
+  ],
+  "status": "completed",
+  "related_files": [
+    "docs/application-review.md",
+    "docs/verification-final.md",
+    "src/backend/tests",
+    "src/frontend/e2e/workflows.spec.ts"
+  ],
+  "commits": [
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "58backend/21frontend/6browser tests passed; independent review defects corrected and rereviewed; full source display verified live without paid regeneration.",
+  "updated_at": "2026-10-08"
+}

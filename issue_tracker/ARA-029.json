@@ -1,0 +1,26 @@
+{
+  "id": "ARA-029",
+  "title": "Compose omits daily budget override",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during actual integration or independent source review; see development journal and review evidence.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Original trigger reproduced and targeted regression passes after correction."
+  ],
+  "test_cases": [
+    "test_custom_daily_budget_reaches_api_and_worker"
+  ],
+  "status": "completed",
+  "related_files": [
+    "compose.yaml",
+    ".env.example",
+    "tests/infrastructure/test_compose_budget.py"
+  ],
+  "commits": [
+    "7a16711c4d9fc444af9be4d1effd73d222f1f723"
+  ],
+  "pull_requests": [],
+  "verification": "Observed nondefault budget forwarding regression red then green; API and worker receive configured cap; independently reviewed.",
+  "updated_at": "2026-10-08"
+}

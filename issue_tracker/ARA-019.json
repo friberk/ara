@@ -1,0 +1,27 @@
+{
+  "id": "ARA-019",
+  "title": "Safe accessible full-text retrieval",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Safe accessible full-text retrieval for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-006",
+    "ARA-010"
+  ],
+  "acceptance_criteria": [
+    "Stored public candidate download validates redirects/signature/limits and uses ingestion."
+  ],
+  "test_cases": [
+    "Stored public candidate download validates redirects/signature/limits and uses ingestion."
+  ],
+  "status": "deferred",
+  "related_files": [
+    "docs/implementation-plan.md"
+  ],
+  "commits": [
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+  ],
+  "pull_requests": [],
+  "verification": "Automatic stored-provider PDF retrieval is deferred P1. Manual upload processes originals; no arbitrary-URL downloader exists in core.",
+  "updated_at": "2026-10-08"
+}

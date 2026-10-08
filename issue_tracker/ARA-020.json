@@ -1,0 +1,31 @@
+{
+  "id": "ARA-020",
+  "title": "Interface and retrieval polish",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Interface and retrieval polish for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-015"
+  ],
+  "acceptance_criteria": [
+    "Targeted usability refinements retain working flows and tests."
+  ],
+  "test_cases": [
+    "Targeted usability refinements retain working flows and tests."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/components/GeneratedContent.tsx",
+    "src/frontend/src/components/ChatPanel.tsx",
+    "src/frontend/src/index.css",
+    "src/backend/app/routes/documents.py"
+  ],
+  "commits": [
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4",
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de"
+  ],
+  "pull_requests": [],
+  "verification": "Targeted polish includes safe Markdown, hidden raw source markers, model labels, complete citation passages and measured mobile fix; regression/browser checks pass. Broader retrieval enhancements remain optional.",
+  "updated_at": "2026-10-08"
+}

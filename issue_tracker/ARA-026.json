@@ -1,0 +1,28 @@
+{
+  "id": "ARA-026",
+  "title": "AnyIO streaming cancellation loses partial answer",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during actual integration or independent source review; see development journal and review evidence.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Original trigger reproduced and targeted regression passes after correction."
+  ],
+  "test_cases": [
+    "test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and_partial_flushes",
+    "test_given_asgi_level_cancellation_when_disconnected_then_database_retains_partial"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/chat.py",
+    "src/backend/tests/test_ai.py",
+    "src/backend/tests/test_ai_integration.py"
+  ],
+  "commits": [
+    "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Actual AnyIO/ASGI disconnect reproduced lost text; bounded shielded cleanup now retains interrupted text and free UUID replay. Independently reviewed.",
+  "updated_at": "2026-10-08"
+}

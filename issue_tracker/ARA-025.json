@@ -1,0 +1,29 @@
+{
+  "id": "ARA-025",
+  "title": "PDF upload storage failure prevents same-file recovery",
+  "type": "bug",
+  "priority": "P0",
+  "description": "Observed during actual integration or independent source review; see development journal and review evidence.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Original trigger reproduced and targeted regression passes after correction."
+  ],
+  "test_cases": [
+    "test_upload_can_resume_after_real_storage_connection_failure",
+    "test_missing_retained_original_can_be_reuploaded_and_ingested",
+    "test_duplicate_pdf_request_uuid_cannot_be_reused_for_different_original"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/uploads.py",
+    "src/backend/alembic/versions/0003_upload_requests.py",
+    "src/backend/tests/test_research_integration.py"
+  ],
+  "commits": [
+    "387fa554dc71f08abf83290fe542fe147a80b088",
+    "f23757612fc767052b0e5bc72d628227b9b04901"
+  ],
+  "pull_requests": [],
+  "verification": "Actual transient storage failure red/green, same-PDF recovery, missing-original recovery and UUID conflict protections pass; independent reviewer confirmed resolution.",
+  "updated_at": "2026-10-08"
+}

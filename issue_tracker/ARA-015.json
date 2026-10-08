@@ -1,0 +1,34 @@
+{
+  "id": "ARA-015",
+  "title": "Paper reader, chat and model controls",
+  "type": "feature",
+  "priority": "P0",
+  "description": "Paper reader, chat and model controls for the approved research-assistant workflows.",
+  "dependencies": [
+    "ARA-013",
+    "ARA-014"
+  ],
+  "acceptance_criteria": [
+    "Accessible responsive reader/status/models/citations and streaming states work."
+  ],
+  "test_cases": [
+    "src/frontend/src/pages/workflows.test.tsx: readiness, metadata, models, summary/chat and provider errors",
+    "Mobile workspace and keyboard controls remain usable",
+    "Desktop1440/mobile390 live paper inspection"
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/pages/PaperPage.tsx",
+    "src/frontend/src/components/ModelControls.tsx",
+    "src/frontend/src/index.css"
+  ],
+  "commits": [
+    "8e6fe9607839262df855e4591fb4628e727175dc",
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4",
+    "3a69aff78dc3e74e5beb623a1b813ec99998e4de",
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+  ],
+  "pull_requests": [],
+  "verification": "Desktop1440/mobile390 captures, no document overflow, keyboard skip navigation, model/status/source controls, 21frontend tests and6browser tests pass.",
+  "updated_at": "2026-10-08"
+}
