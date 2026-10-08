@@ -1,0 +1,33 @@
+{
+  "id": "ARA-038",
+  "title": "Research home, search thread, library, activity and settings",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Unified composer home, search results as a research thread of paper cards with saved state, library with dropzone and URL filter, readable activity with paper links and retry, polished settings.",
+  "dependencies": [
+    "ARA-033",
+    "ARA-034"
+  ],
+  "acceptance_criteria": [
+    "Given the home composer, when a topic is submitted, then the query is recorded in search history and results render as paper cards with title, authors, year, abstract and links.",
+    "Given a result already in the library, then the card shows In library with Open; saving another result shows Saved to library without duplicating.",
+    "Given a library paper chosen as composer context, when a question is submitted, then the paper workspace opens on a new chat and streams the answer.",
+    "Given a failed ingest job, when Retry processing is pressed on Activity, then the job is queued again and links to its paper."
+  ],
+  "test_cases": [
+    "research RTL: save, rate limit, saved flag",
+    "library RTL: filter in URL, upload dropzone validation",
+    "e2e/research.spec.ts E2E-01/E2E-02 and mobile shell"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/research",
+    "src/frontend/src/features/library",
+    "src/frontend/src/features/activity",
+    "src/frontend/src/features/settings"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

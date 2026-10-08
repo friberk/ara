@@ -30,6 +30,43 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /models → `{items:Model[]}`; GET/PUT /settings → Settings.
 - GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
+## Workspace history additions (ARA-034, UI overhaul)
+
+All additions are backward compatible. They support the chat-centred sidebar, the unified composer and progress that survives a reload. Alembic revision `0004_workspace_history` owns the schema changes.
+
+- **Chat lifecycle fields.** `Chat` gains `title_source`: `default` / `auto` / `manual`.
+  - A chat created without an explicit title starts as `default` ("Paper discussion").
+  - The first user question in a `default` chat sets a deterministic title, `title_from_question(content, 60)`: whitespace collapsed, cut at a word boundary, trailing punctuation stripped, "…" when shortened. It also sets `title_source=auto`, in the same transaction as the user message.
+  - Replayed request UUIDs never retitle.
+  - An explicit title at creation, or a later rename, sets `manual`, and a manual title is never overwritten.
+- **GET /chats?paper_id=&limit=30&offset=** returns `{items: ChatSummary[]}`.
+  - `ChatSummary` is `Chat` plus `paper_title` (nullable), `last_activity_at` (latest message time, else `created_at`), `message_count` and `last_question_preview` (latest user message, at most 140 characters, nullable).
+  - Ordered by `last_activity_at` desc, then id. `limit` is 1–100, default 30.
+  - Unknown `paper_id` → empty list.
+- **PATCH /chats/{id}** `{title}` (trimmed, 1–200 characters, not blank, extra fields forbidden) → Chat with `title_source=manual`.
+  - Missing chat → 404 `CHAT_NOT_FOUND`.
+- **DELETE /chats/{id}** → 204, removing the chat and its messages.
+  - Locks the chat like message preparation does and expires stale leases first.
+  - A live processing assistant message → 409 `CHAT_BUSY`.
+  - Missing chat → 404 `CHAT_NOT_FOUND`; clients treat that as already deleted.
+- **POST /search-history** `{provider, query}` (query trimmed, 1–300 characters) → `SearchHistoryItem`.
+  - Recorded only on explicit user submission; `GET /search` stays free of side effects.
+  - Upserts on (provider, casefolded and whitespace-collapsed query): `query` takes the latest spelling, and `last_searched_at` is set to now.
+  - `SearchHistoryItem`: id, provider, query, created_at, last_searched_at.
+- **GET /search-history?limit=20** → `{items: SearchHistoryItem[]}`, newest `last_searched_at` first. `limit` is 1–100.
+- **DELETE /search-history/{id}** → 204; unknown id → 404 `SEARCH_HISTORY_NOT_FOUND`.
+- **DELETE /search-history** → 204, clearing all history.
+- **Search hits know library state.**
+  - `SearchPage.items` becomes `SearchHit[]`, where `SearchHit = SearchResult + saved_paper_id` (nullable).
+  - A hit is saved when a paper source has the same provider and external_id, or a paper has the same normalized DOI.
+  - Stored `SearchResult` snapshots and `PaperDetail.sources` are unchanged.
+- **Jobs link to papers.**
+  - `JobStatus` gains `paper_id` and `paper_title` (both nullable).
+    - Summary jobs take them from their payload's paper.
+    - Ingest jobs take them from their document's paper.
+  - `GET /jobs` gains optional filters: `paper_id`, `kind` (`ingest` or `summary`) and `active` (true = queued, processing or retry_wait).
+- **CORS** allows `DELETE`. The existing Origin guard applies to every unsafe method, including DELETE.
+
 ## SSE
 
 Events have JSON data, blank-line framing and heartbeat comments. `message.started`: `{message_id}`; `message.delta`: `{text}`; `message.completed`: Message; `message.failed`: `{code,message,message_id?}`. Complete emitted only after persistence. Unknown/invalid frames produce a visible client error; AbortController stops streaming and authoritative history refreshes. Duplicate UUIDs cannot launch inference again. Histories retain partial/interrupted status after process failure.

@@ -1,0 +1,32 @@
+{
+  "id": "ARA-036",
+  "title": "Conversation pane: streaming chat, chat switcher, summary card, suggested questions",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Chat-first right pane of the paper workspace: thread with user bubbles and assistant prose, docked composer with model switcher and Stop, chat switcher with rename/delete, summary as the first card with versions and job stages, suggested questions from hw1.",
+  "dependencies": [
+    "ARA-033",
+    "ARA-034",
+    "ARA-035"
+  ],
+  "acceptance_criteria": [
+    "Given a ready paper with no chats, when the user asks a suggested question, then a chat is created, the URL contains /chats/:chatId, and the answer streams with inline page chips.",
+    "Given streaming, when Stop generation is pressed, then the partial answer is kept as interrupted and is never re-sent automatically.",
+    "Given a summary job running, when the page reloads, then the summary card reattaches to the active job's progress.",
+    "Given a question queued from the home composer, when the chat opens under StrictMode, then exactly one request is sent."
+  ],
+  "test_cases": [
+    "conversation RTL: stream, stop, stored model label, chip opens source",
+    "pending-questions consume once",
+    "e2e/conversation.spec.ts E2E-04/E2E-05"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/chat",
+    "src/frontend/src/features/summary"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

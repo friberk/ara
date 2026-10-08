@@ -1,0 +1,30 @@
+{
+  "id": "ARA-040",
+  "title": "Design record, review and documentation for the overhaul",
+  "type": "task",
+  "priority": "P2",
+  "description": "Impeccable detector, fresh finish review, regenerated DESIGN.md and .impeccable/design.json, README/frontend report/journal updates with real evidence.",
+  "dependencies": [
+    "ARA-039"
+  ],
+  "acceptance_criteria": [
+    "Given the finished build, then desktop 1440 and mobile 390 captures in light and dark are reviewed and the reviewer verdict is reported honestly.",
+    "Given the new world, then DESIGN.md and .impeccable/design.json describe the shipped tokens and components."
+  ],
+  "test_cases": [
+    "impeccable detect --json",
+    "impeccable-finish-reviewer verdict",
+    "impeccable-documenter output"
+  ],
+  "status": "planned",
+  "related_files": [
+    "DESIGN.md",
+    "README.md",
+    "docs/frontend-report.md",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

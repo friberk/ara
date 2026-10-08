@@ -1,0 +1,36 @@
+{
+  "id": "ARA-034",
+  "title": "Workspace history API: recent chats, rename/delete, auto-title, search history, saved hits, job links",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Additive backend endpoints for the chat-centred sidebar and composer. Contract in docs/api-contract.md 'Workspace history additions'. Alembic 0004_workspace_history owns schema.",
+  "dependencies": [
+    "ARA-011",
+    "ARA-033"
+  ],
+  "acceptance_criteria": [
+    "Given chats on two papers, when GET /chats, then items are ordered by latest activity with paper_title, message_count and last question preview.",
+    "Given a default-titled chat, when the first question is posted, then the title becomes a deterministic shortened question once, and a replayed request UUID does not retitle; a renamed chat keeps its manual title.",
+    "Given an assistant answer still processing, when DELETE /chats/{id}, then 409 CHAT_BUSY; otherwise 204 and messages are removed.",
+    "Given the same query submitted twice with different case/spacing, when POST /search-history, then one item exists with the latest spelling and timestamp.",
+    "Given a saved paper, when the same work is searched, then its hit carries saved_paper_id, matched by provider record or DOI.",
+    "Given an active summary job, when GET /jobs?paper_id&kind=summary&active=true, then that job is returned with paper_id and paper_title."
+  ],
+  "test_cases": [
+    "test_title_from_question unit cases",
+    "test_workspace_integration.py on real PostgreSQL via scripts/test-stack.py",
+    "DELETE preflight allowed; cross-origin DELETE rejected 403"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/alembic/versions/0004_workspace_history.py",
+    "src/backend/app/repositories/chats.py",
+    "src/backend/app/routes/history.py",
+    "src/backend/app/services/chat.py",
+    "docs/api-contract.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

@@ -1,0 +1,34 @@
+{
+  "id": "ARA-033",
+  "title": "UI overhaul foundation: shadcn neutral theme, app shell and composer",
+  "type": "feature",
+  "priority": "P1",
+  "description": "User-requested overhaul into a chat-centred shadcn workspace (ChatGPT/Claude/Elicit class). Foundation owned by the lead: neutral tokens, light/dark, Geist, collapsible sidebar shell, command palette, unified composer, model switcher, query layer and test helpers.",
+  "dependencies": [
+    "ARA-015",
+    "ARA-020"
+  ],
+  "acceptance_criteria": [
+    "Given a first visit, when the system prefers dark, then the app renders shadcn neutral dark tokens without a light flash, and the theme toggle switches Light/Dark/System persistently.",
+    "Given any route at 1440px, when the user presses Cmd/Ctrl+B, then the sidebar collapses to an icon rail; at 390px the sidebar opens as a sheet and the page has no horizontal overflow.",
+    "Given the model switcher, when a model is unavailable, then it is disabled with a reason, and the chosen model and effort are sent with the next generation request.",
+    "Given keyboard-only use, then Skip to content is the first tab stop and every control has a visible focus ring."
+  ],
+  "test_cases": [
+    "App shell RTL: skip link, Workspace navigation, theme toggle",
+    "ModelSwitcher RTL: disabled unavailable model, effort submenu, set as default",
+    "npm run check, npm run build main chunk <= 467KB"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/index.css",
+    "src/frontend/src/App.tsx",
+    "src/frontend/src/components/shell",
+    "src/frontend/src/components/composer",
+    "src/frontend/src/hooks/queries"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

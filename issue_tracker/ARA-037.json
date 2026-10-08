@@ -1,0 +1,30 @@
+{
+  "id": "ARA-037",
+  "title": "Paper workspace and in-app PDF reader with evidence highlight",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Resizable split workspace: PDF reader (react-pdf/pdf.js, lazy) and Details (bibliography, provenance, metadata edit, attach PDF) on the left; conversation on the right. Mobile Chat/PDF/Details tabs. Citation chips jump to the page and highlight the cited excerpt.",
+  "dependencies": [
+    "ARA-033",
+    "ARA-035"
+  ],
+  "acceptance_criteria": [
+    "Given a ready paper, when the workspace opens, then the PDF renders lazily with page count and zoom, and the conversation pane is usable without choosing a tab.",
+    "Given a citation chip for page 2, when clicked, then the reader scrolls to page 2 and marks the matching text spans; when no text matches, then it still jumps and says the passage could not be highlighted.",
+    "Given a metadata-only paper, then the reader shows an attach-PDF dropzone and the composer explains why asking is disabled.",
+    "Given 390px width, then Chat, PDF and Details are tabs and a chip tap switches to PDF at the cited page."
+  ],
+  "test_cases": [
+    "text-highlight.test.ts",
+    "DetailsPanel RTL: provenance, dirty-only PATCH, metadata-only gate",
+    "e2e/workspace.spec.ts E2E-03, citation jump, mobile tabs"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/workspace"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

@@ -1,0 +1,28 @@
+{
+  "id": "ARA-035",
+  "title": "Generated content: math, inline citation chips and source list",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Render model Markdown safely with GFM and KaTeX math, turn [source:UUID] markers into inline page chips scoped to the message's citations, and deduplicate sources by page.",
+  "dependencies": [
+    "ARA-033"
+  ],
+  "acceptance_criteria": [
+    "Given content with \\(x^2\\) and \\[E=mc^2\\], then inline and display math render; '$5 and $10' stays plain text.",
+    "Given a [source:UUID] marker matching a citation, then a 'p. N' chip renders at that position; unknown or other-document markers render nothing.",
+    "Given duplicate citations on one page, then the source list shows that page once; raw HTML, images and javascript: links remain inert."
+  ],
+  "test_cases": [
+    "Markdown.test.tsx",
+    "math.test.ts",
+    "remark-citations.test.ts"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/content"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

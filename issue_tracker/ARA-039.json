@@ -1,0 +1,33 @@
+{
+  "id": "ARA-039",
+  "title": "Test and E2E migration to the overhauled UI",
+  "type": "task",
+  "priority": "P1",
+  "description": "Rewrite RTL and Playwright selectors to roles/labels for the new layout while preserving E2E-01..05 and mobile coverage; regenerate OpenAPI types from the test API.",
+  "dependencies": [
+    "ARA-034",
+    "ARA-035",
+    "ARA-036",
+    "ARA-037",
+    "ARA-038"
+  ],
+  "acceptance_criteria": [
+    "Given the e2e stack, when Playwright runs, then E2E-01..05 and mobile pass without CSS-class selectors.",
+    "Given CI, then src/api/generated.ts equals openapi-typescript output from the test API on port 8001."
+  ],
+  "test_cases": [
+    "npx playwright test against compose.e2e.yaml",
+    "npm run check",
+    "CI contract cmp"
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/e2e",
+    "src/frontend/src/test",
+    "src/frontend/src/api/generated.ts"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "",
+  "updated_at": "2026-10-08"
+}

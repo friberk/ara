@@ -19,3 +19,4 @@ pymupdf-output/
 *.tsbuildinfo
 .impeccable/review/
 docs/evidence/generated/
+.impeccable/*.cache.json

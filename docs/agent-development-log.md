@@ -65,3 +65,29 @@ The staged audit checked all 169 source/configuration/documentation files agains
 ### Main integration and archive
 
 The user instructed: “Merge to main. Keep the branch for archival purposes.” No main branch existed, so the lead created it at the verified feature tip `526ef68`. The complete implementation history is now on main; `feat/ai-research-assistant` remains unchanged at that tip. Branch SHA equality and a clean tracked tree were verified before the documentation update. Application source did not change, so the passing tests remain applicable without another run. No branch was deleted or pushed.
+
+## 2026-10-08 — UI overhaul planning
+
+- Prompt: the user judged the frontend "terrible" and asked for a rethink into a chat-centred layout like chatgpt.com, claude.ai, Scite, Elicit, SciSpace or Undermind, using shadcn, with a sleek model switcher. They asked for a plan first, using the frontend-design and Impeccable plugins.
+- Mid-task instructions: work on a separate UI overhaul branch, deploy multiple agents and use git worktrees. Later: "for the color schema, follow the shadcn defaults … black/white based."
+- Answers to the structured planning questions:
+  - Unified composer information architecture.
+  - In-app PDF viewer.
+  - Light and dark themes following the system setting.
+  - Additive backend endpoints allowed. The user corrected the agent's deadline framing: "don't get confused by the deadline. We have time. Just do whatever required without being constrained by the time".
+- Evidence gathering:
+  - The Playwright MCP browser failed: `Chromium distribution 'chrome' is not found`.
+  - The lead instead captured the running app with the project's own cached Playwright Chromium, writing to a session scratch directory outside the repository.
+  - Captures at 1440 and 390 showed a docs-like page shell, native selects and file inputs, chat hidden behind a second tab, raw LaTeX in summaries and duplicate page buttons.
+- Read-only explorers mapped the frontend and the backend API. A planning agent then checked the plan against the code.
+- Corrections the planning agent found:
+  - The two fixture providers share one DOI, so E2E-02 changes once search hits know their library state.
+  - CI generates the contract from the test API on port 8001, where the canary route is hidden. Regenerating from the dev API would fail the check.
+  - The `ara-test` and `ara-e2e` Compose project names are fixed, so backend and browser suites cannot run concurrently from several worktrees.
+- Approved plan:
+  - Branch `feat/ui-overhaul`.
+  - Additive API work on `feat/ui-api` in a worktree, owned by one backend agent, which also owns migration 0004.
+  - The lead builds the foundation: tokens, shell, composer, model switcher and query layer.
+  - Four disjoint frontend feature agents in their own worktrees: content, conversation, workspace/reader, and research/library.
+  - Serial end-to-end verification, then a fresh Impeccable finish review and regenerated design documentation.
+- The brand commitment in PRODUCT.md now records the user-pinned direction. Issues: ARA-033 to ARA-040.
