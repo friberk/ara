@@ -234,3 +234,36 @@ test('Given a chat created elsewhere and a stale cached chat list, Then the pane
   expect(screen.queryByText('Conversation not found')).not.toBeInTheDocument()
   expect(await screen.findByRole('article', { name: 'Your message' })).toHaveTextContent('Asked from home')
 })
+
+test('Given legacy chats on the default title, Then the switcher names them like the sidebar and still lists empty ones', async () => {
+  mockApi({
+    ...settings,
+    'GET /chats': {
+      items: [
+        chatRow('c1', { title: 'Paper discussion', title_source: 'default', last_question_preview: 'What is this paper about?', message_count: 2 }),
+        chatRow('c2', { title: 'Paper discussion', title_source: 'default', last_question_preview: null, message_count: 0, last_activity_at: '2026-10-07T12:00:00Z' }),
+      ],
+    },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await user.click(await screen.findByRole('button', { name: 'What is this paper about?' }))
+  expect(await screen.findByRole('menuitemradio', { name: /^What is this paper about\?/ })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('menuitemradio', { name: /^Paper discussion/ })).toHaveTextContent('No questions yet')
+})
+
+test('Given auto-titled chats, Then a row repeats its question only when a later question differs', async () => {
+  mockApi({
+    ...settings,
+    'GET /chats': {
+      items: [
+        chatRow('c1', { title: 'What datasets are used', title_source: 'auto', last_question_preview: 'What datasets are used?', message_count: 2 }),
+        chatRow('c2', { title: 'What problem does this paper address', title_source: 'auto', last_question_preview: 'What are the major limitations?', message_count: 4 }),
+      ],
+    },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await user.click(await screen.findByRole('button', { name: 'What datasets are used' }))
+  const single = await screen.findByRole('menuitemradio', { name: /^What datasets are used/ })
+  expect(single.textContent?.match(/What datasets are used/g)).toHaveLength(1)
+  expect(screen.getByRole('menuitemradio', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
+})

@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { chatDisplayTitle } from '@/components/shell/recent-items'
 import { useDeleteChat, useRenameChat } from '@/hooks/queries/chats'
 import type { PaperChats } from './use-paper-chats'
 
@@ -26,6 +27,14 @@ function formatActivity(iso: string) {
   const now = new Date()
   if (date.toDateString() === now.toDateString()) return sameDay.format(date)
   return (date.getFullYear() === now.getFullYear() ? sameYear : otherYear).format(date)
+}
+
+// Questions compare without case or trailing punctuation: auto-titles drop the question mark and may end in "…".
+const comparable = (text: string) => text.replace(/[\s.,;:!?…\-–—]+$/u, '').toLowerCase()
+/** The second line of a row: the latest question when it is not already the name, or why there is none. */
+function secondLine(chat: ChatSummary) {
+  if (chat.last_question_preview) return comparable(chat.last_question_preview).startsWith(comparable(chatDisplayTitle(chat))) ? null : chat.last_question_preview
+  return chat.message_count === 0 ? 'No questions yet' : null
 }
 
 function RenameDialog({ chat, onClose }: { chat: ChatSummary; onClose: () => void }) {
@@ -81,7 +90,7 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
   const navigate = useNavigate()
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const startNew = () => navigate(`/papers/${paper.id}`)
-  const title = chat?.title || (chatId ? 'Conversation' : 'New conversation')
+  const title = chat ? chatDisplayTitle(chat) : chatId ? 'Conversation' : 'New conversation'
   const earlier = (item: ChatSummary) => item.document_id !== paper.active_document_id
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
@@ -102,11 +111,11 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
             {chats.items.map((item) => (
               <DropdownMenuRadioItem key={item.id} value={item.id} className="items-start py-1.5">
                 <div className="grid min-w-0 flex-1 gap-0.5">
-                  <span className="truncate">{item.title || 'Untitled conversation'}</span>
-                  <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                    <span className="truncate">{item.last_question_preview ?? 'No questions yet'}</span>
-                    <time dateTime={item.last_activity_at} className="ml-auto shrink-0 tabular">{formatActivity(item.last_activity_at)}</time>
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="truncate">{chatDisplayTitle(item)}</span>
+                    <time dateTime={item.last_activity_at} className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{formatActivity(item.last_activity_at)}</time>
                   </span>
+                  {secondLine(item) && <span className="truncate text-xs text-muted-foreground">{secondLine(item)}</span>}
                   {earlier(item) && <Badge variant="outline" className="mt-0.5 font-normal text-muted-foreground">Earlier PDF</Badge>}
                 </div>
               </DropdownMenuRadioItem>
