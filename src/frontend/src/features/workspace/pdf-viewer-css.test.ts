@@ -24,3 +24,10 @@ test('Given context lines, Then they carry no tint', () => {
   expect(css).not.toMatch(/\[data-citation-highlight='context'\][^{]*\{[^}]*background/)
   expect(css).not.toMatch(/\.textLayer \[data-citation-highlight\][^{]*\{[^}]*background/)
 })
+
+// Character-precise marks are <mark> elements inside the transparent text-layer spans; the browser's own mark
+// colours would paint the hidden text black on yellow over the canvas.
+test('Given a mark inside a text-layer span, Then its text stays transparent and only the evidence tint shows', () => {
+  expect(css).toMatch(/\.textLayer mark\s*\{[^}]*color:\s*transparent/)
+  expect(css).toMatch(/\.textLayer mark\s*\{[^}]*background(?:-color)?:\s*(?:none|transparent)/)
+})

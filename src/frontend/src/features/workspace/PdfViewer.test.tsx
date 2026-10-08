@@ -6,7 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import type { Citation } from '@/api/types'
 import PdfViewer, { type PdfViewerProps } from './PdfViewer'
 
-const fixture = vi.hoisted(() => ({ pages: {} as Record<number, string[]>, failing: new Set<number>() }))
+const fixture = vi.hoisted(() => ({ pages: {} as Record<number, React.ReactNode[]>, failing: new Set<number>() }))
 
 vi.mock('react-pdf', async () => {
   const { useEffect } = await import('react')
@@ -122,13 +122,52 @@ describe('PdfViewer passage-level evidence (test-first)', () => {
   beforeEach(() => { fixture.pages[2] = prose })
   afterEach(() => vi.restoreAllMocks())
 
-  test('Given a claim, When the passage is marked, Then the lines of the supporting sentence are strong and the rest of the excerpt is context', async () => {
+  const line = (index: number) => screen.getByRole('group', { name: 'Page 2' }).querySelectorAll<HTMLElement>('span[role="presentation"]')[index]!
+
+  test('Given a supporting sentence that begins mid-line, When the passage is marked, Then a mark inside that line starts at the sentence', async () => {
     const { onHighlight } = renderViewer({ citation: chunk, claim, nonce: 1 })
     await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
-    expect(marked(2, 'strong')).toEqual([prose[1], prose[2]])
+    expect(marked(2, 'strong')).toEqual(['The', prose[2]])
+    const mark = line(1).querySelector('mark')
+    expect(mark).toHaveAttribute('data-citation-highlight', 'strong')
+    expect(mark).toHaveAttribute('data-citation-pulse')
+    expect(line(1)).not.toHaveAttribute('data-citation-highlight')
+    expect(line(1)).toHaveTextContent(prose[1]!)
     expect(marked(2, 'context')).toEqual([prose[0]])
-    expect(screen.getByText(prose[2]!)).toHaveAttribute('data-citation-pulse')
-    expect(screen.getByText(prose[0]!)).not.toHaveAttribute('data-citation-pulse')
+    expect(line(0)).not.toHaveAttribute('data-citation-pulse')
+  })
+
+  // Added after a mutation check showed nothing failed when a mark ran on to the end of its line.
+  test('Given a supporting sentence that starts and ends inside one line, Then the mark covers just that sentence', async () => {
+    const middle = ['The method first extracts page text, then retrieves relevant', 'chunks. The experiment uses the Orion-12 dataset. Results follow', 'in the next section with twelve examples per task.']
+    fixture.pages[2] = middle
+    const { onHighlight } = renderViewer({ citation: cite(2, middle.join('\n')), claim, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    expect(marked(2, 'strong')).toEqual(['The experiment uses the Orion-12 dataset.'])
+    expect(line(1)).toHaveTextContent(middle[1]!)
+  })
+
+  test('Given repeated jumps, Then each line keeps its text and holds at most one mark, and a whole-excerpt jump unwraps it', async () => {
+    const { onHighlight, rehighlight } = renderViewer({ citation: chunk, claim, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(1))
+    rehighlight({ citation: chunk, claim, nonce: 2 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(2))
+    expect(line(1).querySelectorAll('mark')).toHaveLength(1)
+    expect(line(1)).toHaveTextContent(prose[1]!)
+    rehighlight({ citation: chunk, nonce: 3 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(3))
+    expect(line(1).querySelector('mark')).toBeNull()
+    expect(line(1).childNodes).toHaveLength(1)
+    expect(line(1)).toHaveAttribute('data-citation-highlight', 'strong')
+  })
+
+  test('Given a line that is not a single run of text, When only part of it is cited, Then the whole line is marked instead', async () => {
+    fixture.pages[2] = [prose[0], <>chunks. It generates answers grounded in those passages. <i>The</i></>, prose[2]]
+    const { onHighlight } = renderViewer({ citation: chunk, claim, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    expect(line(1).querySelector('mark')).toBeNull()
+    expect(line(1)).toHaveAttribute('data-citation-highlight', 'strong')
+    expect(marked(2, 'strong')).toEqual([prose[1], prose[2]])
   })
 
   test('Given no claim, Then the whole excerpt is strong and nothing is context', async () => {

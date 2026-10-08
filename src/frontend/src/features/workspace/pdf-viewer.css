@@ -21,6 +21,12 @@
  * only mark. The rest of the cited chunk is marked 'context' but left untinted: a stored chunk is about 3,200
  * characters, and even a faint tint washed most of the page in stripes and competed with the evidence.
  */
+/* Marks inside a span carry a sentence that starts or ends mid-line; the text layer's text stays invisible. */
+.pdf-viewer .textLayer mark {
+  color: transparent;
+  background: none;
+}
+
 .pdf-viewer .textLayer [data-citation-highlight='strong'] {
   background-color: color-mix(in oklch, var(--pdf-evidence) 55%, transparent);
   border-radius: 2px;

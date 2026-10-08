@@ -38,6 +38,36 @@ type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function offsetIn(root: HTMLElement, element: Element) { return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop }
 
+/**
+ * Wraps characters [start, end) of a text-layer span in a <mark>, as pdf.js's own find highlighter does, so a passage
+ * that begins mid-line is marked from its first character. Returns the span itself when the range is all of it or
+ * the span is not one run of text, so that span is marked whole rather than not at all.
+ */
+function markRange(span: HTMLElement, start: number, end: number): HTMLElement {
+  const run = span.firstChild
+  if (span.childNodes.length !== 1 || !(run instanceof Text)) return span
+  if ((start <= 0 && end >= run.length) || end <= start) return span
+  const cited = start > 0 ? run.splitText(start) : run
+  if (end - start < cited.length) cited.splitText(end - start)
+  const mark = document.createElement('mark')
+  cited.replaceWith(mark)
+  mark.append(cited)
+  return mark
+}
+
+/** Unwraps every mark and clears every mark attribute, so each jump starts from the text layer as pdf.js drew it. */
+function clearMarks(root: HTMLElement) {
+  root.querySelectorAll('mark[data-citation-highlight]').forEach((mark) => {
+    const span = mark.parentElement
+    mark.replaceWith(...mark.childNodes)
+    span?.normalize()
+  })
+  root.querySelectorAll('[data-citation-highlight]').forEach((element) => {
+    element.removeAttribute('data-citation-highlight')
+    element.removeAttribute('data-citation-pulse')
+  })
+}
+
 const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTextLayer, onTextLayerError }: {
   pageNumber: number
   width: number
@@ -59,8 +89,9 @@ const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTex
 /**
  * Every page in one scroll column. Pages are placeholders sized from the PDF until they come near the viewport,
  * so long papers stay light. A highlight request scrolls to its page and, once that page's text layer exists, marks
- * the spans of the sentences that support the claim data-citation-highlight="strong" and the rest of the excerpt
- * "context" (the whole excerpt is strong without a claim).
+ * the characters of the sentences that support the claim data-citation-highlight="strong" (whole spans, or <mark>s
+ * inside spans where a sentence starts or ends mid-line) and the excerpt's other spans "context"; without a claim
+ * the whole excerpt is strong.
  */
 export default function PdfViewer(props: PdfViewerProps) {
   const { documentId, zoom, navigation, highlight } = props
@@ -108,23 +139,19 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!layer?.querySelector('.endOfContent')) return
     const spans = Array.from(layer.querySelectorAll<HTMLElement>('span[role="presentation"]'))
     const items = spans.map((span) => ({ str: span.textContent ?? '', hasEOL: span.nextElementSibling?.tagName === 'BR' }))
-    const evidence = findEvidence(items, active.citation.excerpt, active.claim)
-    const strong = evidence.strong.map((range) => range.item)
-    const { context } = evidence
-    root.querySelectorAll('[data-citation-highlight]').forEach((element) => {
-      element.removeAttribute('data-citation-highlight')
-      element.removeAttribute('data-citation-pulse')
-    })
+    const { strong, context } = findEvidence(items, active.citation.excerpt, active.claim)
+    clearMarks(root)
     const first = !active.reported
     if (first) void layer.getBoundingClientRect() // flush styles so marking the same passage again restarts the pulse
     for (const index of context) spans[index]?.setAttribute('data-citation-highlight', 'context')
-    for (const index of strong) {
-      spans[index]?.setAttribute('data-citation-highlight', 'strong')
-      if (first) spans[index]?.setAttribute('data-citation-pulse', '')
+    const marks = strong.flatMap(({ item, start, end }) => (spans[item] ? [markRange(spans[item], start, end)] : []))
+    for (const element of marks) {
+      element.setAttribute('data-citation-highlight', 'strong')
+      if (first) element.setAttribute('data-citation-pulse', '')
     }
     if (!first) return
-    settle(strong.length ? 'highlighted' : 'page-only', active.nonce)
-    const start = strong.length ? spans[strong[0]!] : undefined
+    settle(marks.length ? 'highlighted' : 'page-only', active.nonce)
+    const start = marks[0]
     if (start) {
       const middle = offsetIn(root, start) + start.getBoundingClientRect().height / 2
       root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
