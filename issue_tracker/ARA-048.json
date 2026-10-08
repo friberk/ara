@@ -1,0 +1,24 @@
+{
+  "id": "ARA-048",
+  "title": "Local model browser and real 7B verification",
+  "type": "testing",
+  "priority": "P1",
+  "description": "Local model browser and real 7B verification for the approved ARA-022 plan.",
+  "dependencies": [
+    "ARA-022"
+  ],
+  "acceptance_criteria": [
+    "Satisfy the corresponding task and frozen contracts in docs/plans/ARA-022-managed-local-models.md."
+  ],
+  "test_cases": [
+    "Observed red-green-refactor evidence and relevant regression checks."
+  ],
+  "status": "planned",
+  "related_files": [
+    "docs/plans/ARA-022-managed-local-models.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Not yet implemented or verified.",
+  "updated_at": "2026-10-08"
+}

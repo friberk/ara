@@ -1,0 +1,24 @@
+{
+  "id": "ARA-049",
+  "title": "Local model documentation and independent review",
+  "type": "documentation",
+  "priority": "P1",
+  "description": "Local model documentation and independent review for the approved ARA-022 plan.",
+  "dependencies": [
+    "ARA-022"
+  ],
+  "acceptance_criteria": [
+    "Satisfy the corresponding task and frozen contracts in docs/plans/ARA-022-managed-local-models.md."
+  ],
+  "test_cases": [
+    "Observed red-green-refactor evidence and relevant regression checks."
+  ],
+  "status": "planned",
+  "related_files": [
+    "docs/plans/ARA-022-managed-local-models.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Not yet implemented or verified.",
+  "updated_at": "2026-10-08"
+}
