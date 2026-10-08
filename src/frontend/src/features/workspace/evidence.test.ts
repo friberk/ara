@@ -52,8 +52,19 @@ describe('selectEvidence', () => {
 
   test('Given case, punctuation, inflections and numbers, Then they still match while shared stopwords alone do not', () => {
     const excerpt = 'The model is one of the first of its kind. Each head LEARNS syntax-like behavior in the encoder. The big model reaches 28.4 BLEU on the test set.'
-    expect(chosen(excerpt, 'Heads learned syntax-like behaviors.')).toEqual(['Each head LEARNS syntax-like behavior in the encoder.'])
+    expect(chosen(excerpt, 'Heads learned SYNTAX.')).toEqual(['Each head LEARNS syntax-like behavior in the encoder.'])
     expect(chosen(excerpt, 'It scores 28.4 BLEU.')).toEqual(['The big model reaches 28.4 BLEU on the test set.'])
+  })
+
+  test('Given words that recur across the excerpt, Then they count for little against the claim’s rarer words', () => {
+    const excerpt = [
+      'The large model improves BLEU on WMT 2014.',
+      'The base model also improves BLEU on WMT 2014.',
+      'Every model is evaluated with BLEU on WMT 2014.',
+      'Each model is scored with BLEU on WMT 2014.',
+      'Our big ensemble reaches 28.4 BLEU.',
+    ].join(' ')
+    expect(chosen(excerpt, 'The big ensemble model reaches 28.4 BLEU on WMT 2014.')).toEqual(['Our big ensemble reaches 28.4 BLEU.'])
   })
 
   test('Given a neighbour scoring at least half the best, Then it joins the passage; one scoring less does not', () => {
