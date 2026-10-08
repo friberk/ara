@@ -1,0 +1,211 @@
+# AI Research Assistant — Approved Implementation Plan
+
+Approved by the user with “Implement the plan.” The conversation proposal is the source for this persisted implementation specification. Preserve the core choices below; log material corrections before implementing them.
+
+Implementation status is recorded in [execution progress](execution-progress.md) and [final verification](verification-final.md). Planning observations below preserve their original time scope. GitHub pushing is now deferred at the user's request; local source, CI and submission evidence are prepared. Model capabilities reside in typed Python registry metadata; the database stores default preferences and race-safe generation reservations separately. The application uses conservative UTF-8 byte bounds for its 32k input budget when an exact tokenizer is unavailable.
+
+## Requirements, priorities, and assumptions
+
+The authoritative homework is `hw1.md`, due October 10 at 11:59 PM (assume 2026, America/Indiana/Indianapolis). The application accounts for 60% of the grade and the reflection for 40%. The assignment requires search, a persistent library, PDF metadata extraction, content-grounded summaries, paper Q&A, a GUI, backend, database, external API and LLM, a GitHub repository, a short demo of the five workflows, and a genuine coding-agent reflection. The chosen stack, Docker, and TDD/BDD are additional project requirements. The user confirmed 30+ development hours, funded OpenAI access, public GitHub distribution under AGPL-3.0, and a working locally written PDF skill.
+
+- **P0:** Six-service Compose foundation; migrations, bucket initialization and reload; both academic adapters; persistent deduplicated library; original PDF storage, extraction and editable metadata; durable jobs and recovery; hosted model selection and reasoning; page-aware retrieval and citations; persistent streaming multi-turn chat; focused tests; setup docs; repository and submission evidence.
+- **P1:** The user-requested local PDF skill early; accessible full-text retrieval, richer retrieval heuristics and extra UX polish after P0.
+- **P2:** pgvector, embeddings and hybrid retrieval; local inference; OCR; advanced history management.
+
+This is a single-user local app with no authentication, payments or multi-tenancy. API keys stay server-side. The app must start without hosted credentials or local models; analysis reports missing access clearly. Full-text analysis is blocked for metadata-only or unprocessed papers.
+
+### Environment and findings
+
+The repository is greenfield, with empty src/docs/tracker/guide directories. The host is an Apple M3 Pro with 36 GiB of memory. OrbStack runs Linux ARM64 with Docker 29.4 and Compose 5.1; the VM has approximately 15.7 GiB of memory and 12 vCPUs. There is no initial commit or Git remote. Work on a feature branch in place until a baseline exists; preserve user-owned assignment files and writing skills.
+
+Context7 is installed and enabled, but exposed calls return USER_NOT_LOGGED_IN or report that it is not connected. Use official docs; do not claim Context7 retrieval. A live OpenAlex query returned 200 with abstract and PDF metadata; Semantic Scholar returned 429. Python's host urllib failed certificate verification; curl succeeded without bypassing TLS. These are planning observations, not application tests.
+
+MinIO community is archived, unmaintained and source-only. Retain it through a custom ARM64 multi-stage image built from pinned source: commit `7aac2a2c5b7c882e68c1ce017d8256be2feea27f`, with a verified archive, explicit version/linker constants and upstream checksums. Do not use its upstream Dockerfile blindly; it references minio/minio:latest. A real build and S3 checksum test is an early gate, not a verified fact.
+
+The requested official hosted models gpt-5.6-sol/terra/luna are documented with streaming, structured output, and reasoning levels none/low/medium/high/xhigh/max. Their advertised limits are 1.05M context and 128K output. Account access remains a live gate. Default to Luna with low reasoning; application budgets are much smaller than the advertised contexts.
+
+Sources: [SQLAlchemy asyncio](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html), [psycopg dialect](https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#module-sqlalchemy.dialects.postgresql.psycopg), [Dramatiq async actors](https://dramatiq.io/cookbook.html#asyncio-actors), [PyMuPDF processes](https://pymupdf.readthedocs.io/en/latest/recipes-multiprocessing.html), [MinIO upstream](https://github.com/minio/minio), [shadcn/Vite](https://ui.shadcn.com/docs/installation/vite), [OpenAlex auth](https://help.openalex.org/api/authentication/), [S2 API](https://api.semanticscholar.org/api-docs/).
+
+### Traceability
+
+| Requirement | Issues/components | Tests/acceptance | Demo |
+| --- | --- | --- | --- |
+| Search | 006 adapters/form | Both providers, nullable fields, paging/errors; E2E01 | Search a real topic |
+| Library | 007 paper repository/UI | Save, concurrent DOI deduplication, refresh/restart; E2E02 | Save and reopen |
+| PDF metadata | 009–010 storage/parser/jobs/editor | Known fields, originals, pages, invalid/scanned/encrypted PDFs; E2E03 | Upload, status, metadata |
+| Grounded summary | 013 worker/LLM | Actual text, coverage, provenance; E2E04 | Generate a summary |
+| Paper Q&A | 011, 014–015 retrieval/SSE/history | Paper isolation, follow-up, citation, refresh; E2E05 | Ask and inspect the page |
+| Integrated stack | 003–016 | Real core services plus a separately logged external smoke test | App walkthrough |
+| Repository/README | 017 | Clean setup, lockfiles, no secrets | Repository link |
+| Video/reflection | 001, 018 | Five workflows and authentic prompt/correction screenshots | Brightspace submission |
+
+## Architecture
+
+Use a modular monolith: Python 3.13, FastAPI, Pydantic 2/Settings, SQLAlchemy 2 with async psycopg 3, Alembic, httpx, Dramatiq/Redis, and PyMuPDF. The frontend uses React/Vite, strict TypeScript, Tailwind 4/shadcn, TanStack Query, declarative React Router, and RHF/Zod, with no initial Zustand. Use Node 24, uv/npm lockfiles, and digest-pinned container images. Router loaders are unnecessary alongside Query. Backend routes, schemas, models, repositories, services, integrations and jobs have explicit boundaries; business decisions remain in Python.
+
+```mermaid
+flowchart LR
+ B[Browser] --> F[frontend Vite]
+ F -->|REST and SSE| A[api FastAPI]
+ A --> P[PostgreSQL]
+ A --> M[MinIO]
+ A -->|Outbox dispatch| R[Redis]
+ R --> W[Dramatiq worker]
+ W --> P
+ W --> M
+ W --> X[PDF child process]
+ A --> S[OpenAlex / Semantic Scholar]
+ A --> L[Hosted LLM]
+ W --> L
+ A -.-> O[Optional local LLM]
+ W -.-> O
+ DBInit[migrate one-shot] --> P
+ ObjInit[storage-init one-shot] --> M
+```
+
+### Compose/runtime
+
+Run six persistent services: frontend, api, worker, postgres 17, redis 8.2, and minio. Reuse the backend image for migrate/storage-init. Health gates use service_healthy; initialization gates use service_completed_successfully. Migrations use Alembic's async bridge/run_sync and a short-lived NullPool. Initialize the MinIO bucket through the backend SDK to avoid the unavailable mc image.
+
+Bind source code; dependencies stay in container paths. Support Vite HMR, Uvicorn reload, and Dramatiq's watch extra/--watch app, with polling/restart fallback. Use named DB/storage/Redis volumes. Frontend/API ports are configurable and bound to loopback; infrastructure ports remain unpublished. Vite proxies /api; CORS uses explicit allowed origins. Run apps as non-root, bound resources and concurrency, and support graceful shutdown. /health/live and /health/ready do not require external credentials.
+
+Bootstrap an ignored .env with generated internal credentials; never overwrite an existing .env. The user configures hosted credentials there, never in chat. Runtime precedence is environment > dotenv > defaults; explicit constructor settings are reserved for tests. Examples use placeholders. Browser environment variables expose only the public API path. Reset requires an explicit flag, and tests never touch development data.
+
+### Jobs and async lifecycle
+
+Initialize API engines and HTTP clients in lifespan. Give each request, dispatcher, heartbeat and task its own AsyncSession. Create worker resources after fork on the AsyncIO loop, and dispose of them before it stops. Use one process and two threads. Do not share pooled engines across loops, call asyncio.run per actor, share sessions, or rely on implicit lazy relationship I/O.
+
+Commit BackgroundJob and JobOutbox records with domain changes. The API lifespan dispatcher polls every 2 seconds, uses its own sessions, and claims due events with locks. Offload synchronous broker calls and enforce a socket timeout. Publish before marking an event delivered; duplicates are expected. Actors receive jobID+generation and atomically claim a lease. Stale, completed or active duplicate deliveries are no-ops.
+
+Heartbeat every 10 seconds, use a 60-second lease, and run recovery every 30 seconds plus a startup scan. Recover delivered-but-unclaimed jobs and expired processing jobs. Fence final writes by generation+lease. PostgreSQL owns the three total attempts and exponential backoff with jitter; set actor max_retries=0. Redis uses AOF/everysec/noeviction. During API downtime, dispatch and recovery wait while delivered work continues. Exactly-once paid inference cannot be guaranteed across ambiguous failures.
+
+Job states are queued → processing → completed. Retryable failures transition processing → queued; permanent or exhausted failures transition to failed. An explicit eligible retry transitions failed → queued. Persist typed inputs, safe errors, progress/stage and results. The ingest parser has a 120-second timeout; summaries have a 10-minute deadline and checkpoints. Metadata provider errors preserve usable text. Bound optional downloads and embeddings, and make them idempotent.
+
+## Data and API design
+
+Use UUIDs and UTC timestamps. Store PDF bytes only in MinIO. Persist the following records:
+
+- Paper: nullable bibliographic fields, normalizedDOI, provenance, manual overrides and activeDocument.
+- PaperAuthor: ordered author rows.
+- PaperSource: unique(provider, externalID), URLs and a metadata snapshot.
+- Document: original object, hash, name, size, state, extractorVersion and warnings.
+- DocumentPage: text, physicalPage and printedLabel.
+- DocumentChunk: page offsets, ordinal, text, token estimate and GIN tsvector.
+- PaperSummary: document, configuration, sections, citations, usage and promptVersion.
+- ChatSession: immutable paper/document binding and defaults.
+- ChatMessage: ordered roles, content, requestUUID, state, model, settings, citations, generationLease and expiry.
+- BackgroundJob/Outbox: durable execution state.
+- ModelConfiguration: registry, capabilities and defaults, with no credentials.
+
+Enforce uniqueness for non-null normalized DOI, source identity, document checksum in the single-user library, chunk/page ordinals, active job keys, session requestUUID, and one active assistant generation per session. Matching DOI, source or checksum deduplicates; title similarity only warns. A conflicting attach returns a reconciliation error. Manual corrections override enrichment. Historical chats and summaries retain their source document versions. Review Alembic migrations and test them from an empty DB and the previous milestone.
+
+Use the prefix /api/v1. Generate TypeScript contracts with openapi-typescript and detect drift in CI; explicitly document discriminated SSE events. Errors use {code, message, request_id, details, retry_after?}, with appropriate 404/409/413/415/422/429/502/503/504 statuses. SearchResult has normalized nullable fields; PaperDetail includes provenance and readiness; JobStatus includes stage, progress and retry information; GenerationSettings validates capabilities; Citation includes chunk, document, page and excerpt.
+
+| Route | Behavior |
+| --- | --- |
+| GET /search | provider/query/pageSize/opaqueContinuation; normalized page |
+| POST /papers | provider/externalID; canonical lookup; 201 for new, 200 for existing |
+| GET /papers; GET/PATCH /papers/{id} | Paginated library, details and manual correction |
+| POST /documents | Multipart file, optional paper and requestUUID; 202 with references |
+| GET /documents/{id}/download | Retained PDF through the API |
+| GET /documents/{id}/chunks/{chunkID} | Validated source excerpt |
+| GET /jobs; GET /jobs/{id}; POST /jobs/{id}/retry | Durable state and eligible retry |
+| POST/GET /papers/{id}/summaries | Queued generation and history; ready text required |
+| POST/GET /papers/{id}/chats | Create/list chats with an immutable document binding |
+| GET /chats/{id}/messages | Ordered history and generation state |
+| POST /chats/{id}/messages/stream | question/requestUUID/model/settings; SSE |
+| GET /models; GET/PUT /settings | Capabilities, availability and defaults; no secrets |
+| POST /papers/{id}/retrieve-fulltext | P1: stored provider PDF candidate; no arbitrary URL |
+
+## Pipelines and security
+
+The search interface is search(query, continuation, pageSize) → SearchPage. S2 uses relevance/offset and explicit fields; OpenAlex uses works/cursor, reconstructs abstract positions, and selects a direct location pdf_url. Preserve nullable fields honestly; a landingURL is not a PDF. Use a page size of 20. Bound provider response bodies and continuations; use explicit async HTTP timeouts, at most two bounded transient retries, and Retry-After. Invalid credentials and malformed responses must not trigger indefinite retries. Show empty results, rate limits and outages clearly.
+
+Upload validates the PDF signature/media type and a 25 MiB limit. Record the upload state and objectUUID, store the object outside the DB transaction, then create the queued job/outbox. The worker performs a bounded temporary download and invokes a fresh isolated parser via subprocess; on timeout, kill and wait for the subprocess. Enforce a 200-page limit and a text limit. Encrypted PDFs that need a password fail; scanned PDFs report OCR_REQUIRED; partial scans warn.
+
+Extract deterministic metadata first. When needed, use structured nullable LLM extraction grounded in evidence; do not use PDF creationYear or fabricate fields. Enrichment failure does not discard extracted text. Page-aware chunks of approximately 800 tokens with 120-token overlap retain offsets and version. Fence chunk persistence and the ready transition, and commit them transactionally.
+
+P1 downloads use only configured public hosts and stored provider candidates. Reject credentials, private addresses, unsafe protocols and redirects; validate every hop and enforce streaming limits. Treat untrusted PDFs and context as data, never executable instructions. Include no credentials or tools in prompts, and render no raw HTML in the UI. Logs use safe JSON with request/job IDs, never API keys, full prompts or document contents. Restrict hostnames/origins, use safe filenames/object keys, and bound LLM tokens and cost.
+
+The hosted adapter uses the official AsyncOpenAI/Responses API with store=False. A separate local adapter uses OpenAI-compatible ChatCompletions. The registry supports the three exact requested models and persists effective parameters, capabilities and usage. Default to Luna/low with a 32k input ceiling and 4k output budget, including reasoning. Use a configurable $5 daily budget, conservative reservations and bounded concurrency. Shrink budgets for smaller deployment contexts.
+
+Summaries use the complete extracted text when it fits. Otherwise, use ordered map/reduce with full coverage, retained references and checkpoints. Never silently summarize only the first pages. Q&A uses SQL FTS with GIN/ranking, a strict → OR fallback and bounded section coverage, scoped to the immutable document. Persist all history; limit recent complete turns to 4k history tokens and retrieval to 12k tokens. Use recent questions and deterministic section terms to interpret follow-ups. The effective context reserves instructions, output and a safety margin. Use the tokenizer when known; otherwise, use conservative byte estimates. Report insufficient evidence explicitly. Validate CitationIDs against the supplied passages/document, and obtain page numbers from the DB. Factual support in real answers requires manual checking beyond mock tests.
+
+Use POST fetch SSE with message.started/delta/completed/failed events and heartbeats. Persist before started, checkpoint partial content, and persist the final result before completed. The frame parser handles UTF-8 and fragments. Abort closes the provider stream and persists partial content as interrupted. API crash recovery expires direct generation leases and releases the active constraint. UUID replay never regenerates: active requests conflict, while finished/interrupted requests return stored state. Never automatically resubmit paid generation.
+
+## Interface and local skill
+
+Use Impeccable Operate/Read guidance: quiet light surfaces, dark text, one accent, system fonts and consistent tokens. Routes cover /search for provider/results/save/load more; /library for saved list/upload/status; /papers/:id for bibliography/edit/status/summary/chat; /settings for capabilities; and /jobs for progress/errors/retry. Metadata-only, processing, ready and failed states have actionable gates. Desktop uses a metadata sidebar and reader; mobile uses stacked layouts and sheets. Support keyboard upload, labels, focus, dialogs, polite live announcements, scroll preservation, safe generated/source rendering and citation excerpts.
+
+Install the supplied PyMuPDF instructions under .agents/skills/pymupdf-pdf with required frontmatter, local scripts/pymupdf_parse.py, and references/pymupdf-notes.md. The CLI supports md (default)/json/both, images, tables, outroot and lang. Outputs use a basename folder with output.md/output.json/images/tables.json. Use an inline uv dependency, script lockfile and executable shebang; provide an explicit uv alternative. Test page-preserving outputs, rough tables/images, invalid/encrypted PDFs, safe paths and collisions; ignore outputs. Do not use marketplace registration, unpinned npx or automatic OCR. The application remains independent of the skill. The remote skill has unaudited scripts and therefore is not installed.
+
+## Testing and acceptance
+
+For each feature, follow Given/When/Then → observe a failing behavior test → minimal implementation → targeted green test → refactor/regression → issue/evidence/commit. Use real core dependencies and HTTP external fixtures only, with forced test mode and a separate Compose project, DB and bucket. Mocked tests do not prove hosted or live access.
+
+- E2E01: Select a provider and topic → normalized results, load more and errors.
+- E2E02: Save from search → library persists across refresh/restart, with DOI deduplication.
+- E2E03: Upload a known PDF → retained original, progress, known metadata and ready text.
+- E2E04: Summarize a ready PDF → actual text, full coverage and persisted citation.
+- E2E05: Ask a question and follow-up about a ready PDF → streamed grounded answer, page citation and history after refresh.
+- Additional cases: metadata-only gate; scanned, encrypted, oversized and malformed PDFs; malicious source; absent context; broker outage; duplicate jobs; parser timeout; expired leases; chat recovery after API termination; UUID replay.
+
+Use pytest for units, adapters, validation, text and context. Integration tests exercise actual PostgreSQL migrations, constraints and repositories; Redis delivery; and MinIO checksums/restart. Use Vitest/RTL for forms, status, capabilities, SSE and errors, and Playwright for the actual stack with delayed HTTP fixtures. Keep real provider/model smoke tests separately opt-in. CI runs Ruff/pytest; ESLint/tsc/Vitest/build; migrations/integration/Chromium E2E, with failure traces. Use synthetic known PDF/DOI fixtures and a licensed research demo PDF.
+
+## Roadmap and tracking
+
+| Phase | Target/effort | Issues/deliverable | Gate/risk |
+| --- | --- | --- | --- |
+| 0 Foundation | Oct 8, 5–7 h | 001–005, 008, start 017; plan/skill/services/contracts/test canary | MinIO build, S3 round trip, migration, reload and restart; ARM risk |
+| 1 Search/library | Oct 8–9, 4–5 h | 006–007 | Two adapters plus search/save/persistence; S2 rate risk |
+| 2 Ingestion | Oct 9, 6–8 h | 009–011 | Retained PDF, metadata, editor and chunks; parser uncertainty |
+| 3 LLM/chat | Oct 9–10 morning, 9–11 h | 012–015 | Five deterministic E2Es plus real hosted smoke test; context/replay/recovery |
+| 4 Enhancements | Only after P0, 0–2 h | 019 or 020; defer 021–023 | Independent test, no P0 regression |
+| 5 Submission | Oct 10, 8–10 h | 016–018 | Fresh setup, video, student reflection and public repository |
+
+Freeze on Oct 10 at noon; target submission at 10 PM, leaving approximately two hours of buffer. Reserve at least three hours for reflection and screenshots. The lead fixes contracts/migrations and verifies integration. Delegate to independent file owners with no overlapping edits, and review milestones.
+
+Issue IDs map as follows:
+
+| ID | Scope |
+| --- | --- |
+| 001 | Plan/tracker/journal |
+| 002 | Skill |
+| 003 | Compose |
+| 004 | Contracts/test foundation |
+| 005 | Live probes |
+| 006 | Search |
+| 007 | Library |
+| 008 | Jobs |
+| 009 | Upload |
+| 010 | Extraction |
+| 011 | Retrieval |
+| 012 | LLM |
+| 013 | Summary |
+| 014 | Chat |
+| 015 | Reader UI |
+| 016 | QA/security |
+| 017 | CI/README/repository |
+| 018 | Submission |
+| 019 | OA fetch |
+| 020 | Polish |
+| 021 | pgvector |
+| 022 | Local LLM |
+| 023 | OCR |
+| 024 | Connector bug |
+
+Keep full records in issue_tracker; create bug tickets for actual failures.
+
+### Optional local inference
+
+Local inference is P2 only; download no weights during default setup. IFM uses Apache 2, with actual approximately 9B weights occupying 16.8 GiB in BF16 and an advertised 524K context. Optional Linux NVIDIA vLLM at 8K context/one sequence has an estimated 24–32 GB GPU requirement. Audit the trust_remote_code commit before execution.
+
+Qwen uses Apache 2; its BF16 weights occupy approximately 51.7 GiB, exceeding the 36 GiB Mac's memory. It has native 262K/extensible 1M context. The exact Q4_K_M candidate has approximately 16.2 GiB of weights and an estimated 20–22 GiB runtime footprint (unmeasured). Use host-native llama.cpp Metal through host.docker.internal. The vLLM GGUF plugin is experimental; Metal excludes K-quants/hybrids.
+
+The optional Linux NVIDIA local-llm profile uses prepopulated weights and a pinned engine plus CUDA/PyTorch/driver (current CUDA 12.9/compute 7.5+, Ampere BF16). Test the exact artifact, streaming, reasoning and memory before making it selectable. The core app has no GPU prerequisite.
+
+### Definition of Done
+
+Acceptance criteria are satisfied; relevant tests actually pass; there is no critical regression; schema/API/types are documented; Compose and reload work; data persists; retry/error states are honest; issues are updated; and genuine agent corrections are recorded without secrets. The student can explain the components.
+
+The reflection journal covers prompts, decisions, visible failures, diagnosis, follow-ups, evidence, issues, commits and screenshots; never hidden reasoning or invented failures. Keep the guide concise and preserve the authenticity of the student report. Verify the public repository, README, video and reflection for submission. The agent cannot claim Brightspace submission without doing it.
