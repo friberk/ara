@@ -36,11 +36,18 @@ async function citedSummary(request: APIRequestContext, paper: Paper) {
   const { job_id: jobId } = await accepted.json() as { job_id: string }
   await expect.poll(async () => (await (await request.get(`/api/v1/jobs/${jobId}`)).json() as { state: string }).state, { timeout: 45_000 }).toBe('completed')
 }
-/** A citation chip in the conversation pane and the physical page it cites. */
+/**
+ * A citation chip of the stored summary and the physical page it cites. A collapsed summary is inert, so it is
+ * opened first; chips are named "Source, page N" by the content module (ARA-035).
+ */
 async function firstCitation(page: Page): Promise<{ chip: Locator; cited: number }> {
-  const chip = page.getByRole('button', { name: /page \d+/i }).first()
-  await expect(chip).toBeVisible({ timeout: 20_000 })
-  const name = (await chip.getAttribute('aria-label')) ?? (await chip.innerText())
+  const summary = page.getByRole('article', { name: 'Paper summary' })
+  const toggle = summary.getByRole('button', { name: /^(Show full|Collapse) summary$/ })
+  await expect(toggle).toBeVisible({ timeout: 20_000 })
+  if ((await toggle.innerText()).startsWith('Show full')) await toggle.click()
+  const chip = summary.getByRole('button', { name: /^Source, page \d+$/ }).first()
+  await expect(chip).toBeVisible()
+  const name = (await chip.getAttribute('aria-label')) ?? ''
   return { chip, cited: Number(/\d+/.exec(name)?.[0]) }
 }
 const noHorizontalOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
@@ -90,7 +97,7 @@ test('Given a cited summary, when a citation chip is clicked, then the reader ju
   const citedPage = page.getByRole('group', { name: `Page ${cited}` })
   await expect(page.getByLabel('Page number')).toHaveValue(String(cited))
   await expect(citedPage.locator('[data-citation-highlight]').first()).toBeVisible()
-  await expect(page.getByText(`Highlighted the cited passage on page ${cited}.`)).toBeAttached()
+  await expect(page.getByRole('status').filter({ hasText: 'cited passage' })).toHaveText(`Highlighted the cited passage on page ${cited}.`)
   // The same chip again re-runs the jump from elsewhere in the document.
   await page.getByRole('region', { name: 'PDF document' }).evaluate((viewer) => { viewer.scrollTop = 0 })
   await expect(page.getByLabel('Page number')).toHaveValue('1')
