@@ -86,6 +86,27 @@ test('Given a device that cannot hover, Then no preview opens and a tap still re
   vi.mocked(window.matchMedia).mockRestore()
 })
 
+// Test-after (ARA-035 audit): the preview pauses shipped before tests covered them.
+test('Given onSelect, When the hovered chip is clicked, Then no preview opens over the result', async () => {
+  const { calls } = mockApi({ 'GET /documents/d1/chunks/c1': { ...citation, excerpt: fullExcerpt } })
+  const { user } = renderWithProviders(<CitationChip citation={citation} onSelect={() => {}} />)
+  await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  expect(screen.queryByText('Page 7')).toBeNull()
+  expect(calls).toHaveLength(0)
+})
+
+test('Given a tap on a device that can also hover, Then the focus it gives opens no preview', async () => {
+  const { calls } = mockApi({ 'GET /documents/d1/chunks/c1': { ...citation, excerpt: fullExcerpt } })
+  const { user } = renderWithProviders(<CitationChip citation={citation} onSelect={() => {}} />)
+  const chip = screen.getByRole('button', { name: 'Source, page 7' })
+  await user.pointer({ keys: '[TouchA]', target: chip })
+  expect(chip).toHaveFocus()
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  expect(screen.queryByText('Page 7')).toBeNull()
+  expect(calls).toHaveLength(0)
+})
+
 test('Given keyboard focus on the chip, Then the same preview opens', async () => {
   mockApi({ 'GET /documents/d1/chunks/c1': { ...citation, excerpt: fullExcerpt } })
   const { user } = renderWithProviders(<CitationChip citation={citation} />)

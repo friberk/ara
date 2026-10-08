@@ -1,0 +1,42 @@
+// Test-after coverage (ARA-038): these behaviours shipped before their tests. Each test was checked
+// against a deliberate mutation of the implementation to confirm it can fail.
+import { screen, waitFor, within } from '@testing-library/react'
+import { renderApp } from '@/test/render'
+import { json, mockApi } from '@/test/fetch-routes'
+
+const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
+const settings = { default_model: luna.key, reasoning_effort: 'low' }
+afterEach(() => vi.unstubAllGlobals())
+
+test('Given no models on the server, Then settings explain how to configure them', async () => {
+  mockApi({ 'GET /models': { items: [] }, 'GET /settings': settings })
+  renderApp('/settings')
+  expect(await screen.findByRole('heading', { name: 'No models configured' })).toBeVisible()
+  expect(screen.getByText('Configure model access on the server, then reload this page.')).toBeVisible()
+  expect(screen.queryByRole('radiogroup', { name: 'Default model' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Save defaults' })).not.toBeInTheDocument()
+})
+
+test('Given models are loading, Then a loading state is announced', async () => {
+  mockApi({ 'GET /models': () => new Promise<Response>(() => {}), 'GET /settings': settings })
+  renderApp('/settings')
+  await waitFor(() => expect(screen.getAllByRole('status').some((element) => element.textContent?.includes('Loading models…'))).toBe(true))
+})
+
+test('Given models cannot load, Then the error is shown inline and Try again reloads them', async () => {
+  // Fail every request until the user retries: the shell's model switcher shares this query and may refetch on its own.
+  let failing = true
+  const { calls } = mockApi({
+    'GET /models': () => (failing ? json({ code: 'UPSTREAM_UNAVAILABLE', message: 'Model list is unavailable right now.', request_id: 'r1' }, 502) : json({ items: [luna] })),
+    'GET /settings': settings,
+  })
+  const { user } = renderApp('/settings')
+  const main = screen.getByRole('main')
+  const alert = await within(main).findByRole('alert')
+  expect(alert).toHaveTextContent('Model list is unavailable right now.')
+  failing = false
+  await user.click(within(alert).getByRole('button', { name: 'Try again' }))
+  expect(await within(main).findByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked()
+  expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
+  expect(calls.filter((call) => call.path === '/models').length).toBeGreaterThanOrEqual(2)
+})

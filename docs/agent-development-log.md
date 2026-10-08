@@ -149,3 +149,15 @@ Lead follow-up:
 - Saving a paper had invalidated every loaded search page, which re-queried OpenAlex or Semantic Scholar. The red test showed `saved_paper_id` staying null. The cache is now updated in place.
 - A characterisation test showed the agent's ToggleGroup role request was unnecessary, because Radix already renders `radiogroup`.
 - Full-suite runs failed 1–2 different tests each time. Each file passed alone, and the failures were 1 s `findBy` timeouts under 12-worker contention. The research agent independently diagnosed the same cause. Testing Library's async timeout is now 3 s, and three consecutive runs passed 150/150.
+
+### UI overhaul: conversation pane merge (ARA-036)
+
+The conversation agent built the chat-first pane test-first (9 chat tests red against the stub, then green). It fixed a lint-detected ref read during render, and caught its own stale-list "Conversation not found" flash with a failing test.
+
+**Lead review of the port.** It retains the legacy streaming safeguards (abort, terminal guard, cross-document citation rejection, no automatic resend) and consumes queued questions safely under StrictMode.
+
+**Behaviour change.** Stop now keeps the partial answer as "Interrupted" with a polite status instead of an alert. An early stream end still raises an alert.
+
+**Integration.** The merge into `feat/ui-overhaul` passed 162 tests and lint had 0 errors.
+
+**Open item.** The agent's E2E spec assumes a reader region and a highlight status text. That contract was sent to the workspace agent before its merge, so the two are built to the same names.

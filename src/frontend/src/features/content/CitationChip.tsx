@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 
 export type CitationChipProps = { citation: Citation; onSelect?: (citation: Citation) => void; className?: string }
 
-/** A tap, a click or the focus a closing dialog hands back opens no preview for this long. */
+/** After a click or tap, or the focus a closing dialog hands back, no preview opens for this long. */
 const previewPause = 600
 
 // Touch-only devices get no hover preview: a tap reads the source directly.
@@ -47,7 +47,6 @@ export function CitationChip({ citation, onSelect, className }: CitationChipProp
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
         className,
       )}
-      onPointerDown={(event) => { if (event.pointerType !== 'mouse') pause() }}
       onClick={() => {
         pause()
         setPreview(false)
