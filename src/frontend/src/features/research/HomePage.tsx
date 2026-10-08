@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FileUp, Plus } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { FileUp, History, Plus } from 'lucide-react'
 import type { Paper, Provider } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -11,12 +11,15 @@ import { PaperContextChip, PaperPicker } from '@/components/composer/PaperPicker
 import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
 import { useGenerationSettings } from '@/components/composer/generation-settings'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
+import { searchHref } from '@/components/shell/recent-items'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { useCreateChat } from '@/hooks/queries/chats'
-import { useRecordSearch } from '@/hooks/queries/search'
+import { useRecordSearch, useSearchHistory } from '@/hooks/queries/search'
 import { queueQuestion } from '@/lib/pending-questions'
 
 const exampleTopics = ['Retrieval-augmented generation', 'Graph neural networks for molecules', 'Evaluating large language models']
+const SUGGESTION_COUNT = 3
+const chip = 'max-w-full rounded-full font-normal text-muted-foreground'
 
 /** The first viewport: one composer that searches the literature, or asks a paper from the library. */
 export default function HomePage() {
@@ -26,6 +29,10 @@ export default function HomePage() {
   const [paper, setPaper] = useState<Paper | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const record = useRecordSearch()
+  // Same query as the sidebar's recent list, so both share one request. Missing history just leaves the examples.
+  const history = useSearchHistory(20)
+  const recent = (history.data?.items ?? []).slice(0, SUGGESTION_COUNT)
+  const examples = exampleTopics.filter((topic) => !recent.some((item) => item.query.toLowerCase() === topic.toLowerCase())).slice(0, Math.max(0, SUGGESTION_COUNT - recent.length))
   const generation = useGenerationSettings()
   const createChat = useCreateChat(paper?.id ?? '')
   const asking = !!paper
@@ -81,12 +88,21 @@ export default function HomePage() {
         />
         <ErrorNotice error={createChat.error} className="w-full" />
         {!asking && (
-          <div className="flex flex-wrap justify-center gap-2" aria-label="Example topics">
-            {exampleTopics.map((topic) => (
-              <Button key={topic} type="button" variant="outline" size="sm" className="rounded-full font-normal text-muted-foreground" onClick={() => search(topic)}>{topic}</Button>
+          <ul aria-label="Suggestions" className="flex max-w-full flex-wrap justify-center gap-2">
+            {recent.map((item) => (
+              <li key={item.id} className="max-w-full">
+                <Button asChild variant="outline" size="sm" className={chip}>
+                  <Link to={searchHref(item)}><History aria-hidden="true" /><span className="sr-only">Recent search:</span> <span className="truncate">{item.query}</span></Link>
+                </Button>
+              </li>
             ))}
-            <Button type="button" variant="outline" size="sm" className="rounded-full font-normal text-muted-foreground" onClick={() => setUploadOpen(true)}><FileUp aria-hidden="true" />Upload a PDF</Button>
-          </div>
+            {examples.map((topic) => (
+              <li key={topic} className="max-w-full">
+                <Button type="button" variant="outline" size="sm" className={chip} onClick={() => search(topic)}><span className="sr-only">Example topic:</span> <span className="truncate">{topic}</span></Button>
+              </li>
+            ))}
+            <li><Button type="button" variant="outline" size="sm" className={chip} onClick={() => setUploadOpen(true)}><FileUp aria-hidden="true" />Upload a PDF</Button></li>
+          </ul>
         )}
       </div>
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
