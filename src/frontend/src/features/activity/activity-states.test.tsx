@@ -26,11 +26,19 @@ test('Given jobs at different times, Then each shows when it started, finished o
   expect(screen.getByText('Failed yesterday')).toHaveAttribute('datetime', '2026-10-07T12:00:00Z')
 })
 
-test('Given an unknown job kind, Then it is named as a job instead of a raw code', async () => {
-  mockApi({ 'GET /jobs': { items: [{ ...done, id: 'c1', kind: 'canary' }, { ...done, id: 'c2', kind: 'pdf_export' }] } })
+test('Given internal maintenance jobs, Then Activity lists only PDF processing and paper summaries', async () => {
+  // Finish review: internal diagnostics (the canary) are not the reader's work and must not appear.
+  mockApi({ 'GET /jobs': { items: [{ ...done, id: 'c1', kind: 'canary' }, { ...done, id: 'c2', kind: 'pdf_export' }, { ...done, id: 's1', kind: 'summary' }] } })
   renderApp('/activity')
-  expect(await screen.findByRole('heading', { level: 2, name: 'Canary job' })).toBeVisible()
-  expect(screen.getByRole('heading', { level: 2, name: 'Pdf export job' })).toBeVisible()
+  expect(await screen.findByRole('heading', { level: 2, name: 'Paper summary' })).toBeVisible()
+  expect(within(jobsList()).getAllByRole('listitem')).toHaveLength(1)
+  expect(screen.queryByRole('heading', { name: /Canary|Pdf export/ })).not.toBeInTheDocument()
+})
+
+test('Given only internal jobs, Then Activity shows its empty state', async () => {
+  mockApi({ 'GET /jobs': { items: [{ ...done, id: 'c1', kind: 'canary' }] } })
+  renderApp('/activity')
+  expect(await screen.findByRole('heading', { name: 'No activity yet' })).toBeVisible()
 })
 
 test('Given only finished jobs, When Active or Failed is chosen, Then a filter-specific empty state appears', async () => {

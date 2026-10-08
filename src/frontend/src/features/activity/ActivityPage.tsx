@@ -33,13 +33,9 @@ const states: Record<JobView['state'], { label: string; tone: string }> = {
   failed: { label: 'Failed', tone: 'bg-destructive/10 text-destructive' },
 }
 
-// Background kinds without a product name (maintenance checks) still read as a sentence.
-function kindLabel(kind: string) {
-  const known = jobKindLabels[kind]
-  if (known) return known
-  const words = kind.replaceAll('_', ' ')
-  return `${words.charAt(0).toUpperCase()}${words.slice(1)} job`
-}
+// Only work the reader started is shown; maintenance jobs such as the deployment canary stay internal.
+const isReaderJob = (job: JobView) => job.kind in jobKindLabels
+const kindLabel = (kind: string) => jobKindLabels[kind] ?? kind
 
 function JobTime({ job, now }: { job: JobView; now: number }) {
   const settled = job.state === 'completed' || job.state === 'failed'
@@ -111,7 +107,7 @@ export default function ActivityPage() {
   const jobs = useJobs()
   const now = useNow()
   const [filter, setFilter] = useState<Filter>('all')
-  const items = jobs.data?.items ?? []
+  const items = (jobs.data?.items ?? []).filter(isReaderJob)
   const matches = filters.find((item) => item.value === filter)?.matches ?? (() => true)
   const visible = items.filter(matches)
   return (

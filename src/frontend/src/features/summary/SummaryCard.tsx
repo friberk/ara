@@ -1,17 +1,19 @@
 import { useId, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, FileUp } from 'lucide-react'
 import type { Job, Paper, Summary } from '@/api/types'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { JobProgress } from '@/components/jobs/JobProgress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { Markdown, SourceList } from '@/features/content'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
 import { useJobs } from '@/hooks/queries/jobs'
@@ -56,6 +58,8 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
   const activeJob = [generate.data?.job_id, ...running].find((id): id is string => !!id && !finishedJobs.includes(id))
   const gate = summaryGate(paper, generation.usableFor('summary'), generation.loading)
   const canGenerate = !gate && !generation.loading && !activeJob && !generate.isPending
+  // Without a usable PDF the next step is attaching one, not a disabled Generate summary.
+  const needsPdf = paper.document_status === 'metadata_only' || paper.document_status === 'failed'
 
   function start() {
     if (!canGenerate) return
@@ -113,13 +117,17 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
       ) : summaries.isSuccess && !activeJob && (
         <div className="mt-1.5 grid justify-items-start gap-3">
           <p className="text-sm text-muted-foreground">{gate ?? 'A structured summary of the whole paper, with page sources you can check.'}</p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Button type="button" size="sm" disabled={!canGenerate} onClick={start}>
-              {generate.isPending && <Spinner data-icon="inline-start" aria-hidden="true" />}
-              Generate summary
-            </Button>
-            {!gate && generation.selectedModel && <span className="text-xs text-muted-foreground">Uses {generation.selectedModel.display_name} with {effortText(generation.settings.reasoning_effort).toLowerCase()}</span>}
-          </div>
+          {needsPdf ? (
+            <AttachPdf paperId={paper.id} />
+          ) : paper.document_status === 'ready' && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Button type="button" size="sm" disabled={!canGenerate} onClick={start}>
+                {generate.isPending && <Spinner data-icon="inline-start" aria-hidden="true" />}
+                Generate summary
+              </Button>
+              {!gate && generation.selectedModel && <span className="text-xs text-muted-foreground">Uses {generation.selectedModel.display_name} with {effortText(generation.settings.reasoning_effort).toLowerCase()}</span>}
+            </div>
+          )}
         </div>
       )}
     </article>
@@ -155,5 +163,24 @@ function VersionMenu({ versions, current, onSelect, canGenerate, onGenerate }: {
         <DropdownMenuItem disabled={!canGenerate} onSelect={onGenerate}>Generate summary</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** Opens the upload for this paper; the workspace refreshes into processing when it is accepted. */
+function AttachPdf({ paperId }: { paperId: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button type="button" size="sm" onClick={() => setOpen(true)}><FileUp data-icon="inline-start" aria-hidden="true" />Attach PDF</Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Attach the PDF</DialogTitle>
+            <DialogDescription>Summaries and answers read this PDF and cite its pages.</DialogDescription>
+          </DialogHeader>
+          <UploadDropzone paperId={paperId} onAccepted={() => setOpen(false)} />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

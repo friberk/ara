@@ -40,7 +40,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
   const question = pending && asked <= pending.baseline ? pending.text : null
   const unsavedDraft = draft && !saved.some((message) => message.id === draft.id) ? draft : null
   const empty = loaded && !rows.length && !question && !unsavedDraft && !stream.streaming && !peekQuestion(chat.id)
-  const { scrollRef, onScroll, away, stick, toLatest } = useFollowBottom(`${rows.length}:${question ?? ''}:${draft?.id ?? ''}:${draft?.content.length ?? 0}:${draft?.state ?? ''}`)
+  const { scrollRef, onScroll, away, scrolled, stick, toLatest } = useFollowBottom(`${rows.length}:${question ?? ''}:${draft?.id ?? ''}:${draft?.content.length ?? 0}:${draft?.state ?? ''}`)
 
   function ask(content: string, settings: GenerationSettings = generation.settings, requestId?: string) {
     stick()
@@ -72,6 +72,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
       scrollRef={scrollRef}
       onScroll={onScroll}
       away={away}
+      scrolled={scrolled}
       onLatest={toLatest}
       composer={
         <ConversationComposer
@@ -89,7 +90,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
       <SummaryCard paper={paper} />
       {stream.history.isPending && <HistorySkeleton />}
       <ErrorNotice error={stream.history.error} retry={() => void stream.history.refetch()} />
-      {empty && <SuggestedQuestions disabled={!ready} onSelect={(value) => { if (ready) ask(value) }} />}
+      {empty && ready && <SuggestedQuestions onSelect={ask} />}
       {rows.map((message) => message.role === 'user'
         ? <UserMessage key={message.id} content={message.content} />
         : <AssistantMessage key={message.id} message={message} documentId={chat.document_id} />)}

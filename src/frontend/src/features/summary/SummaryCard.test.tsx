@@ -87,10 +87,22 @@ test('Given a long summary, When expanded and collapsed, Then the full text togg
   expect(within(card).getByRole('button', { name: 'Collapse summary' })).toHaveAttribute('aria-expanded', 'true')
 })
 
-test('Given a metadata-only paper, Then summary generation explains that a PDF is needed', async () => {
+test('Given a metadata-only paper, When Attach PDF is chosen, Then the upload for this paper opens instead of a disabled action', async () => {
+  // Finish review: one clear next action instead of a disabled Generate summary.
   mockApi(settings)
-  mount({ ...paper, document_status: 'metadata_only', active_document_id: null })
+  const { user } = mount({ ...paper, document_status: 'metadata_only', active_document_id: null })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
-  expect(await within(card).findByRole('button', { name: 'Generate summary' })).toBeDisabled()
-  expect(within(card).getByText('Attach a PDF to generate a summary.')).toBeVisible()
+  expect(await within(card).findByText('Attach a PDF to generate a summary.')).toBeVisible()
+  expect(within(card).queryByRole('button', { name: 'Generate summary' })).not.toBeInTheDocument()
+  await user.click(await within(card).findByRole('button', { name: 'Attach PDF' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Attach the PDF' })
+  expect(within(dialog).getByLabelText('PDF file')).toBeInTheDocument()
+})
+
+test('Given a PDF still processing, Then the summary card waits without offering an upload or a disabled action', async () => {
+  mockApi(settings)
+  mount({ ...paper, document_status: 'processing', active_document_id: null })
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  expect(await within(card).findByText('A summary can be generated when the PDF finishes processing.')).toBeVisible()
+  expect(within(card).queryByRole('button', { name: /Attach PDF|Generate summary/ })).not.toBeInTheDocument()
 })
