@@ -8,30 +8,41 @@
 }
 
 /*
+ * The evidence colour is the light theme's --evidence, fixed: pages stay white paper in both themes, so the mark
+ * must not follow the theme (the dark token turned it a muddy tan on white).
+ */
+.pdf-viewer {
+  --pdf-evidence: oklch(0.93 0.13 96 / 0.75);
+}
+
+/*
  * The mark sits over the canvas, so it is a translucent tint rather than a blend: Chromium composited a multiply
- * blend of the text layer as cyan in light mode. Pages are white in both themes, so the light token is thinned
- * until the glyphs under it stay dark; the dark token is already translucent.
+ * blend of the text layer as cyan in light mode. Strong lines hold the sentences that support the claim; the rest
+ * of the cited chunk is context, tinted just enough to show where the cited passage sits in it.
  */
 .pdf-viewer .textLayer [data-citation-highlight] {
-  background-color: color-mix(in oklch, var(--evidence) 55%, transparent);
   border-radius: 2px;
 }
 
-.dark .pdf-viewer .textLayer [data-citation-highlight] {
-  background-color: var(--evidence);
+.pdf-viewer .textLayer [data-citation-highlight='strong'] {
+  background-color: color-mix(in oklch, var(--pdf-evidence) 55%, transparent);
 }
 
-/* One brief pulse when a citation lands; marks redrawn after zooming do not pulse again. */
-.pdf-viewer .textLayer [data-citation-highlight='pulse'] {
+.pdf-viewer .textLayer [data-citation-highlight='context'] {
+  background-color: color-mix(in oklch, var(--pdf-evidence) 14%, transparent);
+}
+
+/* One brief pulse on the strong lines when a citation lands; marks redrawn after zooming do not pulse again. */
+.pdf-viewer .textLayer [data-citation-pulse] {
   animation: citation-pulse 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1;
 }
 
 @keyframes citation-pulse {
   0% {
-    box-shadow: 0 0 0 0 var(--evidence);
+    box-shadow: 0 0 0 0 var(--pdf-evidence);
   }
   35% {
-    box-shadow: 0 0 0 4px var(--evidence);
+    box-shadow: 0 0 0 4px var(--pdf-evidence);
   }
   100% {
     box-shadow: 0 0 0 0 transparent;
@@ -39,14 +50,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pdf-viewer .textLayer [data-citation-highlight='pulse'] {
+  .pdf-viewer .textLayer [data-citation-pulse] {
     animation: none;
   }
 }
 
 @media (forced-colors: active) {
-  .pdf-viewer .textLayer [data-citation-highlight] {
+  .pdf-viewer .textLayer [data-citation-highlight='strong'] {
     background-color: Highlight;
     forced-color-adjust: none;
+  }
+
+  .pdf-viewer .textLayer [data-citation-highlight='context'] {
+    background-color: transparent;
   }
 }
