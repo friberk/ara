@@ -20,6 +20,8 @@ function doiUrl(doi: string | null) { return doi ? safeUrl(`https://doi.org/${do
 export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: () => void }) {
   const id = useId()
   const [editing, setEditing] = useState(false)
+  // A replacement uploaded here keeps its progress on screen while the paper reports processing.
+  const [replacing, setReplacing] = useState(false)
   const doi = doiUrl(paper.doi)
   const records = paper.sources.flatMap((source) => {
     const url = safeUrl(source.external_url)
@@ -67,8 +69,8 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
             )}
           </div>
           {/* Attaching and recovering happen in the PDF view's gate; here a ready paper can take a new version. */}
-          {paper.document_status === 'ready' ? (
-            <UploadDropzone paperId={paper.id} title="Replace the PDF" description="A new upload becomes the version you read and ask about. Earlier answers keep citing the PDF they used." />
+          {paper.document_status === 'ready' || replacing ? (
+            <UploadDropzone paperId={paper.id} title="Replace the PDF" description="A new upload becomes the version you read and ask about. Earlier answers keep citing the PDF they used." onAccepted={() => setReplacing(true)} />
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">{pdfState[paper.document_status]}</p>

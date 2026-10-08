@@ -96,6 +96,26 @@ test('Given a metadata-only paper, Then the reader offers the PDF dropzone and k
   expect(screen.queryByRole('link', { name: 'Open original PDF' })).not.toBeInTheDocument()
 })
 
+test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then the upload is followed until the PDF opens', async () => {
+  let stored: object = metadataOnly
+  let job = { id: 'job-1', kind: 'ingest', state: 'processing', stage: 'processing', progress: 20, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: paper.title }
+  mockApi({
+    'POST /documents': () => { stored = { ...metadataOnly, document_status: 'processing', active_document_id: 'doc-1' }; return json({ paper_id: 'p1', document_id: 'doc-1', job_id: 'job-1' }) },
+    'GET /papers/p1': () => json(stored),
+    'GET /jobs/job-1': () => json(job),
+  })
+  const { user } = renderApp('/papers/p1')
+  const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
+  await user.upload(within(reader).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'paper.pdf', { type: 'application/pdf' }))
+  await user.click(within(reader).getByRole('button', { name: 'Upload PDF' }))
+  expect(await screen.findByText('Processing PDF')).toBeVisible()
+  expect(within(reader).getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
+  expect(within(reader).getByRole('progressbar', { name: 'PDF processing progress' })).toBeVisible()
+  stored = paper
+  job = { ...job, state: 'completed', stage: 'completed', progress: 100 }
+  expect(await within(reader).findByText('Showing doc-1', {}, { timeout: 4000 })).toBeVisible()
+})
+
 test('Given field provenance, Then the details show the bibliography and where each field came from', async () => {
   mockApi({ 'GET /papers/p1': paper })
   const { user } = renderApp('/papers/p1')
@@ -125,6 +145,23 @@ test('Given provider metadata, When only the title is edited, Then only the titl
   expect(await screen.findByRole('heading', { level: 1, name: 'Corrected title' })).toBeVisible()
   expect(calls.filter((call) => call.method === 'PATCH').map((call) => call.body)).toEqual([{ title: 'Corrected title' }])
   expect(screen.getByText('Authors: OpenAlex')).toBeVisible()
+})
+
+test('Given a ready paper, When a new PDF version is uploaded from Details, Then its progress stays while the paper processes', async () => {
+  let stored = paper
+  const job = { id: 'job-2', kind: 'ingest', state: 'processing', stage: 'processing', progress: 10, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: paper.title }
+  mockApi({
+    'POST /documents': () => { stored = { ...paper, document_status: 'processing', active_document_id: 'doc-2' }; return json({ paper_id: 'p1', document_id: 'doc-2', job_id: 'job-2' }) },
+    'GET /papers/p1': () => json(stored),
+    'GET /jobs/job-2': job,
+  })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('tab', { name: 'Details' }))
+  const details = screen.getByRole('tabpanel', { name: 'Details' })
+  await user.upload(within(details).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'new-version.pdf', { type: 'application/pdf' }))
+  await user.click(within(details).getByRole('button', { name: 'Upload PDF' }))
+  expect(await screen.findByText('Processing PDF')).toBeVisible()
+  expect(within(details).getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
 })
 
 test('Given a narrow screen, Then Chat, PDF and Details are tabs that follow ?view=', async () => {
