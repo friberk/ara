@@ -76,7 +76,7 @@ export function AssistantMessage({ message, documentId }: { message: Message; do
       ) : (
         <p className="text-sm text-muted-foreground">No answer was saved.</p>
       )}
-      {message.citations.length > 0 && <SourceList citations={message.citations} documentId={documentId} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />}
+      {message.citations.length > 0 && <SourceList citations={message.citations} documentId={documentId} context={message.content} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />}
       {!writing && (
         <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {message.content && <CopyAnswer message={message} />}
