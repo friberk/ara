@@ -36,22 +36,38 @@ export function normalizeText(text: string) {
   return fold(text).replace(/(\p{L})-[^\S\n]*\r?\n\s*/gu, '$1').replace(/\s+/g, ' ').trim()
 }
 
-/** Page text without whitespace, with the item that produced each character. */
+/** Where a page character came from in its item's str, or null where folding moved the offsets. */
+type Source = readonly [start: number, end: number] | null
+
+/** Page text without whitespace, with the item and the item characters that produced each character. */
 function pageKey(items: TextItem[]) {
   const chars: string[] = []
   const owners: number[] = []
+  const sources: Source[] = []
   items.forEach((item, index) => {
-    const text = fold(item.str)
-    for (let at = 0; at < text.length; at += 1) {
-      const char = text.charAt(at)
-      if (WHITESPACE.test(char)) continue
-      chars.push(char)
-      owners.push(index)
+    // Folding character by character keeps offsets into the item. When that differs from folding the whole item
+    // (NFKC composing a combining mark, say), the whole fold is used and this item's offsets are given up.
+    const pieces: [text: string, source: Source][] = []
+    let at = 0
+    for (const point of item.str) {
+      pieces.push([fold(point), [at, at + point.length]])
+      at += point.length
+    }
+    const whole = fold(item.str)
+    const aligned = pieces.map(([text]) => text).join('') === whole
+    for (const [text, source] of aligned ? pieces : [[whole, null] as const]) {
+      for (let offset = 0; offset < text.length; offset += 1) {
+        const char = text.charAt(offset)
+        if (WHITESPACE.test(char)) continue
+        chars.push(char)
+        owners.push(index)
+        sources.push(source)
+      }
     }
     // A hyphen that ends a line between letters splits one word, as normalizeText assumes for the excerpt.
-    if (item.hasEOL && chars.at(-1) === '-' && LETTER.test(chars.at(-2) ?? '')) { chars.pop(); owners.pop() }
+    if (item.hasEOL && chars.at(-1) === '-' && LETTER.test(chars.at(-2) ?? '')) { chars.pop(); owners.pop(); sources.pop() }
   })
-  return { text: chars.join(''), owners }
+  return { text: chars.join(''), owners, sources }
 }
 
 type Range = [start: number, end: number]
@@ -101,18 +117,14 @@ function matchRanges(excerpt: string, page: string): Range[] {
   return ranges
 }
 
-/**
- * Indexes of the text items that the excerpt covers on this page, in order. An empty result means the
- * passage could not be located reliably, so the caller should fall back to showing the page.
- */
-export function findExcerptItems(items: TextItem[], excerpt: string): number[] {
+function locate(items: TextItem[], excerpt: string) {
   const page = pageKey(items)
   const key = normalizeText(excerpt).replace(/\s/g, '')
-  if (!key || !page.text) return []
-  const covered = new Set<number>()
-  for (const [start, end] of matchRanges(key, page.text)) for (let at = start; at < end; at += 1) covered.add(page.owners[at]!)
-  const indexes = [...covered].sort((a, b) => a - b)
-  // Whitespace-only items between marked items are part of the passage too, so the mark reads as one run.
+  return { page, ranges: key && page.text ? matchRanges(key, page.text) : [] }
+}
+
+/** Whitespace-only items between marked items are part of the passage too, so the mark reads as one run. */
+function withGaps(items: TextItem[], indexes: number[]) {
   const filled: number[] = []
   for (const index of indexes) {
     const last = filled.at(-1)
@@ -121,4 +133,39 @@ export function findExcerptItems(items: TextItem[], excerpt: string): number[] {
     filled.push(index)
   }
   return filled
+}
+
+/**
+ * Indexes of the text items that the excerpt covers on this page, in order. An empty result means the
+ * passage could not be located reliably, so the caller should fall back to showing the page.
+ */
+export function findExcerptItems(items: TextItem[], excerpt: string): number[] {
+  const { page, ranges } = locate(items, excerpt)
+  const covered = new Set<number>()
+  for (const [start, end] of ranges) for (let at = start; at < end; at += 1) covered.add(page.owners[at]!)
+  return withGaps(items, [...covered].sort((a, b) => a - b))
+}
+
+/** Characters [start, end) of one text item's str. */
+export type TextRange = { item: number; start: number; end: number }
+
+/**
+ * The characters of each text item that the excerpt covers, so a passage that begins or ends mid-line is marked
+ * from its first character to its last. An item whose offsets folding moved is covered whole.
+ */
+export function findExcerptRanges(items: TextItem[], excerpt: string): TextRange[] {
+  const { page, ranges } = locate(items, excerpt)
+  const extents = new Map<number, [start: number, end: number]>()
+  for (const [start, end] of ranges) {
+    for (let at = start; at < end; at += 1) {
+      const item = page.owners[at]!
+      const [from, to] = page.sources[at] ?? [0, items[item]!.str.length]
+      const extent = extents.get(item)
+      extents.set(item, extent ? [Math.min(extent[0], from), Math.max(extent[1], to)] : [from, to])
+    }
+  }
+  return withGaps(items, [...extents.keys()].sort((a, b) => a - b)).map((item) => {
+    const [start, end] = extents.get(item) ?? [0, items[item]!.str.length]
+    return { item, start, end }
+  })
 }
