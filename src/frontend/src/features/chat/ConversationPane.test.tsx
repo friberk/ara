@@ -6,33 +6,18 @@ import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-route
 import type { Citation, Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { MarkdownProps, SourceListProps } from '@/features/content'
 import { WorkspaceContext, type WorkspaceContextValue } from '@/features/workspace/workspace-context'
 import { json, mockApi } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
+// Runs against the real content module (ARA-035): inline chips and the source list are named "Source, page N".
 import { ConversationPane } from '.'
 import { paperChatsKey } from './use-paper-chats'
-
-// The content module (ARA-035) is rebuilt in parallel. These stand-ins honour its documented props, so the
-// tests pin this pane's wiring: which document scopes the citations and where a chip sends the reader.
-vi.mock('@/features/content', () => ({
-  Markdown: ({ content, citations = [], documentId, onCitation }: MarkdownProps) => (
-    <div>
-      <p>{content.replace(/\[source:[0-9a-f-]{36}\]/gi, '')}</p>
-      {citations.filter((citation) => citation.document_id === documentId).map((citation) => <button key={citation.chunk_id} type="button" onClick={() => onCitation?.(citation)}>Inline page {citation.page}</button>)}
-    </div>
-  ),
-  SourceList: ({ citations, documentId, onSelect }: SourceListProps) => (
-    <div aria-label="Sources">{citations.filter((citation) => citation.document_id === documentId).map((citation) => <button key={citation.chunk_id} type="button" onClick={() => onSelect?.(citation)}>Page {citation.page}</button>)}</div>
-  ),
-  CitationChip: () => null,
-}))
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'Luna', status: 'available', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: ['A. Author'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
 const settings = { 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } }
-const citation: Citation = { chunk_id: 'chunk1', document_id: 'd1', page: 2, excerpt: 'A measured result from the document.' }
-const marker = '[source:12345678-1234-1234-1234-123456789abc]'
+const citation: Citation = { chunk_id: '12345678-1234-1234-1234-123456789abc', document_id: 'd1', page: 2, excerpt: 'A measured result from the document.' }
+const marker = `[source:${citation.chunk_id}]`
 function chatRow(id: string, overrides: Record<string, unknown> = {}) {
   return { id, paper_id: 'p1', document_id: 'd1', title: 'Research question', title_source: 'auto', created_at: '2026-10-08T10:00:00Z', paper_title: paper.title, last_activity_at: '2026-10-08T12:00:00Z', message_count: 0, last_question_preview: null, ...overrides }
 }
@@ -92,6 +77,7 @@ test('Given a ready chat, When a question streams, Then the answer cites page 2 
     'GET /chats': { items: [chatRow('c1')] },
     'GET /chats/c1/messages': () => json({ items: answered ? [userMessage('u1', 'What was measured?'), answer] : [] }),
     'POST /chats/c1/messages/stream': () => { answered = true; return sse([['message.started', { message_id: 'm1' }], ['message.delta', { text: 'The measured result is grounded.' }], ['message.completed', answer]]) },
+    [`GET /documents/d1/chunks/${citation.chunk_id}`]: citation,
   })
   const { user, workspace } = mount('/papers/p1/chats/c1')
   await ask(user, 'What was measured?')
@@ -99,9 +85,12 @@ test('Given a ready chat, When a question streams, Then the answer cites page 2 
   expect(await within(reply).findByText('The measured result is grounded.')).toBeVisible()
   expect(screen.getByRole('article', { name: 'Your message' })).toHaveTextContent('What was measured?')
   await waitFor(() => expect(screen.getAllByRole('article', { name: 'Your message' })).toHaveLength(1))
-  await user.click(within(within(reply).getByLabelText('Sources')).getByRole('button', { name: 'Page 2' }))
+  const sources = within(reply).getByRole('group', { name: 'Sources' })
+  await user.click(within(sources).getByRole('button', { name: 'Source, page 2' }))
   expect(workspace.showSource).toHaveBeenCalledWith(citation)
-  await user.click(within(reply).getByRole('button', { name: 'Inline page 2' }))
+  const inline = within(reply).getAllByRole('button', { name: 'Source, page 2' }).find((chip) => !sources.contains(chip))
+  expect(inline).toBeDefined()
+  await user.click(inline!)
   expect(workspace.showSource).toHaveBeenCalledTimes(2)
   const stream = calls.filter((call) => call.path === '/chats/c1/messages/stream')
   expect(stream).toHaveLength(1)
