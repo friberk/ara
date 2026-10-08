@@ -35,7 +35,7 @@ async function chipPage(chip: Locator) {
 const reader = {
   region: (page: Page) => page.getByRole('region', { name: 'PDF document' }),
   page: (page: Page, pageNumber: number) => reader.region(page).getByRole('group', { name: `Page ${pageNumber}`, exact: true }),
-  outcome: (page: Page) => page.getByRole('status').filter({ hasText: /cited passage on page|showing page/ }),
+  outcome: (page: Page) => page.getByRole('status').filter({ hasText: /cited passage on page|showing page/i }),
 }
 
 test('E2E-04 Given ready text, when summarized, then a stored grounded summary appears and survives reload', async ({ page, request }) => {
