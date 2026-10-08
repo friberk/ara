@@ -42,7 +42,7 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="h-8 min-w-0 max-w-full gap-1.5 px-2.5 text-sm font-medium">
+          <Button type="button" variant="ghost" size="sm" aria-label={chat && earlier(chat) ? `${title}, earlier PDF` : undefined} className="h-8 min-w-0 max-w-full gap-1.5 px-2.5 text-sm font-medium">
             <span className="truncate">{title}</span>
             {chat && earlier(chat) && <Badge variant="outline" className="font-normal text-muted-foreground">Earlier PDF</Badge>}
             <ChevronDown aria-hidden="true" className="text-muted-foreground" />

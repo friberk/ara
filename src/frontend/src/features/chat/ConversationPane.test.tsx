@@ -205,3 +205,10 @@ test('Given auto-titled chats, Then a row repeats its question only when a later
   expect(single.textContent?.match(/What datasets are used/g)).toHaveLength(1)
   expect(screen.getByRole('menuitemradio', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
 })
+
+test('Given the open chat uses an earlier PDF, Then the switcher label marks it and says so in its accessible name', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Old PDF chat', document_id: 'd0' })] } })
+  mount('/papers/p1/chats/c1')
+  const trigger = await screen.findByRole('button', { name: 'Old PDF chat, earlier PDF' })
+  expect(within(trigger).getByText('Earlier PDF')).toBeVisible()
+})
