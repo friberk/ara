@@ -40,13 +40,15 @@ export function normalizeMath(markdown: string): string {
       if (end !== -1) {
         const line = out.slice(out.lastIndexOf('\n') + 1)
         const [prefix, rest] = continuation(line)
-        const body = tidy(markdown.slice(i + 2, end), prefix)
-        if (body) {
+        const lines = mathLines(markdown.slice(i + 2, end), prefix)
+        if (lines.length) {
           i = end + 2
           if (open === '(' || /^(?:\||#{1,6}(?:\s|$))/.test(rest)) {
-            out += inlineMath(body)
+            out += inlineMath(lines.join(' '))
             continue
           }
+          // Display math keeps its lines, so % comments end where the model ended them and aligned rows stay apart.
+          const body = lines.join(`\n${prefix}`)
           const fenceText = '$'.repeat(Math.max(2, longestDollarRun(body) + 1))
           out = rest.trim() ? `${out.trimEnd()}\n${prefix}` : out
           out += `${fenceText}\n${prefix}${body}\n${prefix}${fenceText}`
@@ -109,11 +111,11 @@ function continuation(line: string): [string, string] {
   return [quotes + indent + ' '.repeat(listMarker.length), line.slice(all.length)]
 }
 
-/** Math on one line: container markers from wrapped lines are dropped, as TeX treats line breaks as spaces. */
-function tidy(body: string, prefix: string) {
+/** The math's non-empty lines, trimmed and without the quote markers that wrapped lines carry. */
+function mathLines(body: string, prefix: string) {
   const quotes = (prefix.match(/>/g) ?? []).length
-  const wrapped = new RegExp(`\\n(?:[ \\t]*>[ \\t]?){0,${quotes}}`, 'g')
-  return body.replace(wrapped, '\n').trim().replace(/\s*\n\s*/g, ' ')
+  const wrapped = new RegExp(`^(?:[ \\t]*>[ \\t]?){0,${quotes}}`)
+  return body.split('\n').map((line, index) => (index ? line.replace(wrapped, '') : line).trim()).filter(Boolean)
 }
 
 function longestDollarRun(text: string) {

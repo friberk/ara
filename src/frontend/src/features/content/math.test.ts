@@ -13,8 +13,17 @@ describe('normalizeMath', () => {
     expect(normalizeMath('Scaled by \\[ \\frac{1}{\\sqrt{d_k}} \\] before the softmax.')).toBe('Scaled by\n$$\n\\frac{1}{\\sqrt{d_k}}\n$$\nbefore the softmax.')
   })
 
-  test('Given display math over several lines, Then the content is kept on one line between fences', () => {
-    expect(normalizeMath('\\[\n  \\text{Attention}(Q, K, V) =\n  \\operatorname{softmax}(QK^T)V\n\\]')).toBe('$$\n\\text{Attention}(Q, K, V) = \\operatorname{softmax}(QK^T)V\n$$')
+  test('Given display math over several lines, Then each line stays on its own line between fences', () => {
+    expect(normalizeMath('\\[\n  \\text{Attention}(Q, K, V) =\n  \\operatorname{softmax}(QK^T)V\n\\]')).toBe('$$\n\\text{Attention}(Q, K, V) =\n\\operatorname{softmax}(QK^T)V\n$$')
+  })
+
+  test('Given an aligned environment with a % comment, Then its line breaks survive so the comment ends at its line', () => {
+    expect(normalizeMath('\\[\n\\begin{aligned}\na &= b \\\\ % first row\nc &= d\n\\end{aligned}\n\\]')).toBe('$$\n\\begin{aligned}\na &= b \\\\ % first row\nc &= d\n\\end{aligned}\n$$')
+  })
+
+  test('Given multi-line display math in a list item or quote, Then every line keeps the container prefix', () => {
+    expect(normalizeMath('- Loss:\n  \\[\n  L = a % weight\n  + b\n  \\]')).toBe('- Loss:\n  $$\n  L = a % weight\n  + b\n  $$')
+    expect(normalizeMath('> \\[\n> a = b \\\\\n> c = d\n> \\]')).toBe('> $$\n> a = b \\\\\n> c = d\n> $$')
   })
 
   test('Given display math in a list item or quote, Then the fences keep the container indentation', () => {
