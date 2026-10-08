@@ -18,9 +18,16 @@ export interface CitationMarker extends Node {
   data: { hName: 'cite'; hProperties: { dataChunkId: string; dataClaim?: string } }
 }
 
+/** The last word before a run of chips, the chips and the punctuation after them, rendered as one nowrap span. */
+export interface CitationGroup extends Parent {
+  type: 'citationGroup'
+  children: PhrasingContent[]
+  data: { hName: 'span'; hProperties: { className: string[] } }
+}
+
 declare module 'mdast' {
-  interface PhrasingContentMap { citationMarker: CitationMarker }
-  interface RootContentMap { citationMarker: CitationMarker }
+  interface PhrasingContentMap { citationMarker: CitationMarker; citationGroup: CitationGroup }
+  interface RootContentMap { citationMarker: CitationMarker; citationGroup: CitationGroup }
 }
 
 /** Text with every valid [source:UUID] marker removed, as the reader sees it. */
@@ -50,6 +57,10 @@ export function remarkCitations({ allowed }: RemarkCitationsOptions) {
       recordClaims(block as Parent)
       return SKIP
     })
+    visit(tree, (node) => {
+      if (node.type === 'citationGroup') return SKIP
+      if ('children' in node) (node as Parent).children = groupWithWord((node as Parent).children as PhrasingContent[])
+    })
   }
 }
 
@@ -73,6 +84,56 @@ function recordClaims(block: Parent) {
     }
   }
   walk(block)
+}
+
+/**
+ * Wraps the last word before each run of chips, the run and any punctuation right after it in a nowrap span, so a
+ * chip never starts a line on its own. A word inside emphasis moves with a copy of that emphasis.
+ */
+function groupWithWord(children: PhrasingContent[]) {
+  const out: PhrasingContent[] = []
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!
+    const previous = out.at(-1)
+    const split = child.type === 'citationMarker' && previous ? lastWord(previous) : null
+    if (!split) {
+      out.push(child)
+      continue
+    }
+    const group: CitationGroup = { type: 'citationGroup', children: [split.word], data: { hName: 'span', hProperties: { className: ['whitespace-nowrap'] } } }
+    out.pop()
+    if (split.rest) out.push(split.rest)
+    while (children[index]?.type === 'citationMarker') group.children.push(children[index++]!)
+    const next = children[index]
+    const punctuation = next?.type === 'text' ? /^[^\s\p{L}\p{N}]+/u.exec(next.value)?.[0] : undefined
+    if (next?.type === 'text' && punctuation) {
+      group.children.push({ type: 'text', value: punctuation })
+      const rest = next.value.slice(punctuation.length)
+      if (rest) out.push(group, { type: 'text', value: rest })
+      else out.push(group)
+    } else {
+      out.push(group)
+      index -= 1
+    }
+  }
+  return out
+}
+
+function lastWord(node: PhrasingContent): { rest: PhrasingContent | null; word: PhrasingContent } | null {
+  if (node.type === 'text') {
+    const word = /\S+$/.exec(node.value)
+    if (!word) return null
+    const rest = node.value.slice(0, word.index)
+    return { rest: rest ? { type: 'text', value: rest } : null, word: { type: 'text', value: word[0] } }
+  }
+  if (node.type === 'inlineCode' || (node.type as string) === 'inlineMath') return { rest: null, word: node }
+  if ((node.type === 'strong' || node.type === 'emphasis' || node.type === 'delete') && node.children.length) {
+    const split = lastWord(node.children.at(-1)!)
+    if (!split) return null
+    const kept = [...node.children.slice(0, -1), ...(split.rest ? [split.rest] : [])]
+    return { rest: kept.length ? { ...node, children: kept } as PhrasingContent : null, word: { ...node, children: [split.word] } as PhrasingContent }
+  }
+  return null
 }
 
 function split(value: string, allowed: ReadonlyMap<string, number>) {

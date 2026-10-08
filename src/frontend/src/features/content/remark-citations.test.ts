@@ -15,6 +15,7 @@ function transformAll(paragraphs: PhrasingContent[][], allowed: ReadonlyMap<stri
 const transform = (children: PhrasingContent[], allowed?: ReadonlyMap<string, number>) => transformAll([children], allowed)[0]!
 const text = (value: string): PhrasingContent => ({ type: 'text', value })
 const chip = (chunkId: string, claim?: string) => ({ type: 'citationMarker', chunkId, data: { hName: 'cite', hProperties: claim === undefined ? { dataChunkId: chunkId } : { dataChunkId: chunkId, dataClaim: claim } } })
+const nowrap = (...children: unknown[]) => ({ type: 'citationGroup', children, data: { hName: 'span', hProperties: { className: ['whitespace-nowrap'] } } })
 
 /** The marker sequence with nowrap groups unwrapped and neighbouring text joined, for tests about resolution only. */
 function flat(nodes: PhrasingContent[]): PhrasingContent[] {
@@ -96,5 +97,29 @@ describe('claims (test-first)', () => {
   test('Given a claim at the start of a paragraph, Then the previous paragraph is not part of it', () => {
     const [, second] = transformAll([[text('An earlier paragraph without a full stop')], [text(`It scores 28.4 BLEU [source:${a}].`)]])
     expect(flat(second!)).toMatchObject([text('It scores 28.4 BLEU'), chip(a, 'It scores 28.4 BLEU'), text('.')])
+  })
+})
+
+describe('nowrap grouping (test-first)', () => {
+  test('Given a chip after a word, Then the word, the chip and the punctuation after it share one nowrap span', () => {
+    expect(transform([text(`Attention replaces recurrence [source:${a}]. It also parallelises.`)])).toMatchObject([
+      text('Attention replaces '), nowrap(text('recurrence'), chip(a), text('.')), text(' It also parallelises.'),
+    ])
+  })
+
+  test('Given consecutive chips, Then they join the last word in one span', () => {
+    expect(transform([text(`Both approaches. [source:${b}] [source:${a}] Next.`)])).toEqual([
+      text('Both '), nowrap(text('approaches.'), chip(b, 'Both approaches.'), chip(a, 'Both approaches.')), text(' Next.'),
+    ])
+  })
+
+  test('Given the last word is emphasised, Then only that word moves into the span, still emphasised', () => {
+    expect(transform([{ type: 'strong', children: [text('multi-head attention')] }, text(` [source:${a}].`)])).toMatchObject([
+      { type: 'strong', children: [text('multi-head ')] }, nowrap({ type: 'strong', children: [text('attention')] }, chip(a), text('.')),
+    ])
+  })
+
+  test('Given a chip with no word before it, Then nothing is grouped', () => {
+    expect(transform([text(`[source:${a}] opens the paragraph.`)])).toEqual([chip(a), text(' opens the paragraph.')])
   })
 })
