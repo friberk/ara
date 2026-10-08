@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, update
 
 from app.models.jobs import BackgroundJob, JobOutbox
+from app.schemas.jobs import JobStatus
 
 
 def now() -> datetime:
@@ -169,3 +170,55 @@ async def recover(sessions) -> None:
             )
             .values(delivered_at=None)
         )
+
+
+def payload_uuid(payload: dict, key: str) -> UUID | None:
+    try:
+        return UUID(payload[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
+    """Link summary jobs through their payload paper and ingest jobs through their document."""
+    from app.models.research import Document, Paper
+
+    documents = {payload_uuid(job.payload, "document_id") for job in jobs if job.kind == "ingest"}
+    documents.discard(None)
+    document_papers = (
+        dict(
+            (
+                await session.execute(
+                    select(Document.id, Document.paper_id).where(Document.id.in_(documents))
+                )
+            ).all()
+        )
+        if documents
+        else {}
+    )
+
+    def linked_paper(job: BackgroundJob) -> UUID | None:
+        if job.kind == "summary":
+            return payload_uuid(job.payload, "paper_id")
+        if job.kind == "ingest":
+            return document_papers.get(payload_uuid(job.payload, "document_id"))
+        return None
+
+    paper_of = {job.id: linked_paper(job) for job in jobs}
+    papers = set(paper_of.values()) - {None}
+    titles = (
+        dict(
+            (await session.execute(select(Paper.id, Paper.title).where(Paper.id.in_(papers)))).all()
+        )
+        if papers
+        else {}
+    )
+    statuses = []
+    for job in jobs:
+        status = JobStatus.model_validate(job)
+        paper_id = paper_of.get(job.id)
+        # A deleted paper leaves no link rather than one that would 404.
+        if paper_id in titles:
+            status.paper_id, status.paper_title = paper_id, titles[paper_id]
+        statuses.append(status)
+    return statuses

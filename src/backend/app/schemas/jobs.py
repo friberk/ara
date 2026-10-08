@@ -30,6 +30,8 @@ class JobStatus(BaseModel):
     available_at: datetime
     created_at: datetime
     updated_at: datetime
+    paper_id: UUID | None = None
+    paper_title: str | None = None
 
     @computed_field
     @property
