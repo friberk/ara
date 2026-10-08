@@ -2,7 +2,8 @@ import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '@/test/render'
 import { mockApi } from '@/test/fetch-routes'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { GenerationSettingsProvider, useGenerationSettings } from './generation-settings'
+import { GenerationSettingsProvider } from './generation-settings'
+import { useGenerationSettings } from './generation-settings-context'
 import { ModelSwitcher } from './ModelSwitcher'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }

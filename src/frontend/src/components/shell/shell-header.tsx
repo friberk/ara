@@ -1,7 +1,7 @@
-import { createContext, useContext } from 'react'
+import { useContext } from 'react'
 import { createPortal } from 'react-dom'
+import { HeaderSlotContext } from './shell-header-context'
 
-export const HeaderSlotContext = createContext<HTMLElement | null>(null)
 
 /** Renders page-specific controls (a title, a chat switcher) into the shell's top bar. */
 export function ShellHeader({ children }: { children: React.ReactNode }) {

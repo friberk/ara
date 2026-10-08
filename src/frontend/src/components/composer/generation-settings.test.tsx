@@ -2,7 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { testClient } from '@/test/render'
 import { mockApi } from '@/test/fetch-routes'
-import { GenerationSettingsProvider, useGenerationSettings } from './generation-settings'
+import { GenerationSettingsProvider } from './generation-settings'
+import { useGenerationSettings } from './generation-settings-context'
 
 const model = (key: string, overrides: Record<string, unknown> = {}) => ({ key, provider: 'openai', model_id: key, display_name: key, status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000, ...overrides })
 afterEach(() => vi.unstubAllGlobals())

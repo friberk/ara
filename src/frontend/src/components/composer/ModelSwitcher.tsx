@@ -8,10 +8,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { unavailableReason, useSaveDefaults, type Purpose } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
-import { useGenerationSettings } from './generation-settings'
+import { effortLabel } from './effort'
+import { useGenerationSettings } from './generation-settings-context'
 
-const effortLabels: Record<string, string> = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
-export const effortLabel = (effort: string) => effortLabels[effort] ?? effort
 
 /** Compact model and reasoning-effort picker. The choice applies to the next request; "Set as default" saves it. */
 export function ModelSwitcher({ purpose, disabled, align = 'start', className }: { purpose?: Purpose; disabled?: boolean; align?: 'start' | 'end'; className?: string }) {

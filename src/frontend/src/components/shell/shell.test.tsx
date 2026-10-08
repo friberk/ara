@@ -2,7 +2,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { renderApp, renderWithProviders } from '@/test/render'
 import { json, mockApi, noContent } from '@/test/fetch-routes'
-import { HeaderSlotContext, ShellHeader } from './shell-header'
+import { ShellHeader } from './shell-header'
+import { HeaderSlotContext } from './shell-header-context'
 
 const paper = (id: string, title: string) => ({ id, title, authors: ['Ada Researcher'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: `d-${id}`, metadata_provenance: {} })
 const search = { id: 's1', provider: 'semantic_scholar', query: 'regular expressions', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T11:00:00Z' }

@@ -1,22 +1,8 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { GenerationSettings, Model } from '@/api/types'
-import { modelSupports, useModels, useSavedSettings, type Purpose } from '@/hooks/queries/models'
+import { modelSupports, useModels, useSavedSettings } from '@/hooks/queries/models'
+import { GenerationSettingsContext, type GenerationSettingsValue } from './generation-settings-context'
 
-type GenerationSettingsValue = {
-  /** Effective selection: the session choice, else the saved default, normalised to an effort the model supports. */
-  settings: GenerationSettings
-  setSettings: (next: GenerationSettings) => void
-  models: Model[]
-  selectedModel: Model | undefined
-  savedDefaults: GenerationSettings | null
-  loading: boolean
-  error: unknown
-  retry: () => void
-  /** True when the selected model and effort can serve this kind of generation. */
-  usableFor: (purpose: Purpose) => boolean
-}
-
-const GenerationSettingsContext = createContext<GenerationSettingsValue | null>(null)
 
 function normalise(models: Model[], value: GenerationSettings): GenerationSettings {
   const model = models.find((item) => item.key === value.model)
@@ -48,10 +34,4 @@ export function GenerationSettingsProvider({ children }: { children: React.React
     }
   }, [choice, models, saved])
   return <GenerationSettingsContext.Provider value={value}>{children}</GenerationSettingsContext.Provider>
-}
-
-export function useGenerationSettings() {
-  const context = useContext(GenerationSettingsContext)
-  if (!context) throw new Error('useGenerationSettings must be used within GenerationSettingsProvider.')
-  return context
 }

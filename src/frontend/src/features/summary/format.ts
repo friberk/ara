@@ -1,4 +1,4 @@
-import { effortLabel } from '@/components/composer/ModelSwitcher'
+import { effortLabel } from '@/components/composer/effort'
 
 export function effortText(effort: string) { return effort === 'none' ? 'No reasoning' : `${effortLabel(effort)} reasoning` }
 

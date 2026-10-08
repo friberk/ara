@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { AppSidebar } from './AppSidebar'
-import { HeaderSlotContext } from './shell-header'
+import { HeaderSlotContext } from './shell-header-context'
 
 const CommandPalette = lazy(() => import('./CommandPalette'))
 

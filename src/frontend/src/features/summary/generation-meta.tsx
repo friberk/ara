@@ -1,4 +1,4 @@
-import { useGenerationSettings } from '@/components/composer/generation-settings'
+import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { cn } from '@/lib/utils'
 import { effortText } from './format'
 

@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import type { ChatSummary, GenerationSettings, Paper } from '@/api/types'
-import { useGenerationSettings } from '@/components/composer/generation-settings'
+import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SummaryCard } from '@/features/summary'

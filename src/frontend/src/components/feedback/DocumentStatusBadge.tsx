@@ -2,8 +2,8 @@ import { CircleAlert, CircleCheck, FileQuestion, LoaderCircle } from 'lucide-rea
 import { Badge } from '@/components/ui/badge'
 import type { DocumentState } from '@/api/types'
 import { cn } from '@/lib/utils'
+import { documentStateLabels } from './document-state'
 
-export const documentStateLabels: Record<DocumentState, string> = { metadata_only: 'PDF needed', processing: 'Processing PDF', ready: 'Ready to read', failed: 'Processing failed' }
 const tone: Record<DocumentState, string> = {
   metadata_only: 'bg-muted text-muted-foreground',
   processing: 'bg-warning-muted text-warning',

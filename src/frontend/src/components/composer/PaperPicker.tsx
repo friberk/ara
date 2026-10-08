@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { documentStateLabels } from '@/components/feedback/DocumentStatusBadge'
+import { documentStateLabels } from '@/components/feedback/document-state'
 import { usePapers } from '@/hooks/queries/papers'
 
 /** Lists library papers; only papers with a processed PDF can be asked about. */
