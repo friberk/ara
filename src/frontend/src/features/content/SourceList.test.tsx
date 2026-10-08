@@ -43,11 +43,29 @@ test('Given a keyboard user, Then every source can be reached and opened without
   expect(onSelect).toHaveBeenLastCalledWith(citations[1], undefined)
 })
 
-test('Given the text the sources support, When a source is opened, Then onSelect also receives that text without its markers', async () => {
+const chunk = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`
+const lettered = 'abcdefab-cdef-4abc-8def-abcdefabcdef'
+
+test('Given the answer the sources support, When a page chip is opened, Then its claim is the sentences that cite that page', async () => {
   const onSelect = vi.fn()
-  const citations = [cite('11111111-1111-4111-8111-111111111111', 4)]
-  const context = `Heads capture syntax [source:${citations[0]!.chunk_id}]. They also track **semantics**. [source:${citations[0]!.chunk_id}]`
+  const citations = [cite(chunk(1), 4), cite(chunk(2), 9), cite(lettered, 4)]
+  const context = [
+    `Attention heads capture syntax [source:${chunk(1)}]. Convolutions are costly. [source:${chunk(2)}]`,
+    '',
+    `- Heads also track **semantics** [source:${lettered.toUpperCase()}]`,
+  ].join('\n')
   const { user } = renderWithProviders(<SourceList documentId="d1" citations={citations} context={context} onSelect={onSelect} />)
   await user.click(screen.getByRole('button', { name: 'Source, page 4' }))
-  expect(onSelect).toHaveBeenCalledWith(citations[0], 'Heads capture syntax. They also track **semantics**.')
+  expect(onSelect).toHaveBeenLastCalledWith(citations[0], 'Attention heads capture syntax Heads also track **semantics**')
+  await user.click(screen.getByRole('button', { name: 'Source, page 9' }))
+  expect(onSelect).toHaveBeenLastCalledWith(citations[1], 'Convolutions are costly.')
+})
+
+test('Given a page that no marker in the text cites, When its chip is opened, Then the claim is the whole text without markers', async () => {
+  const onSelect = vi.fn()
+  const citations = [cite(chunk(1), 4), cite(chunk(5), 2)]
+  const context = `Heads capture syntax [source:${chunk(1)}]. They also track **semantics**.`
+  const { user } = renderWithProviders(<SourceList documentId="d1" citations={citations} context={context} onSelect={onSelect} />)
+  await user.click(screen.getByRole('button', { name: 'Source, page 2' }))
+  expect(onSelect).toHaveBeenCalledWith(citations[1], 'Heads capture syntax. They also track **semantics**.')
 })

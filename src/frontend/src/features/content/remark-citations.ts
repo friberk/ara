@@ -35,6 +35,28 @@ export function stripCitationMarkers(text: string) {
   return text.replace(new RegExp(markerPattern, 'g'), '')
 }
 
+/**
+ * The claims in raw answer or summary text that cite any of the given chunks, in order and once each. Each line is
+ * read as its own block, without list, heading or quote markers, and a claim ends at its marker as in the rendered
+ * text; Markdown emphasis is left in.
+ */
+export function citingClaims(text: string, chunkIds: ReadonlySet<string>) {
+  const claims: string[] = []
+  for (const line of text.split('\n')) {
+    const marker = new RegExp(markerPattern, 'g')
+    const block = line.replace(/^\s*(?:[-*+]|\d+[.)]|#{1,6}|>)\s+/, '')
+    let plain = ''
+    let cursor = 0
+    for (let match = marker.exec(block); match; match = marker.exec(block)) {
+      plain += block.slice(cursor, match.index)
+      cursor = match.index + match[0].length
+      const claim = claimBefore(plain)
+      if (chunkIds.has((match[1] ?? '').toLowerCase()) && claim && !claims.includes(claim)) claims.push(claim)
+    }
+  }
+  return claims
+}
+
 export type RemarkCitationsOptions = {
   /** Page of each lowercase chunk id that may render. Markers for any other chunk are removed. */
   allowed: ReadonlyMap<string, number>
@@ -67,16 +89,21 @@ export function remarkCitations({ allowed }: RemarkCitationsOptions) {
 // A sentence ends at . ! or ?, perhaps followed by closing quotes or brackets, and then whitespace.
 const sentenceEnd = /[.!?]["'”’)\]]*\s+/g
 
+/** The text since the last sentence boundary: the claim a marker at the end of `text` supports. */
+function claimBefore(text: string) {
+  const sentence = text.trimEnd()
+  let start = 0
+  for (const match of sentence.matchAll(sentenceEnd)) start = match.index + match[0].length
+  return sentence.slice(start).trim()
+}
+
 /** Gives each marker the text since the last sentence boundary of its block; a run of markers shares one claim. */
 function recordClaims(block: Parent) {
   let text = ''
   const walk = (parent: Parent) => {
     for (const child of parent.children) {
       if (child.type === 'citationMarker') {
-        const sentence = text.trimEnd()
-        let start = 0
-        for (const match of sentence.matchAll(sentenceEnd)) start = match.index + match[0].length
-        const claim = sentence.slice(start).trim()
+        const claim = claimBefore(text)
         if (claim) child.data.hProperties.dataClaim = claim
       } else if (child.type === 'break') text += ' '
       else if ('value' in child && typeof child.value === 'string' && child.type !== 'html') text += child.value
