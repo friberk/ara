@@ -1,0 +1,201 @@
+// Test-after coverage (ARA-036 TDD audit): behaviour that shipped before any test covered it. Each test was
+// confirmed by breaking the behaviour it covers, watching the test fail, and restoring the code.
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { testClient } from '@/test/render'
+import { json, mockApi } from '@/test/fetch-routes'
+import { queryKeys } from '@/lib/query-keys'
+import { ask, assistantMessage, chatRow, mount, paper, settings, userMessage } from './pane-test-kit'
+
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+/** A stream the test feeds frame by frame. */
+function controlledStream() {
+  let enqueue: (text: string) => void = () => {}
+  let close = () => {}
+  const handler = ({ init }: { init?: RequestInit }) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        enqueue = (text) => controller.enqueue(new TextEncoder().encode(text))
+        close = () => controller.close()
+        init?.signal?.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')))
+      },
+    })
+    return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  return { handler, push: (event: string, data: unknown) => enqueue(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`), close: () => close() }
+}
+const never = () => new Promise<Response>(() => {})
+
+test('Given a question sent with Enter, Then one answer is requested and the composer clears', async () => {
+  const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': controlledStream().handler })
+  const { user } = mount('/papers/p1/chats/c1')
+  const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
+  await waitFor(() => expect(input).toBeEnabled())
+  await user.type(input, 'Sent with Enter{Enter}')
+  await waitFor(() => expect(calls.filter((call) => call.path === '/chats/c1/messages/stream')).toHaveLength(1))
+  expect(input).toHaveValue('')
+})
+
+test('Given an answer starting, Then it reads "Preparing a response…" and screen readers hear it start and finish', async () => {
+  const stream = controlledStream()
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': stream.handler })
+  const { user } = mount('/papers/p1/chats/c1')
+  await ask(user, 'Anything?')
+  const pending = await screen.findByRole('article', { name: 'Assistant message' })
+  expect(pending).toHaveTextContent('Preparing a response…')
+  expect(screen.getByText('Assistant is responding.')).toBeInTheDocument()
+  stream.push('message.started', { message_id: 'm1' })
+  stream.push('message.completed', assistantMessage('m1', 'Done now.'))
+  stream.close()
+  expect(await screen.findByText('Response complete.')).toBeInTheDocument()
+})
+
+test('Given the history refetches mid-stream, Then the question shows once and the live draft replaces its saved partial', async () => {
+  const stream = controlledStream()
+  let saved: unknown[] = []
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': () => json({ items: saved }), 'POST /chats/c1/messages/stream': stream.handler })
+  const client = testClient()
+  const { user } = mount('/papers/p1/chats/c1', { client })
+  await ask(user, 'Mid-stream question?')
+  stream.push('message.started', { message_id: 'm1' })
+  stream.push('message.delta', { text: 'Live draft text' })
+  await screen.findByText('Live draft text')
+  saved = [userMessage('u1', 'Mid-stream question?'), assistantMessage('m1', 'Live', { state: 'processing' })]
+  await client.refetchQueries({ queryKey: queryKeys.messages('c1') })
+  expect(client.getQueryData(queryKeys.messages('c1'))).toEqual({ items: saved })
+  // The query notifies React on a later tick; let that render land before reading the thread.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(screen.getAllByRole('article', { name: 'Your message' })).toHaveLength(1)
+  expect(screen.getByText('Live draft text')).toBeInTheDocument()
+  expect(screen.queryByText('Live')).not.toBeInTheDocument()
+})
+
+test('Given streaming text, Then the thread follows it near the bottom and holds still once the reader scrolls up', async () => {
+  const stream = controlledStream()
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': stream.handler })
+  const { user } = mount('/papers/p1/chats/c1')
+  const thread = await screen.findByRole('region', { name: 'Conversation' })
+  let top = 0
+  Object.defineProperty(thread, 'scrollHeight', { configurable: true, value: 2000 })
+  Object.defineProperty(thread, 'clientHeight', { configurable: true, value: 500 })
+  Object.defineProperty(thread, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
+  await ask(user, 'Follow me?')
+  stream.push('message.started', { message_id: 'm1' })
+  top = 1450
+  fireEvent.scroll(thread)
+  stream.push('message.delta', { text: 'First words' })
+  await screen.findByText('First words')
+  expect(top).toBe(2000)
+  top = 0
+  fireEvent.scroll(thread)
+  stream.push('message.delta', { text: ' and more' })
+  await screen.findByText('First words and more')
+  expect(top).toBe(0)
+})
+
+test('Given a copy that the browser refuses, Then the copy button says so', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [assistantMessage('m1', 'Some answer.')] } })
+  const { user } = mount('/papers/p1/chats/c1')
+  const copy = await screen.findByRole('button', { name: 'Copy answer' })
+  vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('Denied'))
+  await user.click(copy)
+  expect(await screen.findByRole('button', { name: 'Could not copy. Select the text instead.' })).toBeVisible()
+})
+
+test('Given an interrupted answer with no text, Then it says no answer was saved', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [userMessage('u1', 'Lost?'), assistantMessage('m1', '', { state: 'interrupted' })] } })
+  mount('/papers/p1/chats/c1')
+  expect(within(await screen.findByRole('article', { name: 'Assistant message' })).getByText('No answer was saved.')).toBeVisible()
+})
+
+test('Given chats from today, this year and last year, Then each row shows its last activity at the right precision', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-08T15:00:00Z'))
+  const today = '2026-10-08T12:00:00Z'
+  const thisYear = '2026-03-02T12:00:00Z'
+  const lastYear = '2025-06-30T12:00:00Z'
+  mockApi({
+    ...settings,
+    'GET /chats': { items: [chatRow('c1', { title: 'Today chat', last_activity_at: today }), chatRow('c2', { title: 'Spring chat', last_activity_at: thisYear }), chatRow('c3', { title: 'Old chat', last_activity_at: lastYear })] },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await user.click(await screen.findByRole('button', { name: 'Today chat' }))
+  const format = (iso: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, options).format(new Date(iso))
+  expect(await screen.findByRole('menuitemradio', { name: /^Today chat/ })).toHaveTextContent(format(today, { hour: 'numeric', minute: '2-digit' }))
+  const spring = screen.getByRole('menuitemradio', { name: /^Spring chat/ })
+  expect(spring).toHaveTextContent(format(thisYear, { month: 'short', day: 'numeric' }))
+  expect(spring).not.toHaveTextContent('2026')
+  expect(screen.getByRole('menuitemradio', { name: /^Old chat/ })).toHaveTextContent(format(lastYear, { month: 'short', day: 'numeric', year: 'numeric' }))
+})
+
+test('Given a paper with no chats, Then the switcher says there are none yet', async () => {
+  mockApi(settings)
+  const { user } = mount('/papers/p1')
+  await user.click(await screen.findByRole('button', { name: 'New conversation', expanded: false }))
+  expect(await screen.findByRole('menuitem', { name: 'No conversations yet' })).toBeInTheDocument()
+})
+
+test('Given the history still loading, Then a loading placeholder stands in for the thread', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': never })
+  mount('/papers/p1/chats/c1')
+  // The thread is open (its summary card shows) before the history placeholder is looked for.
+  await screen.findByRole('article', { name: 'Paper summary' })
+  expect(screen.getByRole('status', { name: 'Loading conversation' })).toBeInTheDocument()
+})
+
+test('Given a chat URL while the chat list is still loading, Then the pane waits instead of reporting the chat missing', async () => {
+  mockApi({ ...settings, 'GET /chats': never })
+  mount('/papers/p1/chats/c1')
+  expect(await screen.findByRole('status', { name: 'Loading conversation' })).toBeInTheDocument()
+  expect(screen.queryByText('Conversation not found')).not.toBeInTheDocument()
+})
+
+test('Given the chat list fails, Then the pane shows the error inline and Try again loads the chat', async () => {
+  let failures = 0
+  mockApi({
+    ...settings,
+    'GET /chats': () => (failures++ === 0 ? json({ code: 'UNAVAILABLE', message: 'Conversations could not load.' }, 503) : json({ items: [chatRow('c1')] })),
+    'GET /chats/c1/messages': { items: [userMessage('u1', 'Back again')] },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  expect(await screen.findByRole('alert')).toHaveTextContent('Conversations could not load.')
+  await user.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Back again')).toBeVisible()
+})
+
+test('Given a chat URL that is not in the list, Then the pane says so and offers a new conversation', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] } })
+  const { user } = mount('/papers/p1/chats/deleted-chat')
+  expect(await screen.findByRole('heading', { name: 'Conversation not found' })).toBeVisible()
+  const buttons = screen.getAllByRole('button', { name: 'New conversation' })
+  await user.click(buttons[buttons.length - 1]!)
+  await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent(/^\/papers\/p1$/))
+})
+
+test('Given a paper whose PDF failed, Then the composer explains how to enable questions', async () => {
+  mockApi(settings)
+  mount('/papers/p1', { value: { ...paper, document_status: 'failed' } })
+  expect(await screen.findByText('PDF processing failed. Attach a text-based PDF to ask questions.')).toBeVisible()
+  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
+})
+
+test('Given the server refuses a new chat, Then the reason is shown inline', async () => {
+  mockApi({ ...settings, 'POST /papers/p1/chats': () => json({ code: 'DOCUMENT_NOT_READY', message: 'Upload and process a paper PDF before starting a chat' }, 409) })
+  const { user } = mount('/papers/p1')
+  await ask(user, 'Can I start?')
+  expect(await screen.findByRole('alert')).toHaveTextContent('Upload and process a paper PDF before starting a chat')
+})
+
+test('Given a new chat, Then its thread opens and asks at once, without waiting for the chat list to refetch', async () => {
+  let listCalls = 0
+  const { calls } = mockApi({
+    ...settings,
+    'GET /chats': () => (listCalls++ === 0 ? json({ items: [] }) : never()),
+    'POST /papers/p1/chats': () => json({ id: 'c9', paper_id: 'p1', document_id: 'd1', title: 'Paper discussion', created_at: '2026-10-08T12:00:00Z' }, 201),
+    'POST /chats/c9/messages/stream': controlledStream().handler,
+  })
+  const { user } = mount('/papers/p1')
+  await ask(user, 'Straight away?')
+  await waitFor(() => expect(calls.filter((call) => call.path === '/chats/c9/messages/stream')).toHaveLength(1))
+  expect(screen.getByRole('article', { name: 'Your message' })).toHaveTextContent('Straight away?')
+})
