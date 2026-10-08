@@ -71,6 +71,11 @@ test('Given display math with a % comment, Then only the comment is dropped and 
   expect([...display.querySelectorAll('mn')].map((number) => number.textContent)).toEqual(['1', '2'])
 })
 
+test('Given a link whose URL has escaped parentheses, Then the link keeps its URL', () => {
+  renderWithProviders(<Markdown content={'Read [the note](https://example.org/f\\(x\\)).'} />)
+  expect(screen.getByRole('link', { name: 'the note' })).toHaveAttribute('href', 'https://example.org/f(x)')
+})
+
 // Test-after (ARA-035 audit): trust: false shipped before a test covered it.
 test('Given TeX that asks for a link, Then the math renders no link', () => {
   renderWithProviders(<Markdown content={'See \\(\\href{https://example.org}{x}\\) and \\(\\url{https://example.org}\\).'} />)

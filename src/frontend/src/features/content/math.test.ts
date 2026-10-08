@@ -88,4 +88,15 @@ describe('normalizeMath', () => {
     expect(normalizeMath('1. Step\n    - nested \\(x\\)')).toBe('1. Step\n    - nested $$x$$')
     expect(normalizeMath('Text\n    lazy \\(x\\)')).toBe('Text\n    lazy $$x$$')
   })
+
+  test('Given a link destination or autolink with escaped parentheses, Then the URL is left alone', () => {
+    expect(normalizeMath('See [f](https://example.org/f\\(x\\)) for \\(y\\).')).toBe('See [f](https://example.org/f\\(x\\)) for $$y$$.')
+    expect(normalizeMath('[f](<https://example.org/a\\(b\\)> "t \\(c\\)") and \\(d\\)')).toBe('[f](<https://example.org/a\\(b\\)> "t \\(c\\)") and $$d$$')
+    expect(normalizeMath('![plot](https://example.org/p\\(1\\).png)')).toBe('![plot](https://example.org/p\\(1\\).png)')
+    expect(normalizeMath('Go to <https://example.org/a\\(b\\)> now \\(c\\).')).toBe('Go to <https://example.org/a\\(b\\)> now $$c$$.')
+  })
+
+  test('Given math in link text, Then the text still converts', () => {
+    expect(normalizeMath('[\\(x\\)](https://example.org)')).toBe('[$$x$$](https://example.org)')
+  })
 })

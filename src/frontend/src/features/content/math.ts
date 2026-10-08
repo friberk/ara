@@ -1,11 +1,13 @@
 // Models write LaTeX as \( … \) and \[ … \]. Markdown reads those backslashes as escapes and prints "(x)",
-// so before parsing we rewrite them to remark-math's $$ syntax. Fenced, indented and inline code are copied verbatim.
+// so before parsing we rewrite them to remark-math's $$ syntax. Fenced, indented and inline code, link destinations
+// and autolinks are copied verbatim.
 
 /** Blockquote markers, indentation and an optional list marker at the start of a line. */
 const container = /^((?:[ \t]*>[ \t]?)*)([ \t]*)((?:[-*+]|\d{1,9}[.)])[ \t]+)?/
 const codeFence = /^(?:(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?)(`{3,}|~{3,})(.*)$/
 const listItem = /^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/
 const blankLine = /\n[ \t]*\n/y
+const autolink = /<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/y
 
 export function normalizeMath(markdown: string): string {
   if (!markdown.includes('\\(') && !markdown.includes('\\[')) return markdown
@@ -43,6 +45,23 @@ export function normalizeMath(markdown: string): string {
       }
     }
     const char = markdown[i]
+    if (char === ']' && markdown[i + 1] === '(') {
+      const close = destinationEnd(markdown, i + 2)
+      if (close !== -1) {
+        out += markdown.slice(i, close + 1)
+        i = close + 1
+        continue
+      }
+    }
+    if (char === '<') {
+      autolink.lastIndex = i
+      const link = autolink.exec(markdown)?.[0]
+      if (link) {
+        out += link
+        i += link.length
+        continue
+      }
+    }
     if (char === '`') {
       const run = runLength(markdown, i, '`')
       const close = codeSpanEnd(markdown, i + run, run)
@@ -116,6 +135,35 @@ function codeSpanEnd(text: string, from: number, length: number) {
     const run = runLength(text, j, '`')
     if (run === length) return j + run
     j += run - 1
+  }
+  return -1
+}
+
+/** Index of the parenthesis that closes a link's destination and title, or -1 when there is none in this paragraph. */
+function destinationEnd(text: string, from: number) {
+  let depth = 0
+  for (let j = from; j < text.length; j += 1) {
+    blankLine.lastIndex = j
+    if (blankLine.test(text)) return -1
+    const char = text[j]
+    if (char === '\\') j += 1
+    else if (char === '<' && !text.slice(from, j).trim()) j = text.indexOf('>', j)
+    else if ((char === '"' || char === "'") && /\s/.test(text[j - 1] ?? '')) j = quoteEnd(text, j + 1, char)
+    else if (char === '(') depth += 1
+    else if (char === ')') {
+      if (depth === 0) return j
+      depth -= 1
+    }
+    if (j === -1) return -1
+  }
+  return -1
+}
+
+/** Index of the quote that closes a link title, or -1. */
+function quoteEnd(text: string, from: number, quote: string) {
+  for (let j = from; j < text.length; j += 1) {
+    if (text[j] === '\\') j += 1
+    else if (text[j] === quote) return j
   }
   return -1
 }
