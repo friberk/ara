@@ -133,3 +133,19 @@ Strict tsc and the React Compiler lint rule also rejected the first versions of 
 To show the tests guard behaviour, seven deliberate breakages were applied one at a time and each was caught by a failing test, with sources restored after each. Final check: 85 tests passed across 25 files.
 
 The four feature agents were reminded to work strictly red-first and to report red evidence for review.
+
+### UI overhaul: content and research merges
+
+The content agent (ARA-035) and the research agent (ARA-038) reported test-first work with real red excerpts, and the lead merged both with `--no-ff`. Integrated result: 147 tests passing and a 393 KB main chunk.
+
+Corrections from the agents:
+- **Content:** jsdom MathML elements lack `style`, which broke accessibility queries, so the tests now use `hidden: true`.
+- **Content:** the citation dialog lost focus on close; the chip is now nested in `DialogTrigger`.
+- **Research:** a background refetch after saving showed a spurious rate-limit alert.
+
+The research agent stated plainly that its visual-fix commit and about a dozen small behaviours were implemented without tests. It was asked to add labelled test-after coverage with mutation checks.
+
+Lead follow-up:
+- Saving a paper had invalidated every loaded search page, which re-queried OpenAlex or Semantic Scholar. The red test showed `saved_paper_id` staying null. The cache is now updated in place.
+- A characterisation test showed the agent's ToggleGroup role request was unnecessary, because Radix already renders `radiogroup`.
+- Full-suite runs failed 1–2 different tests each time. Each file passed alone, and the failures were 1 s `findBy` timeouts under 12-worker contention. The research agent independently diagnosed the same cause. Testing Library's async timeout is now 3 s, and three consecutive runs passed 150/150.

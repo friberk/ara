@@ -19,15 +19,25 @@
     "library RTL: filter in URL, upload dropzone validation",
     "e2e/research.spec.ts E2E-01/E2E-02 and mobile shell"
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/src/features/research",
     "src/frontend/src/features/library",
     "src/frontend/src/features/activity",
     "src/frontend/src/features/settings"
   ],
-  "commits": [],
+  "commits": [
+    "5147a84",
+    "b5d1683",
+    "2ab7e75",
+    "3021165",
+    "4e35c46",
+    "406cc21",
+    "56d6dab",
+    "de4cd61",
+    "78609a5"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Research agent: 20 tests written first and all red against the legacy pages. Most failed on the missing new page; two were genuine behavioural reds (the rate-limit copy and the empty-library link). Later reds: home suggestions, a dropped space in an accessible name, and a background refetch 429 alert. Not test-first, stated by the agent: 56d6dab visual fixes and about 12 smaller behaviours. A test-after coverage task is in progress. Lead: useSavePaper now marks saved hits in place instead of re-querying providers (78609a5; red: saved_paper_id stayed null). Full-suite 1 s timeouts under 12 workers were fixed with asyncUtilTimeout 3000; 3 consecutive runs passed 150/150. E2E research.spec is written, pending a serial run.",
   "updated_at": "2026-10-08"
 }
