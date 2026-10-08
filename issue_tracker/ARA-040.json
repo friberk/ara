@@ -16,15 +16,22 @@
     "impeccable-finish-reviewer verdict",
     "impeccable-documenter output"
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "DESIGN.md",
     "README.md",
     "docs/frontend-report.md",
     "docs/agent-development-log.md"
   ],
-  "commits": [],
+  "commits": [
+    "a0ba68b",
+    "56598b6",
+    "1141a93",
+    "345996e",
+    "c48d71c",
+    "2189e1b"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Impeccable detector: 0 findings. Fresh finish review of 36 captures returned disposition 'fix' with 7 material items. After the fix batch (all test-first, mutation-checked), the same reviewer's verdict pass scored fixes 1-6 resolved: passage-level evidence jump, matching dark mark, Activity hides internal jobs, faded thread edge, Attach PDF instead of dead controls, chip kept with its word. Non-material residual: the mark can start about one glyph late, a limit of pdf.js text-layer geometry also seen in pdf.js find highlighting. Fix 7 (DESIGN.md) goes to impeccable-documenter. Final: Vitest 338/338, ESLint 0, tsc clean, Playwright 8/8 on a fresh e2e DB.",
   "updated_at": "2026-10-08"
 }

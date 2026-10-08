@@ -50,3 +50,34 @@ src/App.tsx; src/index.css; src/api/client.ts; src/api/types.ts (generated schem
 - Observed two real rendering failures before implementation: persisted Luna/low label missing while model control was Terra/high; streaming partial Luna/low label also missing.
 - Corrected both and ran complete npm check: strict TypeScript, ESLint, 5files/21tests passed. npm build passed (main467.62KB, deferred paper173.96KB, CSS24.24KB).
 - Only src/components/ChatPanel.tsx and src/pages/workflows.test.tsx changed for this correction. No new dependencies, root E2E/script edits, or paid generation runs.
+
+## UI overhaul (2026-10-08, ARA-033 to ARA-040)
+
+The user rejected the first frontend and pinned a chat-centred shadcn workspace in the class of ChatGPT, Claude, Elicit and Undermind. They asked for shadcn's default neutral black-and-white palette, light and dark themes following the system, an in-app PDF viewer, and a sleek model switcher.
+
+### Process
+The work ran on `feat/ui-overhaul` with git worktrees and agents that owned disjoint parts of the code:
+- a backend history API agent
+- content (Markdown, math, citations)
+- conversation (chat and summary)
+- workspace (PDF reader and evidence jump)
+- research (search, library, activity, settings)
+- a later evidence fix after the review
+
+The lead built the foundation and the cross-module contracts, integrated each branch, and ran the serial E2E suite. The user required TDD-first. Where work had been tested after the fact, the agents audited it, labelled it test-after and verified it with mutation checks.
+
+### Result
+- **Shell:** shadcn radix-nova with neutral oklch tokens and self-hosted Geist. A collapsible sidebar lists papers and recent chats and searches. There is a ⌘K palette.
+- **Home:** one composer that searches OpenAlex or Semantic Scholar, or asks a library paper.
+- **Search:** results render as a research thread that shows each paper's saved state.
+- **Library and Activity:** the library filter is kept in the URL, and the upload dialog opens from the library. Activity shows readable stages and offers retry.
+- **Settings:** default model, reasoning effort and theme.
+- **Paper workspace:** a resizable split between a pdf.js reader and the conversation. The summary is the first card. Answers stream with inline page chips. A chip jumps to the page and marks the supporting sentence character-precisely. On mobile, the workspace becomes Chat/PDF/Details tabs.
+
+### Verification
+- Vitest 338/338.
+- ESLint 0 problems and strict tsc clean.
+- Playwright 8/8 on a fresh e2e database.
+- Impeccable detector 0 findings.
+- A fresh-context finish review scored every material UI fix resolved. Details are in docs/agent-development-log.md and ARA-033 to ARA-040.
+- First-paint JS is about 550 KB raw (172 KB gzip). The workspace and pdf.js load lazily.
