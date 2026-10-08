@@ -1,6 +1,7 @@
 // Test-after coverage (ARA-038): these behaviours shipped before their tests. Each test was checked
 // against a deliberate mutation of the implementation to confirm it can fail.
 import { screen, waitFor, within } from '@testing-library/react'
+import { toast } from 'sonner'
 import { renderApp } from '@/test/render'
 import { json, mockApi } from '@/test/fetch-routes'
 
@@ -64,4 +65,32 @@ test('Given jobs cannot load, Then the error is shown inline and Try again reloa
   await user.click(within(alert).getByRole('button', { name: 'Try again' }))
   await waitFor(() => expect(within(jobsList()).getAllByRole('listitem')).toHaveLength(1))
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+describe('retrying a failed ingest job', () => {
+  // Sonner keeps toasts in a module-level store and replays active ones to a new Toaster; clear them between tests.
+  afterEach(() => { toast.dismiss() })
+  const failedJob = { ...base, id: 'j9', kind: 'ingest', state: 'failed', stage: 'failed', progress: 30, error: { code: 'PDF_UNREADABLE', message: 'The PDF has no extractable text.' }, paper_id: 'p1', paper_title: 'Traceable research systems', created_at: '2026-10-08T10:00:00Z', updated_at: '2026-10-08T10:05:00Z' }
+  const rowOf = async () => (await screen.findByRole('heading', { level: 2, name: 'PDF processing' })).closest('li') as HTMLElement
+
+  test('Given a retry in flight, Then the button reads Retrying… and stays disabled until it is queued', async () => {
+    let finish: (response: Response) => void = () => {}
+    mockApi({ 'GET /jobs': { items: [failedJob] }, 'POST /jobs/j9/retry': () => new Promise<Response>((done) => { finish = done }) })
+    const { user } = renderApp('/activity')
+    const row = await rowOf()
+    await user.click(within(row).getByRole('button', { name: 'Retry processing' }))
+    expect(await within(row).findByRole('button', { name: 'Retrying…' })).toBeDisabled()
+    finish(json({ ...failedJob, state: 'queued', stage: 'queued', error: null }))
+    expect(await screen.findByText('Processing queued again')).toBeVisible()
+  })
+
+  test('Given the retry is refused, Then the reason is shown inline in the row and retrying stays possible', async () => {
+    mockApi({ 'GET /jobs': { items: [failedJob] }, 'POST /jobs/j9/retry': () => json({ code: 'JOB_NOT_RETRYABLE', message: 'This job can no longer be retried.', request_id: 'r1' }, 409) })
+    const { user } = renderApp('/activity')
+    const row = await rowOf()
+    await user.click(within(row).getByRole('button', { name: 'Retry processing' }))
+    expect(await within(row).findByRole('alert')).toHaveTextContent('This job can no longer be retried.')
+    expect(within(row).getByRole('button', { name: 'Retry processing' })).toBeEnabled()
+    expect(screen.queryByText('Processing queued again')).not.toBeInTheDocument()
+  })
 })
