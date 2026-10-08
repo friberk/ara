@@ -114,8 +114,9 @@ test('Given a metadata-only paper, Then the composer is disabled and the footnot
   mount('/papers/p1', { value: { ...paper, document_status: 'metadata_only', active_document_id: null } })
   expect(await screen.findByText('Attach a PDF to ask questions about this paper.')).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
-  expect(within(screen.getByRole('group', { name: 'Suggested questions' })).getByRole('button', { name: 'What datasets are used?' })).toBeDisabled()
-  expect(await within(screen.getByRole('article', { name: 'Paper summary' })).findByRole('button', { name: 'Generate summary' })).toBeDisabled()
+  // Finish review: no dead controls. Questions are offered once the PDF is ready; the summary card offers the next step.
+  expect(screen.queryByRole('group', { name: 'Suggested questions' })).not.toBeInTheDocument()
+  expect(await within(screen.getByRole('article', { name: 'Paper summary' })).findByRole('button', { name: 'Attach PDF' })).toBeEnabled()
 })
 
 test('Given several chats, When another is chosen in the switcher, Then its URL opens and an earlier PDF is marked', async () => {

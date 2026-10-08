@@ -2,11 +2,13 @@ import { ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 /** The scrolling thread column with the composer docked beneath it. */
-export function ThreadLayout({ scrollRef, onScroll, away, onLatest, composer, children }: {
+export function ThreadLayout({ scrollRef, onScroll, away, scrolled = false, onLatest, composer, children }: {
   scrollRef: React.Ref<HTMLDivElement>
   onScroll: () => void
   /** The reader has scrolled up from the newest content. */
   away: boolean
+  /** Scrolled away from the top: fade the top edge under the conversation header. */
+  scrolled?: boolean
   onLatest: () => void
   composer: React.ReactNode
   children: React.ReactNode
@@ -20,7 +22,8 @@ export function ThreadLayout({ scrollRef, onScroll, away, onLatest, composer, ch
           role="region"
           aria-label="Conversation"
           tabIndex={0}
-          className="absolute inset-0 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+          data-scrolled={scrolled || undefined}
+          className="absolute inset-0 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset data-scrolled:[mask-image:linear-gradient(to_bottom,transparent,black_24px)]"
         >
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-4 pt-2 pb-10">{children}</div>
         </div>

@@ -11,9 +11,14 @@ export function useFollowBottom(signal: string) {
   const ref = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const [away, setAway] = useState(false)
+  // Scrolled away from the top: the viewport fades its top edge so content never looks sliced under the header.
+  const [scrolled, setScrolled] = useState(false)
   useLayoutEffect(() => {
     const element = ref.current
-    if (element && following.current) element.scrollTop = element.scrollHeight
+    if (element && following.current) {
+      element.scrollTop = element.scrollHeight
+      setScrolled(element.scrollTop > 0)
+    }
   }, [signal])
   function onScroll() {
     const element = ref.current
@@ -21,6 +26,7 @@ export function useFollowBottom(signal: string) {
     const near = element.scrollHeight - element.scrollTop - element.clientHeight < followDistance
     following.current = near
     setAway(!near)
+    setScrolled(element.scrollTop > 0)
   }
   function stick() {
     following.current = true
@@ -33,5 +39,5 @@ export function useFollowBottom(signal: string) {
     const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   }
-  return { scrollRef: ref, onScroll, away, stick, toLatest }
+  return { scrollRef: ref, onScroll, away, scrolled, stick, toLatest }
 }

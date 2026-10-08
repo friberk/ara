@@ -78,14 +78,26 @@ test('Given summaries fail to load, Then the error is inline and Try again loads
   expect(await within(card).findByText('Loaded summary.')).toBeInTheDocument()
 })
 
-test.each([
-  ['a PDF still processing', { ...paper, document_status: 'processing' as const }, settings, 'A summary can be generated when the PDF finishes processing.'],
-  ['a failed PDF', { ...paper, document_status: 'failed' as const }, settings, 'PDF processing failed. Attach a text-based PDF to generate a summary.'],
-  ['a model without structured output', paper, { ...settings, 'GET /models': { items: [{ ...luna, supports_structured_output: false }] } }, 'The selected model can’t write summaries. Choose another model in the composer.'],
-])('Given %s, Then Generate summary is disabled with the reason', async (_case, value, routes, reason) => {
-  mount(routes, value)
+// Finish review: a paper without a usable PDF offers the next step (or waits) instead of a disabled action.
+test('Given a PDF still processing, Then the card explains the wait and offers no action', async () => {
+  mount(settings, { ...paper, document_status: 'processing' as const })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
-  expect(await within(card).findByText(reason)).toBeVisible()
+  expect(await within(card).findByText('A summary can be generated when the PDF finishes processing.')).toBeVisible()
+  expect(within(card).queryByRole('button', { name: /Generate summary|Attach PDF/ })).not.toBeInTheDocument()
+})
+
+test('Given a failed PDF, Then the card explains why and offers Attach PDF', async () => {
+  mount(settings, { ...paper, document_status: 'failed' as const })
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  expect(await within(card).findByText('PDF processing failed. Attach a text-based PDF to generate a summary.')).toBeVisible()
+  expect(within(card).getByRole('button', { name: 'Attach PDF' })).toBeEnabled()
+  expect(within(card).queryByRole('button', { name: 'Generate summary' })).not.toBeInTheDocument()
+})
+
+test('Given a model without structured output, Then Generate summary is disabled with the reason', async () => {
+  mount({ ...settings, 'GET /models': { items: [{ ...luna, supports_structured_output: false }] } }, paper)
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  expect(await within(card).findByText('The selected model can’t write summaries. Choose another model in the composer.')).toBeVisible()
   expect(within(card).getByRole('button', { name: 'Generate summary' })).toBeDisabled()
 })
 

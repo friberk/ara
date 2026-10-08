@@ -24,7 +24,7 @@ export function NewConversation({ paper }: { paper: Paper }) {
   const generation = useGenerationSettings()
   const create = useCreateChat(paper.id)
   const [text, setText] = useState('')
-  const { scrollRef, onScroll, away, toLatest } = useFollowBottom('start')
+  const { scrollRef, onScroll, away, scrolled, toLatest } = useFollowBottom('start')
   const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading })
   const ready = canAsk(gate) && !create.isPending
 
@@ -47,11 +47,12 @@ export function NewConversation({ paper }: { paper: Paper }) {
       scrollRef={scrollRef}
       onScroll={onScroll}
       away={away}
+      scrolled={scrolled}
       onLatest={toLatest}
       composer={<ConversationComposer value={text} onValueChange={setText} onSubmit={() => ask(text)} gate={gate} sendable={!create.isPending} busy={create.isPending} />}
     >
       <SummaryCard paper={paper} />
-      <SuggestedQuestions disabled={!ready} onSelect={ask} />
+      {ready && <SuggestedQuestions onSelect={ask} />}
       <ErrorNotice error={create.error} />
     </ThreadLayout>
   )
