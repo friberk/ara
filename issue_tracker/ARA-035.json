@@ -17,12 +17,18 @@
     "math.test.ts",
     "remark-citations.test.ts"
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/src/features/content"
   ],
-  "commits": [],
+  "commits": [
+    "5fcbf84",
+    "cf5ceb8",
+    "b3c337c",
+    "44ab08c",
+    "5aaa1dd"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Content agent, test-first. Red: math.test and remark-citations.test failed on unresolved modules; component tests 16 failed / 25 passed against the lead's stubs (missing 'Source, page 7' button, math, table and the Sources group). After implementation, 2 failed with a jsdom MathML style TypeError; tests now query math with hidden:true. Visual round 1 found duplicate same-page chips, chip contrast about 4.35:1, lost dialog focus and HoverCard passive-listener errors on touch; each got a red test and a fix. Agent check: 72 tests. Lead integration after merge: npm run check 32 files/147 tests, build main 393.46KB. KaTeX CSS and JS are only in lazy chunks. Follow-up in progress (test-first): newline-preserving display math, indented code blocks, link destinations.",
   "updated_at": "2026-10-08"
 }
