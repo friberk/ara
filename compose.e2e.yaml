@@ -1,0 +1,33 @@
+# Test-only external HTTP fixtures; use project ara-e2e with compose.test.yaml.
+services:
+  external-fixtures:
+    image: ara-backend:development
+    init: true
+    command: ["python", "/fixtures/server.py"]
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3).close()"]
+      interval: 2s
+      timeout: 4s
+      retries: 20
+    mem_limit: 256m
+  api:
+    environment: &fixture-env
+      APP_ENV: test
+      OPENAI_API_KEY: fixture-test-key
+      OPENAI_BASE_URL: http://external-fixtures:8080/v1
+      OPENALEX_BASE_URL: http://external-fixtures:8080
+      SEMANTIC_SCHOLAR_BASE_URL: http://external-fixtures:8080/graph/v1
+      CORS_ORIGINS: '["http://localhost:5180","http://127.0.0.1:5180"]'
+      LLM_DAILY_BUDGET_USD: "100"
+    ports: !override
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      external-fixtures:
+        condition: service_healthy
+  worker:
+    environment: *fixture-env
+  frontend:
+    ports: !override
+      - "127.0.0.1:5180:5173"

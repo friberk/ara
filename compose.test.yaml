@@ -1,0 +1,39 @@
+# Use scripts/test-stack.py: it forces a separate project and never resets dev data.
+name: ara-test
+
+x-test-env: &test-env
+  APP_ENV: test
+  DATABASE_URL: postgresql+psycopg://ara_test:ara-test-postgres-local@postgres:5432/ara_test
+  ARA_TEST_DATABASE_URL: postgresql+psycopg://ara_test:ara-test-postgres-local@postgres:5432/ara_test
+  REDIS_URL: redis://:ara-test-redis-local@redis:6379/0
+  MINIO_ACCESS_KEY: ara-test
+  MINIO_SECRET_KEY: ara-test-minio-local
+  MINIO_BUCKET: research-pdfs-test
+  OPENAI_API_KEY: ""
+  OPENALEX_API_KEY: ""
+  SEMANTIC_SCHOLAR_API_KEY: ""
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: ara_test
+      POSTGRES_DB: ara_test
+      POSTGRES_PASSWORD: ara-test-postgres-local
+  redis:
+    environment:
+      REDIS_PASSWORD: ara-test-redis-local
+  minio:
+    environment:
+      MINIO_ROOT_USER: ara-test
+      MINIO_ROOT_PASSWORD: ara-test-minio-local
+  migrate:
+    environment: *test-env
+  storage-init:
+    environment: *test-env
+  api:
+    environment: *test-env
+    ports: !reset []
+  worker:
+    environment: *test-env
+  frontend:
+    ports: !reset []
