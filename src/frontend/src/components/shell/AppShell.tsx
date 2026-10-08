@@ -28,7 +28,7 @@ export function AppShell() {
   return (
     <GenerationSettingsProvider>
       <SidebarProvider className="h-svh overflow-hidden">
-        <a href="#main" className="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium shadow focus:not-sr-only focus:fixed focus:top-2 focus:left-2">Skip to content</a>
+        <a href="#main" className="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium shadow focus:not-sr-only focus:fixed focus:top-2 focus:left-1/2 focus:-translate-x-1/2">Skip to content</a>
         <AppSidebar onOpenSearch={() => openPalette(true)} />
         <div data-slot="sidebar-inset" className="relative flex h-svh min-w-0 flex-1 flex-col bg-background">
           <header className="flex h-12 shrink-0 items-center gap-1 px-2">

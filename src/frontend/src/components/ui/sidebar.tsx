@@ -514,7 +514,9 @@ function SidebarMenuButton({
     />
   )
 
-  if (!tooltip) {
+  // Tooltips only show on the collapsed desktop rail. Mounting an invisible tooltip elsewhere lets it take
+  // the first Escape, so a keyboard user could not close the mobile sheet in one press.
+  if (!tooltip || isMobile || state !== "collapsed") {
     return button
   }
 
@@ -530,7 +532,6 @@ function SidebarMenuButton({
       <TooltipContent
         side="right"
         align="center"
-        hidden={state !== "collapsed" || isMobile}
         {...tooltip}
       />
     </Tooltip>

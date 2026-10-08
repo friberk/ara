@@ -80,3 +80,27 @@ test('Given a header slot, Then page controls render into it and nothing renders
   renderWithProviders(<Routes><Route path="/" element={<ShellHeader><span>Orphan</span></ShellHeader>} /></Routes>)
   expect(screen.queryByText('Orphan')).not.toBeInTheDocument()
 })
+
+test('Given the mobile sidebar is open, When Escape is pressed once, Then the sheet closes', async () => {
+  const original = window.matchMedia
+  window.matchMedia = ((query: string) => ({ matches: query.includes('max-width'), media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia
+  try {
+    mockApi({})
+    const { user } = renderApp('/')
+    await user.click(screen.getByRole('button', { name: 'Toggle Sidebar' }))
+    expect(await screen.findByRole('navigation', { name: 'Workspace' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Workspace' })).not.toBeInTheDocument())
+  } finally {
+    window.matchMedia = original
+  }
+})
+
+test('Given the desktop sidebar collapsed to icons, When an item is focused, Then its tooltip names it', async () => {
+  mockApi({})
+  const { user } = renderApp('/')
+  await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Toggle Sidebar' }))
+  await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
+  within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name: 'Library' }).focus()
+  expect(await screen.findByRole('tooltip', { name: 'Library' })).toBeInTheDocument()
+})
