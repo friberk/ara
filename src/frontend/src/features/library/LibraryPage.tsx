@@ -106,7 +106,7 @@ export default function LibraryPage() {
             {items.map((paper) => <li key={paper.id}><PaperRow paper={paper} /></li>)}
           </ul>
         )}
-        {papers.data && <ErrorNotice error={papers.error} retry={() => void papers.fetchNextPage()} className="mt-2" />}
+        {papers.isFetchNextPageError && <ErrorNotice error={papers.error} retry={() => void papers.fetchNextPage()} className="mt-2" />}
         {papers.hasNextPage && !papers.isFetchNextPageError && (
           <div className="flex justify-center border-t pt-6">
             <Button variant="outline" disabled={papers.isFetchingNextPage} aria-busy={papers.isFetchingNextPage} onClick={() => void papers.fetchNextPage()}>

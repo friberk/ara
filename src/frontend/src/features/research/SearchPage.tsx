@@ -67,7 +67,8 @@ function SearchThread({ params, onSearch }: { params: SearchParams; onSearch: (n
           {hits.map((hit) => <li key={`${hit.provider}:${hit.external_id}`}><PaperCard hit={hit} /></li>)}
         </ol>
       )}
-      {search.data && <ErrorNotice error={searchError(search.error, params.provider)} retry={() => void search.fetchNextPage()} className="mt-2" />}
+      {/* Loaded results stay valid when a background refresh fails; only a failed Load more needs a retry. */}
+      {search.isFetchNextPageError && <ErrorNotice error={searchError(search.error, params.provider)} retry={() => void search.fetchNextPage()} className="mt-2" />}
       {search.hasNextPage && !search.isFetchNextPageError && (
         <div className="flex justify-center border-t pt-6">
           <Button variant="outline" disabled={search.isFetchingNextPage} aria-busy={search.isFetchingNextPage} onClick={() => void search.fetchNextPage()}>
