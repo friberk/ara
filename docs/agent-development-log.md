@@ -119,3 +119,17 @@ The user asked whether the work followed TDD. Audit result:
 - **Recent-list change:** the only lead change that followed red-green (2 failing tests, then green).
 
 The ARA-033 verification text had said "Red/green observed", which overstated the process; it now states this accurately. For the remaining lead work, tests come first, and each feature agent's red evidence is checked when it reports.
+
+### Foundation component tests
+
+The user asked for every foundation component to have its own tests, and set a standing rule: TDD-first from now on. Because the foundation code already existed, this was a test backfill, not test-first work.
+
+The lead added 54 tests across the API client, composer, model and provider switchers, paper picker, feedback, upload, jobs, theme, sidebar, palette, header slot and query hooks. The new tests exposed two real defects:
+- `UploadDropzone` forwarded the mutation's extra arguments (the File and mutation context) to `onAccepted`.
+- The `renderWithProviders` rerender lost its providers ("No QueryClient set").
+
+Strict tsc and the React Compiler lint rule also rejected the first versions of two tests: unsafe `matchMedia` casts, and probe components reassigning outer variables. Those tests were rewritten with `renderHook`.
+
+To show the tests guard behaviour, seven deliberate breakages were applied one at a time and each was caught by a failing test, with sources restored after each. Final check: 85 tests passed across 25 files.
+
+The four feature agents were reminded to work strictly red-first and to report red evidence for review.

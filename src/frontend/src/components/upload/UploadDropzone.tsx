@@ -55,7 +55,7 @@ export function UploadDropzone({ paperId, onAccepted, onSettled, title, descript
           <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div className="min-w-0 flex-1"><p className="truncate text-sm">{file.name}</p><p className="tabular text-xs text-muted-foreground">{formatSize(file.size)}</p></div>
           <Button size="icon-sm" variant="ghost" aria-label="Remove file" disabled={upload.isPending} onClick={() => { choose(null); if (input.current) input.current.value = '' }}><X /></Button>
-          <Button size="sm" disabled={!!problem || upload.isPending} onClick={() => upload.mutate(file, { onSuccess: onAccepted })}>{upload.isPending ? 'Uploading…' : 'Upload PDF'}</Button>
+          <Button size="sm" disabled={!!problem || upload.isPending} onClick={() => upload.mutate(file, { onSuccess: (accepted) => onAccepted?.(accepted) })}>{upload.isPending ? 'Uploading…' : 'Upload PDF'}</Button>
         </div>
       )}
       <ErrorNotice error={problem ? new Error(problem) : upload.error} />
