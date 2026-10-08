@@ -65,6 +65,13 @@ test('Given \\( \\) and \\[ \\] LaTeX, Then inline and display math render in pl
   expect(container).not.toHaveTextContent('(O(n^2d))')
 })
 
+// Test-after (ARA-035 audit): trust: false shipped before a test covered it.
+test('Given TeX that asks for a link, Then the math renders no link', () => {
+  renderWithProviders(<Markdown content={'See \\(\\href{https://example.org}{x}\\) and \\(\\url{https://example.org}\\).'} />)
+  // KaTeX would put any link in its aria-hidden HTML layer, where a pointer can still follow it.
+  expect(screen.queryByRole('link', { hidden: true })).toBeNull()
+})
+
 test('Given currency amounts, Then the dollar signs stay plain text', () => {
   renderWithProviders(<Markdown content="Training cost between $5 and $10 per hour." />)
   expect(screen.getByText('Training cost between $5 and $10 per hour.')).toBeVisible()

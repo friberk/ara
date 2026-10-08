@@ -50,4 +50,21 @@ describe('normalizeMath', () => {
   test('Given plain currency and existing $$ math, Then nothing changes', () => {
     expect(normalizeMath('Costs $5 and $10, and $$x$$ stays.')).toBe('Costs $5 and $10, and $$x$$ stays.')
   })
+
+  // Test-after (ARA-035 audit): these branches shipped before a test covered them.
+  test('Given display math wrapped across quoted lines, Then the quote markers are not read as TeX', () => {
+    expect(normalizeMath('> \\[\n> a = b\n> \\]')).toBe('> $$\n> a = b\n> $$')
+  })
+
+  test('Given math that starts or ends with a dollar, Then padding keeps the fence from growing', () => {
+    expect(normalizeMath('Escaped \\(\\$\\) sign.')).toBe('Escaped $$ \\$ $$ sign.')
+  })
+
+  test('Given display math in a heading, Then it stays inline so the heading survives', () => {
+    expect(normalizeMath('## Cost \\[O(n)\\]')).toBe('## Cost $$O(n)$$')
+  })
+
+  test('Given a backtick line whose info contains a backtick, Then it is a code span, not a fence', () => {
+    expect(normalizeMath('```js`x```\n\\(y\\)')).toBe('```js`x```\n$$y$$')
+  })
 })
