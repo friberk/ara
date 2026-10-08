@@ -91,3 +91,22 @@ The user instructed: “Merge to main. Keep the branch for archival purposes.”
   - Four disjoint frontend feature agents in their own worktrees: content, conversation, workspace/reader, and research/library.
   - Serial end-to-end verification, then a fresh Impeccable finish review and regenerated design documentation.
 - The brand commitment in PRODUCT.md now records the user-pinned direction. Issues: ARA-033 to ARA-040.
+
+### UI overhaul: backend history API (ARA-034)
+
+A backend agent worked in its own worktree on `feat/ui-api` and owned migration 0004 and the API schemas.
+
+**Red phase:** the targeted run had 16 failures and 13 passes (`ImportError` for `title_from_question`, 404 on the new routes, `KeyError: 'saved_paper_id'`, an unfiltered job list, and the DELETE preflight returning `400 Disallowed CORS method`).
+
+**Corrections during implementation:**
+- Pydantic rejected `SearchResult` instances in a `list[SearchHit]` field, so the integration now builds `SearchHit` items.
+- The first full run failed only the readiness test, which still pinned revision 0003. The pin moved to `0004_workspace_history`.
+
+**Agent's final run:** 74 passed and Ruff was clean.
+
+**Trailer request:** mid-run, the user asked that commits carry no Co-Authored-By trailer and that existing ones be amended. The lead stripped the trailer from the three overhaul commits with `git filter-branch --msg-filter` (trees verified identical) and repointed the untouched feature worktrees. It then rebased `feat/ui-api` onto the rewritten tip, stripped the trailer from the six backend commits, and merged by fast-forward.
+
+**Lead verification:**
+- Ran `docker compose run --rm migrate` on the development stack; readiness returned ready, and `GET /chats` returned real chats with paper titles.
+- Independently reran `python3 scripts/test-stack.py test`: 74 passed in 14.54s.
+- Regenerated `src/api/generated.ts` from the e2e test API on port 8001, matching CI, and replaced the provisional frontend types with generated aliases. Vitest passed 28 of 28.

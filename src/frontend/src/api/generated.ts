@@ -264,6 +264,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent Chats */
+        get: operations["recent_chats_api_v1_chats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Chat */
+        delete: operations["delete_chat_api_v1_chats__chat_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Chat */
+        patch: operations["rename_chat_api_v1_chats__chat_id__patch"];
+        trace?: never;
+    };
     "/api/v1/chats/{chat_id}/messages": {
         parameters: {
             query?: never;
@@ -293,6 +328,42 @@ export interface paths {
         /** Answer */
         post: operations["answer_api_v1_chats__chat_id__messages_stream_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search History */
+        get: operations["search_history_api_v1_search_history_get"];
+        put?: never;
+        /** Record Search */
+        post: operations["record_search_api_v1_search_history_post"];
+        /** Clear Search History */
+        delete: operations["clear_search_history_api_v1_search_history_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search-history/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Forget Search */
+        delete: operations["forget_search_api_v1_search_history__item_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -334,6 +405,11 @@ export interface components {
             /** Title */
             title: string;
             /**
+             * Title Source
+             * @enum {string}
+             */
+            title_source: "default" | "auto" | "manual";
+            /**
              * Created At
              * Format: date-time
              */
@@ -371,6 +447,57 @@ export interface components {
         ChatPage: {
             /** Items */
             items: components["schemas"]["Chat"][];
+        };
+        /** ChatRename */
+        ChatRename: {
+            /** Title */
+            title: string;
+        };
+        /** ChatSummary */
+        ChatSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Title Source
+             * @enum {string}
+             */
+            title_source: "default" | "auto" | "manual";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Paper Title */
+            paper_title: string | null;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Message Count */
+            message_count: number;
+            /** Last Question Preview */
+            last_question_preview: string | null;
+        };
+        /** ChatSummaryPage */
+        ChatSummaryPage: {
+            /** Items */
+            items: components["schemas"]["ChatSummary"][];
         };
         /** Defaults */
         Defaults: {
@@ -465,6 +592,10 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Paper Id */
+            paper_id?: string | null;
+            /** Paper Title */
+            paper_title?: string | null;
             readonly error: components["schemas"]["JobError"] | null;
         };
         /** Message */
@@ -603,6 +734,75 @@ export interface components {
             /** External Id */
             external_id: string;
         };
+        /** SearchHistoryInput */
+        SearchHistoryInput: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openalex" | "semantic_scholar";
+            /** Query */
+            query: string;
+        };
+        /** SearchHistoryItem */
+        SearchHistoryItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openalex" | "semantic_scholar";
+            /** Query */
+            query: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Searched At
+             * Format: date-time
+             */
+            last_searched_at: string;
+        };
+        /** SearchHistoryPage */
+        SearchHistoryPage: {
+            /** Items */
+            items: components["schemas"]["SearchHistoryItem"][];
+        };
+        /**
+         * SearchHit
+         * @description A search result plus library state; stored provider snapshots stay SearchResult.
+         */
+        SearchHit: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openalex" | "semantic_scholar";
+            /** External Id */
+            external_id: string;
+            /** Title */
+            title?: string | null;
+            /** Authors */
+            authors?: string[];
+            /** Year */
+            year?: number | null;
+            /** Abstract */
+            abstract?: string | null;
+            /** Doi */
+            doi?: string | null;
+            /** External Url */
+            external_url?: string | null;
+            /** Pdf Url */
+            pdf_url?: string | null;
+            /** Saved Paper Id */
+            saved_paper_id?: string | null;
+        };
         /** SearchPage */
         SearchPage: {
             /**
@@ -611,7 +811,7 @@ export interface components {
              */
             provider: "openalex" | "semantic_scholar";
             /** Items */
-            items: components["schemas"]["SearchResult"][];
+            items: components["schemas"]["SearchHit"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /** Total */
@@ -805,6 +1005,9 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                paper_id?: string | null;
+                kind?: ("ingest" | "summary") | null;
+                active?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -1361,6 +1564,103 @@ export interface operations {
             };
         };
     };
+    recent_chats_api_v1_chats_get: {
+        parameters: {
+            query?: {
+                paper_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummaryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_api_v1_chats__chat_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_chat_api_v1_chats__chat_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_messages_api_v1_chats__chat_id__messages_get: {
         parameters: {
             query?: never;
@@ -1409,6 +1709,117 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_history_api_v1_search_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_search_api_v1_search_history_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchHistoryInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHistoryItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_search_history_api_v1_search_history_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    forget_search_api_v1_search_history__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };

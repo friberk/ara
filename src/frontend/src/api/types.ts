@@ -22,11 +22,11 @@ export type ChatInput = Schemas['ChatInput']
 export type GenerationSettings = Pick<GenerationInput, 'model' | 'reasoning_effort'>
 export type DocumentState = Paper['document_status']
 
-// Workspace history additions (ARA-034, docs/api-contract.md). Written from the contract until
-// generated.ts is regenerated from the merged API; then these become Schemas aliases.
-export type TitleSource = 'default' | 'auto' | 'manual'
-export type ChatSummary = Chat & { title_source?: TitleSource; paper_title: string | null; last_activity_at: string; message_count: number; last_question_preview: string | null }
-export interface SearchHistoryItem { id: string; provider: Provider; query: string; created_at: string; last_searched_at: string }
-export type SearchHit = SearchResult & { saved_paper_id?: string | null }
-export type JobView = Job & { paper_id?: string | null; paper_title?: string | null }
+// Workspace history additions (ARA-034, docs/api-contract.md).
+export type TitleSource = Chat['title_source']
+export type ChatSummary = Schemas['ChatSummary']
+export type SearchHistoryItem = Schemas['SearchHistoryItem']
+export type SearchHit = Schemas['SearchHit']
+/** Jobs carry paper_id and paper_title (null when the paper no longer exists). */
+export type JobView = Job
 export const providerLabels: Record<Provider, string> = { openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar' }
