@@ -1,21 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, Pencil, SquarePen, Trash2 } from 'lucide-react'
-import { toast } from 'sonner'
 import type { ChatSummary, Paper } from '@/api/types'
-import { ErrorNotice } from '@/components/feedback/ErrorNotice'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { DeleteChatDialog, RenameChatDialog } from '@/components/shell/chat-dialogs'
 import { chatDisplayTitle } from '@/components/shell/recent-items'
-import { useDeleteChat, useRenameChat } from '@/hooks/queries/chats'
 import type { PaperChats } from './use-paper-chats'
 
 const sameDay = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -37,54 +31,6 @@ function secondLine(chat: ChatSummary) {
   return chat.message_count === 0 ? 'No questions yet' : null
 }
 
-function RenameDialog({ chat, onClose }: { chat: ChatSummary; onClose: () => void }) {
-  const [title, setTitle] = useState(chat.title)
-  const rename = useRenameChat()
-  const trimmed = title.trim()
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="sm:max-w-md">
-        <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (trimmed) rename.mutate({ chatId: chat.id, title: trimmed }, { onSuccess: () => { toast.success('Conversation renamed'); onClose() } }) }}>
-          <DialogHeader>
-            <DialogTitle>Rename conversation</DialogTitle>
-            <DialogDescription>{chat.paper_title ?? 'Paper conversation'}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="rename-current-chat">Conversation name</Label>
-            <Input id="rename-current-chat" value={title} maxLength={200} autoFocus onChange={(event) => setTitle(event.target.value)} />
-          </div>
-          <ErrorNotice error={rename.error} />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!trimmed || trimmed === chat.title || rename.isPending}>{rename.isPending ? 'Saving…' : 'Save name'}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function DeleteDialog({ chat, onClose, onDeleted }: { chat: ChatSummary; onClose: () => void; onDeleted: () => void }) {
-  const remove = useDeleteChat()
-  return (
-    <AlertDialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
-          <AlertDialogDescription>“{chat.title}” and its answers will be removed. The paper and its summaries stay in your library.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <ErrorNotice error={remove.error} />
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={remove.isPending} onClick={(event) => { event.preventDefault(); remove.mutate(chat.id, { onSuccess: () => { toast.success('Conversation deleted'); onDeleted() } }) }}>
-            {remove.isPending ? 'Deleting…' : 'Delete conversation'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
-}
-
 /** The pane's top row: switch between this paper's conversations, rename or delete the open one, or start anew. */
 export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; chats: PaperChats; chat: ChatSummary | undefined; chatId: string | undefined }) {
   const navigate = useNavigate()
@@ -96,7 +42,7 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="h-8 min-w-0 max-w-full gap-1.5 px-2.5 text-sm font-medium">
+          <Button type="button" variant="ghost" size="sm" aria-label={chat && earlier(chat) ? `${title}, earlier PDF` : undefined} className="h-8 min-w-0 max-w-full gap-1.5 px-2.5 text-sm font-medium">
             <span className="truncate">{title}</span>
             {chat && earlier(chat) && <Badge variant="outline" className="font-normal text-muted-foreground">Earlier PDF</Badge>}
             <ChevronDown aria-hidden="true" className="text-muted-foreground" />
@@ -137,8 +83,8 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
         </TooltipTrigger>
         <TooltipContent side="bottom">New conversation</TooltipContent>
       </Tooltip>
-      {chat && dialog === 'rename' && <RenameDialog chat={chat} onClose={() => setDialog(null)} />}
-      {chat && dialog === 'delete' && <DeleteDialog chat={chat} onClose={() => setDialog(null)} onDeleted={() => { setDialog(null); navigate(`/papers/${paper.id}`, { replace: true }) }} />}
+      {chat && dialog === 'rename' && <RenameChatDialog chat={chat} onClose={() => setDialog(null)} />}
+      {chat && dialog === 'delete' && <DeleteChatDialog chat={chat} onClose={() => setDialog(null)} />}
     </div>
   )
 }
