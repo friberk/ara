@@ -45,21 +45,17 @@ test('Given search results, When one is saved, Then it is confirmed and can be o
   expect(screen.getByRole('button', { name: 'Load more' })).toBeVisible()
 })
 
-test('Given a save, When the background refresh is rate limited, Then the saved row stays without an alert', async () => {
-  let searches = 0
-  const { calls } = mockApi({
-    'GET /search': () => (++searches === 1 ? json(page([hit])) : json({ code: 'PROVIDER_RATE_LIMITED', message: 'The academic provider is rate limited. Try again shortly.', request_id: 'r2' }, 429)),
-    'POST /papers': paper,
-  })
+test('Given a save, Then the row shows In library without querying the provider again', async () => {
+  // Saving marks matching hits in the cache; re-querying OpenAlex or Semantic Scholar would risk rate limits.
+  const { calls } = mockApi({ 'GET /search': page([hit]), 'POST /papers': paper })
   const { user } = mount('/search?q=evidence&provider=openalex')
   const row = await screen.findByRole('article', { name: paper.title })
   await user.click(within(row).getByRole('button', { name: 'Save to library' }))
   expect(await within(row).findByRole('link', { name: 'Open paper' })).toHaveAttribute('href', '/papers/p1')
-  await waitFor(() => expect(calls.filter((call) => call.path === '/search')).toHaveLength(2))
-  // Let the failed refetch settle into query state before checking that nothing alarming rendered.
-  await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
-  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(within(row).getByText('In library')).toBeVisible()
+  await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+  expect(calls.filter((call) => call.path === '/search')).toHaveLength(1)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
 test('Given a result, Then title, authors, year, abstract and links are shown', async () => {
