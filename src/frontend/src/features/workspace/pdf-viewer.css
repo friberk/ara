@@ -17,19 +17,13 @@
 
 /*
  * The mark sits over the canvas, so it is a translucent tint rather than a blend: Chromium composited a multiply
- * blend of the text layer as cyan in light mode. Strong lines hold the sentences that support the claim; the rest
- * of the cited chunk is context, tinted just enough to show where the cited passage sits in it.
+ * blend of the text layer as cyan in light mode. Strong lines hold the sentences that support the claim and are the
+ * only mark. The rest of the cited chunk is marked 'context' but left untinted: a stored chunk is about 3,200
+ * characters, and even a faint tint washed most of the page in stripes and competed with the evidence.
  */
-.pdf-viewer .textLayer [data-citation-highlight] {
-  border-radius: 2px;
-}
-
 .pdf-viewer .textLayer [data-citation-highlight='strong'] {
   background-color: color-mix(in oklch, var(--pdf-evidence) 55%, transparent);
-}
-
-.pdf-viewer .textLayer [data-citation-highlight='context'] {
-  background-color: color-mix(in oklch, var(--pdf-evidence) 14%, transparent);
+  border-radius: 2px;
 }
 
 /* One brief pulse on the strong lines when a citation lands; marks redrawn after zooming do not pulse again. */
@@ -59,9 +53,5 @@
   .pdf-viewer .textLayer [data-citation-highlight='strong'] {
     background-color: Highlight;
     forced-color-adjust: none;
-  }
-
-  .pdf-viewer .textLayer [data-citation-highlight='context'] {
-    background-color: transparent;
   }
 }

@@ -17,3 +17,10 @@ test('Given a strong mark that just landed, Then it pulses; context lines never 
   expect(css).toMatch(/\[data-citation-pulse\][^{]*\{[^}]*animation:\s*citation-pulse/)
   expect(css).not.toMatch(/\[data-citation-highlight='pulse'\]/)
 })
+
+// After the first browser round: a faint tint on the rest of the 3,200-character chunk still washed most of page 7
+// in stripes, so context lines stay unmarked and the strong lines are the only mark on the page.
+test('Given context lines, Then they carry no tint', () => {
+  expect(css).not.toMatch(/\[data-citation-highlight='context'\][^{]*\{[^}]*background/)
+  expect(css).not.toMatch(/\.textLayer \[data-citation-highlight\][^{]*\{[^}]*background/)
+})
