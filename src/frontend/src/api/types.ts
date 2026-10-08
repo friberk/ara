@@ -20,3 +20,13 @@ export type Settings = Schemas['Defaults']
 export type GenerationInput = Schemas['GenerationInput']
 export type ChatInput = Schemas['ChatInput']
 export type GenerationSettings = Pick<GenerationInput, 'model' | 'reasoning_effort'>
+export type DocumentState = Paper['document_status']
+
+// Workspace history additions (ARA-034, docs/api-contract.md). Written from the contract until
+// generated.ts is regenerated from the merged API; then these become Schemas aliases.
+export type TitleSource = 'default' | 'auto' | 'manual'
+export type ChatSummary = Chat & { title_source?: TitleSource; paper_title: string | null; last_activity_at: string; message_count: number; last_question_preview: string | null }
+export interface SearchHistoryItem { id: string; provider: Provider; query: string; created_at: string; last_searched_at: string }
+export type SearchHit = SearchResult & { saved_paper_id?: string | null }
+export type JobView = Job & { paper_id?: string | null; paper_title?: string | null }
+export const providerLabels: Record<Provider, string> = { openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar' }

@@ -16,6 +16,15 @@ export async function checkedResponse(path: string, init?: RequestInit): Promise
   return response
 }
 export async function api<T>(path: string, init?: RequestInit): Promise<T> { return (await checkedResponse(path, init)).json() as Promise<T> }
+/** For endpoints that answer 204 No Content. */
+export async function apiVoid(path: string, init?: RequestInit): Promise<void> { await checkedResponse(path, init) }
 export function json(method: 'POST' | 'PATCH' | 'PUT', body: unknown): RequestInit { return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } }
+export const remove: RequestInit = { method: 'DELETE' }
+export function query(params: Record<string, string | number | boolean | null | undefined>) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) if (value !== null && value !== undefined && value !== '') search.set(key, String(value))
+  const text = search.toString()
+  return text ? `?${text}` : ''
+}
 export function downloadUrl(documentId: string, page?: number) { return `${prefix}/documents/${encodeURIComponent(documentId)}/download${page ? `#page=${page}` : ''}` }
 export function safeUrl(value: string | null | undefined): string | undefined { if (!value) return undefined; try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : undefined } catch { return undefined } }

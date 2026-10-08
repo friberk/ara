@@ -1,0 +1,100 @@
+import { Link, useLocation } from 'react-router-dom'
+import { Activity, BookOpenText, FileText, Library, Search, Settings, SquarePen } from 'lucide-react'
+import { Kbd } from '@/components/ui/kbd'
+import {
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
+  SidebarMenuItem, SidebarMenuSkeleton, SidebarRail, useSidebar,
+} from '@/components/ui/sidebar'
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
+import { usePapers } from '@/hooks/queries/papers'
+import { SidebarRecent } from './SidebarRecent'
+
+function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
+  const papers = usePapers('', { pageSize: 6 })
+  const location = useLocation()
+  const items = papers.data?.pages[0]?.items ?? []
+  if (papers.isError || (!papers.isPending && !items.length)) return null
+  return (
+    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel>Papers</SidebarGroupLabel>
+      <SidebarMenu>
+        {papers.isPending && Array.from({ length: 3 }, (_, index) => <SidebarMenuItem key={index}><SidebarMenuSkeleton /></SidebarMenuItem>)}
+        {items.map((paper) => (
+          <SidebarMenuItem key={paper.id}>
+            <SidebarMenuButton asChild isActive={location.pathname.startsWith(`/papers/${paper.id}`)} tooltip={paper.title ?? 'Untitled paper'}>
+              <Link to={`/papers/${paper.id}`} onClick={onNavigate} title={paper.title ?? undefined}>
+                <FileText aria-hidden="true" className="text-sidebar-foreground/60" />
+                <span>{paper.title ?? 'Untitled paper'}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ))}
+      </SidebarMenu>
+    </SidebarGroup>
+  )
+}
+
+export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
+  const location = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
+  const close = () => { if (isMobile) setOpenMobile(false) }
+  const links = [
+    { to: '/library', label: 'Library', icon: Library },
+    { to: '/activity', label: 'Activity', icon: Activity },
+  ]
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild tooltip="Research Assistant">
+              <Link to="/" onClick={close}>
+                <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground dark:bg-foreground dark:text-background"><BookOpenText className="size-4" aria-hidden="true" /></span>
+                <span className="truncate font-semibold tracking-tight">Research Assistant</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <nav aria-label="Workspace">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={location.pathname === '/'} tooltip="New research">
+                  <Link to="/" onClick={close}><SquarePen aria-hidden="true" /><span>New research</span></Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Find papers and chats" onClick={() => { close(); onOpenSearch() }}>
+                  <Search aria-hidden="true" /><span>Find papers and chats</span>
+                  <Kbd className="ml-auto group-data-[collapsible=icon]:hidden">⌘K</Kbd>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {links.map(({ to, label, icon: Icon }) => (
+                <SidebarMenuItem key={to}>
+                  <SidebarMenuButton asChild isActive={location.pathname.startsWith(to)} tooltip={label}>
+                    <Link to={to} onClick={close}><Icon aria-hidden="true" /><span>{label}</span></Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </nav>
+        </SidebarGroup>
+        <SidebarPapers onNavigate={close} />
+        <SidebarRecent />
+      </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={location.pathname.startsWith('/settings')} tooltip="Settings">
+              <Link to="/settings" onClick={close}><Settings aria-hidden="true" /><span>Settings</span></Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem><ThemeToggle /></SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
+  )
+}
