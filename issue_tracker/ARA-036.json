@@ -20,7 +20,7 @@
     "pending-questions consume once",
     "e2e/conversation.spec.ts E2E-04/E2E-05"
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/chat",
     "src/frontend/src/features/summary"
@@ -29,9 +29,19 @@
     "d1a3df7",
     "aed1c53",
     "d78e136",
-    "a7dc0e9"
+    "a7dc0e9",
+    "1a350f8",
+    "93fcd45",
+    "b054c67",
+    "d112b45",
+    "4d8504b",
+    "1e7cd6a",
+    "f5d3acb",
+    "7750ff8",
+    "488b382",
+    "b8df94a"
   ],
   "pull_requests": [],
-  "verification": "Conversation agent, test-first. Red: 9 chat tests failed against the stub (missing 'Question about this paper' textbox and 'Suggested questions' group); the summary suite failed on an unresolved module. 2 later failures were a test bug (CTA renders after summaries load; switched to findByRole). Lint red: 5 react-hooks/refs errors (a ref read during render) fixed by passing plain props. Self-review red: a stale chat list flashed 'Conversation not found' ('expected document not to contain element'); fixed. Safeguards ported and reviewed by lead: abort on unmount, terminal guard, cross-document citation rejection, no automatic resend, StrictMode-safe queued question with fixed request_id. Stop now keeps the partial answer as Interrupted with a status message rather than an alert. Lead integration: 36 files / 162 tests, 0 lint errors. Pending: workspace integration, e2e/conversation.spec.ts serial run, streaming and summary progress visual check (needs generation).",
+  "verification": "Conversation agent, test-first. Red: 9 chat tests failed against the stub (missing 'Question about this paper' textbox and 'Suggested questions' group); the summary suite failed on an unresolved module. 2 later failures were a test bug (CTA renders after summaries load; switched to findByRole). Lint red: 5 react-hooks/refs errors (a ref read during render) fixed by passing plain props. Self-review red: a stale chat list flashed 'Conversation not found' ('expected document not to contain element'); fixed. Safeguards ported and reviewed by lead: abort on unmount, terminal guard, cross-document citation rejection, no automatic resend, StrictMode-safe queued question with fixed request_id. Stop now keeps the partial answer as Interrupted with a status message rather than an alert. Lead integration: 36 files / 162 tests, 0 lint errors. Pending: workspace integration, e2e/conversation.spec.ts serial run, streaming and summary progress visual check (needs generation). Follow-ups: shared rename/delete dialogs (refactor, 28 tests green); test-first earlier-PDF accessible name; a TDD audit naming test-first, missing-module-only and test-after work; 41 mutations, all red after 4 vacuous tests were corrected. E2E-04 and E2E-05 passed in the integrated full run (8/8, 34.5s) with the evidence jump verified on real data.",
   "updated_at": "2026-10-08"
 }

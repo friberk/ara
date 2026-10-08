@@ -172,3 +172,19 @@ The lead ran `research.spec.ts` against the e2e fixture stack.
 - **Mobile test, second failure:** the next run failed at `toBeHidden`, because one Escape did not close the sheet. The screenshot showed focus on a sidebar item. A new unit test reproduced it (red). The cause was shadcn's `SidebarMenuButton`, which always mounts a Tooltip and only hides its content on mobile or when expanded, so the invisible tooltip took the first Escape. Tooltips now mount only on the collapsed desktop rail. A guard test keeps the rail labels; it was first wrong (it matched two "Toggle Sidebar" buttons) and was fixed, then confirmed red by disabling tooltips.
 
 The mobile E2E now passes in 5.1s and Vitest passes 225/225. The legacy `workflows.spec.ts` was retired in favour of the per-feature specs.
+
+### UI overhaul: workspace integration, full E2E and cleanup
+
+**Workspace merge.** The workspace agent integrated its reader with the real conversation pane on its own branch. Its TDD audit separated assertion reds, missing-module reds, and test-after work that was mutation-verified. The lead merged it and, on real data, verified the evidence jump: clicking a "p. 7" chip in an answer announced "Highlighted the cited passage on page 7.", and the mobile view switched to the PDF tab. The integrated suite passed 293 tests.
+
+**First full E2E run.** It passed 7 of 8. E2E-02 failed because Playwright runs spec files alphabetically and the conversation spec's setup saves the fixture paper through the API. A Playwright project dependency now runs the research journey first. All 8 then passed on a fresh e2e database.
+
+**Cleanup.**
+- Removed the legacy pages and components.
+- Dropped four unused dependencies.
+- Declared pdfjs-dist explicitly.
+- Moved helpers and contexts out of component files so ESLint reports zero problems.
+
+**Bundle size correction.** The lead had been reporting the entry chunk alone as "main". A comparison of first-paint JS (entry plus modulepreloads) showed about 550 KB raw (172 KB gzip) both before and after the refactor. That is the honest number.
+
+**Final checks.** E2E still passed 8/8 after the cleanup, and the Impeccable detector reported 0 findings. The fresh finish reviewer received 36 validated captures.

@@ -20,16 +20,17 @@
     "npm run check",
     "CI contract cmp"
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "src/frontend/e2e",
     "src/frontend/src/test",
     "src/frontend/src/api/generated.ts"
   ],
   "commits": [
-    "78aa856"
+    "78aa856",
+    "f046982"
   ],
   "pull_requests": [],
-  "verification": "research.spec: E2E-01 passed; E2E-02 passed on a fresh e2e DB (3.7s); mobile passed after the skip-link and sidebar-tooltip fixes (5.1s). workflows.spec.ts retired. Pending: workspace.spec and conversation.spec after the workspace merge, and a final full serial run on a fresh e2e DB.",
+  "verification": "All 8 E2E passed on a fresh e2e DB (36.7s), and again after the legacy cleanup (34.5s). A Playwright project dependency runs the research save journey first. The generated contract matches the test API on 8001 (cmp). Vitest 290/290, ESLint 0 problems, strict tsc clean.",
   "updated_at": "2026-10-08"
 }

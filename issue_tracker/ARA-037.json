@@ -19,12 +19,21 @@
     "DetailsPanel RTL: provenance, dirty-only PATCH, metadata-only gate",
     "e2e/workspace.spec.ts E2E-03, citation jump, mobile tabs"
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/workspace"
   ],
-  "commits": [],
+  "commits": [
+    "a64038e",
+    "79ac582",
+    "d2bebd2",
+    "e1c6002",
+    "73d16f0",
+    "dd2d6c4",
+    "6dd3594",
+    "b1cbfc2"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Workspace agent: the workspace suite was 12/12 red against the legacy page; the matcher was red on a missing module (test-first); the page-only status was red first. Test-after, mutation-verified: replace-PDF progress, the gate upload, the highlighted-status pin, and PdfViewer (7 mutants, all caught). Not automated (browser probes only): viewer internals such as lazy mounting, zoom anchoring and span marking. Fixes after visual review: Chromium mis-composited the multiply blend, so the evidence mark is now a tint; the collapsed reader is now inert. pdfjs-dist 6.3.289 has no isEvalSupported option; its worker has no eval. Lead integration: on real data, a 'p. 7' chip announced 'Highlighted the cited passage on page 7.' at 1440 and 390 in both themes. E2E-03, the citation jump and the mobile tabs passed. pdf.js lives only in the lazy PdfViewer chunk.",
   "updated_at": "2026-10-08"
 }
