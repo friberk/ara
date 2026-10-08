@@ -110,3 +110,12 @@ A backend agent worked in its own worktree on `feat/ui-api` and owned migration 
 - Ran `docker compose run --rm migrate` on the development stack; readiness returned ready, and `GET /chats` returned real chats with paper titles.
 - Independently reran `python3 scripts/test-stack.py test`: 74 passed in 14.54s.
 - Regenerated `src/api/generated.ts` from the e2e test API on port 8001, matching CI, and replaced the provisional frontend types with generated aliases. Vitest passed 28 of 28.
+
+### TDD process correction (ARA-033)
+
+The user asked whether the work followed TDD. Audit result:
+- **Backend (ARA-034):** test-first, with the red run recorded by the backend agent.
+- **Lead's frontend foundation:** written before its tests. The later failures were test or environment issues, not red phases.
+- **Recent-list change:** the only lead change that followed red-green (2 failing tests, then green).
+
+The ARA-033 verification text had said "Red/green observed", which overstated the process; it now states this accurately. For the remaining lead work, tests come first, and each feature agent's red evidence is checked when it reports.
