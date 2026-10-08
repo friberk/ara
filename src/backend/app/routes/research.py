@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.integrations.academic import AcademicSearch
 from app.models.research import Paper
-from app.repositories.papers import paper_detail, patch_paper, save_canonical
+from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
 from app.schemas.research import PaperDetail, PaperPage, PaperPatch, Provider, SavePaper, SearchPage
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
@@ -20,9 +20,12 @@ async def search(
     limit: int = Query(default=20, ge=1, le=50),
 ):
     resources = request.app.state.resources
-    return await AcademicSearch(resources.http, resources.settings).search(
+    page = await AcademicSearch(resources.http, resources.settings).search(
         provider, q.strip(), cursor, limit
     )
+    async with resources.sessions() as session:
+        await mark_saved(session, page.items)
+    return page
 
 
 @router.post("/papers", response_model=PaperDetail)

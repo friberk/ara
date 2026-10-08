@@ -1,7 +1,8 @@
-from typing import Literal
+from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 Provider = Literal["openalex", "semantic_scholar"]
 
@@ -18,9 +19,15 @@ class SearchResult(BaseModel):
     pdf_url: str | None = None
 
 
+class SearchHit(SearchResult):
+    """A search result plus library state; stored provider snapshots stay SearchResult."""
+
+    saved_paper_id: UUID | None = None
+
+
 class SearchPage(BaseModel):
     provider: Provider
-    items: list[SearchResult]
+    items: list[SearchHit]
     next_cursor: str | None = None
     total: int | None = None
 
@@ -68,3 +75,22 @@ class Citation(BaseModel):
     document_id: UUID
     page: int
     excerpt: str
+
+
+class SearchHistoryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Provider
+    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
+
+
+class SearchHistoryItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    provider: Provider
+    query: str
+    created_at: datetime
+    last_searched_at: datetime
+
+
+class SearchHistoryPage(BaseModel):
+    items: list[SearchHistoryItem]

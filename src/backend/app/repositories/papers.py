@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, tuple_
 
 from app.core.errors import AppError
 from app.integrations.academic import normalized_doi
 from app.models.research import Document, Paper, PaperAuthor, PaperSource
-from app.schemas.research import PaperDetail, PaperPatch, SearchResult
+from app.schemas.research import PaperDetail, PaperPatch, SearchHit, SearchResult
 
 
 async def identity_locks(session, keys: list[str]) -> None:
@@ -83,6 +83,37 @@ async def save_canonical(session, result: SearchResult) -> tuple[Paper, bool]:
         source.metadata_snapshot = result.model_dump(mode="json")
     await session.flush()
     return paper, created
+
+
+async def mark_saved(session, hits: list[SearchHit]) -> None:
+    """Match hits to the library like save_canonical: provider record first, then DOI."""
+    if not hits:
+        return
+    identities = {(hit.provider, hit.external_id) for hit in hits}
+    by_source = {
+        (provider, external_id): paper_id
+        for provider, external_id, paper_id in await session.execute(
+            select(PaperSource.provider, PaperSource.external_id, PaperSource.paper_id).where(
+                tuple_(PaperSource.provider, PaperSource.external_id).in_(identities)
+            )
+        )
+    }
+    dois = {doi for hit in hits if (doi := normalized_doi(hit.doi))}
+    by_doi = (
+        dict(
+            (
+                await session.execute(
+                    select(Paper.normalized_doi, Paper.id).where(Paper.normalized_doi.in_(dois))
+                )
+            ).all()
+        )
+        if dois
+        else {}
+    )
+    for hit in hits:
+        hit.saved_paper_id = by_source.get((hit.provider, hit.external_id)) or by_doi.get(
+            normalized_doi(hit.doi)
+        )
 
 
 async def paper_detail(session, paper_id: UUID) -> PaperDetail:
