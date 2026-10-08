@@ -9,7 +9,7 @@ import type { Citation } from '@/api/types'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import type { PdfNavigation } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
-import { findExcerptItems } from './text-highlight'
+import { findEvidence } from './evidence'
 import type { HighlightOutcome, SourceRequest } from './workspace-context'
 
 // The worker comes from the same pdfjs-dist that react-pdf resolves, so API and worker versions always agree.
@@ -25,18 +25,48 @@ export type PdfViewerProps = {
   /** 1 fits the page to the panel width. */
   zoom: number
   navigation: PdfNavigation | null
-  /** A citation in this document to scroll to and mark; a new nonce repeats the jump. */
+  /** A citation in this document to scroll to and mark, with the claim it supports; a new nonce repeats the jump. */
   highlight: SourceRequest | null
   onDocumentLoad: (numPages: number) => void
   onPageChange: (page: number) => void
   onHighlight: (outcome: HighlightOutcome) => void
 }
 
-type ActiveHighlight = { citation: Citation; nonce: number; reported: boolean }
+type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean }
 type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function offsetIn(root: HTMLElement, element: Element) { return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop }
+
+/**
+ * Wraps characters [start, end) of a text-layer span in a <mark>, as pdf.js's own find highlighter does, so a passage
+ * that begins mid-line is marked from its first character. Returns the span itself when the range is all of it or
+ * the span is not one run of text, so that span is marked whole rather than not at all.
+ */
+function markRange(span: HTMLElement, start: number, end: number): HTMLElement {
+  const run = span.firstChild
+  if (span.childNodes.length !== 1 || !(run instanceof Text)) return span
+  if ((start <= 0 && end >= run.length) || end <= start) return span
+  const cited = start > 0 ? run.splitText(start) : run
+  if (end - start < cited.length) cited.splitText(end - start)
+  const mark = document.createElement('mark')
+  cited.replaceWith(mark)
+  mark.append(cited)
+  return mark
+}
+
+/** Unwraps every mark and clears every mark attribute, so each jump starts from the text layer as pdf.js drew it. */
+function clearMarks(root: HTMLElement) {
+  root.querySelectorAll('mark[data-citation-highlight]').forEach((mark) => {
+    const span = mark.parentElement
+    mark.replaceWith(...mark.childNodes)
+    span?.normalize()
+  })
+  root.querySelectorAll('[data-citation-highlight]').forEach((element) => {
+    element.removeAttribute('data-citation-highlight')
+    element.removeAttribute('data-citation-pulse')
+  })
+}
 
 const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTextLayer, onTextLayerError }: {
   pageNumber: number
@@ -58,8 +88,10 @@ const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTex
 
 /**
  * Every page in one scroll column. Pages are placeholders sized from the PDF until they come near the viewport,
- * so long papers stay light. A highlight request scrolls to its page and, once that page's text layer exists,
- * marks the excerpt's spans with data-citation-highlight.
+ * so long papers stay light. A highlight request scrolls to its page and, once that page's text layer exists, marks
+ * the characters of the sentences that support the claim data-citation-highlight="strong" (whole spans, or <mark>s
+ * inside spans where a sentence starts or ends mid-line) and the excerpt's other spans "context"; without a claim
+ * the whole excerpt is strong.
  */
 export default function PdfViewer(props: PdfViewerProps) {
   const { documentId, zoom, navigation, highlight } = props
@@ -106,15 +138,24 @@ export default function PdfViewer(props: PdfViewerProps) {
     // react-pdf appends .endOfContent when a text layer finishes; it is removed again when the layer re-renders.
     if (!layer?.querySelector('.endOfContent')) return
     const spans = Array.from(layer.querySelectorAll<HTMLElement>('span[role="presentation"]'))
-    const indexes = findExcerptItems(spans.map((span) => ({ str: span.textContent ?? '', hasEOL: span.nextElementSibling?.tagName === 'BR' })), active.citation.excerpt)
-    root.querySelectorAll('[data-citation-highlight]').forEach((element) => element.removeAttribute('data-citation-highlight'))
+    const items = spans.map((span) => ({ str: span.textContent ?? '', hasEOL: span.nextElementSibling?.tagName === 'BR' }))
+    const { strong, context } = findEvidence(items, active.citation.excerpt, active.claim)
+    clearMarks(root)
     const first = !active.reported
     if (first) void layer.getBoundingClientRect() // flush styles so marking the same passage again restarts the pulse
-    for (const index of indexes) spans[index]?.setAttribute('data-citation-highlight', first ? 'pulse' : '')
+    for (const index of context) spans[index]?.setAttribute('data-citation-highlight', 'context')
+    const marks = strong.flatMap(({ item, start, end }) => (spans[item] ? [markRange(spans[item], start, end)] : []))
+    for (const element of marks) {
+      element.setAttribute('data-citation-highlight', 'strong')
+      if (first) element.setAttribute('data-citation-pulse', '')
+    }
     if (!first) return
-    settle(indexes.length ? 'highlighted' : 'page-only', active.nonce)
-    const start = indexes.length ? spans[indexes[0]!] : undefined
-    if (start) root.scrollTo({ top: Math.max(0, offsetIn(root, start) - root.clientHeight * 0.2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+    settle(marks.length ? 'highlighted' : 'page-only', active.nonce)
+    const start = marks[0]
+    if (start) {
+      const middle = offsetIn(root, start) + start.getBoundingClientRect().height / 2
+      root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+    }
     // A chip in a now-hidden tab had focus; keep keyboard users in the document they were sent to.
     const focused = document.activeElement
     if (!(focused instanceof HTMLElement) || focused === document.body || !focused.offsetParent) root.focus({ preventScroll: true })
@@ -183,8 +224,8 @@ export default function PdfViewer(props: PdfViewerProps) {
 
   useEffect(() => {
     if (!highlight) return
-    const { citation, nonce } = highlight
-    request.current = { citation, nonce, reported: false }
+    const { citation, claim, nonce } = highlight
+    request.current = { citation, claim, nonce, reported: false }
     pendingPage.current = citation.page
     flushPendingPage()
     markPage(citation.page)

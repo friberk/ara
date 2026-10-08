@@ -107,7 +107,7 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
             className={cn('mt-3 grid gap-3 text-[15.5px] leading-7', !open && 'max-h-44 overflow-hidden mask-b-from-50%')}
           >
             <Markdown content={current.content} citations={current.citations} documentId={current.document_id} onCitation={workspace?.showSource} />
-            <SourceList citations={current.citations} documentId={current.document_id} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />
+            <SourceList citations={current.citations} documentId={current.document_id} context={current.content} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />
           </div>
           <Button type="button" variant="ghost" size="sm" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen(!open)} className="mt-1 -ml-2 text-muted-foreground hover:text-foreground">
             {open ? 'Collapse summary' : 'Show full summary'}

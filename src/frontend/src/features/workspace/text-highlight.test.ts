@@ -1,4 +1,4 @@
-import { findExcerptItems, normalizeText, type TextItem } from './text-highlight'
+import { findExcerptItems, findExcerptRanges, normalizeText, type TextItem } from './text-highlight'
 
 /** One pdf.js text item per printed line, as the text layer renders a simple single-column page. */
 const lines = (...rows: string[]): TextItem[] => rows.map((str) => ({ str, hasEOL: true }))
@@ -71,5 +71,43 @@ describe('findExcerptItems', () => {
   test('Given a short excerpt, Then it must appear whole', () => {
     expect(findExcerptItems(page, 'Abstract')).toEqual([1])
     expect(findExcerptItems(page, 'Abstraction')).toEqual([])
+  })
+})
+
+describe('findExcerptRanges (test-first)', () => {
+  const whole = (item: number, rows: TextItem[] = page) => ({ item, start: 0, end: rows[item]!.str.length })
+
+  test('Given an excerpt that starts and ends mid-line, Then the ranges start at its first character and end after its last', () => {
+    expect(findExcerptRanges(page, 'We propose a new simple\nnetwork architecture, the Transformer')).toEqual([
+      { item: 5, start: page[5]!.str.indexOf('We propose'), end: page[5]!.str.length },
+      { item: 6, start: 0, end: page[6]!.str.indexOf(', based') },
+    ])
+  })
+
+  test('Given whole lines, Then each range covers its whole item', () => {
+    expect(findExcerptRanges(page, 'The dominant sequence transduction models are based on complex\nrecurrent or convolutional neural networks that include an encoder')).toEqual([whole(2), whole(3)])
+  })
+
+  test('Given ligature glyphs, Then offsets still point into the text item as rendered', () => {
+    const items = lines('We train eﬃcient models on the ﬁrst ﬂoor of the', 'benchmark and report the ﬁnal scores below.')
+    expect(findExcerptRanges(items, 'efficient models on the first floor of the benchmark and report')).toEqual([
+      { item: 0, start: items[0]!.str.indexOf('eﬃcient'), end: items[0]!.str.length },
+      { item: 1, start: 0, end: items[1]!.str.indexOf(' the ﬁnal') },
+    ])
+  })
+
+  // Added after a mutation check: the bridge across extraction noise is matched after the anchors around it.
+  test('Given a reference mark in the text layer that the excerpt lacks, Then the line is covered across it to the passage end', () => {
+    const items = lines('and a decoder. The best performing models also connect the encoder', 'and decoder through an [12] attention mechanism. We propose a new simple')
+    expect(findExcerptRanges(items, 'The best performing models also connect the encoder and decoder through an attention mechanism. We propose')).toEqual([
+      { item: 0, start: items[0]!.str.indexOf('The best'), end: items[0]!.str.length },
+      { item: 1, start: 0, end: items[1]!.str.indexOf(' a new') },
+    ])
+  })
+
+  test('Given a line whose normalised offsets do not line up with its characters, Then that line falls back to a whole-item range', () => {
+    // NFKC composes "e" + combining acute when the whole line is folded, but not when each character is folded alone.
+    const items = lines('Members of the Cafe\u0301 Society meet weekly', 'at noon in the old library.')
+    expect(findExcerptRanges(items, 'Café Society meet weekly at noon')).toEqual([whole(0, items), { item: 1, start: 0, end: items[1]!.str.indexOf(' in the') }])
   })
 })
