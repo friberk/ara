@@ -2,6 +2,17 @@
 
 A local research workspace for CS59300. Search Semantic Scholar or OpenAlex, save papers, upload PDFs, and use paper content for summaries and questions. The architecture is a React SPA and a modular FastAPI backend with durable workers and persistent storage.
 
+## Features
+
+The interface is a chat-centred workspace built with shadcn components, using the default neutral black-and-white theme in light and dark (it follows your system setting; switch in the sidebar or Settings).
+
+- **Search.** The home screen is one composer. Type a topic and choose OpenAlex or Semantic Scholar. Results show title, authors, year, abstract and DOI or PDF links. Each result can be saved to the library, and papers already saved show "In library".
+- **Library.** Saved and uploaded papers persist across restarts. Filter by title, and see each paper's PDF status.
+- **Upload.** Drop or choose a PDF (up to 25 MB) from the home composer or the library. Title, authors, year and abstract are extracted, and progress appears in Activity.
+- **Paper workspace.** The PDF reader sits beside the conversation. The latest summary is the first card. Ask your own questions or use the suggested ones; answers stream in with inline page citations. Clicking a citation scrolls the PDF to that page and highlights the passage. On phones, the workspace switches between Chat, PDF and Details tabs.
+- **Models.** A compact switcher in the composer chooses the model and reasoning effort for the next request. Each answer records the model that produced it, and Settings stores the defaults.
+- **History.** The sidebar lists recent papers, searches and conversations. Conversations are titled from their first question and can be renamed or deleted. Press ⌘K (Ctrl+K) to find papers and chats.
+
 ## Start locally
 
 Requirements: Docker with Compose, enough memory for approximately six small services, and Python3 for the environment bootstrap. Dockerfiles target ARM64 and x86_64; the verified build is ARM64 on an M3 Pro using OrbStack. GPU inference is optional.
@@ -53,7 +64,7 @@ npx playwright install chromium
 npx playwright test
 ```
 
-The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Test fixtures explicitly use synthetic papers and delayed model streaming; they are never activated by normal startup. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
+The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Test fixtures explicitly use synthetic papers and delayed model streaming; they are never activated by normal startup. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
 
 Test data reset is explicit and affects only `ara-test`:
 
