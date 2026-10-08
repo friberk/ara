@@ -31,7 +31,8 @@ export function ConversationPane({ paper, chatId }: ConversationPaneProps) {
         <NewConversation paper={paper} />
       ) : chat ? (
         <ConversationThread key={chat.id} paper={paper} chat={chat} />
-      ) : chats.isPending ? (
+      ) : chats.isPending || chats.isFetching ? (
+        // A chat created elsewhere (the home composer) may be missing from a cached list until it refetches.
         <div role="status" aria-label="Loading conversation" className="mx-auto grid w-full max-w-3xl gap-3 px-4 pt-2">
           <Skeleton className="h-28 w-full rounded-2xl" /><Skeleton className="ml-auto h-10 w-2/5 rounded-2xl" />
         </div>

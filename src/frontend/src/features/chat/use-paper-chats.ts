@@ -24,7 +24,7 @@ export function usePaperChats(paperId: string) {
     queryFn: ({ signal }) => api<Collection<Chat>>(`/papers/${paperId}/chats`, { signal }),
     enabled: missing,
   })
-  if (missing) return { items: (legacy.data?.items ?? []).map((chat) => asChatSummary(chat)), isPending: legacy.isPending, error: legacy.error, refetch: () => void legacy.refetch() }
-  return { items: list.data?.items ?? [], isPending: list.isPending, error: list.error, refetch: () => void list.refetch() }
+  if (missing) return { items: (legacy.data?.items ?? []).map((chat) => asChatSummary(chat)), isPending: legacy.isPending, isFetching: legacy.isFetching, error: legacy.error, refetch: () => void legacy.refetch() }
+  return { items: list.data?.items ?? [], isPending: list.isPending, isFetching: list.isFetching, error: list.error, refetch: () => void list.refetch() }
 }
 export type PaperChats = ReturnType<typeof usePaperChats>

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import type { Citation, Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
@@ -11,6 +11,7 @@ import { WorkspaceContext, type WorkspaceContextValue } from '@/features/workspa
 import { json, mockApi } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
 import { ConversationPane } from '.'
+import { paperChatsKey } from './use-paper-chats'
 
 // The content module (ARA-035) is rebuilt in parallel. These stand-ins honour its documented props, so the
 // tests pin this pane's wiring: which document scopes the citations and where a chip sends the reader.
@@ -51,8 +52,7 @@ function PaneRoute({ value }: { value: Paper }) {
   return <ConversationPane paper={value} chatId={chatId} />
 }
 function CurrentPath() { return <output aria-label="Current path">{useLocation().pathname}</output> }
-function mount(path: string, { value = paper, workspace = workspaceValue(), strict = false }: { value?: Paper; workspace?: WorkspaceContextValue; strict?: boolean } = {}) {
-  const client = testClient()
+function mount(path: string, { value = paper, workspace = workspaceValue(), strict = false, client = testClient() }: { value?: Paper; workspace?: WorkspaceContextValue; strict?: boolean; client?: QueryClient } = {}) {
   const user = userEvent.setup()
   const tree = (
     <QueryClientProvider client={client}>
@@ -235,4 +235,13 @@ test('Given the history cannot load, Then an inline error offers to try again', 
   expect(await screen.findByRole('alert')).toHaveTextContent('The conversation could not load.')
   await user.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('Loaded on retry')).toBeVisible()
+})
+
+test('Given a chat created elsewhere and a stale cached chat list, Then the pane waits for the list instead of saying the chat is missing', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c7', { title: 'Asked from home' })] }, 'GET /chats/c7/messages': { items: [userMessage('u7', 'Asked from home')] } })
+  const client = testClient()
+  client.setQueryData(paperChatsKey('p1'), { items: [] })
+  mount('/papers/p1/chats/c7', { client })
+  expect(screen.queryByText('Conversation not found')).not.toBeInTheDocument()
+  expect(await screen.findByRole('article', { name: 'Your message' })).toHaveTextContent('Asked from home')
 })

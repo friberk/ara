@@ -39,7 +39,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
   const rows = draft ? saved.map((message) => (message.id === draft.id ? draft : message)) : saved
   const question = pending && asked <= pending.baseline ? pending.text : null
   const unsavedDraft = draft && !saved.some((message) => message.id === draft.id) ? draft : null
-  const empty = loaded && !rows.length && !question && !unsavedDraft && !stream.streaming
+  const empty = loaded && !rows.length && !question && !unsavedDraft && !stream.streaming && !peekQuestion(chat.id)
   const { scrollRef, onScroll, away, stick, toLatest } = useFollowBottom(`${rows.length}:${question ?? ''}:${draft?.id ?? ''}:${draft?.content.length ?? 0}:${draft?.state ?? ''}`)
 
   function ask(content: string, settings: GenerationSettings = generation.settings, requestId?: string) {
