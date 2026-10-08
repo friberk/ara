@@ -3,7 +3,7 @@
   "title": "Optional OCR",
   "type": "improvement",
   "priority": "P2",
-  "description": "Optional OCR for the approved research-assistant workflows.",
+  "description": "Add explicitly enabled worker-side OCR for scanned and mixed PDFs, preserving originals and physical-page provenance. Bound runtime/resources, report uncertain text and keep the normal text-PDF pipeline working.",
   "dependencies": [
     "ARA-010"
   ],
@@ -13,7 +13,7 @@
   "test_cases": [
     "Scanned documents handled with explicitly enabled OCR and provenance."
   ],
-  "status": "deferred",
+  "status": "planned",
   "related_files": [
     "docs/implementation-plan.md"
   ],
@@ -21,6 +21,6 @@
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "P2 OCR deferred; scanned/image-only PDFs report actionable OCR_REQUIRED failure.",
+  "verification": "Reopened planning. Image-only PDFs currently report OCR_REQUIRED; OCR is not implemented.",
   "updated_at": "2026-10-08"
 }

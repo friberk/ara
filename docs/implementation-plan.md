@@ -154,16 +154,16 @@ Use pytest for units, adapters, validation, text and context. Integration tests 
 
 ## Roadmap and tracking
 
-| Phase | Target/effort | Issues/deliverable | Gate/risk |
+| Phase | Current status | Issues/deliverable | Gate/risk |
 | --- | --- | --- | --- |
-| 0 Foundation | Oct 8, 5–7 h | 001–005, 008, start 017; plan/skill/services/contracts/test canary | MinIO build, S3 round trip, migration, reload and restart; ARM risk |
-| 1 Search/library | Oct 8–9, 4–5 h | 006–007 | Two adapters plus search/save/persistence; S2 rate risk |
-| 2 Ingestion | Oct 9, 6–8 h | 009–011 | Retained PDF, metadata, editor and chunks; parser uncertainty |
-| 3 LLM/chat | Oct 9–10 morning, 9–11 h | 012–015 | Five deterministic E2Es plus real hosted smoke test; context/replay/recovery |
-| 4 Enhancements | Only after P0, 0–2 h | 019 or 020; defer 021–023 | Independent test, no P0 regression |
-| 5 Submission | Oct 10, 8–10 h | 016–018 | Fresh setup, video, student reflection and public repository |
+| 0 Foundation | Complete | 001–005, 008; plan/skill/services/contracts/test canary | MinIO build, S3 round trip, migration, reload and restart |
+| 1 Search/library | Complete | 006–007 | Two adapters plus search/save/persistence; live S2 rate limits handled |
+| 2 Ingestion | Complete | 009–011 | Retained PDF, metadata, editor and page chunks |
+| 3 LLM/chat | Complete | 012–015, expanded by 033–040 | Hosted smoke test, current UI, context/replay/recovery and browser checks |
+| 4 Enhancements | Continued iteration backlog | 019, 021–023, 043 | Safe downloads, semantic retrieval, local-serving feasibility, OCR and longer conversation context; focused verification for each |
+| 5 Submission | In progress, alongside feature iterations | 017–018, 042 | Current-UI live demo, authentic reflection, updated evidence, public repository and submission |
 
-Freeze on Oct 10 at noon; target submission at 10 PM, leaving approximately two hours of buffer. Reserve at least three hours for reflection and screenshots. The lead fixes contracts/migrations and verifies integration. Delegate to independent file owners with no overlapping edits, and review milestones.
+The user rejected the agent's recommendation to freeze feature work after reaching the homework baseline. The earlier human-oriented effort ranges and automatic freeze are superseded. Prioritize dependencies and observed agent throughput; investigate actual resource constraints instead of assuming human development speed. Keep the October 10, 11:59 PM submission requirement visible while continuing iterations and preparation in parallel. The lead owns contracts/migrations and integration verification. Delegate independent work to disjoint file owners and review milestones. Scope reductions require a concrete reason and the user's decision.
 
 Issue IDs map as follows:
 

@@ -234,3 +234,13 @@ Verification on `main`:
 - Running development stack healthy
 
 The final full E2E run (8/8) and the backend suite (74/74) ran on the same code.
+
+### Premature push toward the homework baseline (ARA-041)
+
+The user asked what remained after the UI overhaul. The lead answered that the core was complete and recommended: “I’d prioritize the demo and reflection over further feature work.” The roadmap also contained human-oriented effort ranges and a predetermined freeze. The response did not establish an actual time/resource constraint before recommending that the user stop iterating.
+
+The user corrected this: “No, we have time for other things. Also log this behavior. The agent is pushing towards an MVP rather than keep iterating.” The user emphasized the difference between human and agent throughput, illustrating it as one agent hour versus one hundred human hours. This is the user's comparison, not a benchmark measured by this session.
+
+Correction: reaching the mandatory workflows does not end the intended system's development. Reopen the remaining enhancement backlog; replace assumed human-hour schedules with dependencies, observed agent execution throughput and measured technical constraints. Submission preparation remains required and can run alongside feature iterations. The user decides scope reductions. AGENTS.md now records this standing policy, and the plan no longer prescribes an automatic freeze.
+
+The next user request was a list of remaining work with scope and descriptions. No enhancement was presented as implemented during that listing; remaining application work and submission/tooling tasks are recorded separately in the tracker. This exchange itself is an authentic reflection example of the user correcting the agent's project-management bias.

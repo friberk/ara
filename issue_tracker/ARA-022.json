@@ -3,7 +3,7 @@
   "title": "Optional local model serving",
   "type": "infrastructure",
   "priority": "P2",
-  "description": "Optional local model serving for the approved research-assistant workflows.",
+  "description": "Verify requested local model artifacts, licenses, engine/quantization compatibility and actual memory/context limits. Add optional OpenAI-compatible local generation, capability-aware selection and streaming; support an appropriate Mac host or NVIDIA profile without making default startup depend on weights.",
   "dependencies": [
     "ARA-012"
   ],
@@ -13,7 +13,7 @@
   "test_cases": [
     "Exact artifacts/engine/license/code reviewed; streaming/context/memory verified before enablement."
   ],
-  "status": "deferred",
+  "status": "planned",
   "related_files": [
     "docs/implementation-plan.md",
     "docs/ai-report.md"
@@ -22,6 +22,6 @@
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "P2 local inference investigated against Mac/CUDA/quantization constraints; no weights downloaded or local model/Compose profile implemented.",
+  "verification": "Reopened planning. Exact runtime feasibility remains a technical validation gate; no weights downloaded or local service implemented.",
   "updated_at": "2026-10-08"
 }

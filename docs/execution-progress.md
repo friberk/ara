@@ -10,7 +10,7 @@ The approved plan's core application is integrated into `main`. The user request
 | 1 — Search/library | Complete | Both provider adapters, normalized pagination/errors, canonical save, DOI deduplication and persistent library. |
 | 2 — PDF ingestion | Complete | Private originals in MinIO, bounded child-process extraction, page-aware chunks, metadata/provenance/editor and durable status/recovery. |
 | 3 — Summaries/chat | Complete | Hosted Responses integration, complete-text summary jobs, lexical retrieval, persistent multi-turn SSE chat, scoped citations, model settings and cost reservations. |
-| 4 — Enhancements | Deferred | Automatic open-access downloads, semantic retrieval, local serving and OCR remain outside the verified core. Targeted interface corrections are complete. |
+| 4 — Enhancements | Planned continued iterations | Automatic open-access downloads, semantic retrieval, local serving, OCR and longer conversation context remain to implement. The user rejected a premature scope freeze; these are a prioritized backlog. The UI overhaul (033–040) is complete. |
 | 5 — Verification/submission | Application checks complete; submission pending | Automated and live checks, local demo recording, README, license notices, prepared CI, issue records and authentic agent evidence. No remote CI run or Brightspace submission claimed. |
 
 ## Ownership and integration
@@ -25,4 +25,4 @@ See [final verification](verification-final.md) for commands, counts and live ob
 
 Semantic Scholar's live anonymous request returned a handled rate limit; its successful adapter/UI behavior is verified with external HTTP fixtures. All three hosted model IDs were listed by the configured account, while paid generation was exercised with Luna/low. Lexical retrieval and citation identity checks do not guarantee that every generated claim follows from its cited text.
 
-Deadline: October 10, 11:59 PM, with a planned 10 PM submission target. Preserve time for the student's own reflection, screenshots and final submission review. Deferred features must not displace those deliverables.
+Deadline: October 10, 11:59 PM. Feature iterations and submission preparation can proceed in parallel. Forecasts must use observed agent throughput and actual dependencies/resources; the previous human-hour estimates and automatic freeze are superseded by the user's feedback (ARA-041).

@@ -1,0 +1,30 @@
+{
+  "id": "ARA-041",
+  "title": "Correct premature scope freeze based on human-hour assumptions",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Record the actual user correction after the lead pushed toward the homework baseline and submission instead of continued iteration. Maintain a standing policy based on measured agent throughput, dependencies and actual constraints.",
+  "dependencies": [
+    "ARA-001"
+  ],
+  "acceptance_criteria": [
+    "Journal preserves the actual recommendation and user feedback without inventing internal reasoning or measured speedups.",
+    "AGENTS.md and the roadmap require continued iteration and remove an automatic human-hour-based freeze.",
+    "Remaining enhancements are a planned backlog rather than deferred solely for assumed lack of time."
+  ],
+  "test_cases": [
+    "Review the journal against the actual exchange.",
+    "Inspect guide/roadmap and reopened issue statuses for consistency."
+  ],
+  "status": "completed",
+  "related_files": [
+    "AGENTS.md",
+    "docs/implementation-plan.md",
+    "docs/execution-progress.md",
+    "docs/agent-development-log.md"
+  ],
+  "verification": "Actual feedback recorded; iteration policy and roadmap corrected; enhancement planning reopened. Documentation change only.",
+  "commits": [],
+  "pull_requests": [],
+  "updated_at": "2026-10-08"
+}

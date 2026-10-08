@@ -1,0 +1,31 @@
+{
+  "id": "ARA-043",
+  "title": "Improve long-conversation context and follow-up retrieval",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Extend the existing recent-turn context window with evidence-aware follow-up resolution and budgeted conversation compaction. Persist compaction/version provenance, retain complete original history and immutable paper/document bindings, and prevent repeated paid generation for the same request.",
+  "dependencies": [
+    "ARA-014"
+  ],
+  "acceptance_criteria": [
+    "Long conversations preserve useful prior facts/questions within the selected model budget.",
+    "Follow-ups retrieve evidence from the correct immutable document and explicitly report insufficient context.",
+    "Original messages remain available; compaction and generation settings are traceable.",
+    "UUID replay and interrupted-state protections continue to pass."
+  ],
+  "test_cases": [
+    "Long multi-turn fixture with references to earlier questions and bounded context.",
+    "Insufficient-evidence, document-isolation and request-replay regressions."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/retrieval.py",
+    "src/backend/tests/test_ai_integration.py",
+    "docs/implementation-plan.md"
+  ],
+  "verification": "Advanced history management was in the approved P2 plan; existing bounded recent-turn strategy remains operational.",
+  "commits": [],
+  "pull_requests": [],
+  "updated_at": "2026-10-08"
+}

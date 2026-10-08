@@ -17,6 +17,8 @@ The verified implementation is on `main`. Retain `feat/ai-research-assistant` as
 
 Use Given/When/Then acceptance criteria and practical red-green-refactor cycles. Log actual failures and corrections; never invent interactions or claim a test passed without output. Track work in `issue_tracker/` using `ARA-*` IDs. Record relevant prompts, decisions, errors and evidence in `docs/agent-development-log.md`.
 
+Completing the mandatory workflows is a milestone; continue the intended P1/P2 iterations. Do not recommend a scope freeze from unvalidated human-hour estimates or the homework baseline alone. Base forecasts on observed agent throughput, task dependencies, and measured technical/resource constraints. The user decides scope and iteration limits. Submission preparation can proceed alongside feature work. See ARA-041 for the actual premature-freeze feedback.
+
 Use `uv`/npm lockfiles, Ruff, pytest/pytest-asyncio, ESLint/strict tsc, Vitest/RTL, Playwright. Prefer generated OpenAPI TypeScript contracts. Alembic owns schema changes; no startup `create_all`. Commit identifiers where practical; one agent owns migrations/shared contracts. Independent agents may write disjoint modules; lead verifies integration.
 
 ## Commands

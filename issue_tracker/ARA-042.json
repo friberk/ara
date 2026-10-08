@@ -1,0 +1,30 @@
+{
+  "id": "ARA-042",
+  "title": "Align final verification and submission records with the UI overhaul",
+  "type": "documentation",
+  "priority": "P1",
+  "description": "Preserve historical verification while adding the current main UI/workspace state and recorded 74-backend/339-frontend/8-browser results. Refresh demo guidance, artifact references and remaining deliverables; distinguish fixture runs from current live validation.",
+  "dependencies": [
+    "ARA-039",
+    "ARA-040"
+  ],
+  "acceptance_criteria": [
+    "Final status documents distinguish initial and overhauled UI verification.",
+    "Submission checklist calls for a current-UI recording and authentic reflection evidence.",
+    "Counts and claims link to actual outputs/records; no remote CI or new live generation is fabricated."
+  ],
+  "test_cases": [
+    "Check documentation against current main, journal and issue verification."
+  ],
+  "status": "planned",
+  "related_files": [
+    "docs/verification-final.md",
+    "docs/execution-progress.md",
+    "docs/submission-checklist.md",
+    "docs/frontend-report.md"
+  ],
+  "verification": "Remaining documentation reconciliation identified during the progress audit.",
+  "commits": [],
+  "pull_requests": [],
+  "updated_at": "2026-10-08"
+}

@@ -3,7 +3,7 @@
   "title": "Optional pgvector and embeddings",
   "type": "improvement",
   "priority": "P2",
-  "description": "Optional pgvector and embeddings for the approved research-assistant workflows.",
+  "description": "Add versioned chunk embeddings, pgvector storage/indexes and paper-scoped semantic/hybrid retrieval. Preserve lexical fallback, immutable document citations and token budgets; evaluate retrieval quality against representative questions.",
   "dependencies": [
     "ARA-011"
   ],
@@ -13,7 +13,7 @@
   "test_cases": [
     "Versioned semantic/hybrid retrieval evaluated without breaking lexical search."
   ],
-  "status": "deferred",
+  "status": "planned",
   "related_files": [
     "docs/implementation-plan.md"
   ],
@@ -21,6 +21,6 @@
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "P2 embeddings/pgvector/hybrid retrieval deferred; verified lexical retrieval remains default.",
+  "verification": "Reopened planning. Current retrieval is lexical; no embeddings/vector indexes implemented.",
   "updated_at": "2026-10-08"
 }

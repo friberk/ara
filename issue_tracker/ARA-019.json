@@ -3,7 +3,7 @@
   "title": "Safe accessible full-text retrieval",
   "type": "improvement",
   "priority": "P1",
-  "description": "Safe accessible full-text retrieval for the approved research-assistant workflows.",
+  "description": "Fetch a saved paper's accessible full-text PDF from canonical provider candidates. Validate public destinations and redirects, enforce PDF signature/size/time limits, retain original bytes in MinIO, and reuse durable ingestion/status/error handling without accepting arbitrary browser URLs.",
   "dependencies": [
     "ARA-006",
     "ARA-010"
@@ -14,7 +14,7 @@
   "test_cases": [
     "Stored public candidate download validates redirects/signature/limits and uses ingestion."
   ],
-  "status": "deferred",
+  "status": "planned",
   "related_files": [
     "docs/implementation-plan.md"
   ],
@@ -22,6 +22,6 @@
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "Automatic stored-provider PDF retrieval is deferred P1. Manual upload processes originals; no arbitrary-URL downloader exists in core.",
+  "verification": "Reopened for continued iteration after user feedback. Download/ingestion is not implemented yet.",
   "updated_at": "2026-10-08"
 }
