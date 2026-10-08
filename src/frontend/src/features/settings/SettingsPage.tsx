@@ -12,6 +12,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useTheme } from '@/components/theme/theme-context'
 import { useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
+import { segmentedGroup, segmentedItem } from './segmented'
 
 const statusBadges: Record<Model['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -76,8 +77,8 @@ function ModelDefaults({ models, saved, labelledBy }: { models: Model[]; saved: 
           <p className="text-sm text-muted-foreground">More effort can help with harder questions, but answers take longer.</p>
         </div>
         {selected?.reasoning_efforts.length ? (
-          <ToggleGroup type="single" role="radiogroup" variant="outline" size="sm" spacing={0} aria-labelledby={effortId} value={draft.reasoning_effort} onValueChange={(value) => { if (value) change({ model: draft.model, reasoning_effort: value }) }} className="flex-wrap">
-            {selected.reasoning_efforts.map((effort) => <ToggleGroupItem key={effort} value={effort} className="px-3">{effortLabel(effort)}</ToggleGroupItem>)}
+          <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-labelledby={effortId} value={draft.reasoning_effort} onValueChange={(value) => { if (value) change({ model: draft.model, reasoning_effort: value }) }} className={segmentedGroup}>
+            {selected.reasoning_efforts.map((effort) => <ToggleGroupItem key={effort} value={effort} className={segmentedItem}>{effortLabel(effort)}</ToggleGroupItem>)}
           </ToggleGroup>
         ) : (
           <p className="text-sm text-muted-foreground">{selected ? 'This model has no reasoning effort settings.' : 'Choose a model to see its reasoning options.'}</p>
@@ -101,8 +102,8 @@ function Appearance() {
         <h2 id={headingId} className="text-base font-semibold tracking-tight">Appearance</h2>
         <p className="text-sm text-muted-foreground">System follows your device and switches with it.</p>
       </div>
-      <ToggleGroup type="single" role="radiogroup" variant="outline" size="sm" spacing={0} aria-label="Theme" value={theme} onValueChange={(value) => { if (value) setTheme(value) }}>
-        {themes.map(({ value, label, icon: Icon }) => <ToggleGroupItem key={value} value={value} className="px-3"><Icon aria-hidden="true" />{label}</ToggleGroupItem>)}
+      <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-label="Theme" value={theme} onValueChange={(value) => { if (value) setTheme(value) }} className={segmentedGroup}>
+        {themes.map(({ value, label, icon: Icon }) => <ToggleGroupItem key={value} value={value} className={segmentedItem}><Icon aria-hidden="true" />{label}</ToggleGroupItem>)}
       </ToggleGroup>
     </section>
   )

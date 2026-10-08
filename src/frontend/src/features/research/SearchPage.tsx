@@ -83,19 +83,20 @@ function SearchComposer({ initial, onSearch }: { initial: SearchParams | null; o
   const [text, setText] = useState(initial?.q ?? '')
   const [provider, setProvider] = useState<Provider>(initial?.provider ?? 'openalex')
   return (
-    <div className="sticky bottom-0 z-10 bg-background px-4 pt-1 pb-4 before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-linear-to-t before:from-background before:to-transparent sm:px-6">
-      <Composer
-        value={text}
-        onValueChange={setText}
-        onSubmit={() => onSearch({ q: text.trim(), provider })}
-        label="Research topic"
-        placeholder={initial ? 'Refine search' : 'Search papers by topic, title or research question'}
-        submitLabel="Search papers"
-        maxLength={300}
-        autoFocus={!initial}
-        leading={<ProviderSwitcher value={provider} onChange={setProvider} />}
-        className="mx-auto max-w-3xl"
-      />
+    <div className="sticky bottom-0 z-10 bg-background pt-1 pb-4 before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-linear-to-t before:from-background before:to-transparent">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+        <Composer
+          value={text}
+          onValueChange={setText}
+          onSubmit={() => onSearch({ q: text.trim(), provider })}
+          label="Research topic"
+          placeholder={initial ? 'Refine search' : 'Search papers by topic, title or research question'}
+          submitLabel="Search papers"
+          maxLength={300}
+          autoFocus={!initial}
+          leading={<ProviderSwitcher value={provider} onChange={setProvider} />}
+        />
+      </div>
     </div>
   )
 }

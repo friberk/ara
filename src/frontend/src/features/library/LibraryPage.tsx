@@ -13,7 +13,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { usePapers } from '@/hooks/queries/papers'
 import { PaperByline } from '@/features/research/PaperByline'
-import { countFormat } from '@/features/research/paper-format'
+import { countFormat, displayText } from '@/features/research/paper-format'
 
 const FILTER_DELAY_MS = 250
 
@@ -22,12 +22,12 @@ function PaperRow({ paper }: { paper: Paper }) {
     <article className="group relative py-5">
       <h2 className="text-base leading-snug font-semibold tracking-tight text-balance break-words">
         {/* The title link stretches over the row so the whole row opens the paper. */}
-        <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{paper.title?.trim() || 'Untitled paper'}</Link>
+        <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{displayText(paper.title) || 'Untitled paper'}</Link>
       </h2>
       <PaperByline authors={paper.authors} year={paper.year} className="mt-1.5">
         <DocumentStatusBadge state={paper.document_status} />
       </PaperByline>
-      {paper.abstract?.trim() && <p className="mt-2 line-clamp-2 text-sm leading-6 text-pretty text-muted-foreground">{paper.abstract.trim()}</p>}
+      {displayText(paper.abstract) && <p className="mt-2 line-clamp-2 text-sm leading-6 text-pretty text-muted-foreground">{displayText(paper.abstract)}</p>}
     </article>
   )
 }
@@ -71,7 +71,7 @@ export default function LibraryPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
         <div className="grid gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
           <p className="text-sm text-muted-foreground" aria-live="polite">{papers.data ? count : ' '}</p>

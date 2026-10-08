@@ -9,7 +9,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useSavePaper } from '@/hooks/queries/papers'
 import { cn } from '@/lib/utils'
 import { PaperByline } from './PaperByline'
-import { doiLink, recordLink } from './paper-format'
+import { displayText, doiLink, recordLink } from './paper-format'
 
 /** Clamped to three lines; Show more appears only when the text actually overflows. */
 function Abstract({ text }: { text: string }) {
@@ -80,7 +80,7 @@ export function PaperCard({ hit }: { hit: SearchHit }) {
   const navigate = useNavigate()
   const save = useSavePaper()
   const savedId = save.data?.id ?? hit.saved_paper_id ?? null
-  const title = hit.title?.trim() || 'Untitled paper'
+  const title = displayText(hit.title) || 'Untitled paper'
   function saveThen(next?: (paperId: string) => void) {
     save.mutate({ provider: hit.provider, external_id: hit.external_id }, { onSuccess: (paper) => { toast.success('Saved to library'); next?.(paper.id) } })
   }

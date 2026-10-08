@@ -13,6 +13,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { isActiveJob, jobKindLabels, jobStageLabel } from '@/components/jobs/job-labels'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
 import { cn } from '@/lib/utils'
+import { segmentedGroup, segmentedItem } from '@/features/settings/segmented'
 import { absoluteTime, relativeTime, useNow } from './relative-time'
 
 type Filter = 'all' | 'active' | 'failed'
@@ -117,10 +118,10 @@ export default function ActivityPage() {
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
       <header className="grid gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-        <p className="text-sm text-pretty text-muted-foreground">PDF processing and summaries. Progress updates on its own while jobs run, and you can leave this page at any time.</p>
+        <p className="text-sm text-pretty text-muted-foreground">PDF processing and summaries run in the background. Progress updates here, and you can leave this page while they work.</p>
       </header>
-      <ToggleGroup type="single" role="radiogroup" variant="outline" size="sm" spacing={0} aria-label="Filter activity" value={filter} onValueChange={(value) => { if (value) setFilter(value as Filter) }} className="mt-8">
-        {filters.map((item) => <ToggleGroupItem key={item.value} value={item.value} className="px-3">{item.label}</ToggleGroupItem>)}
+      <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-label="Filter activity" value={filter} onValueChange={(value) => { if (value) setFilter(value as Filter) }} className={cn(segmentedGroup, 'mt-8')}>
+        {filters.map((item) => <ToggleGroupItem key={item.value} value={item.value} className={segmentedItem}>{item.label}</ToggleGroupItem>)}
       </ToggleGroup>
       <div className="mt-2">
         {jobs.isPending && <div role="status" className="divide-y"><span className="sr-only">Loading activity…</span>{Array.from({ length: 3 }, (_, index) => <RowSkeleton key={index} />)}</div>}

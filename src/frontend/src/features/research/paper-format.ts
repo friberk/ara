@@ -3,12 +3,17 @@ import { providerLabels, type Provider } from '@/api/types'
 
 export type AuthorLine = { short: string; full: string; truncated: boolean }
 
+/** Drops control and private-use characters that some provider records and PDF fonts leak into names and titles. */
+export function displayText(value: string | null | undefined): string {
+  return (value ?? '').replace(/[\p{Cc}\p{Co}]/gu, ' ').replace(/\s+/g, ' ').trim()
+}
+
 /** First `max` authors, then "et al."; the full list stays available for a tooltip and screen readers. */
 export function authorLine(authors: string[] | null | undefined, max = 3): AuthorLine | null {
-  const names = (authors ?? []).map((name) => name.trim()).filter(Boolean)
+  const names = (authors ?? []).map(displayText).filter(Boolean)
   if (!names.length) return null
   const full = names.join(', ')
-  return names.length > max ? { short: `${names.slice(0, max).join(', ')} et al.`, full, truncated: true } : { short: full, full, truncated: false }
+  return names.length > max ? { short: `${names.slice(0, max).join(', ')} et\u00a0al.`, full, truncated: true } : { short: full, full, truncated: false }
 }
 
 /** Accepts a bare DOI or a doi.org URL and returns the bare DOI with its resolver link. */
