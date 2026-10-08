@@ -1,4 +1,6 @@
+import { useId } from 'react'
 import type { Citation } from '@/api/types'
+import { cn } from '@/lib/utils'
 import { CitationChip } from './CitationChip'
 
 export type SourceListProps = {
@@ -9,13 +11,25 @@ export type SourceListProps = {
   className?: string
 }
 
-/** Contract stub (lead): one chip per citation. ARA-035 deduplicates by page and adds keyboard access to excerpts. */
+/** The pages an answer or summary cites, once each and in page order. */
 export function SourceList({ citations, documentId, onSelect, className }: SourceListProps) {
+  const labelId = useId()
   const valid = citations.filter((citation) => citation.document_id === documentId)
+  // The first passage cited on a page represents that page.
+  const firstOnPage = new Map<number, Citation>()
+  for (const citation of valid) if (!firstOnPage.has(citation.page)) firstOnPage.set(citation.page, citation)
+  const pages = [...firstOnPage.values()].sort((a, b) => a.page - b.page)
+  const mismatch = valid.length !== citations.length
+  if (!pages.length && !mismatch) return null
   return (
-    <>
-      {valid.length > 0 && <div className={className} aria-label="Sources">{valid.map((citation, index) => <CitationChip key={`${citation.chunk_id}:${index}`} citation={citation} onSelect={onSelect} />)}</div>}
-      {valid.length !== citations.length && <p role="alert" className="text-sm text-destructive">A citation could not be matched to this document.</p>}
-    </>
+    <div className={cn('grid gap-2', className)}>
+      {pages.length > 0 && (
+        <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-1.5">
+          <span id={labelId} className="mr-0.5 text-xs text-muted-foreground">Sources</span>
+          {pages.map((citation) => <CitationChip key={citation.chunk_id} citation={citation} onSelect={onSelect} />)}
+        </div>
+      )}
+      {mismatch && <p role="alert" className="text-sm text-destructive">A citation could not be matched to this document.</p>}
+    </div>
   )
 }

@@ -21,16 +21,29 @@
     "test_workspace_integration.py on real PostgreSQL via scripts/test-stack.py",
     "DELETE preflight allowed; cross-origin DELETE rejected 403"
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/alembic/versions/0004_workspace_history.py",
     "src/backend/app/repositories/chats.py",
     "src/backend/app/routes/history.py",
     "src/backend/app/services/chat.py",
-    "docs/api-contract.md"
+    "docs/api-contract.md",
+    "src/backend/app/routes/chat.py",
+    "src/backend/app/routes/jobs.py",
+    "src/backend/app/repositories/jobs.py",
+    "src/backend/app/repositories/papers.py",
+    "src/backend/app/services/health.py",
+    "src/backend/tests/test_workspace_integration.py"
   ],
-  "commits": [],
+  "commits": [
+    "c5899e8",
+    "618faa9",
+    "466baa5",
+    "d66a214",
+    "2e3961e",
+    "524164c"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Red: ara-test compose run pytest tests/test_ai.py tests/test_workspace_integration.py -> 16 failed, 13 passed in 2.28s (ImportError title_from_question; 404 on /chats, DELETE /chats/{id} and /search-history; KeyError saved_paper_id; unfiltered /jobs; DELETE preflight 400). Green: same command 29 passed in 2.35s. First full python3 scripts/test-stack.py test found readiness pinned to 0003 (1 failed, 73 passed); after bumping SCHEMA_REVISION: Ruff All checks passed, 74 passed in 13.91s. alembic check: no new upgrade operations; downgrade to 0003 and re-upgrade verified with title_source backfill (default/manual). Lead independent rerun after rebase/merge: test-stack 74 passed in 14.54s; dev DB migrated to 0004 and readiness ready; generated.ts regenerated from test API 8001.",
   "updated_at": "2026-10-08"
 }

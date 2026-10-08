@@ -14,10 +14,11 @@ export function renderApp(path = '/') {
   return { client, user, ...view }
 }
 
-/** Renders one component with the query client and router, for focused tests. */
+/** Renders one component with the query client and router, for focused tests. rerender keeps the providers. */
 export function renderWithProviders(ui: React.ReactElement, { path = '/' } = {}) {
   const client = testClient()
   const user = userEvent.setup()
-  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter></QueryClientProvider>)
+  const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>{children}</MemoryRouter></QueryClientProvider>
+  const view = render(ui, { wrapper })
   return { client, user, ...view }
 }

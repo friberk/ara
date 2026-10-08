@@ -29,13 +29,19 @@ async def resources():
     )
     resources = Resources(settings)
     from app.models.jobs import BackgroundJob
-    from app.models.research import GenerationReservation, ModelConfiguration, Paper
+    from app.models.research import (
+        GenerationReservation,
+        ModelConfiguration,
+        Paper,
+        SearchHistory,
+    )
 
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(Paper))
         await session.execute(delete(ModelConfiguration))
         await session.execute(delete(GenerationReservation))
         await session.execute(delete(BackgroundJob))
+        await session.execute(delete(SearchHistory))
     await resources.storage_call(resources.storage.make_bucket, settings.minio_bucket)
     try:
         yield resources
@@ -53,4 +59,5 @@ async def resources():
             await session.execute(delete(ModelConfiguration))
             await session.execute(delete(GenerationReservation))
             await session.execute(delete(BackgroundJob))
+            await session.execute(delete(SearchHistory))
         await resources.close()

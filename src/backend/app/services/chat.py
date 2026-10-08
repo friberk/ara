@@ -29,9 +29,25 @@ from app.services.retrieval import (
     validate_citations,
 )
 
+# Clause punctuation only: closing brackets, quotes and percent signs carry meaning.
+TITLE_TRAILING = " .,;:!?…-–—。，；：！？、"
+
 
 def event(name: str, data: dict) -> str:
     return f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def title_from_question(text: str, limit: int = 60) -> str:
+    """Deterministic chat title: collapsed whitespace, word-boundary cut, "…" if shortened."""
+    collapsed = " ".join(text.split())
+    shortened = len(collapsed) > limit
+    cut = collapsed
+    if shortened:
+        cut = collapsed[: limit - 1]
+        if collapsed[limit - 1] != " " and " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+    title = cut.rstrip(TITLE_TRAILING) or cut
+    return title + "…" if shortened else title
 
 
 async def expire(session, chat_id):
@@ -138,6 +154,10 @@ async def prepare(resources, chat_id: UUID, body):
             configuration={"prompt_version": "1", "input_limit": 32000, "output_limit": 4000},
             created_at=now(),
         )
+        if chat.title_source == "default":
+            # Same transaction as the user message; replays returned above never retitle.
+            first = next((m.content for m in messages if m.role == "user"), body.content)
+            chat.title, chat.title_source = title_from_question(first), "auto"
         session.add_all([user, assistant])
         await session.flush()
         return assistant, prompt, chunks, False

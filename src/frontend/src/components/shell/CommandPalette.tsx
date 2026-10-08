@@ -5,7 +5,7 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { documentStateLabels } from '@/components/feedback/DocumentStatusBadge'
 import { useChats } from '@/hooks/queries/chats'
 import { usePapers } from '@/hooks/queries/papers'
-import { chatHref } from './recent-items'
+import { chatDisplayTitle, chatHref } from './recent-items'
 
 /** Jump to a paper or conversation, or run a common action. Loaded on first open (⌘K / Ctrl+K). */
 export default function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -48,9 +48,9 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
           {!!chats.data?.items.length && (
             <CommandGroup heading="Conversations">
               {chats.data.items.map((chat) => (
-                <CommandItem key={chat.id} value={`chat ${chat.title} ${chat.paper_title ?? ''} ${chat.id}`} onSelect={() => go(chatHref(chat))}>
+                <CommandItem key={chat.id} value={`chat ${chatDisplayTitle(chat)} ${chat.paper_title ?? ''} ${chat.id}`} onSelect={() => go(chatHref(chat))}>
                   <MessageSquare aria-hidden="true" />
-                  <span className="truncate">{chat.title}</span>
+                  <span className="truncate">{chatDisplayTitle(chat)}</span>
                   {chat.paper_title && <span className="ml-auto max-w-[40%] shrink-0 truncate text-xs text-muted-foreground">{chat.paper_title}</span>}
                 </CommandItem>
               ))}

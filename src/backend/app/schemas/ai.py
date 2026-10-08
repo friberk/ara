@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 class DTO(BaseModel):
@@ -35,6 +35,11 @@ class ChatInput(GenerationInput):
 
 class ChatCreate(BaseModel):
     title: str = Field(default="Paper discussion", min_length=1, max_length=200)
+
+
+class ChatRename(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 class Model(DTO):
@@ -79,11 +84,23 @@ class Chat(DTO):
     paper_id: UUID
     document_id: UUID
     title: str
+    title_source: Literal["default", "auto", "manual"]
     created_at: datetime
 
 
 class ChatPage(BaseModel):
     items: list[Chat]
+
+
+class ChatSummary(Chat):
+    paper_title: str | None
+    last_activity_at: datetime
+    message_count: int
+    last_question_preview: str | None
+
+
+class ChatSummaryPage(BaseModel):
+    items: list[ChatSummary]
 
 
 class Message(DTO):

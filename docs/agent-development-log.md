@@ -91,3 +91,73 @@ The user instructed: “Merge to main. Keep the branch for archival purposes.”
   - Four disjoint frontend feature agents in their own worktrees: content, conversation, workspace/reader, and research/library.
   - Serial end-to-end verification, then a fresh Impeccable finish review and regenerated design documentation.
 - The brand commitment in PRODUCT.md now records the user-pinned direction. Issues: ARA-033 to ARA-040.
+
+### UI overhaul: backend history API (ARA-034)
+
+A backend agent worked in its own worktree on `feat/ui-api` and owned migration 0004 and the API schemas.
+
+**Red phase:** the targeted run had 16 failures and 13 passes (`ImportError` for `title_from_question`, 404 on the new routes, `KeyError: 'saved_paper_id'`, an unfiltered job list, and the DELETE preflight returning `400 Disallowed CORS method`).
+
+**Corrections during implementation:**
+- Pydantic rejected `SearchResult` instances in a `list[SearchHit]` field, so the integration now builds `SearchHit` items.
+- The first full run failed only the readiness test, which still pinned revision 0003. The pin moved to `0004_workspace_history`.
+
+**Agent's final run:** 74 passed and Ruff was clean.
+
+**Trailer request:** mid-run, the user asked that commits carry no Co-Authored-By trailer and that existing ones be amended. The lead stripped the trailer from the three overhaul commits with `git filter-branch --msg-filter` (trees verified identical) and repointed the untouched feature worktrees. It then rebased `feat/ui-api` onto the rewritten tip, stripped the trailer from the six backend commits, and merged by fast-forward.
+
+**Lead verification:**
+- Ran `docker compose run --rm migrate` on the development stack; readiness returned ready, and `GET /chats` returned real chats with paper titles.
+- Independently reran `python3 scripts/test-stack.py test`: 74 passed in 14.54s.
+- Regenerated `src/api/generated.ts` from the e2e test API on port 8001, matching CI, and replaced the provisional frontend types with generated aliases. Vitest passed 28 of 28.
+
+### TDD process correction (ARA-033)
+
+The user asked whether the work followed TDD. Audit result:
+- **Backend (ARA-034):** test-first, with the red run recorded by the backend agent.
+- **Lead's frontend foundation:** written before its tests. The later failures were test or environment issues, not red phases.
+- **Recent-list change:** the only lead change that followed red-green (2 failing tests, then green).
+
+The ARA-033 verification text had said "Red/green observed", which overstated the process; it now states this accurately. For the remaining lead work, tests come first, and each feature agent's red evidence is checked when it reports.
+
+### Foundation component tests
+
+The user asked for every foundation component to have its own tests, and set a standing rule: TDD-first from now on. Because the foundation code already existed, this was a test backfill, not test-first work.
+
+The lead added 54 tests across the API client, composer, model and provider switchers, paper picker, feedback, upload, jobs, theme, sidebar, palette, header slot and query hooks. The new tests exposed two real defects:
+- `UploadDropzone` forwarded the mutation's extra arguments (the File and mutation context) to `onAccepted`.
+- The `renderWithProviders` rerender lost its providers ("No QueryClient set").
+
+Strict tsc and the React Compiler lint rule also rejected the first versions of two tests: unsafe `matchMedia` casts, and probe components reassigning outer variables. Those tests were rewritten with `renderHook`.
+
+To show the tests guard behaviour, seven deliberate breakages were applied one at a time and each was caught by a failing test, with sources restored after each. Final check: 85 tests passed across 25 files.
+
+The four feature agents were reminded to work strictly red-first and to report red evidence for review.
+
+### UI overhaul: content and research merges
+
+The content agent (ARA-035) and the research agent (ARA-038) reported test-first work with real red excerpts, and the lead merged both with `--no-ff`. Integrated result: 147 tests passing and a 393 KB main chunk.
+
+Corrections from the agents:
+- **Content:** jsdom MathML elements lack `style`, which broke accessibility queries, so the tests now use `hidden: true`.
+- **Content:** the citation dialog lost focus on close; the chip is now nested in `DialogTrigger`.
+- **Research:** a background refetch after saving showed a spurious rate-limit alert.
+
+The research agent stated plainly that its visual-fix commit and about a dozen small behaviours were implemented without tests. It was asked to add labelled test-after coverage with mutation checks.
+
+Lead follow-up:
+- Saving a paper had invalidated every loaded search page, which re-queried OpenAlex or Semantic Scholar. The red test showed `saved_paper_id` staying null. The cache is now updated in place.
+- A characterisation test showed the agent's ToggleGroup role request was unnecessary, because Radix already renders `radiogroup`.
+- Full-suite runs failed 1–2 different tests each time. Each file passed alone, and the failures were 1 s `findBy` timeouts under 12-worker contention. The research agent independently diagnosed the same cause. Testing Library's async timeout is now 3 s, and three consecutive runs passed 150/150.
+
+### UI overhaul: conversation pane merge (ARA-036)
+
+The conversation agent built the chat-first pane test-first (9 chat tests red against the stub, then green). It fixed a lint-detected ref read during render, and caught its own stale-list "Conversation not found" flash with a failing test.
+
+**Lead review of the port.** It retains the legacy streaming safeguards (abort, terminal guard, cross-document citation rejection, no automatic resend) and consumes queued questions safely under StrictMode.
+
+**Behaviour change.** Stop now keeps the partial answer as "Interrupted" with a polite status instead of an alert. An early stream end still raises an alert.
+
+**Integration.** The merge into `feat/ui-overhaul` passed 162 tests and lint had 0 errors.
+
+**Open item.** The agent's E2E spec assumes a reader region and a highlight status text. That contract was sent to the workspace agent before its merge, so the two are built to the same names.

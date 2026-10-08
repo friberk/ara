@@ -255,3 +255,39 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     )
     assert closed == [True]
     assert saved[-1] == (assistant.id, "Visible partial answer", "interrupted")
+
+
+@pytest.mark.parametrize(
+    ("question", "limit", "expected"),
+    [
+        ("  What   accuracy\n did the\tmodel reach?  ", 60, "What accuracy did the model reach"),
+        ("Is accuracy above 90%?", 60, "Is accuracy above 90%"),
+        ("Why does BERT (2018) work?!", 60, "Why does BERT (2018) work"),
+        ("alpha beta, gamma delta", 12, "alpha beta…"),
+        ("alpha beta gamma", 13, "alpha beta…"),
+        ("x" * 61, 60, "x" * 59 + "…"),
+        ("a" * 60, 60, "a" * 60),
+        ("???", 60, "???"),
+    ],
+)
+def test_given_question_when_titling_then_deterministic_word_boundary_title(
+    question, limit, expected
+):
+    from app.services.chat import title_from_question
+
+    assert title_from_question(question, limit) == expected
+
+
+def test_given_long_question_when_titling_then_bounded_and_marked_only_when_shortened():
+    from app.services.chat import title_from_question
+
+    question = (
+        "How does the proposed retrieval method compare with dense passage retrieval "
+        "on open-domain question answering benchmarks?"
+    )
+    title = title_from_question(question)
+    assert title == title_from_question(question)
+    assert len(title) <= 60 and title.endswith("…")
+    assert question.startswith(title.removesuffix("…"))
+    assert not title.removesuffix("…").endswith(" ")
+    assert not title_from_question("What accuracy?").endswith("…")

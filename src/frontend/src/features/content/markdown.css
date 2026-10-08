@@ -1,0 +1,20 @@
+/*
+ * KaTeX's stylesheet is unlayered, so Tailwind utilities cannot override it; these unlayered rules can.
+ * Scoped to Markdown output so the rest of the app never sees them.
+ */
+.content-markdown .katex {
+  font-size: 1.1em;
+}
+
+/* The base layer gives every element the hairline border colour; fraction bars and roots must use the ink. */
+.content-markdown .katex * {
+  border-color: currentColor;
+}
+
+/* Wide equations scroll inside the reading column instead of widening it. */
+.content-markdown .katex-display {
+  margin: 1.25em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}

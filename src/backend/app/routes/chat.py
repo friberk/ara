@@ -1,13 +1,23 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.integrations.llm import LLMError, validate_selection
 from app.models.research import ChatMessage, ChatSession, Document, Paper
-from app.schemas.ai import Chat, ChatCreate, ChatInput, ChatPage, Message, MessagePage
+from app.repositories.chats import chat_summaries
+from app.schemas.ai import (
+    Chat,
+    ChatCreate,
+    ChatInput,
+    ChatPage,
+    ChatRename,
+    ChatSummaryPage,
+    Message,
+    MessagePage,
+)
 from app.services.chat import expire, prepare, stream_answer
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
@@ -26,7 +36,12 @@ async def create_chat(paper_id: UUID, body: ChatCreate, request: Request):
         )
         if document is None or document.status != "ready":
             raise HTTPException(409, "Upload and process a paper PDF before starting a chat")
-        chat = ChatSession(paper_id=paper_id, document_id=document.id, title=body.title)
+        chat = ChatSession(
+            paper_id=paper_id,
+            document_id=document.id,
+            title=body.title,
+            title_source="manual" if "title" in body.model_fields_set else "default",
+        )
         session.add(chat)
         await session.flush()
         return Chat.model_validate(chat)
@@ -45,6 +60,56 @@ async def list_chats(paper_id: UUID, request: Request):
             )
         ).all()
         return ChatPage(items=[Chat.model_validate(item) for item in items])
+
+
+@router.get("/chats", response_model=ChatSummaryPage)
+async def recent_chats(
+    request: Request,
+    paper_id: UUID | None = None,
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    async with request.app.state.resources.sessions() as session:
+        items = await chat_summaries(session, paper_id=paper_id, limit=limit, offset=offset)
+        return ChatSummaryPage(items=items)
+
+
+async def locked_chat(session, chat_id: UUID) -> ChatSession:
+    chat = await session.scalar(
+        select(ChatSession).where(ChatSession.id == chat_id).with_for_update()
+    )
+    if chat is None:
+        raise AppError(404, "CHAT_NOT_FOUND", "Chat not found.")
+    return chat
+
+
+@router.patch("/chats/{chat_id}", response_model=Chat)
+async def rename_chat(chat_id: UUID, body: ChatRename, request: Request):
+    async with request.app.state.resources.sessions() as session, session.begin():
+        chat = await locked_chat(session, chat_id)
+        chat.title, chat.title_source = body.title, "manual"
+        await session.flush()
+        return Chat.model_validate(chat)
+
+
+@router.delete("/chats/{chat_id}", status_code=204, response_class=Response)
+async def delete_chat(chat_id: UUID, request: Request):
+    async with request.app.state.resources.sessions() as session, session.begin():
+        chat = await locked_chat(session, chat_id)
+        await expire(session, chat_id)
+        if await session.scalar(
+            select(ChatMessage.id).where(
+                ChatMessage.session_id == chat_id,
+                ChatMessage.role == "assistant",
+                ChatMessage.state == "processing",
+            )
+        ):
+            raise AppError(
+                409, "CHAT_BUSY", "Wait for the current answer to finish before deleting."
+            )
+        # Messages go with the chat through the session_id ON DELETE CASCADE foreign key.
+        await session.delete(chat)
+    return Response(status_code=204)
 
 
 @router.get("/chats/{chat_id}/messages", response_model=MessagePage)

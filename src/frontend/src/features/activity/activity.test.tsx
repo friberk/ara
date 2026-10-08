@@ -1,0 +1,47 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import { renderApp } from '@/test/render'
+import { mockApi } from '@/test/fetch-routes'
+
+const base = { attempts: 1, generation: 1, result: null, error_code: null, error_message: null, error: null, available_at: '2026-10-08T10:00:00Z', created_at: '2026-10-08T10:00:00Z', updated_at: '2026-10-08T10:05:00Z' }
+const failed = { ...base, id: 'j1', kind: 'ingest', state: 'failed', stage: 'failed', progress: 30, attempts: 2, error: { code: 'PDF_UNREADABLE', message: 'The PDF has no extractable text.' }, paper_id: 'p1', paper_title: 'Traceable research systems' }
+const summary = { ...base, id: 'j2', kind: 'summary', state: 'completed', stage: 'completed', progress: 100, paper_id: 'p2', paper_title: 'Attention is all you need' }
+const running = { ...base, id: 'j3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 55, paper_id: null, paper_title: null }
+afterEach(() => vi.unstubAllGlobals())
+
+test('Given a failed ingest job, When Retry processing is pressed, Then it is queued again and links to its paper', async () => {
+  const { calls } = mockApi({ 'GET /jobs': { items: [failed, summary] }, 'POST /jobs/j1/retry': { ...failed, state: 'queued', stage: 'queued', error: null } })
+  const { user } = renderApp('/activity')
+  expect(await screen.findByRole('heading', { level: 1, name: 'Activity' })).toBeVisible()
+  const row = (await screen.findByRole('heading', { level: 2, name: 'PDF processing' })).closest('li') as HTMLElement
+  expect(within(row).getByRole('link', { name: failed.paper_title })).toHaveAttribute('href', '/papers/p1')
+  expect(within(row).getByText('Failed')).toBeVisible()
+  expect(within(row).getByText('The PDF has no extractable text.')).toBeVisible()
+  await user.click(within(row).getByRole('button', { name: 'Retry processing' }))
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/jobs/j1/retry')).toBe(true))
+  expect(await screen.findByText('Processing queued again')).toBeVisible()
+  const done = (screen.getByRole('heading', { level: 2, name: 'Paper summary' })).closest('li') as HTMLElement
+  expect(within(done).getByRole('link', { name: summary.paper_title })).toHaveAttribute('href', '/papers/p2')
+  expect(within(done).queryByRole('button', { name: 'Retry processing' })).not.toBeInTheDocument()
+})
+
+test('Given active and finished jobs, Then stage and progress are readable and the filter narrows the list', async () => {
+  mockApi({ 'GET /jobs': { items: [running, failed, summary] } })
+  const { user } = renderApp('/activity')
+  expect(await screen.findByText('Extracting title, authors and abstract')).toBeVisible()
+  expect(screen.getByRole('progressbar', { name: 'PDF processing progress' })).toBeVisible()
+  expect(within(screen.getByRole('list', { name: 'Jobs' })).getAllByRole('listitem')).toHaveLength(3)
+  await user.click(screen.getByRole('radio', { name: 'Failed' }))
+  await waitFor(() => expect(within(screen.getByRole('list', { name: 'Jobs' })).getAllByRole('listitem')).toHaveLength(1))
+  expect(screen.getByRole('link', { name: failed.paper_title })).toBeVisible()
+  await user.click(screen.getByRole('radio', { name: 'Active' }))
+  await waitFor(() => expect(within(screen.getByRole('list', { name: 'Jobs' })).getAllByRole('listitem')).toHaveLength(1))
+  expect(screen.getByText('55%')).toBeVisible()
+})
+
+test('Given the legacy jobs route, Then Activity opens with an empty state', async () => {
+  mockApi({})
+  renderApp('/jobs')
+  expect(await screen.findByRole('heading', { level: 1, name: 'Activity' })).toBeVisible()
+  expect(await screen.findByRole('heading', { name: 'No activity yet' })).toBeVisible()
+  expect(within(screen.getByRole('main')).getByRole('link', { name: 'Upload a PDF' })).toHaveAttribute('href', '/library#upload')
+})

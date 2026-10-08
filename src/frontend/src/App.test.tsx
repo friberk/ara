@@ -61,14 +61,17 @@ test('Given a library paper chosen in the composer, When a question is asked, Th
   expect(peekQuestion('c9')?.request_id).toMatch(/^[0-9a-f-]{36}$/)
 })
 
-test('Given recent chats and searches, Then the sidebar lists them by activity and a chat can be renamed and deleted', async () => {
-  let title = chat.title
-  const { calls } = mockApi({
-    'GET /chats': () => new Response(JSON.stringify({ items: [{ ...chat, title }] }), { headers: { 'Content-Type': 'application/json' } }),
+function recentRoutes(title: { value: string }) {
+  return mockApi({
+    'GET /chats': () => new Response(JSON.stringify({ items: [{ ...chat, title: title.value }] }), { headers: { 'Content-Type': 'application/json' } }),
     'GET /search-history': { items: [search] },
-    'PATCH /chats/c1': ({ body }) => { title = (body as { title: string }).title; return new Response(JSON.stringify({ ...chat, title, title_source: 'manual' }), { headers: { 'Content-Type': 'application/json' } }) },
+    'PATCH /chats/c1': ({ body }) => { title.value = (body as { title: string }).title; return new Response(JSON.stringify({ ...chat, title: title.value, title_source: 'manual' }), { headers: { 'Content-Type': 'application/json' } }) },
     'DELETE /chats/c1': () => noContent(),
   })
+}
+
+test('Given recent chats and searches, Then the sidebar lists them by activity and a chat can be renamed', async () => {
+  recentRoutes({ value: chat.title })
   const { user } = renderApp('/')
   const links = await screen.findAllByRole('link', { name: /Which datasets were used\?|graph transformers/ })
   expect(links.map((link) => link.textContent)).toEqual(['Which datasets were used?', 'graph transformers'])
@@ -81,7 +84,12 @@ test('Given recent chats and searches, Then the sidebar lists them by activity a
   await user.type(field, 'WMT datasets')
   await user.click(screen.getByRole('button', { name: 'Save name' }))
   expect(await screen.findByRole('link', { name: 'WMT datasets' })).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Options for WMT datasets' }))
+})
+
+test('Given a recent chat, When deleted and confirmed, Then the chat is removed', async () => {
+  const { calls } = recentRoutes({ value: chat.title })
+  const { user } = renderApp('/')
+  await user.click(await screen.findByRole('button', { name: 'Options for Which datasets were used?' }))
   await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
   await user.click(await screen.findByRole('button', { name: 'Delete conversation' }))
   await waitFor(() => expect(calls.some((call) => call.method === 'DELETE' && call.path === '/chats/c1')).toBe(true))

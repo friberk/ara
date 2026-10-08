@@ -17,12 +17,23 @@
     "math.test.ts",
     "remark-citations.test.ts"
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/content"
   ],
-  "commits": [],
+  "commits": [
+    "5fcbf84",
+    "cf5ceb8",
+    "b3c337c",
+    "44ab08c",
+    "5aaa1dd",
+    "0ac0d3f",
+    "842971c",
+    "223a2b9",
+    "15779dd",
+    "e107484"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Content agent, test-first. Red: math.test and remark-citations.test failed on unresolved modules; component tests 16 failed / 25 passed against the lead's stubs (missing 'Source, page 7' button, math, table and the Sources group). After implementation, 2 failed with a jsdom MathML style TypeError; tests now query math with hidden:true. Visual round 1 found duplicate same-page chips, chip contrast about 4.35:1, lost dialog focus and HoverCard passive-listener errors on touch; each got a red test and a fix. Agent check: 72 tests. Lead integration after merge: npm run check 32 files/147 tests, build main 393.46KB. KaTeX CSS and JS are only in lazy chunks. Follow-up in progress (test-first): newline-preserving display math, indented code blocks, link destinations. Follow-up: TDD audit by the agent (7 component tests were never red because the stubs already behaved; math/plugin reds were missing-module only). 0ac0d3f adds test-after coverage with mutation checks, and 2 vacuous tests were found and fixed. Math edge cases were done test-first, 7 failed before implementation: multi-line display math keeps lines (KaTeX % comment had swallowed '+ 2'), indented code skipped, link destinations/autolinks skipped. Lead integration: 178 tests in 3 consecutive full runs. Remaining known gaps (accepted): display math in table cells/headings stays inline, markers in link text dropped, indented code inside blockquotes/6-space list code, reference definitions, multi-line inline \\\\( \\\\).",
   "updated_at": "2026-10-08"
 }

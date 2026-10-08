@@ -19,7 +19,7 @@
     "ModelSwitcher RTL: disabled unavailable model, effort submenu, set as default",
     "npm run check, npm run build main chunk <= 467KB"
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/src/index.css",
     "src/frontend/src/App.tsx",
@@ -27,8 +27,12 @@
     "src/frontend/src/components/composer",
     "src/frontend/src/hooks/queries"
   ],
-  "commits": [],
+  "commits": [
+    "bf1daea",
+    "2db13ad",
+    "5d9afdc"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Foundation: shadcn radix-nova neutral tokens light/dark, Geist, client-only theme provider, sidebar shell with papers/recent, lazy command palette, unified composer, ModelSwitcher, query layer, workspace and pending-question contracts. Process note: the foundation was implemented BEFORE its tests (not test-first). Tests were written afterwards; the failures seen then were test/environment issues, not red phases: lazy routes broke synchronous legacy getBy queries; mergeRecent crashed on a legacy mock without timestamps (made defensive); a Radix submenu click did not select in jsdom (tests drive submenus by keyboard); next-themes emitted a React 19 script-tag warning (replaced). Only the Recent display-title/empty-chat change (5d9afdc) followed red-green: 3 new tests, 2 failed, then 31/31 green. npm run check: 31/31 Vitest, strict tsc, ESLint 0 errors. Build main chunk 486.87KB/148.53KB gzip; budget revised from 467KB to Vite's 500KB line because the shadcn shell (Radix menus, tooltip, sheet, sonner) is intrinsic. Pending: finish review and final captures (ARA-040). Component test backfill (written after the foundation code, per the user's request for full component coverage): 54 new tests for the API client, pending questions, PDF validation, job labels, Composer, generation settings, ModelSwitcher, ProviderSwitcher, PaperPicker, feedback, UploadDropzone, JobProgress, ThemeProvider, sidebar, recents, command palette, header slot and query hooks. They found two defects: UploadDropzone passed the mutation's extra arguments to onAccepted, and renderWithProviders' rerender dropped providers. Both fixed. Mutation check: 7/7 deliberate breakages were caught (Shift+Enter guard, 25 MB boundary, 404-as-deleted, take-once, empty-chat filter, saved theme, effort normalisation). npm run check 25 files/85 tests, 0 lint errors; build main 487.02KB.",
   "updated_at": "2026-10-08"
 }

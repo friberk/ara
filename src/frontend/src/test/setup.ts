@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
+
+// Whole-app tests load lazy routes (Markdown, KaTeX, pdf.js) on first use; under a parallel run that can exceed 1s.
+configure({ asyncUtilTimeout: 3000 })
 
 afterEach(() => { cleanup(); window.localStorage.clear(); document.documentElement.className = '' })
 

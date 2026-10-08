@@ -11,5 +11,6 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': { target: process.env.API_PROXY_TARGET ?? 'http://api:8000', changeOrigin: true }, '/health': { target: process.env.API_PROXY_TARGET ?? 'http://api:8000' } },
   },
-  test: { environment: 'jsdom', globals: true, setupFiles: ['./src/test/setup.ts'], exclude: ['e2e/**', 'node_modules/**'] },
+  // Whole-app jsdom tests load lazy routes; parallel runs can double their time.
+  test: { environment: 'jsdom', globals: true, testTimeout: 15_000, setupFiles: ['./src/test/setup.ts'], exclude: ['e2e/**', 'node_modules/**'] },
 })

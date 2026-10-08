@@ -6,7 +6,7 @@ from urllib.parse import quote
 import httpx
 
 from app.core.errors import AppError
-from app.schemas.research import SearchPage, SearchResult
+from app.schemas.research import SearchHit, SearchPage, SearchResult
 
 FIELDS = "title,authors,year,abstract,externalIds,url,openAccessPdf"
 
@@ -170,7 +170,10 @@ class AcademicSearch:
                 raise ValueError("Missing results")
             return SearchPage(
                 provider=provider,
-                items=[normalize(provider, x) for x in data],
+                items=[
+                    SearchHit.model_validate(normalize(provider, x), from_attributes=True)
+                    for x in data
+                ],
                 next_cursor=str(continuation) if continuation is not None and data else None,
                 total=total,
             )

@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy import text
 
-SCHEMA_REVISION = "0003_upload_requests"
+SCHEMA_REVISION = "0004_workspace_history"
 
 
 async def readiness(resources) -> dict[str, str]:

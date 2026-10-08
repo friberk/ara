@@ -17,6 +17,7 @@ from app.core.resources import Resources
 from app.routes.ai import router as ai_router
 from app.routes.chat import router as chat_router
 from app.routes.documents import router as documents_router
+from app.routes.history import router as history_router
 from app.routes.jobs import router
 from app.routes.research import router as research_router
 from app.services.dispatcher import dispatcher_loop
@@ -48,7 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_methods=["GET", "POST", "PATCH", "PUT"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
         allow_headers=["Content-Type", "X-Request-ID"],
     )
 
@@ -126,6 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(documents_router)
     app.include_router(ai_router)
     app.include_router(chat_router)
+    app.include_router(history_router)
     return app
 
 

@@ -1,12 +1,13 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import String, and_, cast, or_, select
 
 from app.core.errors import AppError
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Document
-from app.repositories.jobs import enqueue, now
+from app.repositories.jobs import enqueue, job_statuses, now
 from app.schemas.jobs import CanaryInput, JobPage, JobStatus
 
 
@@ -14,14 +15,37 @@ def router(development: bool) -> APIRouter:
     routes = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
     @routes.get("", response_model=JobPage)
-    async def list_jobs(request: Request, limit: int = Query(default=50, ge=1, le=100)):
-        async with request.app.state.resources.sessions() as session:
-            jobs = (
-                await session.scalars(
-                    select(BackgroundJob).order_by(BackgroundJob.created_at.desc()).limit(limit)
+    async def list_jobs(
+        request: Request,
+        limit: int = Query(default=50, ge=1, le=100),
+        paper_id: UUID | None = None,
+        kind: Literal["ingest", "summary"] | None = None,
+        active: bool | None = None,
+    ):
+        statement = select(BackgroundJob).order_by(BackgroundJob.created_at.desc()).limit(limit)
+        if kind is not None:
+            statement = statement.where(BackgroundJob.kind == kind)
+        if active is not None:
+            # retry_wait is a stage of the queued state, so active jobs include it.
+            states = ["queued", "processing"] if active else ["completed", "failed"]
+            statement = statement.where(BackgroundJob.state.in_(states))
+        if paper_id is not None:
+            documents = select(cast(Document.id, String)).where(Document.paper_id == paper_id)
+            statement = statement.where(
+                or_(
+                    and_(
+                        BackgroundJob.kind == "summary",
+                        BackgroundJob.payload["paper_id"].astext == str(paper_id),
+                    ),
+                    and_(
+                        BackgroundJob.kind == "ingest",
+                        BackgroundJob.payload["document_id"].astext.in_(documents),
+                    ),
                 )
-            ).all()
-            return JobPage(items=[JobStatus.model_validate(job) for job in jobs])
+            )
+        async with request.app.state.resources.sessions() as session:
+            jobs = (await session.scalars(statement)).all()
+            return JobPage(items=await job_statuses(session, list(jobs)))
 
     if development:
 
@@ -78,7 +102,7 @@ def router(development: bool) -> APIRouter:
                 if document:
                     document.status, document.warnings = "processing", []
             await session.flush()
-            return JobStatus.model_validate(job)
+            return (await job_statuses(session, [job]))[0]
 
     @routes.get("/{job_id}", response_model=JobStatus)
     async def get_job(job_id: UUID, request: Request):
@@ -86,6 +110,6 @@ def router(development: bool) -> APIRouter:
             job = await session.get(BackgroundJob, job_id)
             if job is None:
                 raise HTTPException(status_code=404, detail="Job not found")
-            return JobStatus.model_validate(job)
+            return (await job_statuses(session, [job]))[0]
 
     return routes

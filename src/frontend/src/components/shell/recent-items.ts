@@ -10,10 +10,16 @@ export function searchHref(item: Pick<SearchHistoryItem, 'query' | 'provider'>) 
 }
 export function chatHref(chat: Pick<ChatSummary, 'id' | 'paper_id'>) { return `/papers/${chat.paper_id}/chats/${chat.id}` }
 
-/** Chats and searches interleaved by their latest activity, newest first. */
+/** A chat still on its default title (created before auto-titling) is named by its latest question. */
+export function chatDisplayTitle(chat: Pick<ChatSummary, 'title' | 'title_source' | 'last_question_preview'>) {
+  if (chat.title_source === 'default' && chat.last_question_preview) return chat.last_question_preview
+  return chat.title || 'Untitled conversation'
+}
+
+/** Chats with messages and searches, interleaved by their latest activity, newest first. */
 export function mergeRecent(chats: ChatSummary[], searches: SearchHistoryItem[], limit = 15): RecentItem[] {
   const items: RecentItem[] = [
-    ...chats.map((chat) => ({ kind: 'chat' as const, id: chat.id, title: chat.title || 'Untitled conversation', detail: chat.paper_title, href: chatHref(chat), at: chat.last_activity_at, chat })),
+    ...chats.filter((chat) => chat.message_count > 0).map((chat) => ({ kind: 'chat' as const, id: chat.id, title: chatDisplayTitle(chat), detail: chat.paper_title, href: chatHref(chat), at: chat.last_activity_at, chat })),
     ...searches.map((search) => ({ kind: 'search' as const, id: search.id, title: search.query, detail: providerLabels[search.provider], href: searchHref(search), at: search.last_searched_at, search })),
   ]
   // Defensive at the data boundary: a row without a timestamp sorts last instead of breaking the sidebar.
