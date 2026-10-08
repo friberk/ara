@@ -9,11 +9,12 @@ import { renderApp } from '@/test/render'
 vi.mock('./PdfViewer', async () => {
   const { useEffect } = await import('react')
   return {
-    default: function PdfViewerStub({ documentId, highlight, onDocumentLoad, onHighlight }: import('./PdfViewer').PdfViewerProps) {
+    default: function PdfViewerStub({ documentId, highlight, zoom, navigation, onDocumentLoad, onHighlight }: import('./PdfViewer').PdfViewerProps) {
       useEffect(() => onDocumentLoad(15), [onDocumentLoad])
       return (
         <div role="group" aria-label="PDF viewer">
           <p>{`Showing ${documentId}${highlight ? ` at page ${highlight.citation.page}` : ''}`}</p>
+          <p>{`Zoom ${zoom}${navigation ? `, asked for page ${navigation.page}` : ''}`}</p>
           <button type="button" onClick={() => onHighlight('highlighted')}>Report passage found</button>
           <button type="button" onClick={() => onHighlight('page-only')}>Report passage not found</button>
         </div>
@@ -255,4 +256,69 @@ test('Given an unknown paper, Then the workspace says so and links back to the l
   renderApp('/papers/p1')
   expect(await screen.findByRole('heading', { name: 'Paper not found' })).toBeVisible()
   expect(screen.getByRole('link', { name: 'Open library' })).toHaveAttribute('href', '/library')
+})
+
+// TEST-AFTER coverage: these behaviours were implemented before any test named them. Each case was added after the
+// code, passed at once, and was then mutation-verified (it fails when the behaviour it names is removed).
+describe('test-after coverage (mutation-verified)', () => {
+  test('Given a loaded PDF, When the toolbar pages and zooms, Then the viewer is asked for that page and size', async () => {
+    mockApi({ 'GET /papers/p1': paper })
+    const { user } = renderApp('/papers/p1')
+    expect(await screen.findByText('Zoom 1')).toBeVisible()
+    const field = await screen.findByRole('textbox', { name: 'Page number' })
+    await waitFor(() => expect(field).toBeEnabled())
+    await user.clear(field)
+    await user.type(field, '99{Enter}')
+    expect(screen.getByText('Zoom 1, asked for page 15')).toBeVisible()
+    expect(field).toHaveValue('15')
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Previous page' }))
+    expect(screen.getByText('Zoom 1, asked for page 14')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(screen.getByText('Zoom 1.1, asked for page 14')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Fit width' }))
+    for (let step = 0; step < 4; step += 1) await user.click(screen.getByRole('button', { name: 'Zoom out' }))
+    expect(screen.getByText('Zoom 0.5, asked for page 14')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeDisabled()
+  })
+
+  test('Given a metadata-only paper, When Details offers to attach a PDF, Then the reader returns to the PDF dropzone', async () => {
+    mockApi({ 'GET /papers/p1': metadataOnly })
+    const { user } = renderApp('/papers/p1')
+    await user.click(await screen.findByRole('tab', { name: 'Details' }))
+    await user.click(screen.getByRole('button', { name: 'Attach a PDF' }))
+    expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
+    expect(within(screen.getByRole('tabpanel', { name: 'PDF' })).getByText('Attach the PDF to read, summarize and ask')).toBeVisible()
+  })
+
+  test('Given a narrow screen, When Details offers to attach a PDF, Then the PDF view opens', async () => {
+    narrowScreen()
+    mockApi({ 'GET /papers/p1': metadataOnly })
+    const { user } = renderApp('/papers/p1?view=details')
+    await user.click(await screen.findByRole('button', { name: 'Attach a PDF' }))
+    expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
+  })
+
+  test('Given an impossible publication year, When the bibliography is saved, Then the field explains the range and nothing is sent', async () => {
+    const { calls } = mockApi({ 'GET /papers/p1': paper })
+    const { user } = renderApp('/papers/p1')
+    await user.click(await screen.findByRole('tab', { name: 'Details' }))
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const year = screen.getByRole('textbox', { name: 'Publication year' })
+    await user.clear(year)
+    await user.type(year, '12')
+    await user.click(screen.getByRole('button', { name: 'Save bibliography' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a publication year between 1500 and 2100.')
+    expect(year).toHaveAttribute('aria-invalid', 'true')
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
+  })
+
+  test('Given the paper cannot be loaded, Then the error is shown inline with a retry', async () => {
+    let attempts = 0
+    mockApi({ 'GET /papers/p1': () => (attempts += 1) === 1 ? json({ code: 'UNAVAILABLE', message: 'The library is temporarily unavailable.' }, 503) : json(paper) })
+    const { user } = renderApp('/papers/p1')
+    expect(await screen.findByRole('alert')).toHaveTextContent('The library is temporarily unavailable.')
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('heading', { level: 1, name: paper.title })).toBeVisible()
+  })
 })
