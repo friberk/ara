@@ -1,0 +1,48 @@
+/* PDF reader (ARA-037). Pages stay white paper in both themes; only the evidence mark carries colour. */
+
+.pdf-viewer .pdf-page {
+  border-radius: 2px;
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent),
+    0 4px 12px -4px color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+/* Multiply lets the marker tint the paper while the printed glyphs stay dark. */
+.pdf-viewer .textLayer {
+  mix-blend-mode: multiply;
+}
+
+.pdf-viewer .textLayer [data-citation-highlight] {
+  background-color: var(--evidence);
+  border-radius: 2px;
+}
+
+/* One brief pulse when a citation lands; marks redrawn after zooming do not pulse again. */
+.pdf-viewer .textLayer [data-citation-highlight='pulse'] {
+  animation: citation-pulse 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+
+@keyframes citation-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--evidence);
+  }
+  35% {
+    box-shadow: 0 0 0 4px var(--evidence);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-viewer .textLayer [data-citation-highlight='pulse'] {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .pdf-viewer .textLayer [data-citation-highlight] {
+    background-color: Highlight;
+    forced-color-adjust: none;
+  }
+}

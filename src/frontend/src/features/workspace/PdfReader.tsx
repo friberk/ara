@@ -1,0 +1,63 @@
+import { Component, lazy, Suspense } from 'react'
+import { History } from 'lucide-react'
+import type { Paper } from '@/api/types'
+import { Button } from '@/components/ui/button'
+import { ErrorNotice } from '@/components/feedback/ErrorNotice'
+import type { PdfControls } from './pdf-controls'
+import { PagesSkeleton } from './PagesSkeleton'
+import { ReaderGate } from './ReaderGate'
+import { useWorkspace } from './workspace-context'
+
+// pdf.js is large, so it loads only when a PDF is actually shown.
+const PdfViewer = lazy(() => import('./PdfViewer'))
+
+class ReaderErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (!this.state.error) return this.props.children
+    return <div className="p-4"><ErrorNotice error={new Error('The PDF reader couldn’t load. Reload the page, or open the original PDF.')} retry={() => this.setState({ error: null })} /></div>
+  }
+}
+
+/**
+ * The PDF tab: a gate until the paper has a readable PDF, then the viewer. documentId is the version on screen,
+ * which is the active PDF unless a citation asked for an earlier one.
+ */
+export function PdfReader({ paper, documentId, controls, onShowCurrent }: { paper: Paper; documentId: string | null; controls: PdfControls; onShowCurrent: () => void }) {
+  const { sourceRequest, highlightOutcome, reportHighlight } = useWorkspace()
+  if (!documentId) return <ReaderGate paper={paper} />
+  const highlight = sourceRequest?.citation.document_id === documentId ? sourceRequest : null
+  const outcome = highlight ? highlightOutcome : null
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {documentId !== paper.active_document_id && (
+        <div className="flex items-center gap-3 border-b bg-muted/50 px-4 py-2 text-sm">
+          <History className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="min-w-0 flex-1">Showing an earlier PDF version</p>
+          <Button size="xs" variant="outline" onClick={onShowCurrent}>Back to current PDF</Button>
+        </div>
+      )}
+      <div role="status" aria-live="polite" className={outcome === 'page-only' ? 'border-b px-4 py-2 text-xs text-muted-foreground' : 'sr-only'}>
+        {outcome === 'page-only' && highlight && `Couldn’t pinpoint the passage, so showing page ${highlight.citation.page}.`}
+        {outcome === 'highlighted' && highlight && `Highlighted the cited passage on page ${highlight.citation.page}.`}
+      </div>
+      <div className="min-h-0 flex-1">
+        <ReaderErrorBoundary key={documentId}>
+          <Suspense fallback={<PagesSkeleton />}>
+            <PdfViewer
+              key={documentId}
+              documentId={documentId}
+              zoom={controls.zoom}
+              navigation={controls.navigation}
+              highlight={highlight}
+              onDocumentLoad={controls.onDocumentLoad}
+              onPageChange={controls.onPageChange}
+              onHighlight={reportHighlight}
+            />
+          </Suspense>
+        </ReaderErrorBoundary>
+      </div>
+    </div>
+  )
+}
