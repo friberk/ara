@@ -94,3 +94,25 @@ test('Given no summary yet, Then the card names the model a new summary will use
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('Uses Luna with low reasoning')).toBeVisible()
 })
+
+test('Given a server that ignores the job filters, Then jobs of other papers and finished jobs show no progress here', async () => {
+  mount({
+    ...settings,
+    'GET /jobs': { items: [{ ...job('j8', 'processing'), paper_id: 'another-paper' }, job('j9', 'completed'), { ...job('j10', 'processing'), kind: 'ingest' }] },
+  })
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  expect(await within(card).findByRole('button', { name: 'Generate summary' })).toBeVisible()
+  expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument()
+})
+
+test('Given Generate summary pressed twice quickly, Then only one paid summary is requested', async () => {
+  let posts = 0
+  const { user } = mount({ ...settings, 'POST /papers/p1/summaries': () => { posts++; return never() } })
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  const generate = await within(card).findByRole('button', { name: 'Generate summary' })
+  await waitFor(() => expect(generate).toBeEnabled())
+  await user.click(generate)
+  await user.click(generate)
+  expect(generate).toBeDisabled()
+  expect(posts).toBe(1)
+})

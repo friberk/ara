@@ -4,6 +4,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { testClient } from '@/test/render'
 import { json, mockApi } from '@/test/fetch-routes'
 import { queryKeys } from '@/lib/query-keys'
+import { queueQuestion } from '@/lib/pending-questions'
 import { ask, assistantMessage, chatRow, mount, paper, settings, userMessage } from './pane-test-kit'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -198,4 +199,42 @@ test('Given a new chat, Then its thread opens and asks at once, without waiting 
   await ask(user, 'Straight away?')
   await waitFor(() => expect(calls.filter((call) => call.path === '/chats/c9/messages/stream')).toHaveLength(1))
   expect(screen.getByRole('article', { name: 'Your message' })).toHaveTextContent('Straight away?')
+})
+
+test('Given the reader scrolled up, When a question is sent, Then the thread returns to the newest content', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [userMessage('u0', 'Earlier question')] }, 'POST /chats/c1/messages/stream': controlledStream().handler })
+  const { user } = mount('/papers/p1/chats/c1')
+  await screen.findByText('Earlier question')
+  const thread = screen.getByRole('region', { name: 'Conversation' })
+  let top = 0
+  Object.defineProperty(thread, 'scrollHeight', { configurable: true, value: 2000 })
+  Object.defineProperty(thread, 'clientHeight', { configurable: true, value: 500 })
+  Object.defineProperty(thread, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
+  fireEvent.scroll(thread)
+  expect(await screen.findByRole('button', { name: 'Scroll to latest message' })).toBeVisible()
+  await ask(user, 'Back to the bottom?')
+  expect(top).toBe(2000)
+  expect(screen.queryByRole('button', { name: 'Scroll to latest message' })).not.toBeInTheDocument()
+})
+
+test('Given models still loading, Then a typed question cannot be sent yet', async () => {
+  mockApi({ 'GET /models': never, 'GET /settings': never })
+  const { user } = mount('/papers/p1')
+  await user.type(await screen.findByRole('textbox', { name: 'Question about this paper' }), 'Too early?')
+  expect(screen.getByRole('button', { name: 'Ask question' })).toBeDisabled()
+})
+
+test('Given an answer still processing after a reload, Then there is no Stop button and the footnote explains the wait', async () => {
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [userMessage('u1', 'Still going?'), assistantMessage('m1', '', { state: 'processing' })] } })
+  mount('/papers/p1/chats/c1')
+  expect(await screen.findByText('An answer is still being written. It appears here when it finishes.')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Stop generation' })).not.toBeInTheDocument()
+})
+
+test('Given a queued question while an answer is still processing, Then it waits in the composer instead of being sent', async () => {
+  const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [userMessage('u1', 'First'), assistantMessage('m1', '', { state: 'processing' })] } })
+  queueQuestion('c1', { content: 'Queued behind an answer', settings: { model: 'gpt-5.6-luna', reasoning_effort: 'low' } })
+  mount('/papers/p1/chats/c1')
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toHaveValue('Queued behind an answer'))
+  expect(calls.some((call) => call.path.endsWith('/messages/stream'))).toBe(false)
 })
