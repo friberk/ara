@@ -188,3 +188,24 @@ The mobile E2E now passes in 5.1s and Vitest passes 225/225. The legacy `workflo
 **Bundle size correction.** The lead had been reporting the entry chunk alone as "main". A comparison of first-paint JS (entry plus modulepreloads) showed about 550 KB raw (172 KB gzip) both before and after the refactor. That is the honest number.
 
 **Final checks.** E2E still passed 8/8 after the cleanup, and the Impeccable detector reported 0 findings. The fresh finish reviewer received 36 validated captures.
+
+### Impeccable finish review and fixes (ARA-040)
+
+A fresh-context `impeccable-finish-reviewer` received 36 validated captures and the direction contract. Its disposition was **fix**, with seven material findings:
+1. The evidence jump marked a whole ~3,200-character chunk (nearly all of page 7) instead of the supporting passage.
+2. The dark-mode mark rendered tan on white pages.
+3. Activity exposed internal canary jobs.
+4. The summary card was sliced under the conversation header.
+5. A metadata-only paper showed dead disabled controls.
+6. A citation chip could wrap alone.
+7. DESIGN.md was stale.
+
+**Lead fixes (3, 4 and 5).** All test-first. Two older test-after tests encoded the superseded disabled-control behaviour and were rewritten to the new intent. One invented empty-state title in a new test was corrected to the existing copy before implementation. Five mutations were caught.
+
+**Evidence agent fixes (1, 2 and 6).** Done test-first in a fresh worktree:
+- Chips now pass their claim sentence. The reader scores excerpt sentences against it and marks the best ones character-precisely, using Text.splitText and `<mark>` with no innerHTML, then centres the first strong line.
+- The agent's visual check showed whole-answer context strongly marking an unrelated sentence, so Sources chips now use only the sentences citing their page.
+- A first stylesheet test passed vacuously (Vitest returns an empty `?raw` import) and was redone.
+- The agent ran E2E against the test API only, with an Origin override confined to fixture data.
+
+**Lead integration.** 338 tests passing, 0 lint problems, Playwright 8/8 on a fresh e2e database. The recaptures show only "Not only do individual attention heads…" marked on page 7, the same yellow in both themes, and an "Attach PDF" primary action for papers without a PDF. The recaptures went back to the same reviewer for a verdict pass.
