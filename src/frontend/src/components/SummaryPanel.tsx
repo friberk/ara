@@ -1,0 +1,12 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, json } from '../api/client'
+import type { Collection, GenerationInput, GenerationSettings, Paper, Summary, SummaryAccepted } from '../api/types'
+import { Button } from './ui/button'
+import { Citations } from './Citations'
+import { Empty, ErrorNotice, Loading } from './Feedback'
+import { GeneratedContent } from './GeneratedContent'
+import { JobProgress } from './JobProgress'
+export function SummaryPanel({ paper, settings, allowed }: { paper: Paper; settings: GenerationSettings; allowed: boolean }) {
+  const client = useQueryClient(); const summaries = useQuery({ queryKey: ['summaries', paper.id], queryFn: () => api<Collection<Summary>>(`/papers/${paper.id}/summaries`) }); const generate = useMutation({ mutationFn: () => api<SummaryAccepted>(`/papers/${paper.id}/summaries`, json('POST', { ...settings, request_id: crypto.randomUUID() } satisfies GenerationInput)) })
+  return <div><div className="panel-heading"><h2>Grounded summaries</h2><Button disabled={!allowed || paper.document_status !== 'ready' || generate.isPending || !!generate.data} onClick={() => generate.mutate()}>{generate.isPending ? 'Requesting…' : 'Generate summary'}</Button></div><p className="muted small">Summaries use the processed PDF and retain page sources. Check important claims against the original.</p><ErrorNotice error={generate.error}/>{generate.data && <JobProgress jobId={generate.data.job_id} onSettled={() => { void client.invalidateQueries({ queryKey: ['summaries', paper.id] }); generate.reset() }}/>}<ErrorNotice error={summaries.error} retry={() => void summaries.refetch()}/>{summaries.isPending && <Loading>Loading summaries…</Loading>}{summaries.data && (!summaries.data.items.length ? <Empty title="No summaries yet">{paper.document_status === 'ready' ? 'Choose a model and generate a summary of this paper.' : 'A processed PDF is needed before a summary can be generated.'}</Empty> : summaries.data.items.map((summary) => <article className="summary-item" key={summary.id}><div className="generation-meta">{summary.model} · {summary.reasoning_effort} reasoning · {new Date(summary.created_at).toLocaleString()}{summary.document_id !== paper.active_document_id && <span className="status">Earlier PDF version</span>}</div><GeneratedContent content={summary.content}/><Citations citations={summary.citations} documentId={summary.document_id}/></article>))}</div>
+}
