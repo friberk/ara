@@ -7,7 +7,7 @@
  * for little. Words are compared after folding case and ligatures, dropping stopwords and punctuation and stripping
  * common suffixes; two stems also match when one is a longer word's prefix.
  */
-import { normalizeText } from './text-highlight'
+import { findExcerptItems, normalizeText, type TextItem } from './text-highlight'
 
 const MAX_SENTENCES = 3
 /** A further sentence must score at least this share of the best one. */
@@ -101,4 +101,18 @@ export function selectEvidence(excerpt: string, claim: string): string[] {
     chosen.add(pool.reduce((top, index) => (scores[index]! > scores[top]! ? index : top)))
   }
   return [...chosen].sort((a, b) => a - b).map((index) => candidates[index]!.text)
+}
+
+export type EvidenceItems = { strong: number[]; context: number[] }
+
+/**
+ * Text items to mark for a citation: the lines of the sentences that support the claim are strong and the rest of
+ * the excerpt on this page is context. Without a claim, or when no sentence supports it or none can be located in
+ * the text layer, the whole excerpt is strong as before. Both lists are empty when the passage is not on this page.
+ */
+export function findEvidenceItems(items: TextItem[], excerpt: string, claim?: string): EvidenceItems {
+  const passage = findExcerptItems(items, excerpt)
+  const located = new Set(claim ? selectEvidence(excerpt, claim).flatMap((sentence) => findExcerptItems(items, sentence)) : [])
+  if (!located.size) return { strong: passage, context: [] }
+  return { strong: [...located].sort((a, b) => a - b), context: passage.filter((index) => !located.has(index)) }
 }

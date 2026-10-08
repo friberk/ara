@@ -1,4 +1,5 @@
-import { selectEvidence } from './evidence'
+import { findEvidenceItems, selectEvidence } from './evidence'
+import type { TextItem } from './text-highlight'
 
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim()
 const chosen = (excerpt: string, claim: string) => selectEvidence(excerpt, claim).map(oneLine)
@@ -101,5 +102,46 @@ describe('selectEvidence', () => {
     const [sentence] = selectEvidence(page7, headsClaim)
     expect(page7).toContain(sentence)
     expect(sentence).toMatch(/^Not only do individual attention\nheads/)
+  })
+})
+
+describe('findEvidenceItems', () => {
+  /** One pdf.js text item per printed line, as the text layer renders a simple single-column page. */
+  const lines = (...rows: string[]): TextItem[] => rows.map((str) => ({ str, hasEOL: true }))
+  const page = lines(
+    '4 Why Self-Attention',
+    'Convolutional layers are generally more expensive than',
+    'recurrent layers. As side benefit, self-attention could yield',
+    'more interpretable models. We inspect attention distributions',
+    'from our models. Not only do individual attention',
+    'heads clearly learn to perform different tasks, many appear',
+    'to exhibit behavior related to the syntactic and semantic',
+    'structure of the sentences.',
+    '5 Training',
+    'This section describes the training regime for our models.',
+  )
+  const excerpt = page.slice(1).map((item) => item.str).join('\n')
+  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+  test('Given a claim, Then the lines of its supporting sentence are strong and the rest of the excerpt is context', () => {
+    expect(findEvidenceItems(page, excerpt, headsClaim)).toEqual({ strong: [4, 5, 6, 7], context: [1, 2, 3, 8, 9] })
+  })
+
+  test('Given no claim, Then the whole excerpt is strong, as before claims existed', () => {
+    expect(findEvidenceItems(page, excerpt)).toEqual({ strong: all, context: [] })
+    expect(findEvidenceItems(page, excerpt, '')).toEqual({ strong: all, context: [] })
+  })
+
+  test('Given a claim no sentence supports, Then the whole excerpt is strong', () => {
+    expect(findEvidenceItems(page, excerpt, 'The authors thank their colleagues for comments.')).toEqual({ strong: all, context: [] })
+  })
+
+  test('Given the supporting sentence is missing from the text layer, Then the whole located excerpt is strong', () => {
+    const imageOnly = page.map((item, index) => (index >= 4 && index <= 7 ? { ...item, str: '' } : item))
+    expect(findEvidenceItems(imageOnly, excerpt, headsClaim)).toEqual({ strong: [1, 2, 3, 4, 5, 6, 7, 8, 9], context: [] })
+  })
+
+  test('Given an excerpt that is not on the page, Then nothing is marked', () => {
+    expect(findEvidenceItems(page, 'The measured answer accuracy in this synthetic experiment is 86 percent.', 'Accuracy is 86 percent.')).toEqual({ strong: [], context: [] })
   })
 })
