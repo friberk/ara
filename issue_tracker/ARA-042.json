@@ -11,7 +11,8 @@
   "acceptance_criteria": [
     "Final status documents distinguish initial and overhauled UI verification.",
     "Submission checklist calls for a current-UI recording and authentic reflection evidence.",
-    "Counts and claims link to actual outputs/records; no remote CI or new live generation is fabricated."
+    "Counts and claims link to actual outputs/records; no remote CI or new live generation is fabricated.",
+    "Issue source references resolve to current files or their explicitly linked historical commits after the UI migration."
   ],
   "test_cases": [
     "Check documentation against current main, journal and issue verification."

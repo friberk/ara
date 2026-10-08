@@ -24,7 +24,8 @@
   "commits": [
     "5ec2b98990a1c5dfb74327ca7d7b75a63241ef5b",
     "387fa554dc71f08abf83290fe542fe147a80b088",
-    "f23757612fc767052b0e5bc72d628227b9b04901"
+    "f23757612fc767052b0e5bc72d628227b9b04901",
+    "112c95990a2d73e4a336fcb8c5ed0b81785860f4"
   ],
   "pull_requests": [],
   "verification": "FTS and follow-up context remain document-scoped; invalid citations fail; full selected passage and PDF page visible. Identity checks do not prove semantic entailment.",
