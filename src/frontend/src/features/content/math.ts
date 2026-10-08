@@ -1,0 +1,127 @@
+// Models write LaTeX as \( … \) and \[ … \]. Markdown reads those backslashes as escapes and prints "(x)",
+// so before parsing we rewrite them to remark-math's $$ syntax. Fenced and inline code are copied verbatim.
+
+/** Blockquote markers, indentation and an optional list marker at the start of a line. */
+const container = /^((?:[ \t]*>[ \t]?)*)([ \t]*)((?:[-*+]|\d{1,9}[.)])[ \t]+)?/
+const codeFence = /^(?:(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?)(`{3,}|~{3,})(.*)$/
+const blankLine = /\n[ \t]*\n/y
+
+export function normalizeMath(markdown: string): string {
+  if (!markdown.includes('\\(') && !markdown.includes('\\[')) return markdown
+  let out = ''
+  let i = 0
+  let fence: string | null = null
+  while (i < markdown.length) {
+    if (i === 0 || markdown[i - 1] === '\n') {
+      const end = lineEnd(markdown, i)
+      const match = codeFence.exec(markdown.slice(i, end))
+      const marker = match?.[1] ?? ''
+      const opens = !!match && !(marker.startsWith('`') && match[2]?.includes('`'))
+      const closes: boolean = !!match && !!fence && marker[0] === fence[0] && marker.length >= fence.length && match[2]?.trim() === ''
+      if (fence || opens) {
+        fence = closes ? null : (fence ?? marker)
+        out += markdown.slice(i, Math.min(end + 1, markdown.length))
+        i = end + 1
+        continue
+      }
+    }
+    const char = markdown[i]
+    if (char === '`') {
+      const run = runLength(markdown, i, '`')
+      const close = codeSpanEnd(markdown, i + run, run)
+      const next = close === -1 ? i + run : close
+      out += markdown.slice(i, next)
+      i = next
+      continue
+    }
+    if (char === '\\') {
+      const open = markdown[i + 1]
+      const end = open === '(' || open === '[' ? mathEnd(markdown, i + 2, open === '(' ? ')' : ']') : -1
+      if (end !== -1) {
+        const line = out.slice(out.lastIndexOf('\n') + 1)
+        const [prefix, rest] = continuation(line)
+        const body = tidy(markdown.slice(i + 2, end), prefix)
+        if (body) {
+          i = end + 2
+          if (open === '(' || /^(?:\||#{1,6}(?:\s|$))/.test(rest)) {
+            out += inlineMath(body)
+            continue
+          }
+          const fenceText = '$'.repeat(Math.max(2, longestDollarRun(body) + 1))
+          out = rest.trim() ? `${out.trimEnd()}\n${prefix}` : out
+          out += `${fenceText}\n${prefix}${body}\n${prefix}${fenceText}`
+          while (markdown[i] === ' ' || markdown[i] === '\t') i += 1
+          if (i < markdown.length && markdown[i] !== '\n') out += `\n${prefix}`
+          continue
+        }
+      }
+      // Any other escape, including an escaped backslash, is copied as a pair so "\\(" never opens math.
+      out += markdown.slice(i, i + 2)
+      i += 2
+      continue
+    }
+    out += char
+    i += 1
+  }
+  return out
+}
+
+function lineEnd(text: string, from: number) {
+  const end = text.indexOf('\n', from)
+  return end === -1 ? text.length : end
+}
+
+function runLength(text: string, from: number, char: string) {
+  let end = from
+  while (text[end] === char) end += 1
+  return end - from
+}
+
+/** Index after the backtick run that closes a code span, or -1 when the span never closes in its paragraph. */
+function codeSpanEnd(text: string, from: number, length: number) {
+  for (let j = from; j < text.length; j += 1) {
+    blankLine.lastIndex = j
+    if (blankLine.test(text)) return -1
+    if (text[j] !== '`') continue
+    const run = runLength(text, j, '`')
+    if (run === length) return j + run
+    j += run - 1
+  }
+  return -1
+}
+
+/** Index of the backslash that closes the math, or -1 when it does not close in this paragraph. */
+function mathEnd(text: string, from: number, close: ')' | ']') {
+  for (let j = from; j < text.length; j += 1) {
+    blankLine.lastIndex = j
+    if (blankLine.test(text)) return -1
+    if (text[j] !== '\\') continue
+    if (text[j + 1] === close) return j
+    j += 1
+  }
+  return -1
+}
+
+/** The indentation a block needs to stay inside this line's list item or blockquote, and the line after it. */
+function continuation(line: string): [string, string] {
+  const match = container.exec(line)
+  const [all = '', quotes = '', indent = '', listMarker = ''] = match ?? []
+  return [quotes + indent + ' '.repeat(listMarker.length), line.slice(all.length)]
+}
+
+/** Math on one line: container markers from wrapped lines are dropped, as TeX treats line breaks as spaces. */
+function tidy(body: string, prefix: string) {
+  const quotes = (prefix.match(/>/g) ?? []).length
+  const wrapped = new RegExp(`\\n(?:[ \\t]*>[ \\t]?){0,${quotes}}`, 'g')
+  return body.replace(wrapped, '\n').trim().replace(/\s*\n\s*/g, ' ')
+}
+
+function longestDollarRun(text: string) {
+  return Math.max(0, ...(text.match(/\$+/g) ?? []).map((run) => run.length))
+}
+
+function inlineMath(body: string) {
+  const fence = '$'.repeat(Math.max(2, longestDollarRun(body) + 1))
+  // A dollar against the fence would lengthen it; remark-math strips one padding space on each side.
+  return body.startsWith('$') || body.endsWith('$') ? `${fence} ${body} ${fence}` : `${fence}${body}${fence}`
+}
