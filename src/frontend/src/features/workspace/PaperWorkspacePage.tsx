@@ -106,7 +106,10 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
       ) : (
         <ResizablePanelGroup id="paper-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="min-h-0 flex-1 border-t">
           <ResizablePanel id="reader" panelRef={readerPanel} defaultSize="50%" minSize="30%" collapsible collapsedSize="0%" onResize={(size) => setReaderCollapsed(size.asPercentage < 0.5)}>
-            <ReaderPanel paper={paper} documentId={documentId} onShowCurrent={showCurrent} />
+            {/* A collapsed reader keeps its state but leaves the tab order and the accessibility tree. */}
+            <div className="h-full" inert={readerCollapsed}>
+              <ReaderPanel paper={paper} documentId={documentId} onShowCurrent={showCurrent} />
+            </div>
           </ResizablePanel>
           <ResizableHandle withHandle className="data-[separator=active]:bg-ring data-[separator=hover]:bg-ring/60" />
           <ResizablePanel id="conversation" minSize="35%">

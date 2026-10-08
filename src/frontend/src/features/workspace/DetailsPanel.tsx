@@ -51,7 +51,7 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
             </dl>
             <section aria-labelledby={`${id}-abstract`} className="grid gap-2">
               <h3 id={`${id}-abstract`} className="text-sm font-medium">Abstract</h3>
-              <p className="max-w-[70ch] text-sm leading-relaxed whitespace-pre-line text-pretty text-muted-foreground">{paper.abstract || 'No abstract is available for this paper yet.'}</p>
+              {paper.abstract ? <p className="max-w-[70ch] text-sm leading-relaxed whitespace-pre-line text-pretty">{paper.abstract}</p> : <p className="text-sm text-muted-foreground">No abstract is available for this paper yet.</p>}
             </section>
             <MetadataSources provenance={paper.metadata_provenance} headingId={`${id}-sources`} />
           </section>

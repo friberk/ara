@@ -7,14 +7,18 @@
     0 4px 12px -4px color-mix(in oklch, var(--foreground) 12%, transparent);
 }
 
-/* Multiply lets the marker tint the paper while the printed glyphs stay dark. */
-.pdf-viewer .textLayer {
-  mix-blend-mode: multiply;
+/*
+ * The mark sits over the canvas, so it is a translucent tint rather than a blend: Chromium composited a multiply
+ * blend of the text layer as cyan in light mode. Pages are white in both themes, so the light token is thinned
+ * until the glyphs under it stay dark; the dark token is already translucent.
+ */
+.pdf-viewer .textLayer [data-citation-highlight] {
+  background-color: color-mix(in oklch, var(--evidence) 55%, transparent);
+  border-radius: 2px;
 }
 
-.pdf-viewer .textLayer [data-citation-highlight] {
+.dark .pdf-viewer .textLayer [data-citation-highlight] {
   background-color: var(--evidence);
-  border-radius: 2px;
 }
 
 /* One brief pulse when a citation lands; marks redrawn after zooming do not pulse again. */
