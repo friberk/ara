@@ -1,87 +1,10 @@
-import { StrictMode } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom'
-import type { Citation, Paper } from '@/api/types'
-import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import type { MarkdownProps, SourceListProps } from '@/features/content'
-import { WorkspaceContext, type WorkspaceContextValue } from '@/features/workspace/workspace-context'
+import { screen, waitFor, within } from '@testing-library/react'
 import { json, mockApi } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
-import { ConversationPane } from '.'
+// Runs against the real content module (ARA-035): inline chips and the source list are named "Source, page N".
+import { assistantMessage, ask, chatRow, citation, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
 import { paperChatsKey } from './use-paper-chats'
 
-// The content module (ARA-035) is rebuilt in parallel. These stand-ins honour its documented props, so the
-// tests pin this pane's wiring: which document scopes the citations and where a chip sends the reader.
-vi.mock('@/features/content', () => ({
-  Markdown: ({ content, citations = [], documentId, onCitation }: MarkdownProps) => (
-    <div>
-      <p>{content.replace(/\[source:[0-9a-f-]{36}\]/gi, '')}</p>
-      {citations.filter((citation) => citation.document_id === documentId).map((citation) => <button key={citation.chunk_id} type="button" onClick={() => onCitation?.(citation)}>Inline page {citation.page}</button>)}
-    </div>
-  ),
-  SourceList: ({ citations, documentId, onSelect }: SourceListProps) => (
-    <div aria-label="Sources">{citations.filter((citation) => citation.document_id === documentId).map((citation) => <button key={citation.chunk_id} type="button" onClick={() => onSelect?.(citation)}>Page {citation.page}</button>)}</div>
-  ),
-  CitationChip: () => null,
-}))
-
-const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'Luna', status: 'available', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
-const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: ['A. Author'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
-const settings = { 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } }
-const citation: Citation = { chunk_id: 'chunk1', document_id: 'd1', page: 2, excerpt: 'A measured result from the document.' }
-const marker = '[source:12345678-1234-1234-1234-123456789abc]'
-function chatRow(id: string, overrides: Record<string, unknown> = {}) {
-  return { id, paper_id: 'p1', document_id: 'd1', title: 'Research question', title_source: 'auto', created_at: '2026-10-08T10:00:00Z', paper_title: paper.title, last_activity_at: '2026-10-08T12:00:00Z', message_count: 0, last_question_preview: null, ...overrides }
-}
-function userMessage(id: string, content: string) { return { id, role: 'user', content, state: 'completed', model: null, reasoning_effort: null, citations: [], created_at: '2026-10-08T12:00:00Z' } }
-function assistantMessage(id: string, content: string, overrides: Record<string, unknown> = {}) {
-  return { id, role: 'assistant', content, state: 'completed', model: luna.key, reasoning_effort: 'low', citations: [], created_at: '2026-10-08T12:00:01Z', ...overrides }
-}
-function sse(frames: [string, unknown][]) {
-  return new Response(frames.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
-}
-function workspaceValue(): WorkspaceContextValue {
-  return { paper, view: 'chat', setView: vi.fn(), readerTab: 'pdf', setReaderTab: vi.fn(), sourceRequest: null, showSource: vi.fn(), highlightOutcome: null, reportHighlight: vi.fn() }
-}
-
-function PaneRoute({ value }: { value: Paper }) {
-  const { chatId } = useParams()
-  return <ConversationPane paper={value} chatId={chatId} />
-}
-function CurrentPath() { return <output aria-label="Current path">{useLocation().pathname}</output> }
-function mount(path: string, { value = paper, workspace = workspaceValue(), strict = false, client = testClient() }: { value?: Paper; workspace?: WorkspaceContextValue; strict?: boolean; client?: QueryClient } = {}) {
-  const user = userEvent.setup()
-  const tree = (
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <TooltipProvider>
-          <GenerationSettingsProvider>
-            <WorkspaceContext.Provider value={workspace}>
-              <div style={{ height: 800 }}>
-                <Routes>
-                  <Route path="/papers/:paperId" element={<PaneRoute value={value} />} />
-                  <Route path="/papers/:paperId/chats/:chatId" element={<PaneRoute value={value} />} />
-                </Routes>
-              </div>
-              <CurrentPath />
-            </WorkspaceContext.Provider>
-          </GenerationSettingsProvider>
-        </TooltipProvider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  )
-  render(strict ? <StrictMode>{tree}</StrictMode> : tree)
-  return { user, client, workspace }
-}
-async function ask(user: ReturnType<typeof userEvent.setup>, question: string) {
-  const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
-  await waitFor(() => expect(input).toBeEnabled())
-  await user.type(input, question)
-  await user.click(screen.getByRole('button', { name: 'Ask question' }))
-}
 afterEach(() => vi.unstubAllGlobals())
 
 test('Given a ready chat, When a question streams, Then the answer cites page 2 and its chips open the source in the reader', async () => {
@@ -92,6 +15,7 @@ test('Given a ready chat, When a question streams, Then the answer cites page 2 
     'GET /chats': { items: [chatRow('c1')] },
     'GET /chats/c1/messages': () => json({ items: answered ? [userMessage('u1', 'What was measured?'), answer] : [] }),
     'POST /chats/c1/messages/stream': () => { answered = true; return sse([['message.started', { message_id: 'm1' }], ['message.delta', { text: 'The measured result is grounded.' }], ['message.completed', answer]]) },
+    [`GET /documents/d1/chunks/${citation.chunk_id}`]: citation,
   })
   const { user, workspace } = mount('/papers/p1/chats/c1')
   await ask(user, 'What was measured?')
@@ -99,9 +23,12 @@ test('Given a ready chat, When a question streams, Then the answer cites page 2 
   expect(await within(reply).findByText('The measured result is grounded.')).toBeVisible()
   expect(screen.getByRole('article', { name: 'Your message' })).toHaveTextContent('What was measured?')
   await waitFor(() => expect(screen.getAllByRole('article', { name: 'Your message' })).toHaveLength(1))
-  await user.click(within(within(reply).getByLabelText('Sources')).getByRole('button', { name: 'Page 2' }))
+  const sources = within(reply).getByRole('group', { name: 'Sources' })
+  await user.click(within(sources).getByRole('button', { name: 'Source, page 2' }))
   expect(workspace.showSource).toHaveBeenCalledWith(citation)
-  await user.click(within(reply).getByRole('button', { name: 'Inline page 2' }))
+  const inline = within(reply).getAllByRole('button', { name: 'Source, page 2' }).find((chip) => !sources.contains(chip))
+  expect(inline).toBeDefined()
+  await user.click(inline!)
   expect(workspace.showSource).toHaveBeenCalledTimes(2)
   const stream = calls.filter((call) => call.path === '/chats/c1/messages/stream')
   expect(stream).toHaveLength(1)
@@ -244,4 +171,37 @@ test('Given a chat created elsewhere and a stale cached chat list, Then the pane
   mount('/papers/p1/chats/c7', { client })
   expect(screen.queryByText('Conversation not found')).not.toBeInTheDocument()
   expect(await screen.findByRole('article', { name: 'Your message' })).toHaveTextContent('Asked from home')
+})
+
+test('Given legacy chats on the default title, Then the switcher names them like the sidebar and still lists empty ones', async () => {
+  mockApi({
+    ...settings,
+    'GET /chats': {
+      items: [
+        chatRow('c1', { title: 'Paper discussion', title_source: 'default', last_question_preview: 'What is this paper about?', message_count: 2 }),
+        chatRow('c2', { title: 'Paper discussion', title_source: 'default', last_question_preview: null, message_count: 0, last_activity_at: '2026-10-07T12:00:00Z' }),
+      ],
+    },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await user.click(await screen.findByRole('button', { name: 'What is this paper about?' }))
+  expect(await screen.findByRole('menuitemradio', { name: /^What is this paper about\?/ })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('menuitemradio', { name: /^Paper discussion/ })).toHaveTextContent('No questions yet')
+})
+
+test('Given auto-titled chats, Then a row repeats its question only when a later question differs', async () => {
+  mockApi({
+    ...settings,
+    'GET /chats': {
+      items: [
+        chatRow('c1', { title: 'What datasets are used', title_source: 'auto', last_question_preview: 'What datasets are used?', message_count: 2 }),
+        chatRow('c2', { title: 'What problem does this paper address', title_source: 'auto', last_question_preview: 'What are the major limitations?', message_count: 4 }),
+      ],
+    },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await user.click(await screen.findByRole('button', { name: 'What datasets are used' }))
+  const single = await screen.findByRole('menuitemradio', { name: /^What datasets are used/ })
+  expect(single.textContent?.match(/What datasets are used/g)).toHaveLength(1)
+  expect(screen.getByRole('menuitemradio', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
 })

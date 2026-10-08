@@ -23,19 +23,19 @@ async function readyPaper(request: APIRequestContext): Promise<Paper> {
   return paper
 }
 
-// Citation chips are rendered by the content module (ARA-035) as "Page N" or "p. N".
-const citationChip = /(page|p\.)\s*\d+/i
+// Citation chips from the content module (ARA-035), inline and in the Sources group, are named "Source, page N".
+const citationChip = /^Source, page \d+$/
 async function chipPage(chip: Locator) {
   const label = (await chip.getAttribute('aria-label')) ?? (await chip.innerText())
   return Number(label.match(/\d+/)?.[0])
 }
 
-// Reader contract (ARA-037). The workspace reader is built in parallel; these are the accessible names this
-// spec relies on, kept in one place so they can be aligned with the shipped reader.
+// Reader names as shipped on feat/ui-workspace (ARA-037, 79ac582): the PDF scroller is a region named
+// "PDF document", each page a group named "Page N", and the jump outcome is announced in a polite status.
 const reader = {
-  region: (page: Page) => page.getByRole('region', { name: 'PDF reader' }),
-  /** The reader states the outcome of a citation jump (WorkspaceContext.reportHighlight) in a polite status. */
-  outcome: (page: Page, pageNumber: number) => page.getByRole('status').filter({ hasText: new RegExp(`page ${pageNumber}\\b`, 'i') }),
+  region: (page: Page) => page.getByRole('region', { name: 'PDF document' }),
+  page: (page: Page, pageNumber: number) => reader.region(page).getByRole('group', { name: `Page ${pageNumber}`, exact: true }),
+  outcome: (page: Page) => page.getByRole('status').filter({ hasText: /cited passage on page|showing page/ }),
 }
 
 test('E2E-04 Given ready text, when summarized, then a stored grounded summary appears and survives reload', async ({ page, request }) => {
@@ -88,9 +88,8 @@ test('E2E-05 Given a ready paper, when a question and a follow-up are asked, the
   const cited = await chipPage(chip)
   expect(cited).toBeGreaterThan(0)
   await chip.click()
-  await expect(reader.region(page)).toBeVisible()
-  await expect(reader.outcome(page, cited)).toContainText(/highlighted/i)
-  await expect(reader.outcome(page, cited)).not.toContainText(/could not/i)
+  await expect(reader.page(page, cited)).toBeInViewport()
+  await expect(reader.outcome(page)).toHaveText(`Highlighted the cited passage on page ${cited}.`)
 
   // Follow-up in the same chat.
   await page.getByRole('textbox', { name: 'Question about this paper' }).fill('What are the limitations?')
