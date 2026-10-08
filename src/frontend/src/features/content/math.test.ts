@@ -76,4 +76,16 @@ describe('normalizeMath', () => {
   test('Given a backtick line whose info contains a backtick, Then it is a code span, not a fence', () => {
     expect(normalizeMath('```js`x```\n\\(y\\)')).toBe('```js`x```\n$$y$$')
   })
+
+  test('Given an indented code block, Then LaTeX delimiters inside it are untouched', () => {
+    expect(normalizeMath('Example:\n\n    print("\\(x\\)")\n    \\[y\\]\n\nThen \\(z\\).')).toBe('Example:\n\n    print("\\(x\\)")\n    \\[y\\]\n\nThen $$z$$.')
+    expect(normalizeMath('\tcode \\(x\\)')).toBe('\tcode \\(x\\)')
+    expect(normalizeMath('Text\n\n    a \\(x\\)\n\n    b \\(y\\)\n\nBack \\(z\\)')).toBe('Text\n\n    a \\(x\\)\n\n    b \\(y\\)\n\nBack $$z$$')
+  })
+
+  test('Given indented lines that continue a list or paragraph, Then they are not code and still convert', () => {
+    expect(normalizeMath('- Item\n\n    Continued \\(x\\)')).toBe('- Item\n\n    Continued $$x$$')
+    expect(normalizeMath('1. Step\n    - nested \\(x\\)')).toBe('1. Step\n    - nested $$x$$')
+    expect(normalizeMath('Text\n    lazy \\(x\\)')).toBe('Text\n    lazy $$x$$')
+  })
 })

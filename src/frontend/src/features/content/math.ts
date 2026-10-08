@@ -1,9 +1,10 @@
 // Models write LaTeX as \( … \) and \[ … \]. Markdown reads those backslashes as escapes and prints "(x)",
-// so before parsing we rewrite them to remark-math's $$ syntax. Fenced and inline code are copied verbatim.
+// so before parsing we rewrite them to remark-math's $$ syntax. Fenced, indented and inline code are copied verbatim.
 
 /** Blockquote markers, indentation and an optional list marker at the start of a line. */
 const container = /^((?:[ \t]*>[ \t]?)*)([ \t]*)((?:[-*+]|\d{1,9}[.)])[ \t]+)?/
 const codeFence = /^(?:(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?)(`{3,}|~{3,})(.*)$/
+const listItem = /^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/
 const blankLine = /\n[ \t]*\n/y
 
 export function normalizeMath(markdown: string): string {
@@ -11,10 +12,26 @@ export function normalizeMath(markdown: string): string {
   let out = ''
   let i = 0
   let fence: string | null = null
+  // Indented code needs a blank line (or the start) before it and cannot be the content of a list item.
+  let indented = false
+  let afterBlank = true
+  let inList = false
   while (i < markdown.length) {
     if (i === 0 || markdown[i - 1] === '\n') {
       const end = lineEnd(markdown, i)
-      const match = codeFence.exec(markdown.slice(i, end))
+      const line = markdown.slice(i, end)
+      if (!fence && line.trim()) {
+        const indent = indentColumns(line)
+        indented = indent >= 4 && (indented || (afterBlank && !inList))
+        if (!indented) inList = listItem.test(line) || (indent > 0 && inList)
+        afterBlank = false
+        if (indented) {
+          out += markdown.slice(i, Math.min(end + 1, markdown.length))
+          i = end + 1
+          continue
+        }
+      } else if (!fence) afterBlank = true
+      const match = codeFence.exec(line)
       const marker = match?.[1] ?? ''
       const opens = !!match && !(marker.startsWith('`') && match[2]?.includes('`'))
       const closes: boolean = !!match && !!fence && marker[0] === fence[0] && marker.length >= fence.length && match[2]?.trim() === ''
@@ -71,6 +88,17 @@ export function normalizeMath(markdown: string): string {
 function lineEnd(text: string, from: number) {
   const end = text.indexOf('\n', from)
   return end === -1 ? text.length : end
+}
+
+/** Leading whitespace in columns, with tab stops every four. */
+function indentColumns(line: string) {
+  let columns = 0
+  for (const char of line) {
+    if (char === ' ') columns += 1
+    else if (char === '\t') columns += 4 - (columns % 4)
+    else break
+  }
+  return columns
 }
 
 function runLength(text: string, from: number, char: string) {
