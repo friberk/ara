@@ -117,3 +117,31 @@ describe('abstract clamping', () => {
     expect(within(row).queryByRole('button', { name: /Show (more|less)/ })).not.toBeInTheDocument()
   })
 })
+
+test('Given the first search request fails, Then the header says the search did not finish', async () => {
+  mockApi({ 'GET /search': () => json({ code: 'PROVIDER_UNAVAILABLE', message: 'The academic provider is unavailable.', request_id: 'r1' }, 502) })
+  mount('/search?q=graphs&provider=openalex')
+  expect(await screen.findByRole('alert')).toHaveTextContent('The academic provider is unavailable.')
+  expect(screen.getByText('Search on OpenAlex did not finish')).toBeVisible()
+  expect(screen.queryByText('Searching OpenAlex…')).not.toBeInTheDocument()
+})
+
+test('Given Load more fails, Then the loaded results stay and Try again fetches the next page', async () => {
+  let failing = true
+  mockApi({
+    'GET /search': ({ url }) => {
+      if (url.searchParams.get('cursor') !== 'c2') return json(page([hit], { next_cursor: 'c2', total: 2 }))
+      return failing ? json({ code: 'PROVIDER_RATE_LIMITED', message: 'The academic provider is rate limited. Try again shortly.', request_id: 'r2' }, 429) : json(page([{ ...hit, external_id: 'W2', title: 'Second page paper' }]))
+    },
+  })
+  const { user } = mount('/search?q=evidence&provider=openalex')
+  await user.click(await screen.findByRole('button', { name: 'Load more' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('OpenAlex is busy')
+  expect(screen.getByRole('article', { name: hit.title })).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  failing = false
+  await user.click(within(alert).getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByRole('article', { name: 'Second page paper' })).toBeVisible()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
