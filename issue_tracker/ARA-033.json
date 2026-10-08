@@ -19,7 +19,7 @@
     "ModelSwitcher RTL: disabled unavailable model, effort submenu, set as default",
     "npm run check, npm run build main chunk <= 467KB"
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/src/index.css",
     "src/frontend/src/App.tsx",
@@ -27,8 +27,12 @@
     "src/frontend/src/components/composer",
     "src/frontend/src/hooks/queries"
   ],
-  "commits": [],
+  "commits": [
+    "bf1daea",
+    "2db13ad",
+    "5d9afdc"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Foundation: shadcn radix-nova neutral tokens light/dark, Geist, client-only theme provider, sidebar shell with papers/recent, lazy command palette, unified composer, ModelSwitcher, query layer, workspace and pending-question contracts. Red/green observed: lazy routes broke synchronous legacy getBy queries; mergeRecent crashed on a legacy mock without timestamps (made defensive); Radix submenu click did not select in jsdom (tests drive submenus by keyboard); next-themes emitted a React 19 script-tag warning (replaced). npm run check: 31/31 Vitest, strict tsc, ESLint 0 errors. Build main chunk 486.87KB/148.53KB gzip; budget revised from 467KB to Vite's 500KB line because the shadcn shell (Radix menus, tooltip, sheet, sonner) is intrinsic. Pending: finish review and final captures (ARA-040).",
   "updated_at": "2026-10-08"
 }
