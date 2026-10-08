@@ -93,3 +93,24 @@ test('Given saved titles with hidden characters, Then rows render them clean', a
   expect(await within(main).findByRole('link', { name: 'Exploiting input sanitization' })).toHaveAttribute('href', '/papers/p1')
   expect(within(main).getByText('Web services sanitize input.')).toBeVisible()
 })
+
+test('Given Load more fails, Then the loaded papers stay and Try again fetches the next page', async () => {
+  let failing = true
+  mockApi({
+    'GET /papers': ({ url }) => {
+      if (url.searchParams.get('offset') !== '20') return json({ items: Array.from({ length: 20 }, (_, index) => paper(index)) })
+      return failing ? json({ code: 'DATABASE_UNAVAILABLE', message: 'More papers are unavailable right now.', request_id: 'r1' }, 503) : json({ items: [paper(20)] })
+    },
+  })
+  const { user } = mount(['/library'])
+  const main = screen.getByRole('main')
+  await user.click(await within(main).findByRole('button', { name: 'Load more' }))
+  const alert = await within(main).findByRole('alert')
+  expect(alert).toHaveTextContent('More papers are unavailable right now.')
+  expect(within(main).getByRole('link', { name: 'Paper 0' })).toBeVisible()
+  expect(within(main).queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  failing = false
+  await user.click(within(alert).getByRole('button', { name: 'Try again' }))
+  expect(await within(main).findByRole('link', { name: 'Paper 20' })).toBeVisible()
+  expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
+})
