@@ -1,0 +1,57 @@
+name: Verify research assistant
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.10.8'
+      - name: Bootstrap private test configuration
+        run: python3 scripts/bootstrap.py
+      - name: Backend and real-service integration
+        run: python3 scripts/test-stack.py test
+      - name: Infrastructure acceptance checks
+        run: python3 -m unittest discover -s tests/infrastructure -v
+      - name: Frontend checks and build
+        working-directory: src/frontend
+        run: |
+          npm ci
+          npm run check
+          npm run build
+      - name: Create synthetic paper fixture
+        run: uv run --with pymupdf==1.26.7 python tests/fixtures/create_pdf.py /tmp/ara-fixtures/research.pdf
+      - name: Start deterministic browser stack
+        run: docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml up --build -d --wait
+      - name: Check generated API contract
+        working-directory: src/frontend
+        run: |
+          ara_generated_contract="$(mktemp)"
+          npx openapi-typescript http://127.0.0.1:8001/openapi.json -o "$ara_generated_contract"
+          cmp src/api/generated.ts "$ara_generated_contract"
+      - name: Chromium browser checks
+        working-directory: src/frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Show safe service logs on failure
+        if: failure()
+        run: docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml logs --tail 100 api worker
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: browser-failure-evidence
+          path: |
+            src/frontend/test-results
+            src/frontend/playwright-report
+          retention-days: 7
