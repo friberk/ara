@@ -219,3 +219,18 @@ The same finish reviewer re-scored the recaptured screens: fixes 1–6 resolved,
 - The unused `--evidence` token: the reader had hard-coded its own copy, so the token now has one value in both themes and the reader uses it.
 
 Mutations confirmed both fixes. Final run: Vitest 339/339, ESLint 0, Playwright 8/8 on a fresh e2e database.
+
+### UI overhaul merged into main
+
+The user asked: "Can we merge to main?", then: "Also keep the branches for record."
+
+`main` had not moved since `feat/ui-overhaul` was cut, so the merge was a fast-forward to `dd9a96d`. The branch and all agent branches are kept as archives, and nothing was pushed because no remote is configured and publishing is deferred.
+
+Verification on `main`:
+- Strict tsc clean
+- ESLint 0 problems
+- Vitest 339/339
+- Production build passing
+- Running development stack healthy
+
+The final full E2E run (8/8) and the backend suite (74/74) ran on the same code.

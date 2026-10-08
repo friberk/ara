@@ -13,7 +13,7 @@ Single-user CS 59300 homework application. `hw1.md` is the assignment authority;
 
 ## Workflow
 
-The verified implementation is on `main`. Retain `feat/ai-research-assistant` as an archive at `526ef68`; use new feature branches for subsequent changes. The initial checkout had no HEAD, so implementation began in place; that historical limitation is recorded in the journal. Do not modify `hw1.md`, `hw1.pdf`, or existing writing skills.
+The verified implementation is on `main`. Retain `feat/ai-research-assistant` as an archive at `526ef68`. The chat-centred UI overhaul (ARA-033 to ARA-040) was fast-forwarded into `main` at `dd9a96d`; retain `feat/ui-overhaul` and its agent branches (`feat/ui-api`, `feat/ui-content`, `feat/ui-conversation`, `feat/ui-workspace`, `feat/ui-research`, `feat/ui-evidence`) as archives. Use new feature branches for subsequent changes. Commit messages carry no Co-Authored-By trailer. The initial checkout had no HEAD, so implementation began in place; that historical limitation is recorded in the journal. Do not modify `hw1.md`, `hw1.pdf`, or existing writing skills.
 
 Use Given/When/Then acceptance criteria and practical red-green-refactor cycles. Log actual failures and corrections; never invent interactions or claim a test passed without output. Track work in `issue_tracker/` using `ARA-*` IDs. Record relevant prompts, decisions, errors and evidence in `docs/agent-development-log.md`.
 
