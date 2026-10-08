@@ -1,0 +1,661 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-08T00:00:00Z",
+  "title": "Design System: AI Research Assistant",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Ink",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "ink-foreground": {
+        "role": "neutral",
+        "displayName": "Ink Foreground",
+        "canonical": "oklch(0.985 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Foreground",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "quiet-surface": {
+        "role": "neutral",
+        "displayName": "Quiet Surface",
+        "canonical": "oklch(0.97 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.556 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.922 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "ring": {
+        "role": "neutral",
+        "displayName": "Ring",
+        "canonical": "oklch(0.708 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "sidebar-ground": {
+        "role": "neutral",
+        "displayName": "Sidebar Ground",
+        "canonical": "oklch(0.985 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "ink-dark": {
+        "role": "primary",
+        "displayName": "Ink (dark)",
+        "canonical": "oklch(0.922 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "paper-dark": {
+        "role": "neutral",
+        "displayName": "Paper (dark)",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "card-dark": {
+        "role": "neutral",
+        "displayName": "Card (dark)",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "quiet-surface-dark": {
+        "role": "neutral",
+        "displayName": "Quiet Surface (dark)",
+        "canonical": "oklch(0.269 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "muted-foreground-dark": {
+        "role": "neutral",
+        "displayName": "Muted Ink (dark)",
+        "canonical": "oklch(0.708 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "hairline-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark)",
+        "canonical": "oklch(1 0 0 / 10%)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "input-dark": {
+        "role": "neutral",
+        "displayName": "Input Border (dark)",
+        "canonical": "oklch(1 0 0 / 15%)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Destructive Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.15 0.2 27)",
+          "oklch(0.26 0.2 27)",
+          "oklch(0.37 0.2 27)",
+          "oklch(0.48 0.2 27)",
+          "oklch(0.6 0.2 27)",
+          "oklch(0.72 0.2 27)",
+          "oklch(0.84 0.2 27)",
+          "oklch(0.95 0.2 27)"
+        ]
+      },
+      "destructive-dark": {
+        "role": "tertiary",
+        "displayName": "Destructive Red (dark)",
+        "canonical": "oklch(0.704 0.191 22.216)",
+        "tonalRamp": [
+          "oklch(0.15 0.19 22)",
+          "oklch(0.26 0.19 22)",
+          "oklch(0.37 0.19 22)",
+          "oklch(0.48 0.19 22)",
+          "oklch(0.6 0.19 22)",
+          "oklch(0.72 0.19 22)",
+          "oklch(0.84 0.19 22)",
+          "oklch(0.95 0.19 22)"
+        ]
+      },
+      "evidence-marker": {
+        "role": "tertiary",
+        "displayName": "Evidence Marker Yellow",
+        "canonical": "oklch(0.93 0.13 96 / 0.75)",
+        "tonalRamp": [
+          "oklch(0.15 0.13 96)",
+          "oklch(0.26 0.13 96)",
+          "oklch(0.37 0.13 96)",
+          "oklch(0.48 0.13 96)",
+          "oklch(0.6 0.13 96)",
+          "oklch(0.72 0.13 96)",
+          "oklch(0.84 0.13 96)",
+          "oklch(0.95 0.13 96)"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Status Green",
+        "canonical": "oklch(0.45 0.11 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.11 155)",
+          "oklch(0.26 0.11 155)",
+          "oklch(0.37 0.11 155)",
+          "oklch(0.48 0.11 155)",
+          "oklch(0.6 0.11 155)",
+          "oklch(0.72 0.11 155)",
+          "oklch(0.84 0.11 155)",
+          "oklch(0.95 0.11 155)"
+        ]
+      },
+      "success-muted": {
+        "role": "tertiary",
+        "displayName": "Status Green Ground",
+        "canonical": "oklch(0.96 0.03 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.03 155)",
+          "oklch(0.26 0.03 155)",
+          "oklch(0.37 0.03 155)",
+          "oklch(0.48 0.03 155)",
+          "oklch(0.6 0.03 155)",
+          "oklch(0.72 0.03 155)",
+          "oklch(0.84 0.03 155)",
+          "oklch(0.95 0.03 155)"
+        ]
+      },
+      "success-dark": {
+        "role": "tertiary",
+        "displayName": "Status Green (dark)",
+        "canonical": "oklch(0.8 0.12 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.12 155)",
+          "oklch(0.26 0.12 155)",
+          "oklch(0.37 0.12 155)",
+          "oklch(0.48 0.12 155)",
+          "oklch(0.6 0.12 155)",
+          "oklch(0.72 0.12 155)",
+          "oklch(0.84 0.12 155)",
+          "oklch(0.95 0.12 155)"
+        ]
+      },
+      "success-muted-dark": {
+        "role": "tertiary",
+        "displayName": "Status Green Ground (dark)",
+        "canonical": "oklch(0.3 0.05 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.05 155)",
+          "oklch(0.26 0.05 155)",
+          "oklch(0.37 0.05 155)",
+          "oklch(0.48 0.05 155)",
+          "oklch(0.6 0.05 155)",
+          "oklch(0.72 0.05 155)",
+          "oklch(0.84 0.05 155)",
+          "oklch(0.95 0.05 155)"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Status Amber",
+        "canonical": "oklch(0.5 0.11 70)",
+        "tonalRamp": [
+          "oklch(0.15 0.11 70)",
+          "oklch(0.26 0.11 70)",
+          "oklch(0.37 0.11 70)",
+          "oklch(0.48 0.11 70)",
+          "oklch(0.6 0.11 70)",
+          "oklch(0.72 0.11 70)",
+          "oklch(0.84 0.11 70)",
+          "oklch(0.95 0.11 70)"
+        ]
+      },
+      "warning-muted": {
+        "role": "tertiary",
+        "displayName": "Status Amber Ground",
+        "canonical": "oklch(0.96 0.04 85)",
+        "tonalRamp": [
+          "oklch(0.15 0.04 85)",
+          "oklch(0.26 0.04 85)",
+          "oklch(0.37 0.04 85)",
+          "oklch(0.48 0.04 85)",
+          "oklch(0.6 0.04 85)",
+          "oklch(0.72 0.04 85)",
+          "oklch(0.84 0.04 85)",
+          "oklch(0.95 0.04 85)"
+        ]
+      },
+      "warning-dark": {
+        "role": "tertiary",
+        "displayName": "Status Amber (dark)",
+        "canonical": "oklch(0.82 0.12 80)",
+        "tonalRamp": [
+          "oklch(0.15 0.12 80)",
+          "oklch(0.26 0.12 80)",
+          "oklch(0.37 0.12 80)",
+          "oklch(0.48 0.12 80)",
+          "oklch(0.6 0.12 80)",
+          "oklch(0.72 0.12 80)",
+          "oklch(0.84 0.12 80)",
+          "oklch(0.95 0.12 80)"
+        ]
+      },
+      "warning-muted-dark": {
+        "role": "tertiary",
+        "displayName": "Status Amber Ground (dark)",
+        "canonical": "oklch(0.32 0.05 75)",
+        "tonalRamp": [
+          "oklch(0.15 0.05 75)",
+          "oklch(0.26 0.05 75)",
+          "oklch(0.37 0.05 75)",
+          "oklch(0.48 0.05 75)",
+          "oklch(0.6 0.05 75)",
+          "oklch(0.72 0.05 75)",
+          "oklch(0.84 0.05 75)",
+          "oklch(0.95 0.05 75)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Home greeting above the composer; at most once per screen."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles on Search, Library, Activity and Settings."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Paper titles in result rows; library rows at 1rem, details panel at 1.125rem."
+      },
+      "reading": {
+        "displayName": "Reading",
+        "purpose": "Assistant answers, user messages and summaries."
+      },
+      "composer": {
+        "displayName": "Composer",
+        "purpose": "Text typed into the composer."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Abstracts, descriptions, links, menus."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, citation chips, footnotes, captions; sentence case."
+      },
+      "identifier": {
+        "displayName": "Identifier",
+        "purpose": "DOIs, raw model ids, DOI inputs and code only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "composer-float",
+        "value": "0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px -4px rgb(0 0 0 / 0.08)",
+        "purpose": "Composer at rest, light mode only."
+      },
+      {
+        "name": "composer-focus",
+        "value": "0 1px 2px rgb(0 0 0 / 0.05), 0 8px 24px -6px rgb(0 0 0 / 0.12)",
+        "purpose": "Composer while its field has focus, light mode only."
+      },
+      {
+        "name": "floating-control",
+        "value": "0 2px 8px -2px rgb(0 0 0 / 0.15)",
+        "purpose": "Round scroll-to-latest button over the thread."
+      },
+      {
+        "name": "paper-page",
+        "value": "0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent), 0 4px 12px -4px color-mix(in oklch, var(--foreground) 12%, transparent)",
+        "purpose": "Each rendered PDF page."
+      }
+    ],
+    "motion": [
+      {
+        "name": "citation-pulse",
+        "value": "1.2s cubic-bezier(0.16, 1, 0.3, 1) once; 0 to 4px evidence ring and back",
+        "purpose": "One pulse when a citation lands; none after zoom redraws; removed under reduced motion."
+      },
+      {
+        "name": "evidence-scroll",
+        "value": "scrollTo behavior smooth (instant under prefers-reduced-motion)",
+        "purpose": "Centre the cited sentence in the reader."
+      },
+      {
+        "name": "state-transition",
+        "value": "Tailwind default 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Hover backgrounds, composer border and shadow on focus."
+      },
+      {
+        "name": "progress",
+        "value": "motion-safe:animate-spin / motion-safe:animate-pulse",
+        "purpose": "Processing badge icon and the 'Preparing a response' line only."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation and transition durations 0.01ms, scroll-behavior auto",
+        "purpose": "Global prefers-reduced-motion override."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md (mobile boundary: offcanvas sidebar, Chat/PDF/Details tabs)",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink fill; used sparingly for confirming actions.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Save bibliography</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border-radius:var(--radius,10px);border:1px solid transparent;font:500 14px/1 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;}.ds-btn:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.708 0 0)) 50%,transparent);border-color:var(--ring,oklch(0.708 0 0));}.ds-btn:active{transform:translateY(1px);}.ds-btn-primary{background:var(--primary,oklch(0.205 0 0));color:var(--primary-foreground,oklch(0.985 0 0));}.ds-btn-primary:hover{background:color-mix(in oklch,var(--primary,oklch(0.205 0 0)) 80%,transparent);}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "The standard row action: Save to library, Open paper, Try again.",
+      "html": "<button class=\"ds-btn ds-btn-outline\">Save to library</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border-radius:var(--radius,10px);border:1px solid transparent;font:500 14px/1 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;}.ds-btn:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.708 0 0)) 50%,transparent);border-color:var(--ring,oklch(0.708 0 0));}.ds-btn:active{transform:translateY(1px);}.ds-btn-outline{background:var(--background,oklch(1 0 0));color:var(--foreground,oklch(0.145 0 0));border-color:var(--border,oklch(0.922 0 0));}.ds-btn-outline:hover{background:var(--muted,oklch(0.97 0 0));}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary row actions, toolbar and composer controls.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">Ask about this paper</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border-radius:var(--radius,10px);border:1px solid transparent;font:500 14px/1 'Geist Variable',ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s;}.ds-btn:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.708 0 0)) 50%,transparent);border-color:var(--ring,oklch(0.708 0 0));}.ds-btn:active{transform:translateY(1px);}.ds-btn-ghost{background:transparent;color:var(--foreground,oklch(0.145 0 0));}.ds-btn-ghost:hover{background:var(--muted,oklch(0.97 0 0));}"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "composer",
+      "description": "The single floating input: textarea, leading controls, round ink send button.",
+      "html": "<form class=\"ds-composer\"><textarea class=\"ds-composer-input\" rows=\"1\" aria-label=\"Research topic\" placeholder=\"Search papers by topic, title or research question\"></textarea><div class=\"ds-composer-bar\"><span class=\"ds-composer-provider\">OpenAlex</span><button type=\"submit\" class=\"ds-composer-send\" aria-label=\"Search papers\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"/><path d=\"M12 19V5\"/></svg></button></div></form>",
+      "css": ".ds-composer{display:flex;flex-direction:column;width:100%;max-width:48rem;border:1px solid var(--border,oklch(0.922 0 0));border-radius:22px;background:var(--background,oklch(1 0 0));box-shadow:0 1px 2px rgb(0 0 0/.04),0 4px 16px -4px rgb(0 0 0/.08);transition:border-color .15s,box-shadow .15s;}.ds-composer:focus-within{border-color:color-mix(in oklch,var(--ring,oklch(0.708 0 0)) 60%,transparent);box-shadow:0 1px 2px rgb(0 0 0/.05),0 8px 24px -6px rgb(0 0 0/.12);}.ds-composer-input{min-height:64px;resize:none;border:0;outline:none;background:transparent;padding:14px 16px 4px;font:400 15px/24px 'Geist Variable',ui-sans-serif,system-ui,sans-serif;color:var(--foreground,oklch(0.145 0 0));}.ds-composer-input::placeholder{color:var(--muted-foreground,oklch(0.556 0 0));}.ds-composer-bar{display:flex;align-items:center;gap:4px;padding:0 8px 8px;}.ds-composer-provider{flex:1;padding:0 8px;font:500 13px 'Geist Variable',sans-serif;color:var(--muted-foreground,oklch(0.556 0 0));}.ds-composer-send{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:9999px;background:var(--primary,oklch(0.205 0 0));color:var(--primary-foreground,oklch(0.985 0 0));cursor:pointer;}.ds-composer-send:hover{background:color-mix(in oklch,var(--primary,oklch(0.205 0 0)) 80%,transparent);}.ds-composer-send:focus-visible{outline:2px solid var(--ring,oklch(0.708 0 0));outline-offset:2px;}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Form fields in dialogs and the bibliography editor.",
+      "html": "<input class=\"ds-input\" placeholder=\"Title\" aria-label=\"Title\">",
+      "css": ".ds-input{height:32px;padding:4px 10px;border:1px solid var(--input,oklch(0.922 0 0));border-radius:10px;background:transparent;font:400 14px 'Geist Variable',ui-sans-serif,sans-serif;color:var(--foreground,oklch(0.145 0 0));outline:none;transition:border-color .15s,box-shadow .15s;}.ds-input::placeholder{color:var(--muted-foreground,oklch(0.556 0 0));}.ds-input:focus-visible{border-color:var(--ring,oklch(0.708 0 0));box-shadow:0 0 0 3px color-mix(in oklch,var(--ring,oklch(0.708 0 0)) 50%,transparent);}"
+    },
+    {
+      "name": "Citation Chip",
+      "kind": "chip",
+      "refersTo": "citation-chip",
+      "description": "Inline page chip; activating it runs the evidence jump.",
+      "html": "<p class=\"ds-cite-text\">Different attention heads capture syntactic structure. <button class=\"ds-cite\" aria-label=\"Source, page 7\">p. 7</button></p>",
+      "css": ".ds-cite-text{font:400 15.5px/28px 'Geist Variable',ui-sans-serif,sans-serif;color:var(--foreground,oklch(0.145 0 0));}.ds-cite{display:inline-flex;align-items:center;height:20px;min-width:20px;padding:0 6px;border:0;border-radius:6px;background:var(--muted,oklch(0.97 0 0));color:color-mix(in oklch,var(--foreground,oklch(0.145 0 0)) 70%,transparent);font:500 12px/1 'Geist Variable',sans-serif;font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .15s,color .15s;}.ds-cite:hover{background:color-mix(in oklch,var(--muted,oklch(0.97 0 0)),var(--foreground,oklch(0.145 0 0)) 10%);color:var(--foreground,oklch(0.145 0 0));}.ds-cite:focus-visible{outline:none;box-shadow:0 0 0 1px var(--background,#fff),0 0 0 3px var(--ring,oklch(0.708 0 0));}"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "status-badge-ready",
+      "description": "Round status badge; green and amber tints live only here.",
+      "html": "<span class=\"ds-badge ds-badge-ready\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/></svg>Ready to read</span> <span class=\"ds-badge ds-badge-processing\">Processing</span>",
+      "css": ".ds-badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:2px 8px 2px 6px;border-radius:26px;font:400 12px/1 'Geist Variable',sans-serif;white-space:nowrap;}.ds-badge-ready{background:var(--success-muted,oklch(0.96 0.03 155));color:var(--success,oklch(0.45 0.11 155));}.ds-badge-processing{background:var(--warning-muted,oklch(0.96 0.04 85));color:var(--warning,oklch(0.5 0.11 70));padding-left:8px;}"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "sidebar-item",
+      "description": "Collapsible sidebar rows on the faint neutral ground.",
+      "html": "<nav class=\"ds-side\" aria-label=\"Main\"><a class=\"ds-side-item\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m16 6 4 14\"/><path d=\"M12 6v14\"/><path d=\"M8 8v12\"/><path d=\"M4 4v16\"/></svg>Library</a><a class=\"ds-side-item\" href=\"#\" aria-current=\"page\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m16 6 4 14\"/><path d=\"M12 6v14\"/><path d=\"M8 8v12\"/><path d=\"M4 4v16\"/></svg>Attention Is All You Need</a><a class=\"ds-side-item\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m16 6 4 14\"/><path d=\"M12 6v14\"/><path d=\"M8 8v12\"/><path d=\"M4 4v16\"/></svg>Activity</a></nav>",
+      "css": ".ds-side{display:flex;flex-direction:column;gap:2px;width:16rem;padding:8px;background:var(--sidebar,oklch(0.985 0 0));}.ds-side-item{display:flex;align-items:center;gap:8px;height:32px;padding:8px;border-radius:8px;font:400 14px 'Geist Variable',sans-serif;color:var(--sidebar-foreground,oklch(0.145 0 0));text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.ds-side-item:hover,.ds-side-item[aria-current=page]{background:var(--sidebar-accent,oklch(0.97 0 0));}.ds-side-item[aria-current=page]{font-weight:500;}.ds-side-item:focus-visible{outline:2px solid var(--sidebar-ring,oklch(0.708 0 0));}"
+    },
+    {
+      "name": "Evidence Mark",
+      "kind": "custom",
+      "refersTo": "evidence-marker",
+      "description": "Cited sentence on white PDF paper, with the one-shot pulse; same in both themes.",
+      "html": "<div class=\"ds-page\"><p>As side benefit, self-attention could yield more interpretable models. <mark class=\"ds-evidence\">Not only do individual attention heads clearly learn to perform different tasks, many appear to exhibit behavior related to the syntactic and semantic structure of the sentences.</mark></p></div>",
+      "css": ".ds-page{max-width:32rem;padding:24px 32px;background:#fff;color:#111;border-radius:2px;font:400 12px/1.5 Georgia,serif;box-shadow:0 1px 2px rgb(0 0 0/.1),0 4px 12px -4px rgb(0 0 0/.12);}.ds-evidence{color:inherit;border-radius:2px;background:color-mix(in oklch,oklch(0.93 0.13 96 / 0.75) 55%,transparent);animation:ds-pulse 1.2s cubic-bezier(0.16,1,0.3,1) 1;}@keyframes ds-pulse{0%{box-shadow:0 0 0 0 oklch(0.93 0.13 96 / 0.75)}35%{box-shadow:0 0 0 4px oklch(0.93 0.13 96 / 0.75)}100%{box-shadow:0 0 0 0 transparent}}@media (prefers-reduced-motion:reduce){.ds-evidence{animation:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Category Standard, Played Straight",
+    "overview": "**Creative North Star: \"The Category Standard, Played Straight\"**\n\nThe workspace sits in the same class as ChatGPT, Claude, Elicit and Undermind and does not try to out-design them. Stock shadcn neutral tokens, Geist throughout, a collapsible sidebar, and one floating composer that either searches the literature or asks a selected paper. The craft goes into clarity and provenance rather than ornament: every answer carries page chips, and every chip leads back to the sentence on the page.\n\nThe grounds are pure white in light mode and near-black in dark, following the system preference with a user toggle in the sidebar footer. Colour is withheld almost completely. The interface is achromatic ink on paper. A marker-yellow highlight in the PDF is the one expressive colour, and quiet green and amber tints mark status. Density is moderate: reading text is set larger than the controls around it (15.5px on a 28px line), and lists are borderless rows separated by hairlines rather than stacks of cards.\n\nThe rejection is explicit and comes from the direction contract. Do not use the docs-page arrangement of headings, form cards and tabs that hid the conversation. The thread and the composer are the page.",
+    "keyCharacteristics": [
+      "Zero-chroma oklch neutrals for every surface, text and border, in both themes.",
+      "One floating, heavily rounded composer is the primary input on every route that takes text.",
+      "Borderless list rows divided by hairlines; cards reserved for summaries and the upload drop zone.",
+      "PDF pages stay white paper in both themes, so the evidence mark is identical in light and dark.",
+      "Motion only answers a user action, and reduced motion removes it."
+    ],
+    "rules": [
+      {
+        "name": "The Black-and-White Rule",
+        "body": "Every surface, text colour and border has zero chroma. If a new screen needs emphasis, it gets weight, size or ink, not a hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Highlighter Rule",
+        "body": "Evidence yellow appears only on cited text in the PDF. It is never used for UI emphasis, selection, chips or badges.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Tint Rule",
+        "body": "Green and amber appear only inside status badges, as a muted ground with matching text. They never colour buttons, links, icons outside a badge, or row backgrounds.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red Means Error Rule",
+        "body": "Destructive red is reserved for failures and destructive actions, always as a tint behind red text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Is for Identifiers Rule",
+        "body": "Geist Mono is used only for DOIs, raw model ids, DOI input fields and code. It is never used for decoration, labels or numerals. Counts and page numbers use tabular figures in Geist Sans instead.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "All interface copy (buttons, headings, badges, menu items, toasts) is in sentence case. There are no uppercase eyebrows or tracked-out labels.",
+        "section": "typography"
+      },
+      {
+        "name": "The Soft Lift Rule",
+        "body": "Only surfaces that float over scrolling content (the composer, floating controls and PDF pages) get a shadow. Shadows are soft, low-opacity and blurred. Hard offset shadows are not part of this world.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Dark Mode Lifts by Tone Rule",
+        "body": "In dark mode, floating surfaces drop their shadow and use the card tone (oklch(0.205 0 0)) instead.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** take every surface, text and border colour from the zero-chroma neutral tokens, in both themes.",
+      "**Do** keep evidence yellow (oklch(0.93 0.13 96 / 0.75)) for cited text in the PDF only, and use the same value in light and dark because the page is always white.",
+      "**Do** keep green and amber inside status badges, as a muted ground with matching text.",
+      "**Do** route any new text input through the composer (22px radius, soft float shadow, round send button) instead of a bordered form card.",
+      "**Do** list papers, chats and jobs as borderless rows divided by hairlines inside a max-w-3xl column.",
+      "**Do** set conversational and summary prose at 15.5px on a 28px line, and interface text at 14px.",
+      "**Do** use Geist Mono only for DOIs, raw model ids and code.",
+      "**Do** show errors inline with role=alert beside what failed, and use toasts only to confirm success.",
+      "**Do** write all copy in sentence case, describing the user's action and how to recover, not internal engineering.",
+      "**Do** animate only in response to a user action (send, collapse, resize, citation jump), and honour prefers-reduced-motion."
+    ],
+    "donts": [
+      "**Don't** introduce a brand hue, gradient or tinted neutral. The accent is black and white.",
+      "**Don't** use evidence yellow for UI emphasis, selection, badges or chips.",
+      "**Don't** send errors to toasts.",
+      "**Don't** wrap search results or library entries in individual cards, or rebuild the docs-page arrangement of headings, form cards and tabs that hid the conversation.",
+      "**Don't** add uppercase eyebrows, tracked-out labels or kickers above headings.",
+      "**Don't** use hard offset shadows or heavy elevation. Floating surfaces get the soft lift in light mode and the card tone in dark mode.",
+      "**Don't** invert or tint PDF pages in dark mode, or follow the theme with the evidence mark.",
+      "**Don't** use glyph characters as icons. Icons are Lucide SVGs, hidden from assistive technology when decorative.",
+      "**Don't** add ambient or idle motion. Nothing moves unless the user caused it, except progress indicators."
+    ]
+  }
+}

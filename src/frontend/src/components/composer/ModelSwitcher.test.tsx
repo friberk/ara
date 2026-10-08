@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { renderWithProviders } from '@/test/render'
 import { mockApi } from '@/test/fetch-routes'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -69,4 +69,16 @@ test('Given models are still loading, Then the switcher is disabled and says so'
   mockApi({ 'GET /models': () => new Promise<Response>(() => {}), 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   mount()
   expect(await screen.findByRole('button', { name: 'Model: Loading models' })).toBeDisabled()
+})
+
+test('Given saving the default fails, Then the menu stays open and explains the error inline', async () => {
+  // Errors stay inline (DESIGN.md: toasts are for success only).
+  mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'PUT /settings': () => new Response(JSON.stringify({ code: 'SETTINGS_UNAVAILABLE', message: 'Settings could not be saved. Try again.' }), { status: 503, headers: { 'Content-Type': 'application/json' } }) })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
+  await chooseEffort(user, 'High')
+  await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'Set as default' }))
+  const menu = await screen.findByRole('menu')
+  expect(await within(menu).findByRole('alert')).toHaveTextContent('Settings could not be saved. Try again.')
 })

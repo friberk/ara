@@ -16,7 +16,7 @@
     "impeccable-finish-reviewer verdict",
     "impeccable-documenter output"
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "DESIGN.md",
     "README.md",
@@ -32,6 +32,6 @@
     "2189e1b"
   ],
   "pull_requests": [],
-  "verification": "Impeccable detector: 0 findings. Fresh finish review of 36 captures returned disposition 'fix' with 7 material items. After the fix batch (all test-first, mutation-checked), the same reviewer's verdict pass scored fixes 1-6 resolved: passage-level evidence jump, matching dark mark, Activity hides internal jobs, faded thread edge, Attach PDF instead of dead controls, chip kept with its word. Non-material residual: the mark can start about one glyph late, a limit of pdf.js text-layer geometry also seen in pdf.js find highlighting. Fix 7 (DESIGN.md) goes to impeccable-documenter. Final: Vitest 338/338, ESLint 0, tsc clean, Playwright 8/8 on a fresh e2e DB.",
+  "verification": "Impeccable detector: 0 findings. Fresh finish review of 36 captures returned disposition 'fix' with 7 material items. After the fix batch (all test-first, mutation-checked), the same reviewer's verdict pass scored fixes 1-6 resolved: passage-level evidence jump, matching dark mark, Activity hides internal jobs, faded thread edge, Attach PDF instead of dead controls, chip kept with its word. Non-material residual: the mark can start about one glyph late, a limit of pdf.js text-layer geometry also seen in pdf.js find highlighting. Fix 7 (DESIGN.md) goes to impeccable-documenter. Final: Vitest 338/338, ESLint 0, tsc clean, Playwright 8/8 on a fresh e2e DB. impeccable-documenter rewrote DESIGN.md and .impeccable/design.json from the built code. The stale teal and system-font world was replaced, which closes fix 7. It reported drift. Two items were fixed test-first: (a) a ModelSwitcher save failure raised toast.error, and now stays inline in the open menu (2 mutations caught); (b) the --evidence token was unused because the reader hard-coded its value, so the token now has a single value in both themes and the reader reads it. The rest was accepted as stock shadcn: the dark sidebar-primary blue is overridden where used, chart tokens are unused, and status tints cover job and model badges as documented. Final: Vitest 339/339, ESLint 0, tsc clean, build passing, Playwright 8/8 on a fresh e2e DB.",
   "updated_at": "2026-10-08"
 }

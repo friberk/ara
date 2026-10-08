@@ -12,7 +12,7 @@
  * must not follow the theme (the dark token turned it a muddy tan on white).
  */
 .pdf-viewer {
-  --pdf-evidence: oklch(0.93 0.13 96 / 0.75);
+  --pdf-evidence: var(--evidence);
 }
 
 /*

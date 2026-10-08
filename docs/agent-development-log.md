@@ -209,3 +209,13 @@ A fresh-context `impeccable-finish-reviewer` received 36 validated captures and 
 - The agent ran E2E against the test API only, with an Origin override confined to fixture data.
 
 **Lead integration.** 338 tests passing, 0 lint problems, Playwright 8/8 on a fresh e2e database. The recaptures show only "Not only do individual attention heads…" marked on page 7, the same yellow in both themes, and an "Attach PDF" primary action for papers without a PDF. The recaptures went back to the same reviewer for a verdict pass.
+
+### Verdict pass, documentation and closing drift
+
+The same finish reviewer re-scored the recaptured screens: fixes 1–6 resolved, with one disclosed non-material residual (the mark can start a glyph late because of pdf.js text-layer geometry). Fix 7 needed only DESIGN.md.
+
+`impeccable-documenter` replaced DESIGN.md and wrote `.impeccable/design.json` from the shipped code, and listed drift instead of hiding it. The lead fixed two items test-first:
+- ModelSwitcher's `toast.error` broke the inline-errors rule; failures now stay in the open menu as an alert.
+- The unused `--evidence` token: the reader had hard-coded its own copy, so the token now has one value in both themes and the reader uses it.
+
+Mutations confirmed both fixes. Final run: Vitest 339/339, ESLint 0, Playwright 8/8 on a fresh e2e database.

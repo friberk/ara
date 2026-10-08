@@ -8,9 +8,15 @@ test('Given the stylesheet, Then it is read whole', () => {
   expect(css).toMatch(/\.pdf-viewer \.textLayer/)
 })
 
+const tokens = readFileSync(`${import.meta.dirname}/../../index.css`, 'utf8')
+const darkBlock = tokens.slice(tokens.indexOf('.dark {'), tokens.indexOf('}', tokens.indexOf('.dark {')))
+
 test('Given either theme, Then the evidence mark uses one fixed colour, because PDF pages stay white paper in both', () => {
   expect(css).not.toMatch(/\.dark\b/)
-  expect(css).not.toMatch(/var\(--evidence\)/)
+  // One source of truth: the reader reads the design token, and the token has a single value in both themes.
+  expect(css).toMatch(/var\(--evidence\)/)
+  expect(css).not.toMatch(/oklch\(0\.93 0\.13 96/)
+  expect(darkBlock).not.toMatch(/--evidence:/)
 })
 
 test('Given a strong mark that just landed, Then it pulses; context lines never pulse', () => {

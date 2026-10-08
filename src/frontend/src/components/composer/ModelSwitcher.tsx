@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, ChevronDown, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -16,11 +17,12 @@ import { useGenerationSettings } from './generation-settings-context'
 export function ModelSwitcher({ purpose, disabled, align = 'start', className }: { purpose?: Purpose; disabled?: boolean; align?: 'start' | 'end'; className?: string }) {
   const { settings, setSettings, models, selectedModel, savedDefaults, loading } = useGenerationSettings()
   const save = useSaveDefaults()
+  const [open, setOpen] = useState(false)
   const isDefault = savedDefaults?.model === settings.model && savedDefaults.reasoning_effort === settings.reasoning_effort
   const name = selectedModel?.display_name ?? (loading ? 'Loading models' : 'Choose a model')
   const effort = selectedModel ? effortLabel(settings.reasoning_effort) : null
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (next) save.reset() }}>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="ghost" size="sm" disabled={disabled || loading || !models.length} aria-label={`Model: ${name}${effort ? `, ${effort} reasoning` : ''}`} className={cn('gap-1 rounded-full px-2.5 text-muted-foreground hover:text-foreground', className)}>
           <span className="font-medium text-foreground">{name}</span>
@@ -57,12 +59,20 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
         </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled={isDefault || !selectedModel || save.isPending} onSelect={() => save.mutate(settings, { onSuccess: () => toast.success('Saved as default model'), onError: (error) => toast.error(error.message) })}>
+          <DropdownMenuItem
+            disabled={isDefault || !selectedModel || save.isPending}
+            onSelect={(event) => {
+              // Stay open while saving so a failure can be explained here; errors are never toasts.
+              event.preventDefault()
+              save.mutate(settings, { onSuccess: () => { setOpen(false); toast.success('Saved as default model') } })
+            }}
+          >
             <Check aria-hidden="true" className={cn(!isDefault && 'opacity-0')} />
             {isDefault ? 'Default model' : 'Set as default'}
           </DropdownMenuItem>
           <DropdownMenuItem asChild><Link to="/settings"><Settings2 aria-hidden="true" />Model settings</Link></DropdownMenuItem>
         </DropdownMenuGroup>
+        {save.error && <p role="alert" className="px-2 pt-1 pb-1.5 text-xs text-destructive">{save.error.message}</p>}
       </DropdownMenuContent>
     </DropdownMenu>
   )
