@@ -20,8 +20,8 @@ declare module 'mdast' {
 }
 
 export type RemarkCitationsOptions = {
-  /** Lowercase chunk ids that may render. Markers for any other chunk are removed. */
-  allowed: ReadonlySet<string>
+  /** Page of each lowercase chunk id that may render. Markers for any other chunk are removed. */
+  allowed: ReadonlyMap<string, number>
 }
 
 export function remarkCitations({ allowed }: RemarkCitationsOptions) {
@@ -40,11 +40,12 @@ export function remarkCitations({ allowed }: RemarkCitationsOptions) {
   }
 }
 
-function split(value: string, allowed: ReadonlySet<string>) {
+function split(value: string, allowed: ReadonlyMap<string, number>) {
   const parts: PhrasingContent[] = []
   const marker = new RegExp(markerPattern, 'g')
-  // Markers separated only by whitespace form a run; a chunk cited twice in one run shows once.
-  let run = new Set<string>()
+  // Markers separated only by whitespace form a run. A run shows each page once, as "p. 6 p. 6" reads as a
+  // mistake; the first passage cited on that page stands for it.
+  let run = new Set<number>()
   let cursor = 0
   for (let match = marker.exec(value); match; match = marker.exec(value)) {
     const between = value.slice(cursor, match.index)
@@ -54,8 +55,9 @@ function split(value: string, allowed: ReadonlySet<string>) {
     }
     cursor = match.index + match[0].length
     const chunkId = (match[1] ?? '').toLowerCase()
-    if (!allowed.has(chunkId) || run.has(chunkId)) continue
-    run.add(chunkId)
+    const page = allowed.get(chunkId)
+    if (page === undefined || run.has(page)) continue
+    run.add(page)
     parts.push({ type: 'citationMarker', chunkId, data: { hName: 'cite', hProperties: { dataChunkId: chunkId } } })
   }
   pushText(parts, value.slice(cursor))
