@@ -405,6 +405,7 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
                 chunk_set=prepared.chunk_set,
                 preferred_profile=prepared.retrieval_profile,
                 queries=plan.search_queries,
+                question=plan.standalone_question,
                 budget=prepared.evidence_budget,
                 counter=prepared.limits.counter,
                 reranker=prepared.reranker,

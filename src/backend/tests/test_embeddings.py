@@ -25,6 +25,15 @@ def test_given_profile_keys_when_resolving_then_unknown_keys_are_rejected():
     assert (error.value.status_code, error.value.code) == (422, "INVALID_EMBEDDING_PROFILE")
 
 
+def test_given_profiles_when_batching_then_local_admissions_stay_small():
+    from app.integrations.embedding_catalog import PROFILES
+
+    batches = {key: profile.batch_size for key, profile in PROFILES.items()}
+    # OpenAI batching is unchanged. Locally, one admission is about 10 s of CPU work at the
+    # Phase 0 rates (4B 51 tok/s, 8B 29 tok/s), well inside a search's wait for the slot.
+    assert batches == {"openai-3-large": 64, "qwen3-embed-4b": 2, "qwen3-embed-8b": 1}
+
+
 def ollama_resources(**overrides):
     return SimpleNamespace(settings=Settings(_env_file=None, **overrides))
 
@@ -49,8 +58,8 @@ def admitted(monkeypatch):
     entered = []
 
     @asynccontextmanager
-    async def slot(resources, key):
-        entered.append(key)
+    async def slot(resources, key, **options):
+        entered.append((key, options.get("background", False)))
         yield
 
     monkeypatch.setattr(local_models, "retrieval_inference_slot", slot)
@@ -79,7 +88,8 @@ async def test_given_qwen_profile_when_embedding_then_only_queries_carry_the_ins
     for body in requests:
         assert body["keep_alive"] == "10m" and "dimensions" not in body
         assert body["options"]["num_thread"] == 3
-    assert admitted == ["qwen3-embedding-4b", "qwen3-embedding-4b"]
+    # Only background jobs embed documents, so they yield to searches; a query waits its turn.
+    assert admitted == [("qwen3-embedding-4b", True), ("qwen3-embedding-4b", False)]
     assert embedder.sent_text(" Method \n") == "Method"
 
 
@@ -119,44 +129,27 @@ async def test_given_unnormalized_vectors_when_embedding_then_results_have_unit_
 
 
 def busy_slot(monkeypatch, *, busy_attempts):
-    from app.integrations import embeddings
     from app.services import local_models
 
     attempts = []
 
     @asynccontextmanager
-    async def slot(resources, key):
+    async def slot(resources, key, **options):
         attempts.append(key)
         if len(attempts) <= busy_attempts:
             raise AppError(409, "LOCAL_MODEL_BUSY", "A local search request is already running.")
         yield
 
     monkeypatch.setattr(local_models, "retrieval_inference_slot", slot)
-    monkeypatch.setattr(embeddings, "BUSY_RETRY_SECONDS", 0)
     return attempts
 
 
-async def test_given_busy_retrieval_slot_when_embedding_then_it_retries_once(monkeypatch):
+async def test_given_busy_retrieval_slot_when_embedding_then_only_the_admission_waits(monkeypatch):
+    """The admission already waited its bounded time; a second wait would double it."""
     from app.integrations.embedding_catalog import embedding_profile
     from app.integrations.embeddings import create_embedder
 
     attempts = busy_slot(monkeypatch, busy_attempts=1)
-    requests = []
-    embedder = create_embedder(
-        ollama_resources(), embedding_profile("qwen3-embed-4b"), transport=ollama_runtime(requests)
-    )
-    try:
-        assert len(await embedder.embed_queries(["recall"])) == 1
-    finally:
-        await embedder.close()
-    assert len(attempts) == 2 and len(requests) == 1
-
-
-async def test_given_still_busy_retrieval_slot_when_retried_then_busy_is_raised(monkeypatch):
-    from app.integrations.embedding_catalog import embedding_profile
-    from app.integrations.embeddings import create_embedder
-
-    attempts = busy_slot(monkeypatch, busy_attempts=2)
     requests = []
     embedder = create_embedder(
         ollama_resources(), embedding_profile("qwen3-embed-4b"), transport=ollama_runtime(requests)
@@ -167,7 +160,7 @@ async def test_given_still_busy_retrieval_slot_when_retried_then_busy_is_raised(
     finally:
         await embedder.close()
     assert error.value.code == "LOCAL_MODEL_BUSY"
-    assert len(attempts) == 2 and requests == []
+    assert len(attempts) == 1 and requests == []
 
 
 async def test_given_unreachable_runtime_when_embedding_then_runtime_is_unavailable(admitted):

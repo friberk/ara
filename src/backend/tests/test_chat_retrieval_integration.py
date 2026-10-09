@@ -351,10 +351,63 @@ async def test_given_reranking_off_when_answering_then_no_stage_and_fusion_order
     row = await stored(resources, prepared.assistant.id)
     assert row.retrieval["trace"]["rerank"] == {
         "profile": None,
+        "query": "How does BM25 recall compare?",
         "skipped": None,
         "scores": {},
         "elapsed_ms": 0,
     }
+
+
+@pytest.mark.parametrize("planner", ["model", "fallback"])
+async def test_given_planned_follow_up_when_reranking_then_passages_are_judged_by_the_question(
+    resources, monkeypatch, embeddings, planner
+):
+    """Regression: every candidate was scored against the first keyword query only."""
+    from app.rag import pipeline
+    from app.rag.rerank import RerankOutcome
+
+    paper_id, document_id, _ = await seed_structured(resources)
+    chat_id = await new_chat(resources, paper_id, document_id)
+    use_hosted(monkeypatch, resources, [], cite_first)
+    first = "How much does dense retrieval improve recall over BM25?"
+    opening, events = await ask(resources, chat_id, first)
+    assert named(events, "message.completed")
+    follow_up = "And what did it cost to train?"
+    standalone = "What did training the dense retriever cost, compared with BM25?"
+    queries = ["dense retriever training cost", "BM25 recall comparison"]
+    plan = {"standalone_question": standalone, "search_queries": queries}
+    hosted_responses(
+        monkeypatch,
+        resources,
+        lambda body: (
+            json.dumps({**plan, "needs_paper_evidence": True}) if planner == "model" else "?"
+        ),
+    )
+    seen = []
+
+    async def record(resources, *, query, nodes, reranker):
+        seen.append(query)
+        return RerankOutcome(nodes=list(nodes), reranked=True, reranker=reranker)
+
+    monkeypatch.setattr(pipeline, "rerank_candidates", record)
+    prepared, events = await ask(resources, chat_id, follow_up)
+    assert named(events, "message.completed")
+    # The planner's standalone question; a failed plan falls back to the follow-up itself,
+    # never to the keyword jumble searched in its place.
+    expected = standalone if planner == "model" else follow_up
+    assert seen == [expected]
+    retrieval = (await stored(resources, prepared.assistant.id)).retrieval
+    assert retrieval["trace"]["rerank"]["query"] == expected
+    # A first turn has no plan, so the reranker judged the question as asked.
+    opened = (await stored(resources, opening.assistant.id)).retrieval
+    assert opened["trace"]["rerank"]["query"] == first
+    if planner == "model":
+        assert retrieval["search_queries"] == queries
+    else:
+        assert retrieval["search_queries"] != [follow_up]
+
+
+QUESTION = "How does BM25 recall compare with dense retrieval?"
 
 
 async def evidence(resources, document_id, *, budget=8000, reranker="openai-gpt-6-luna"):
@@ -371,6 +424,7 @@ async def evidence(resources, document_id, *, budget=8000, reranker="openai-gpt-
         chunk_set=CHUNK_SET,
         preferred_profile=OPENAI,
         queries=["BM25 recall dense retrieval"],
+        question=QUESTION,
         budget=budget,
         counter=TiktokenCounter(),
         reranker=reranker,
@@ -397,7 +451,7 @@ async def test_given_reranked_order_when_packing_then_evidence_follows_the_outco
     monkeypatch.setattr(pipeline, "rerank_candidates", reverse)
     roomy = await evidence(resources, document_id)
     ((query, reranker, ids),) = seen
-    assert (query, reranker) == ("BM25 recall dense retrieval", "openai-gpt-6-luna")
+    assert (query, reranker) == (QUESTION, "openai-gpt-6-luna")
     assert ids == [item.node.node_id for item in fused]
     assert [item.node.node_id for item in roomy.ranked] == ids[::-1]
     assert roomy.summary.reranked is True
@@ -434,6 +488,7 @@ async def test_given_skipped_reranker_when_retrieving_then_only_relevant_reasons
     assert result.summary.reranked is False and result.summary.note == note
     assert result.trace["rerank"] == {
         "profile": "openai-gpt-6-luna",
+        "query": QUESTION,
         "skipped": skipped,
         "scores": {},
         "elapsed_ms": 3,

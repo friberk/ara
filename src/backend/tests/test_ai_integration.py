@@ -699,6 +699,7 @@ async def test_given_two_documents_when_retrieving_then_scope_is_immutable(resou
             chunk_set="test",
             preferred_profile="openai-3-large",
             queries=[question],
+            question=question,
             budget=4000,
             counter=TiktokenCounter(),
         )

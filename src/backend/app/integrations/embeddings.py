@@ -1,6 +1,5 @@
 """Embedding adapters over LlamaIndex. Embedding is idempotent and cheap, so it may retry."""
 
-import asyncio
 import math
 from functools import cache
 from typing import Protocol
@@ -15,7 +14,6 @@ from pydantic import ValidationError
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import EmbeddingProfile
 
-BUSY_RETRY_SECONDS = 1
 OLLAMA_KEEP_ALIVE = "10m"
 # Phase 0 S1: a constant num_ctx and num_thread per model avoids runner reloads, and
 # omitting num_thread made a CPU batch 3.4x slower. Chunks are far below 2,048 tokens.
@@ -174,29 +172,24 @@ class OllamaEmbedder:
         return self.model._format_text(text)
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return await self.call(lambda: self.model.aget_text_embedding_batch(texts), len(texts))
+        # Only background jobs (indexing, turn recall) embed documents; they yield the slot to
+        # a waiting search and reschedule themselves.
+        return await self.admitted(
+            lambda: self.model.aget_text_embedding_batch(texts), len(texts), background=True
+        )
 
     async def embed_queries(self, texts: list[str]) -> list[list[float]]:
         async def queries():
             return [await self.model.aget_query_embedding(text) for text in texts]
 
-        return await self.call(queries, len(texts))
+        # A search waits a bounded time for the slot, then falls back to keyword search.
+        return await self.admitted(queries, len(texts), background=False)
 
-    async def call(self, operation, count: int) -> list[list[float]]:
-        try:
-            return await self.admitted(operation, count)
-        except AppError as error:
-            # One generation and one retrieval holder may overlap; another search waits once.
-            if error.code != "LOCAL_MODEL_BUSY":
-                raise
-        await asyncio.sleep(BUSY_RETRY_SECONDS)
-        return await self.admitted(operation, count)
-
-    async def admitted(self, operation, count: int) -> list[list[float]]:
+    async def admitted(self, operation, count: int, *, background: bool) -> list[list[float]]:
         from app.services import local_models
 
         async with local_models.retrieval_inference_slot(
-            self.resources, self.profile.local_model_key
+            self.resources, self.profile.local_model_key, background=background
         ):
             vectors = await self.request(operation)
         return unit_vectors(self.profile, vectors, count)

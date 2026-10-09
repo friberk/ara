@@ -156,12 +156,16 @@ async def retrieve_evidence(
     chunk_set: str,
     preferred_profile: str,
     queries: list[str],
+    question: str,
     budget: int,
     counter: TokenCounter,
     reranker: str | None = None,
     on_stage: Callable[[str], Awaitable[None]] | None = None,
 ) -> EvidenceResult:
-    """`reranker` is a catalog profile key, or None for off; `on_stage` hears "reranking"."""
+    """`queries` are searched; the reranker judges passages against the standalone `question`.
+
+    `reranker` is a catalog profile key, or None for off; `on_stage` hears "reranking".
+    """
     started = time.monotonic()
     timings = {}
     summary = RetrievalSummary(mode="keyword", search_queries=list(queries))
@@ -201,7 +205,7 @@ async def retrieve_evidence(
     fused = reciprocal_rank_fusion(results)
     if reranker is not None and fused and on_stage is not None:
         await on_stage("reranking")
-    reranked = await rerank_candidates(resources, query=queries[0], nodes=fused, reranker=reranker)
+    reranked = await rerank_candidates(resources, query=question, nodes=fused, reranker=reranker)
     timings["rerank"] = reranked.elapsed_ms
     summary.reranked = reranked.reranked
     if reranked.skipped and reranked.skipped not in QUIET_RERANK_SKIPS:
@@ -224,6 +228,7 @@ async def retrieve_evidence(
         "fused": [[item.node.node_id, item.score] for item in fused[:TOP_K]],
         "rerank": {
             "profile": reranker,
+            "query": question,
             "skipped": reranked.skipped,
             "scores": reranked.scores,
             "elapsed_ms": reranked.elapsed_ms,

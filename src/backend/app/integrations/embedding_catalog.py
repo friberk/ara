@@ -22,6 +22,8 @@ class EmbeddingProfile:
 
 
 # Qwen3 Embedding is instruction-aware on queries only; documents are embedded bare.
+# A local batch is one admission to the shared retrieval slot, so it stays near 10 s of CPU
+# work at the Phase 0 rates (4B 51 tok/s, 8B 29 tok/s) and a waiting search gets in next.
 QWEN_QUERY = (
     "Instruct: Given a question about a scientific paper, retrieve passages of the paper "
     "that answer it\nQuery: "
@@ -46,7 +48,7 @@ PROFILES: dict[str, EmbeddingProfile] = {
             "Qwen3 Embedding 4B",
             2560,
             32768,
-            16,
+            2,
             QWEN_QUERY,
             local_model_key="qwen3-embedding-4b",
         ),
@@ -57,7 +59,7 @@ PROFILES: dict[str, EmbeddingProfile] = {
             "Qwen3 Embedding 8B",
             4096,
             32768,
-            16,
+            1,
             QWEN_QUERY,
             local_model_key="qwen3-embedding-8b",
         ),

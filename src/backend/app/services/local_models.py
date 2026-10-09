@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
@@ -12,11 +13,13 @@ from app.models.jobs import BackgroundJob
 from app.models.local_models import ModelInstallation, ModelRequest, ModelUse
 from app.repositories.jobs import enqueue, now
 from app.repositories.local_models import (
+    SlotBusy,
     acquire_use,
     enqueue_revalidation,
     heartbeat_use,
     installation_locked,
     lock_models,
+    mark_waiting,
     pending_owner,
     recovery_operations,
     release_use,
@@ -28,6 +31,9 @@ from app.schemas.jobs import JobError, JobStatus
 
 logger = logging.getLogger(__name__)
 PREPARATION_MESSAGE = "This installed model is being prepared automatically in the background."
+# A search waits about one background embedding batch for the retrieval slot (ARA-072).
+RETRIEVAL_WAIT_SECONDS = 20
+RETRIEVAL_POLL_SECONDS = 0.5
 
 
 def runtime(resources) -> OllamaRuntime:
@@ -324,16 +330,60 @@ async def local_inference_slot(resources, key: str):
 
 
 @asynccontextmanager
-async def retrieval_inference_slot(resources, key: str):
-    """Short-lease embedding/reranking admission that may overlap one generation."""
-    async with admitted_use(resources, key, slot="retrieval", lease_seconds=30):
+async def retrieval_inference_slot(resources, key: str, *, background: bool = False):
+    """Short-lease embedding/reranking admission that may overlap one generation.
+
+    A search waits up to RETRIEVAL_WAIT_SECONDS for another holder and keeps background
+    embedding off the slot meanwhile. Background work never waits: its job reschedules.
+    """
+    async with admitted_use(
+        resources,
+        key,
+        slot="retrieval",
+        lease_seconds=30,
+        wait_seconds=0 if background else RETRIEVAL_WAIT_SECONDS,
+        background=background,
+    ):
         yield
 
 
+async def acquire_waiting(
+    sessions, key: str, *, slot: str, lease_seconds: int, wait_seconds: float, background: bool
+):
+    """Admit now, or poll while another holder finishes; maintenance never waits."""
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            return await acquire_use(
+                sessions, key, slot=slot, lease_seconds=lease_seconds, background=background
+            )
+        except SlotBusy:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+        await mark_waiting(sessions, key, slot=slot, seconds=4 * RETRIEVAL_POLL_SECONDS)
+        await asyncio.sleep(min(RETRIEVAL_POLL_SECONDS, remaining))
+
+
 @asynccontextmanager
-async def admitted_use(resources, key: str, *, slot: str, lease_seconds: int):
+async def admitted_use(
+    resources,
+    key: str,
+    *,
+    slot: str,
+    lease_seconds: int,
+    wait_seconds: float = 0,
+    background: bool = False,
+):
     await ensure_local_available(resources, key)
-    token = await acquire_use(resources.sessions, key, slot=slot, lease_seconds=lease_seconds)
+    token = await acquire_waiting(
+        resources.sessions,
+        key,
+        slot=slot,
+        lease_seconds=lease_seconds,
+        wait_seconds=wait_seconds,
+        background=background,
+    )
     owner = asyncio.current_task()
     lost = False
 

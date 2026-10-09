@@ -1,5 +1,6 @@
 """Catalog rerankers over real budget and admission state, with in-process providers (ARA-074)."""
 
+import asyncio
 import json
 import math
 import re
@@ -202,7 +203,7 @@ def logprobs(p_yes: float) -> dict:
     }
 
 
-async def local_runtime(resources, requests, *, held=None, peak=None, fail_on=None):
+async def local_runtime(resources, requests, *, held=None, peak=None, fail_on=None, delay=0.0):
     """Inventory, version and raw-template scoring for the pinned local reranker."""
     spec = local_spec("qwen3-reranker-0.6b")
     active = 0
@@ -223,6 +224,7 @@ async def local_runtime(resources, requests, *, held=None, peak=None, fail_on=No
         if peak is not None:
             peak[0] = max(peak[0], active)
         try:
+            await asyncio.sleep(delay)
             if held is not None:
                 async with resources.sessions() as session:
                     uses = (await session.scalars(select(ModelUse))).all()
@@ -334,6 +336,26 @@ async def test_given_runtime_lost_mid_rerank_when_reranking_then_scoring_stops(r
     assert (outcome.reranked, outcome.skipped) == (True, None)
     assert outcome.scores == {nodes[0].node.node_id: pytest.approx(0.02)}
     assert ids(outcome.nodes) == ids(nodes)
+
+
+async def test_given_slow_local_reranker_when_the_deadline_passes_then_fusion_order_is_kept(
+    resources, monkeypatch
+):
+    """Each call may take 30 s, so 12 slow calls once delayed an answer by about 6 minutes."""
+    from app.rag import rerank
+    from app.rag.rerank import rerank_candidates
+
+    monkeypatch.setattr(rerank, "LOCAL_DEADLINE_SECONDS", 0.5, raising=False)
+    requests = []
+    await install(resources, await local_runtime(resources, requests, delay=0.25))
+    nodes = [node(1, IRRELEVANT), node(2, PARTIAL), node(3, RELEVANT)]
+    nodes += [node(index, f"{RELEVANT} Sample {index}.") for index in range(4, 7)]
+    outcome = await rerank_candidates(resources, query=QUERY, nodes=nodes, reranker=LOCAL)
+    assert (outcome.nodes, outcome.reranked, outcome.reranker) == (nodes, False, LOCAL)
+    assert outcome.skipped == "RERANKER_TIMEOUT" and outcome.scores == {}
+    assert len(requests) < len(nodes) and outcome.elapsed_ms < 1200
+    async with resources.sessions() as session:
+        assert (await session.scalars(select(ModelUse))).all() == []  # the slot was released
 
 
 @pytest.fixture

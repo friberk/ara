@@ -1,5 +1,7 @@
 """Retrieval inference has its own short admission slot beside generation (ARA-072)."""
 
+import asyncio
+import time
 from datetime import timedelta
 from uuid import uuid4
 
@@ -100,14 +102,61 @@ async def test_given_model_download_processing_when_retrieval_admits_then_runtim
     assert busy.value.code == "LOCAL_MODEL_BUSY"
 
 
-async def test_given_retrieval_in_progress_when_second_retrieval_admits_then_it_is_busy(
-    resources,
+async def test_given_retrieval_held_past_the_wait_when_search_admits_then_it_is_busy(
+    resources, monkeypatch
 ):
+    from app.services import local_models
     from app.services.local_models import retrieval_inference_slot
 
+    monkeypatch.setattr(local_models, "RETRIEVAL_WAIT_SECONDS", 0.6, raising=False)
     await ready_models(resources, RETRIEVAL)
     async with retrieval_inference_slot(resources, RETRIEVAL):
+        started = time.monotonic()
         with pytest.raises(AppError) as busy:
             async with retrieval_inference_slot(resources, RETRIEVAL):
                 pytest.fail("a second retrieval holder must be refused")
         assert busy.value.code == "LOCAL_MODEL_BUSY"
+        # The search waited its bounded time before falling back.
+        assert 0.6 <= time.monotonic() - started < 3
+
+
+async def test_given_background_embedding_when_a_search_waits_then_the_search_enters_next(
+    resources, monkeypatch
+):
+    """Regression: a search retried once after 1 s while background batches held the slot."""
+    from app.repositories.local_models import acquire_use, release_use
+    from app.services import local_models
+    from app.services.local_models import retrieval_inference_slot
+
+    monkeypatch.setattr(local_models, "RETRIEVAL_POLL_SECONDS", 1.0, raising=False)
+    await ready_models(resources, RETRIEVAL)
+    batch = await acquire_use(resources.sessions, RETRIEVAL, slot="retrieval", lease_seconds=30)
+    entered = []
+
+    async def search():
+        async with retrieval_inference_slot(resources, RETRIEVAL):
+            entered.append(time.monotonic())
+
+    waiting = asyncio.create_task(search())
+    await asyncio.sleep(0.3)
+    assert not waiting.done()  # the search waits instead of falling back
+    await release_use(resources.sessions, batch)
+    released = time.monotonic()
+    # The next background batch yields while the search sleeps between attempts.
+    with pytest.raises(AppError) as yielded:
+        async with retrieval_inference_slot(resources, RETRIEVAL, background=True):
+            pytest.fail("background embedding must yield to a waiting search")
+    assert yielded.value.code == "LOCAL_MODEL_BUSY"
+    assert yielded.value.message == "A search is waiting for the local runtime."
+    await asyncio.wait_for(waiting, 5)
+    assert entered and entered[0] - released < 2
+
+
+async def test_given_no_waiting_search_when_background_admits_then_it_holds_the_slot(resources):
+    from app.services.local_models import retrieval_inference_slot
+
+    await ready_models(resources, RETRIEVAL)
+    async with retrieval_inference_slot(resources, RETRIEVAL, background=True):
+        async with resources.sessions() as session:
+            uses = (await session.scalars(select(ModelUse))).all()
+        assert [(use.slot, use.model_key) for use in uses] == [("retrieval", RETRIEVAL)]
