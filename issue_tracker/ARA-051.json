@@ -1,0 +1,33 @@
+{
+  "id": "ARA-051",
+  "title": "Correct Ollama thinking discovery and investigate IFM controls",
+  "type": "bug",
+  "priority": "P1",
+  "description": "The application reads the legacy thinking_levels field rather than the documented thinking object. The installed IFM 3.7B runtime currently advertises neither field; resolving its controls also requires runtime/template investigation. Preserve verified default/disabled behavior until supported controls are established.",
+  "dependencies": [
+    "ARA-044",
+    "ARA-045",
+    "ARA-046",
+    "ARA-047"
+  ],
+  "acceptance_criteria": [
+    "Given canonical thinking metadata, when capabilities are normalized, then documented boolean and named controls/defaults are represented accurately.",
+    "Given absent or malformed metadata, when verification runs, then unsupported controls are never inferred from successful fallback alone.",
+    "Given the exact IFM 7B artifact, when runtime controls are investigated, then accepted requests and actual template behavior are distinguished from model-family claims."
+  ],
+  "test_cases": [
+    "Modern metadata, boolean controls, named values, omission/malformed responses and explicit default semantics.",
+    "Opt-in 7B runtime verification; no additional weights downloaded without authorization."
+  ],
+  "status": "observed",
+  "related_files": [
+    "src/backend/app/integrations/ollama.py",
+    "src/backend/app/integrations/ollama_llm.py",
+    "src/backend/tests/test_local_models_runtime.py",
+    "docker/ollama/README.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Official documentation inspected; current Python parser confirmed against source. Read-only /api/show on installed IFM 3.7B omitted thinking metadata and reported tools/completion. Earlier 7B named-parameter rejection remains a measured result for the pinned build. No behavioral change or new generation test executed in this investigation.",
+  "updated_at": "2026-10-08"
+}
