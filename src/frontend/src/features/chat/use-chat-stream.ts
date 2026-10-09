@@ -39,6 +39,8 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
   const processing = saved.some((message) => message.state === 'processing')
   const busy = streaming || processing
   const refreshChats = () => void client.invalidateQueries({ queryKey: queryKeys.chats.all })
+  // A completed answer may have moved earlier messages into the chat's summary.
+  const refreshMemory = () => void client.invalidateQueries({ queryKey: queryKeys.retrieval.memory(chat.id) })
 
   async function send(content: string, settings: GenerationSettings, requestId: string = crypto.randomUUID()) {
     const text = content.trim()
@@ -50,6 +52,7 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
     setStreaming(true); setError(null); setDraft(null); setOutcome(null); setStage(null); setPending({ text, baseline })
     const answer = (id: string, partial = ''): Message => ({ id, role: 'assistant', content: partial, state: 'processing', model: settings.model, reasoning_effort: settings.reasoning_effort, citations: [], created_at: new Date().toISOString() })
     let terminal = false
+    let completed = false
     try {
       const response = await checkedResponse(`/chats/${chat.id}/messages/stream`, { ...json('POST', { content: text, ...settings, request_id: requestId } satisfies ChatInput), signal: abort.signal })
       await readEvents(response, (event) => {
@@ -65,6 +68,7 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
         if (event.event === 'message.completed') {
           if (event.data.citations.some((citation) => citation.document_id !== chat.document_id)) throw new Error('The response included a source outside this document.')
           terminal = true
+          completed = true
           setDraft(event.data)
           setOutcome('completed')
         }
@@ -96,6 +100,7 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
           setDraft((previous) => previous && items.some((message) => message.id === previous.id) ? null : previous)
         }
         refreshChats()
+        if (completed) refreshMemory()
       }
     }
   }

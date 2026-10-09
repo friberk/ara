@@ -14,7 +14,7 @@ export function ConversationComposer({ value, onValueChange, onSubmit, gate, sen
   sendable: boolean
   busy: boolean
   onStop?: () => void
-  note?: string | null
+  note?: React.ReactNode
 }) {
   return (
     <Composer

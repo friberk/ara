@@ -27,5 +27,6 @@ export const queryKeys = {
     profiles: ['retrieval', 'profiles'] as const,
     settings: ['retrieval', 'settings'] as const,
     paper: (paperId: string) => ['retrieval', 'paper', paperId] as const,
+    memory: (chatId: string) => ['retrieval', 'memory', chatId] as const,
   },
 }

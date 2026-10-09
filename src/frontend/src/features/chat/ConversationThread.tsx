@@ -4,8 +4,10 @@ import { useGenerationSettings } from '@/components/composer/generation-settings
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SummaryCard } from '@/features/summary'
+import { useChatMemory } from '@/hooks/queries/retrieval'
 import { peekQuestion, takeQuestion, type PendingQuestion } from '@/lib/pending-questions'
 import { ConversationComposer } from './ConversationComposer'
+import { MemoryNote } from './MemoryNote'
 import { AssistantMessage, PendingAnswer, UserMessage } from './Messages'
 import { canAsk, questionGate } from './question-gate'
 import { SuggestedQuestions } from './SuggestedQuestions'
@@ -29,6 +31,7 @@ function HistorySkeleton() {
 export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSummary }) {
   const generation = useGenerationSettings()
   const stream = useChatStream(chat)
+  const memory = useChatMemory(chat.id).data?.memory
   const [text, setText] = useState('')
   const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading })
   const loaded = stream.history.isSuccess
@@ -67,7 +70,8 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
 
   const note = stream.processing && !stream.streaming
     ? 'An answer is still being written. It appears here when it finishes.'
-    : chat.document_id !== paper.active_document_id ? 'This conversation uses an earlier PDF of this paper.' : null
+    : chat.document_id !== paper.active_document_id ? 'This conversation uses an earlier PDF of this paper.'
+    : memory ? <MemoryNote memory={memory} /> : null
 
   return (
     <ThreadLayout
