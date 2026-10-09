@@ -150,7 +150,9 @@ test('Given a ready paper whose catalog lookup is running, When it finishes, The
   mockApi({ 'GET /papers/p1': () => json(stored), 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? [lookup] : [] }) })
   renderApp('/papers/p1')
   expect(await screen.findByRole('heading', { level: 1, name: 'Printed title from the PDF' })).toBeVisible()
+  // The PDF is readable meanwhile, so the status says so and the lookup is a quiet note beside it.
   expect(await screen.findByText('Finding paper details')).toBeVisible()
+  expect(screen.getByText('Ready to read')).toBeVisible()
   stored = { ...stored, title: 'Catalog title from OpenAlex', metadata_provenance: { title: { source: 'openalex' } } }
   lookup = { ...lookup, state: 'completed', stage: 'completed', progress: 100 }
   expect(await screen.findByRole('heading', { level: 1, name: 'Catalog title from OpenAlex' }, { timeout: 5000 })).toBeVisible()

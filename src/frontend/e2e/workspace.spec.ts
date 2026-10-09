@@ -61,9 +61,10 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
   if (paper.document_status === 'metadata_only') {
     const reader = page.getByRole('tabpanel', { name: 'PDF' })
     await expect(reader.getByText('Attach the PDF to read, summarize and ask')).toBeVisible()
+    // Choosing the file uploads it at once (ARA-086); one step list follows it until the reader opens.
     await reader.getByLabel('PDF file').setInputFiles(pdfPath)
-    await reader.getByRole('button', { name: 'Upload PDF', exact: true }).click()
-    await expect(reader.getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
+    await expect(reader.getByRole('list', { name: 'Preparation steps' })).toBeVisible()
+    await expect(reader.getByText(/in the background/i)).toHaveCount(0)
   } else {
     // The fixture paper is the only one and earlier browser tests may already have attached research.pdf; identical
     // bytes are deduplicated, so attach a byte-distinct copy as a new version from Details instead.
@@ -71,8 +72,7 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
     const details = page.getByRole('tabpanel', { name: 'Details' })
     const copy = Buffer.concat([await readFile(pdfPath), Buffer.from(`\n% e2e ${crypto.randomUUID()}\n`)])
     await details.getByLabel('PDF file').setInputFiles({ name: 'research-new-version.pdf', mimeType: 'application/pdf', buffer: copy })
-    await details.getByRole('button', { name: 'Upload PDF', exact: true }).click()
-    await expect(details.getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
+    await expect(details.getByRole('list', { name: 'Preparation steps' })).toBeVisible()
     await page.getByRole('tab', { name: 'PDF' }).click()
   }
   const { document_id: documentId } = await (await accepted).json() as { document_id: string }

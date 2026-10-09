@@ -8,10 +8,11 @@ pages, since a DOI in the text can belong to a cited reference. Fields the user 
 values already taken from a provider, are never replaced.
 
 A lookup never blocks reading, summaries or questions: the document is ready before it runs.
-When both sources are rate limited or unreachable, the job waits for the longest Retry-After
-(at least 60 s, then 120 s, at most 30 minutes) and gives up after its third attempt, keeping
-the PDF's values. PostgreSQL job state is authoritative and lease fences make a duplicate
-delivery a no-op.
+The chosen source's own "no match" is final, even if the other source is busy. When the chosen
+source is rate limited or unreachable and the other cannot supply a match, the job waits for
+the longest Retry-After (at least 60 s, then 120 s, at most 30 minutes) and gives up after its
+third attempt, keeping the PDF's values. PostgreSQL job state is authoritative and lease fences
+make a duplicate delivery a no-op.
 """
 
 import asyncio
@@ -351,6 +352,8 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
     search = AcademicSearch(resources.http, resources.settings)
     failures: list[AppError] = []
     found = None
+    # The chosen source's answer decides: its "no match" is final even when the fallback is busy.
+    answered = False
     try:
         async with asyncio.timeout(LOOKUP_DEADLINE_SECONDS):
             for provider in (selected, *(item for item in SOURCES if item != selected)):
@@ -359,13 +362,14 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
                 except AppError as error:
                     failures.append(error)
                     continue
+                answered = answered or provider == selected
                 if found:
                     break
     except TimeoutError:
         failures.append(AppError(503, "PROVIDER_UNAVAILABLE", "The lookup timed out."))
     if found:
         await apply(resources, job_id, generation, token, paper_id, *found)
-    elif failures:
+    elif failures and not answered:
         await settle(
             resources,
             job_id,

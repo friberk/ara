@@ -275,6 +275,24 @@ async def test_rate_limited_selected_source_falls_back_to_the_other_source(resou
     ]
 
 
+async def test_the_chosen_source_answering_no_match_is_final_when_the_fallback_is_busy(resources):
+    """Observed live: anonymous Semantic Scholar 429s must not keep retrying OpenAlex's answer."""
+    requests = []
+    await resources.http.aclose()
+    use(
+        resources,
+        providers(
+            requests,
+            openalex=lambda request: httpx.Response(200, json={"results": []}),
+            semantic_scholar=lambda request: httpx.Response(429, json={"message": "Too Many"}),
+        ),
+    )
+    accepted = await ingested(resources, toolchain_pdf(stamp=None, second_page=NO_DOI_PAGE))
+    job = await run_lookup(resources, accepted.paper_id, due=False)
+    assert job.state == "completed" and job.result["outcome"] == "no_match"
+    assert job.error_code is None
+
+
 async def test_user_edited_fields_survive_enrichment(resources):
     from app.repositories.papers import patch_paper
     from app.schemas.research import PaperPatch

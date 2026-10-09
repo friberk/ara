@@ -133,3 +133,17 @@ test('Given an upload still being read, Then its row is named by its file until 
   mount('/library')
   expect(await within(screen.getByRole('main')).findByRole('link', { name: 'sec18-han.pdf' })).toHaveAttribute('href', '/papers/p3')
 })
+
+test('Given an uploaded PDF that is readable while its details are looked up, Then its row says Ready and notes the lookup', async () => {
+  mockApi({
+    'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p5', document_id: 'd5', job_id: 'j5', duplicate: false }), { status: 202 }),
+    'GET /jobs/j5': { ...ingest, id: 'j5', state: 'completed', stage: 'completed', progress: 100 },
+    'GET /jobs': ({ url }) => new Response(JSON.stringify({ items: url.searchParams.get('kind') === 'metadata' ? [{ ...ingest, id: 'm5', kind: 'metadata', state: 'queued', stage: 'retry_wait', paper_id: 'p5' }] : [] })),
+  })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  await user.upload(screen.getByLabelText('PDF files'), pdf('slow-details.pdf'))
+  const row = (await within(await screen.findByRole('list', { name: 'Uploads' })).findByText('slow-details.pdf')).closest('li') as HTMLElement
+  await waitFor(() => expect(within(row).getByText('Ready')).toBeVisible())
+  expect(within(row).getByText('Finding paper details')).toBeVisible()
+})

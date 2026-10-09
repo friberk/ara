@@ -31,11 +31,13 @@ const open = (file: File, accepted: UploadAccepted) => <Button asChild size="sm"
 function AcceptedRow({ item, accepted }: { item: UploadItem; accepted: UploadAccepted }) {
   const steps = usePreparation({ paperId: accepted.paper_id, jobId: accepted.job_id, uploaded: true })
   if (accepted.duplicate) return <Row icon={<CircleCheck className="size-4" aria-hidden="true" />} file={item.file} status="Already in your library" action={open(item.file, accepted)} />
+  // A readable paper is Ready; a lookup still running after that is a note, not a wait.
+  const ready = steps.some((step) => step.key === 'ready' && step.state === 'done')
   const current = steps.find((step) => step.state === 'active' || step.state === 'failed')
-  const icon = !current ? <CircleCheck className="size-4" aria-hidden="true" /> : current.state === 'failed' ? <CircleAlert className="size-4 text-destructive" aria-hidden="true" /> : <Spinner className="size-4 text-muted-foreground" aria-hidden="true" />
-  return (
-    <Row icon={icon} file={item.file} action={open(item.file, accepted)} status={current ? <><span className={cn(current.state === 'failed' && 'text-destructive')}>{current.label}</span>{current.detail && <span>{current.detail}</span>}</> : <span>Ready</span>} />
-  )
+  const icon = ready ? <CircleCheck className="size-4" aria-hidden="true" /> : current?.state === 'failed' ? <CircleAlert className="size-4 text-destructive" aria-hidden="true" /> : <Spinner className="size-4 text-muted-foreground" aria-hidden="true" />
+  const status = ready ? <><span>Ready</span>{current && <span>{current.label}</span>}</>
+    : current ? <><span className={cn(current.state === 'failed' && 'text-destructive')}>{current.label}</span>{current.detail && <span>{current.detail}</span>}</> : <span>Reading pages</span>
+  return <Row icon={icon} file={item.file} action={open(item.file, accepted)} status={status} />
 }
 
 /** One row per file: upload progress, then its processing stage, or a specific error with a way forward. */
