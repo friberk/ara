@@ -82,7 +82,7 @@ test('Given summaries fail to load, Then the error is inline and Try again loads
 test('Given a PDF still processing, Then the card explains the wait and offers no action', async () => {
   mount(settings, { ...paper, document_status: 'processing' as const })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
-  expect(await within(card).findByText('A summary can be generated when the PDF finishes processing.')).toBeVisible()
+  expect(await within(card).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()
   expect(within(card).queryByRole('button', { name: /Generate summary|Attach PDF/ })).not.toBeInTheDocument()
 })
 

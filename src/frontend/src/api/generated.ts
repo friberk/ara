@@ -210,6 +210,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/papers/{paper_id}/retrieve-fulltext/automatic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retrieve Fulltext Automatically
+         * @description Start retrieval for a paper saved before automatic retrieval; every repeat replays it.
+         */
+        post: operations["retrieve_fulltext_automatically_api_v1_papers__paper_id__retrieve_fulltext_automatic_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents": {
         parameters: {
             query?: never;
@@ -562,6 +582,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AutomaticFullText */
+        AutomaticFullText: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Job Id */
+            job_id?: string | null;
+        };
         /** Body_upload_pdf_api_v1_documents_post */
         Body_upload_pdf_api_v1_documents_post: {
             /** File */
@@ -880,6 +910,8 @@ export interface components {
             /** Locations */
             locations?: components["schemas"]["FullTextLocation"][];
             retrieval_job?: components["schemas"]["JobStatus"] | null;
+            /** Source Host */
+            source_host?: string | null;
             /** Document Id */
             document_id?: string | null;
             /** Ingest Job Id */
@@ -1489,10 +1521,22 @@ export interface components {
             /** Summary Id */
             summary_id?: string | null;
         };
+        /** SummaryBlock */
+        SummaryBlock: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Model */
+            model: string;
+            /** Reasoning Effort */
+            reasoning_effort: string;
+        };
         /** SummaryPage */
         SummaryPage: {
             /** Items */
             items: components["schemas"]["Summary"][];
+            blocked?: components["schemas"]["SummaryBlock"] | null;
         };
         /** ThinkingControls */
         ThinkingControls: {
@@ -2020,6 +2064,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FullTextAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retrieve_fulltext_automatically_api_v1_papers__paper_id__retrieve_fulltext_automatic_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomaticFullText"];
                 };
             };
             /** @description Validation Error */

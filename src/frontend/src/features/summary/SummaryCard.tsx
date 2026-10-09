@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, FileUp } from 'lucide-react'
 import type { Job, Paper, Summary } from '@/api/types'
@@ -16,6 +16,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { Markdown, SourceList } from '@/features/content'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
+import { useFullText } from '@/hooks/queries/fulltext'
 import { useJobs } from '@/hooks/queries/jobs'
 import { useGenerateSummary, useSummaries } from '@/hooks/queries/summaries'
 import { queryKeys } from '@/lib/query-keys'
@@ -25,7 +26,7 @@ import { GenerationMeta } from './generation-meta'
 
 /** Why a summary cannot be generated right now, or null when it can. */
 function summaryGate(paper: Paper, usable: boolean, loadingModels: boolean) {
-  if (paper.document_status === 'processing') return 'A summary can be generated when the PDF finishes processing.'
+  if (paper.document_status === 'processing') return 'The summary starts automatically when the PDF is ready.'
   if (paper.document_status === 'failed') return 'PDF processing failed. Attach a text-based PDF to generate a summary.'
   if (paper.document_status !== 'ready' || !paper.active_document_id) return 'Attach a PDF to generate a summary.'
   if (!loadingModels && !usable) return 'The selected model can’t write summaries. Choose another model in the composer.'
@@ -44,6 +45,9 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
   const summaries = useSummaries(paper.id)
   const generate = useGenerateSummary(paper.id)
   const jobs = useJobs({ paperId: paper.id, kind: 'summary', active: true })
+  // While the PDF is still being retrieved, the summary waits for it instead of asking for an upload.
+  const fulltext = useFullText(paper.document_status === 'metadata_only' ? paper.id : undefined)
+  const retrieving = ['queued', 'processing'].includes(fulltext.data?.retrieval_job?.state ?? '')
   const [finishedJobs, setFinishedJobs] = useState<string[]>([])
   const [failure, setFailure] = useState<Error | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -59,7 +63,22 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
   const gate = summaryGate(paper, generation.usableFor('summary'), generation.loading)
   const canGenerate = !gate && !generation.loading && !activeJob && !generate.isPending
   // Without a usable PDF the next step is attaching one, not a disabled Generate summary.
-  const needsPdf = paper.document_status === 'metadata_only' || paper.document_status === 'failed'
+  const needsPdf = (paper.document_status === 'metadata_only' && !retrieving) || paper.document_status === 'failed'
+  // Why the server will not, or did not, summarize this PDF by itself with the saved default.
+  const blocked = summaries.data?.blocked
+  const waiting = paper.document_status === 'processing' || (paper.document_status === 'metadata_only' && retrieving)
+  const note = waiting ? (blocked ? `The summary won’t start by itself. ${blocked.message}` : paper.document_status === 'processing' ? gate : 'The summary starts when the PDF is ready.')
+    : paper.document_status === 'ready' && blocked ? `Not summarized automatically. ${blocked.message}` : gate
+
+  // A PDF that has just become ready may already have its automatic summary job queued.
+  const readyDocument = paper.document_status === 'ready' ? paper.active_document_id : null
+  const seenReady = useRef(readyDocument)
+  const { refetch: refetchJobs } = jobs
+  const { refetch: refetchSummaries } = summaries
+  useEffect(() => {
+    if (readyDocument && readyDocument !== seenReady.current) { void refetchJobs(); void refetchSummaries() }
+    seenReady.current = readyDocument
+  }, [readyDocument, refetchJobs, refetchSummaries])
 
   function start() {
     if (!canGenerate) return
@@ -116,7 +135,7 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
         </>
       ) : summaries.isSuccess && !activeJob && (
         <div className="mt-1.5 grid justify-items-start gap-3">
-          <p className="text-sm text-muted-foreground">{gate ?? 'A structured summary of the whole paper, with page sources you can check.'}</p>
+          <p className="text-sm text-muted-foreground">{note ?? 'A structured summary of the whole paper, with page sources you can check.'}</p>
           {needsPdf ? (
             <AttachPdf paperId={paper.id} />
           ) : paper.document_status === 'ready' && (
