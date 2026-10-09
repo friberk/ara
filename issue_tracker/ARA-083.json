@@ -8,30 +8,43 @@
     "ARA-077"
   ],
   "acceptance_criteria": [
-    "Given a hosted chat whose turn uses model M, when the follow-up planner rewrites a question or compaction summarizes earlier turns, then both call M at its quietest verified effort (as local chats already do) and no separate memory model is consulted.",
+    "Given a hosted chat whose turn uses model M with reasoning effort E, when the follow-up planner rewrites a question or compaction summarizes earlier turns, then both call M with the chat's active effort E (the turn being answered or the turn that queued the compaction) and no separate memory model is consulted.",
     "Given the Settings page, when the model defaults render, then there is no separate summaries/follow-up model control, and saving the default model and effort still works.",
     "Given stored defaults or a client request that still carries memory_model, when settings load or save, then the request succeeds, the field is ignored, and existing chats, memory summaries and paper summaries stay readable.",
     "Given an existing chat whose latest turn used model M with effort E, when the user opens it, then the composer selects M and E if they are still available; otherwise it keeps the current selection and history is untouched.",
     "Given a chat with the composer on model M, when the user generates the paper summary from that chat, then the summary uses M.",
-    "Given a local chat, when it plans or compacts, then behaviour, admission and no-paid-fallback rules are unchanged."
+    "Given a local chat, when it plans or compacts, then it also follows the chat's active effort, and admission and the no-paid-fallback rules are unchanged."
   ],
   "test_cases": [
     "Backend: memory model resolution, planner and compaction use the chat model; budget reservations name that model.",
     "Backend: settings GET/PUT compatibility with and without memory_model.",
     "Frontend: Settings no longer renders the memory-model radio group; opening a chat restores its latest model and effort; unavailable model keeps the current selection.",
-    "Generated OpenAPI contract matches the backend."
+    "Generated OpenAPI contract matches the backend.",
+    "Backend: the active effort propagates to the planner and the compaction job payload (hosted and local); hosted reasoning headroom, reservations, local thinking with the planner schema and the thinking timeout are covered."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/app/services/memory.py",
     "src/backend/app/schemas/ai.py",
     "src/backend/app/routes/ai.py",
     "src/frontend/src/features/settings/SettingsPage.tsx",
     "src/frontend/src/components/composer/generation-settings.tsx",
-    "src/frontend/src/features/chat/ConversationPane.tsx"
+    "src/frontend/src/features/chat/ConversationPane.tsx",
+    "src/frontend/src/components/composer/reasoning.ts",
+    "src/frontend/src/features/chat/ConversationThread.tsx",
+    "src/frontend/src/features/chat/ConversationPane.model.test.tsx",
+    "src/backend/tests/test_memory_model_integration.py",
+    "docs/api-contract.md"
   ],
-  "commits": [],
+  "commits": [
+    "1d789dc",
+    "c4c7de4",
+    "3c735fc",
+    "ebd71f3",
+    "a2b9d63",
+    "f8dc668"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09 from user feedback. Branch feat/ara-083-chat-model.",
+  "verification": "Red first: backend test_memory_model_integration.py failed (memory_model still returned; PUT with memory_model 'gpt-unknown' returned 422 INVALID_MEMORY_MODEL; hosted compaction/planning called gpt-5.6-luna instead of the chat's gpt-5.6-terra/sol). Frontend: ConversationPane.model.test.tsx restore tests failed (composer stayed on Luna), settings.test.tsx failed ('expected radiogroup ... to be null'). Green after implementation. Final: backend 906 passed in 145.95s with Ruff clean (ara-chatmodel-test); frontend check 483 tests passed and build passes; generated.ts regenerated (memory_model removed). Existing tests that encoded the separate memory model (test_query_planner, test_compaction_integration, memory-note, ConversationPane.standalone) were updated after observing them fail. Composer adopts a chat's latest answer model and normalised effort when the model is available; criterion 5 verified through the summary card in a restored chat. Correction 2026-10-09 (user): effort follows the chat, not the quietest. Red first: hosted plan at high sent effort none; local plan with effort on sent think False; compaction payload lacked effort (TypeError on the new effort argument); planner_timeout missing (ImportError). Green after implementation: backend 911 passed in 142.35s, Ruff clean.",
   "updated_at": "2026-10-09"
 }

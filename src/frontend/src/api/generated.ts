@@ -814,11 +814,6 @@ export interface components {
              * @default low
              */
             reasoning_effort: string;
-            /**
-             * Memory Model
-             * @default gpt-5.6-luna
-             */
-            memory_model: string;
         };
         /** EmbeddingProfileOut */
         EmbeddingProfileOut: {

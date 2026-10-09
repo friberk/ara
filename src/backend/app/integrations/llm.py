@@ -13,6 +13,7 @@ from app.integrations.context_registry import (
     HOSTED_OUTPUT_TOKENS,
     context_profile,
     hosted_profile,
+    hosted_reasoning_headroom,
 )
 from app.integrations.tokens import (
     PromptMessage,
@@ -270,7 +271,11 @@ class HostedLLM:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
         profile = hosted_profile(self.settings, model)
-        output = output_allocation(profile.max_output, max_output_tokens)
+        # An intermediate call also gets the effort's reasoning room above the answer allowance.
+        limit = profile.max_output + hosted_reasoning_headroom(effort)
+        output = output_allocation(
+            profile.max_output if max_output_tokens is None else limit, max_output_tokens
+        )
         if count_messages(profile.counter, messages) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413

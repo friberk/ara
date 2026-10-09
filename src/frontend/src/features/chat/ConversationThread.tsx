@@ -1,6 +1,7 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { ChatSummary, GenerationSettings, Paper, RetrievalStage } from '@/api/types'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
+import { restoreChatSettings } from '@/components/composer/reasoning'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SummaryCard } from '@/features/summary'
@@ -52,6 +53,17 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
     setText('')
     void stream.send(content, settings, requestId)
   }
+
+  // Opening a chat adopts the model and effort of its latest answer once, never as a saved default.
+  const restored = useRef(false)
+  const restore = useEffectEvent(() => {
+    restored.current = true
+    const next = restoreChatSettings(generation.models, stream.saved)
+    if (next) generation.setSettings(next)
+  })
+  useEffect(() => {
+    if (loaded && !generation.loading && !restored.current) restore()
+  }, [loaded, generation.loading])
 
   // A question queued by the home composer or the new-conversation start is sent once, with its own request_id.
   // Peek in the effect, send from a timer the cleanup clears: StrictMode's remount then sends exactly once.
