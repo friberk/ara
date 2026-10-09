@@ -17,9 +17,13 @@ class OllamaLLM:
         *,
         http_client=None,
         reasoning_efforts: Sequence[str] = ("default",),
+        thinking: dict | None = None,
     ):
         self.settings, self.model_id = settings, model_id
         self.reasoning_efforts = tuple(reasoning_efforts)
+        from app.integrations.ollama import local_think_mapping
+
+        self.think_mapping = local_think_mapping(thinking)
         self._owns_client = http_client is None
         self.client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(settings.ollama_request_timeout_seconds, connect=5, pool=5),
@@ -77,7 +81,9 @@ class OllamaLLM:
             },
         }
         if effort != "default":
-            arguments["think"] = False if effort == "none" else effort
+            arguments["think"] = self.think_mapping.get(
+                effort, False if effort == "none" else True if effort == "on" else effort
+            )
         if schema is not None:
             arguments["format"] = schema
         return arguments

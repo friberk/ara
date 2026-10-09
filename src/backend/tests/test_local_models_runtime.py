@@ -173,7 +173,7 @@ async def test_validation_proves_json_schema_support_and_uses_configured_output_
                 json={
                     "template": "{{ .Messages }}",
                     "capabilities": ["completion"],
-                    "thinking_levels": [False, "low", "high", "xhigh"],
+                    "thinking": {"values": [False, "low", "high", "xhigh"], "default": "high"},
                 },
             )
         if request.url.path == "/api/version":
@@ -196,7 +196,9 @@ async def test_validation_proves_json_schema_support_and_uses_configured_output_
         assert all(probe["options"]["num_thread"] == 4 for probe in probes)
         assert any(isinstance(probe.get("format"), dict) for probe in probes)
         assert result["reasoning_efforts"] == ["default", "none", "low", "high", "xhigh"]
-    assert local_model_reasoning({"thinking_levels": [False, "xhigh"]}) == [
+    assert local_model_reasoning(
+        {"thinking": {"values": [False, "xhigh"], "default": "xhigh"}}
+    ) == [
         "default",
         "none",
         "xhigh",

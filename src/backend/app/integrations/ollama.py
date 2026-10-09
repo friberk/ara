@@ -9,13 +9,43 @@ from app.core.errors import AppError
 from app.integrations.model_catalog import LocalModelSpec
 
 
+def local_model_thinking(show_data: dict) -> dict | None:
+    """Accept current metadata only; an HTTP 200 does not prove a named level."""
+    thinking = show_data.get("thinking")
+    if not isinstance(thinking, dict):
+        return None
+    values = thinking.get("values")
+    default = thinking.get("default")
+    if not isinstance(values, list) or not values:
+        return None
+    if any(
+        type(value) not in {bool, str}
+        or (isinstance(value, str) and (not value or len(value) > 20 or value == "default"))
+        for value in [*values, default]
+    ):
+        return None
+    if not any(type(value) is type(default) and value == default for value in values):
+        return None
+    mapping = {}
+    for value in values:
+        key = "on" if value is True else "none" if value is False else value
+        if key in mapping and type(mapping[key]) is not type(value):
+            return None
+        mapping[key] = value
+    return {"values": list(values), "default": default}
+
+
+def local_think_mapping(thinking: dict | None) -> dict[str, bool | str]:
+    if not thinking:
+        return {}
+    return {
+        "on" if value is True else "none" if value is False else value: value
+        for value in thinking["values"]
+    }
+
+
 def local_model_reasoning(show_data: dict) -> list[str]:
-    levels = show_data.get("thinking_levels", [])
-    normalized = {"none" if level is False else level for level in levels}
-    return [
-        "default",
-        *[level for level in ("none", "low", "medium", "high", "xhigh") if level in normalized],
-    ]
+    return ["default", *local_think_mapping(local_model_thinking(show_data))]
 
 
 @dataclass
@@ -233,6 +263,7 @@ class OllamaRuntime:
                     "num_ctx": context_window,
                     "num_predict": self.probe_output_tokens,
                     "num_thread": self.probe_threads,
+                    "temperature": 0.0,
                 },
             },
         )
@@ -260,6 +291,7 @@ class OllamaRuntime:
                         "num_ctx": context_window,
                         "num_predict": self.probe_output_tokens,
                         "num_thread": self.probe_threads,
+                        "temperature": 0.0,
                     },
                 },
                 timeout=self.probe_timeout,
@@ -284,10 +316,14 @@ class OllamaRuntime:
                 409, "MODEL_VALIDATION_FAILED", "The local model streaming probe failed."
             )
         reasoning = ["default"]
-        advertised = local_model_reasoning(show)[1:]
-        inferred = ["none"] if probe.get("message", {}).get("thinking") else []
-        candidates = list(dict.fromkeys([*inferred, *advertised]))
-        for effort in candidates:
+        thinking = local_model_thinking(show)
+        candidates = local_think_mapping(thinking)
+        # Older runtimes may have no metadata. Only a demonstrated change from
+        # default private thinking to none can establish the boolean off control.
+        if "thinking" not in show and probe.get("message", {}).get("thinking"):
+            candidates["none"] = False
+        verified_mapping = {}
+        for effort, value in candidates.items():
             try:
                 response = await self.request(
                     "POST",
@@ -297,12 +333,13 @@ class OllamaRuntime:
                         "model": spec.model_id,
                         "messages": [{"role": "user", "content": "Reply only OK."}],
                         "stream": False,
-                        "think": False if effort == "none" else effort,
+                        "think": value,
                         "keep_alive": 0,
                         "options": {
                             "num_ctx": context_window,
                             "num_predict": self.probe_output_tokens,
                             "num_thread": self.probe_threads,
+                            "temperature": 0.0,
                         },
                     },
                 )
@@ -310,9 +347,10 @@ class OllamaRuntime:
                     response.get("done") is True
                     and response.get("done_reason") == "stop"
                     and str(response.get("message", {}).get("content", "")).strip()
-                    and (effort != "none" or not response.get("message", {}).get("thinking"))
+                    and (value is not False or not response.get("message", {}).get("thinking"))
                 ):
                     reasoning.append(effort)
+                    verified_mapping[effort] = value
             except AppError as error:
                 if error.code not in {"MODEL_RUNTIME_ERROR"}:
                     raise
@@ -323,7 +361,7 @@ class OllamaRuntime:
                 "/api/chat",
                 timeout=self.probe_timeout,
                 json={
-                    **({"think": False} if "none" in reasoning else {}),
+                    **({"think": False} if verified_mapping.get("none") is False else {}),
                     "model": spec.model_id,
                     "messages": [{"role": "user", "content": 'Return only {"ok":true}.'}],
                     "stream": False,
@@ -338,6 +376,7 @@ class OllamaRuntime:
                         "num_ctx": context_window,
                         "num_predict": self.probe_output_tokens,
                         "num_thread": self.probe_threads,
+                        "temperature": 0.0,
                     },
                 },
             )
@@ -358,6 +397,9 @@ class OllamaRuntime:
             "runtime_version": version.get("version"),
             "context_window": context_window,
             "reasoning_efforts": reasoning,
+            "thinking_schema": 1,
+            "thinking": thinking,
+            "think_mapping": verified_mapping,
             "supports_streaming": True,
             "supports_structured_output": structured,
         }

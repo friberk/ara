@@ -54,8 +54,37 @@ def checked_spec(key):
     return spec
 
 
+def verified_think_mapping(validation: dict) -> dict[str, bool | str]:
+    """Use only controls proven under the current discovery contract."""
+    from app.integrations.ollama import local_model_thinking, local_think_mapping
+
+    if validation.get("thinking_schema") != 1:
+        return {}
+    thinking = local_model_thinking(validation)
+    candidates = local_think_mapping(thinking)
+    if thinking is None and "thinking" in validation and validation["thinking"] is None:
+        # Current verification can also prove boolean off by observing the
+        # default trace disappear, on runtimes with no thinking metadata.
+        candidates = {"none": False}
+    verified = validation.get("think_mapping")
+    efforts = validation.get("reasoning_efforts")
+    if not isinstance(verified, dict) or not isinstance(efforts, list):
+        return {}
+    return {
+        effort: candidates[effort]
+        for effort in efforts
+        if isinstance(effort, str)
+        and effort in candidates
+        and type(verified.get(effort)) is type(candidates[effort])
+        and verified.get(effort) == candidates[effort]
+    }
+
+
 def model_dto(spec, row: ModelInstallation | None, *, context_window=8192) -> Model:
+    from app.integrations.ollama import local_model_thinking
+
     validation = (row.validation or {}) if row else {}
+    thinking = local_model_thinking(validation)
     state = row.state if row else "missing"
     ready = state == "ready" and row.weights_present and bool(validation)
     error = (
@@ -81,7 +110,8 @@ def model_dto(spec, row: ModelInstallation | None, *, context_window=8192) -> Mo
         model_id=spec.model_id,
         display_name=spec.display_name,
         status="available" if ready else "unavailable",
-        reasoning_efforts=validation.get("reasoning_efforts", ["default"]),
+        reasoning_efforts=["default", *verified_think_mapping(validation)],
+        thinking=thinking,
         supports_streaming=validation.get("supports_streaming", False),
         supports_structured_output=validation.get("supports_structured_output", False),
         context_window=context_window,
@@ -127,7 +157,8 @@ async def list_local_models(resources, *, inspect_runtime=True) -> list[Model]:
 async def check_runtime_validation(resources, spec, row):
     validation = row.validation or {}
     if (
-        validation.get("digest") != spec.expected_digest
+        validation.get("thinking_schema") != 1
+        or validation.get("digest") != spec.expected_digest
         or validation.get("context_window") != resources.settings.ollama_context_window
     ):
         raise AppError(
@@ -160,10 +191,22 @@ async def ensure_local_available(resources, key: str) -> Model:
     return model
 
 
-async def local_generation_provenance(resources, key: str) -> dict:
+async def local_generation_provenance(resources, key: str, effort: str = "default") -> dict:
     async with resources.sessions() as session:
         row = await session.get(ModelInstallation, checked_spec(key).key)
+        validation = (row.validation or {}) if row else {}
+        from app.integrations.ollama import local_model_thinking
+
+        thinking = local_model_thinking(validation)
+        effective = (
+            (thinking or {}).get("default")
+            if effort == "default"
+            else verified_think_mapping(validation).get(effort)
+        )
         return {
+            "thinking": thinking,
+            "effective_think": effective,
+            "think_parameter_omitted": effort == "default",
             "provider": "ollama",
             "artifact_digest": row.digest if row else None,
             "runtime_version": (row.validation or {}).get("runtime_version") if row else None,

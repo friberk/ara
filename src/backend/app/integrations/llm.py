@@ -14,7 +14,13 @@ from app.schemas.ai import Model
 INPUT_LIMIT = 32000
 OUTPUT_LIMIT = 4000
 LOCAL_TEMPERATURE = 0.0
-EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"]
+# Each model owns its controls, even where their current documented sets match.
+# Source: https://developers.openai.com/api/docs/models/gpt-5.6-{sol,terra,luna}
+HOSTED_REASONING_EFFORTS = {
+    "gpt-5.6-sol": ("none", "low", "medium", "high", "xhigh", "max"),
+    "gpt-5.6-terra": ("none", "low", "medium", "high", "xhigh", "max"),
+    "gpt-5.6-luna": ("none", "low", "medium", "high", "xhigh", "max"),
+}
 PRICES = {
     "gpt-5.6-sol": (Decimal("4"), Decimal("20")),
     "gpt-5.6-terra": (Decimal("2"), Decimal("12")),
@@ -38,7 +44,7 @@ def validate_selection(model: str, effort: str) -> Model:
 
     spec = local_spec(model)
     if spec:
-        if effort not in {"default", *EFFORTS}:
+        if not isinstance(effort, str) or not 1 <= len(effort) <= 20:
             raise LLMError("INVALID_REASONING", "The reasoning effort is not supported.", 422)
         return Model(
             key=model,
@@ -51,14 +57,14 @@ def validate_selection(model: str, effort: str) -> Model:
         )
     if model not in PRICES:
         raise LLMError("INVALID_MODEL", "The requested model is not supported.", 422)
-    if effort not in EFFORTS:
+    if effort not in HOSTED_REASONING_EFFORTS[model]:
         raise LLMError("INVALID_REASONING", "The reasoning effort is not supported.", 422)
     return Model(
         key=model,
         model_id=model,
         display_name="GPT-5.6 " + model.rsplit("-", 1)[-1].capitalize(),
         status="unavailable",
-        reasoning_efforts=EFFORTS,
+        reasoning_efforts=list(HOSTED_REASONING_EFFORTS[model]),
     )
 
 
@@ -107,6 +113,7 @@ def create_llm(resources, model: str, *, selection: Model | None = None):
             spec.model_id,
             http_client=resources.ollama_generation_http,
             reasoning_efforts=selection.reasoning_efforts if selection else ["default"],
+            thinking=selection.thinking.model_dump() if selection and selection.thinking else None,
         )
     validate_selection(model, "low")
     return HostedLLM(resources.settings)
@@ -146,7 +153,7 @@ async def generation_configuration(resources, model: str, effort: str) -> dict:
     if local_spec(model):
         from app.services.local_models import local_generation_provenance
 
-        configuration.update(await local_generation_provenance(resources, model))
+        configuration.update(await local_generation_provenance(resources, model, effort))
         configuration.update(
             context_window=resources.settings.ollama_context_window,
             num_thread=resources.settings.ollama_num_threads,

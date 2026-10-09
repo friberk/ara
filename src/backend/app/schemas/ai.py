@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator
 
 from app.schemas.jobs import JobError
 
@@ -67,7 +67,13 @@ class Installation(DTO):
     error: JobError | None = None
 
 
+class ThinkingControls(BaseModel):
+    values: list[StrictBool | str]
+    default: StrictBool | str
+
+
 class Model(DTO):
+    thinking: ThinkingControls | None = None
     unavailable_reason: str | None = None
     unavailable_code: str | None = None
     installation: Installation | None = None

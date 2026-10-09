@@ -60,7 +60,10 @@ class OllamaFixture:
             with self.lock:
                 operation = self.operations.get(operation_id)
                 if operation is None:
-                    operation = {"cancel": threading.Event(), "stopped": threading.Event()}
+                    operation = {
+                        "cancel": threading.Event(),
+                        "stopped": threading.Event(),
+                    }
                     operation["cancel"].set()
                     operation["stopped"].set()
                     self.operations[operation_id] = operation
@@ -71,13 +74,18 @@ class OllamaFixture:
                 if operation["stopped"].wait(5):
                     handler.send_json({"state": "paused"})
                 else:
-                    handler.send_json({"error": "Synthetic transfer has not stopped"}, 503)
+                    handler.send_json(
+                        {"error": "Synthetic transfer has not stopped"}, 503
+                    )
         elif path == "/api/show":
             handler.send_json(
                 {
                     "template": "{{ .Prompt }}",
                     "capabilities": ["completion", "thinking"],
-                    "thinking_levels": [False],
+                    "thinking": {
+                        "values": [False, True, "low", "medium", "high"],
+                        "default": "high",
+                    },
                     "model_info": {"fixture.context_length": 8192},
                 }
             )
@@ -157,6 +165,13 @@ class OllamaFixture:
         if not installed:
             handler.send_json({"error": "Synthetic model weights missing"}, 404)
             return
+        thinking = body.get("think", "high")
+        if not (
+            type(thinking) is bool
+            or (isinstance(thinking, str) and thinking in {"low", "medium", "high"})
+        ):
+            handler.send_json({"error": "Unsupported synthetic thinking control"}, 400)
+            return
         prompt = json.dumps(body.get("messages", []))
         schema = body.get("format")
         if isinstance(schema, dict):
@@ -164,7 +179,9 @@ class OllamaFixture:
         elif "Reply OK" in prompt:
             answer = "OK"
         else:
-            sources = list(dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", prompt)))
+            sources = list(
+                dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", prompt))
+            )
             citation = f" [source:{sources[0]}]" if sources else ""
             answer = (
                 "The paper evaluates a retrieval-first pipeline on the Orion-12 dataset. "
@@ -175,7 +192,9 @@ class OllamaFixture:
             )
         message = {"role": "assistant", "content": answer}
         if body.get("think") is not False:
-            message["thinking"] = "Synthetic reasoning fixture; never part of the displayed answer."
+            message["thinking"] = (
+                "Synthetic reasoning fixture; never part of the displayed answer."
+            )
         terminal = {
             "model": model,
             "message": message,
@@ -207,11 +226,16 @@ class OllamaFixture:
                     handler,
                     {
                         "model": model,
-                        "message": {"role": "assistant", "content": answer[start : start + 35]},
+                        "message": {
+                            "role": "assistant",
+                            "content": answer[start : start + 35],
+                        },
                         "done": False,
                     },
                 )
                 time.sleep(0.025)
-            self.ndjson(handler, {**terminal, "message": {"role": "assistant", "content": ""}})
+            self.ndjson(
+                handler, {**terminal, "message": {"role": "assistant", "content": ""}}
+            )
         except (BrokenPipeError, ConnectionResetError):
             pass

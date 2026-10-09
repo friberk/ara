@@ -738,6 +738,7 @@ export interface components {
         };
         /** Model */
         Model: {
+            thinking?: components["schemas"]["ThinkingControls"] | null;
             /** Unavailable Reason */
             unavailable_reason?: string | null;
             /** Unavailable Code */
@@ -1001,6 +1002,13 @@ export interface components {
         SummaryPage: {
             /** Items */
             items: components["schemas"]["Summary"][];
+        };
+        /** ThinkingControls */
+        ThinkingControls: {
+            /** Values */
+            values: (boolean | string)[];
+            /** Default */
+            default: boolean | string;
         };
         /** UploadAccepted */
         UploadAccepted: {
