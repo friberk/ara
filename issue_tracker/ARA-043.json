@@ -2,10 +2,14 @@
   "id": "ARA-043",
   "title": "Improve long-conversation context and follow-up retrieval",
   "type": "improvement",
-  "priority": "P2",
-  "description": "Extend the existing recent-turn context window with evidence-aware follow-up resolution and budgeted conversation compaction. Persist compaction/version provenance, retain complete original history and immutable paper/document bindings, and prevent repeated paid generation for the same request.",
+  "priority": "P1",
+  "description": "Epic. Token-accurate, model-aware context management for long conversations: real token counting, per-model windows and budgets, multi-turn message lists, a persisted running summary, follow-up rewriting and recall of earlier turns. Retains complete original history, immutable document bindings and replay protection. Subtasks: ARA-076 to ARA-079.",
   "dependencies": [
-    "ARA-014"
+    "ARA-014",
+    "ARA-076",
+    "ARA-077",
+    "ARA-078",
+    "ARA-079"
   ],
   "acceptance_criteria": [
     "Long conversations preserve useful prior facts/questions within the selected model budget.",
@@ -17,15 +21,16 @@
     "Long multi-turn fixture with references to earlier questions and bounded context.",
     "Insufficient-evidence, document-isolation and request-replay regressions."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/backend/app/services/chat.py",
     "src/backend/app/services/retrieval.py",
     "src/backend/tests/test_ai_integration.py",
-    "docs/implementation-plan.md"
+    "docs/implementation-plan.md",
+    "docs/superpowers/specs/2026-10-09-rag-context-design.md"
   ],
-  "verification": "Advanced history management was in the approved P2 plan; existing bounded recent-turn strategy remains operational.",
+  "verification": "Reopened as a P1 epic on 2026-10-09; existing bounded recent-turn strategy remains until ARA-076 and ARA-077 land.",
   "commits": [],
   "pull_requests": [],
-  "updated_at": "2026-10-08"
+  "updated_at": "2026-10-09"
 }

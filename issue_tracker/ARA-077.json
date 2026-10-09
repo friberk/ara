@@ -1,0 +1,31 @@
+{
+  "id": "ARA-077",
+  "title": "Conversation memory: running summary, follow-up rewriting and recall",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Keep recent turns verbatim, fold older turns into a persisted, versioned, incrementally updated summary built by a background job, rewrite follow-up questions into standalone search queries, and recall relevant earlier turns by embedding. Local chats compact with their local model; hosted chats with Luna. Original messages are never altered.",
+  "dependencies": [
+    "ARA-072",
+    "ARA-076"
+  ],
+  "acceptance_criteria": [
+    "Given a 40-turn conversation, when asking about a fact from turn 2, then the answer uses the summary or recalled turn and stays within budget.",
+    "Given a completed turn over the threshold, when compaction runs twice for the same range, then exactly one summary version is produced.",
+    "Given a local chat, when compaction runs, then no hosted model is called.",
+    "Given a follow-up such as 'how did it compare to the baselines?', when retrieving, then the persisted standalone query names the subject and the retrieved evidence matches it.",
+    "Given the planner fails, when a question is asked, then the deterministic fallback query is used and the answer still completes."
+  ],
+  "test_cases": [
+    "Compaction job idempotency on real Postgres; planner structured-output fixtures; recall retrieval tests; long-conversation fixture."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/services/memory.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/jobs"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

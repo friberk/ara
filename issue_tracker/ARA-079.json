@@ -1,0 +1,26 @@
+{
+  "id": "ARA-079",
+  "title": "Section-summary nodes for broad questions",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Index section and paper summaries as retrievable, cited nodes so small-context models can answer broad questions such as 'list all limitations' without the full paper.",
+  "dependencies": [
+    "ARA-073",
+    "ARA-077"
+  ],
+  "acceptance_criteria": [
+    "Given a broad question on a long paper with a small local model, when answering, then section-summary nodes supply coverage with citations to their source chunks."
+  ],
+  "test_cases": [
+    "Summary-node generation and retrieval tests."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/rag",
+    "src/backend/app/services/summarization.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

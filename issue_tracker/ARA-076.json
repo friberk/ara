@@ -1,0 +1,30 @@
+{
+  "id": "ARA-076",
+  "title": "Model context registry, real token counting and budget allocation",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Replace byte-based estimates with real token counts (tiktoken for hosted models, calibrated runtime ratios for local models), give every model a context window, output and thinking allowance and working cap, and allocate budgets across instructions, evidence, summary, recent turns and recall. Send real multi-turn message lists through both providers, with a stable prefix that benefits prompt caching.",
+  "dependencies": [
+    "ARA-070"
+  ],
+  "acceptance_criteria": [
+    "Given an 8k local model and a hosted model, when a prompt is assembled, then its counted tokens never exceed the model's input budget.",
+    "Given the same question, when assembled under the new counter, then substantially more evidence fits than under byte counting.",
+    "Given a local model with thinking enabled, when generating, then thinking cannot consume the answer's allowance.",
+    "Given hosted and local providers, when a chat request is built, then both receive a role-separated message list with prior assistant citations rendered as page references."
+  ],
+  "test_cases": [
+    "TokenCounter accuracy against reference counts; allocator property tests; provider request-shape tests for Responses and Ollama chat."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/integrations/tokens.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/integrations/ollama_llm.py",
+    "src/backend/app/services/chat.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

@@ -423,3 +423,36 @@ The lead regenerated TypeScript from actual final source OpenAPI and byte-compar
 The actual feature preview's ready 3.7B returned `{"default":"high","on":"high"}`. A batched desktop/mobile Light/Dark browser check substituted only legacy preference GET responses, leaving model metadata real: default/on displayed High, Low stayed Low, Save defaults remained disabled, and persisted user defaults matched before/after. There were zero mutation requests and no horizontal overflow at 1440px/390px. Suggested reflection screenshots are the before/after effort controls and those four layouts, retained privately under `.superpowers/sdd/ARA-055-reasoning-menu/`; no secret or private evidence file is committed. No new weights, inference, preference rewrite, merge or publication occurred. The raw API continues to accept default/on, and past requests retain their actual provenance with Runtime preset/Reasoning enabled labels.
 
 The final root format check found one newly added test signature needing Ruff formatting; after that whitespace-only correction, Ruff lint/format checks and all 39 alias unit tests passed (1.28 seconds). Backend/contract changes are committed as `3c3e0d6`, and the UI/request/history controls as `6b721fd`. A separate documentation commit closes ARA-055. The feature and original API readiness checks both returned HTTP 200, with main still at `c403662`.
+
+## 2026-10-08/09 — Retrieval and context overhaul planning (ARA-021, ARA-043)
+
+- **Prompt:** the user asked to overhaul retrieval and context management. They described the current PDF handling as naive: full pages and unstructured `[source]` tags, unlike Elicit, SciSpace, Scite or Undermind. They asked for state-of-the-art, enterprise-grade RAG with off-the-shelf chunking, embedding models served by Ollama (`qwen3-embedding:8b-q4_K_M`, `qwen3-embedding:4b-q4_K_M`) plus OpenAI's large embedding model, a per-paper option hidden from most users, and model-aware handling of long conversations.
+- **Mid-task instructions:**
+  - Build on `feat/managed-ollama` in a separate branch with git worktrees and orchestrated agents.
+  - Make OpenAI `text-embedding-3-large` the default.
+  - Use an Ollama reranker if feasible, otherwise defer it under a ticket.
+  - Run one Postgres instance for everything and use the existing Ollama, with no separate instance.
+  - Drop dataset evaluation.
+  - Stick to off-the-shelf workflows.
+  - Always work TDD-first.
+  - Allow query embedding through OpenAI for local chats without an explicit disclosure.
+- **Evidence gathering:** read-only exploration of `main` and `feat/managed-ollama` confirmed the following:
+  - 3,200-character per-page windows and `ts_rank` plus coverage chunks.
+  - Byte-based token estimates.
+  - Hosted 32k-byte and local 8,192 limits.
+  - No embeddings.
+  - The installed IFM 3.7B reports a native context length of 524,288; 8,192 is the project's global `OLLAMA_CONTEXT_WINDOW`.
+  - The OrbStack VM has about 16.8 GB, shared by four running stacks.
+  - Web research found no rerank endpoint in Ollama 0.40.1, but log probabilities are available for Qwen3-Reranker scoring.
+- **Design iterations driven by the user's questions:**
+  - The user was confused by multiple-choice questions on long context and memory, and asked why embeddings are needed if everything is sent to the model. The agent dropped the adaptive full-paper idea: retrieval always runs.
+  - The user asked for off-the-shelf memory and orchestration. LlamaIndex was chosen over LangChain as a component library, with our code retaining persistence, jobs, budgets and replay.
+  - The user asked whether Docling came from LlamaIndex (it does not; it is a separate IBM/LF project), why a separate Postgres was needed, and what PolyForm Noncommercial means.
+  - The user then reported research showing Docling is slow. GROBID, plain PyMuPDF and PyMuPDF4LLM were compared, and the user chose PyMuPDF4LLM with its layout model.
+  - The user pointed to PyMuPDF4LLM's LlamaIndex integration. Inspection found the released `LlamaMarkdownReader` (one document per page). `to_chunks().to_llama_nodes()` exists only on GitHub main, for unreleased PyMuPDF 2.0; it is recorded as the upgrade path.
+- **Corrections:**
+  - The agent first described `pymupdf_layout` as PolyForm Noncommercial, based on older package listings. Downloading the 1.28.2 wheel showed AGPL-3.0/commercial dual licensing in `COPYING`, and the claim was corrected.
+  - Once, the agent resubmitted the plan for approval instead of answering the user's question about Docling; the user had to ask again.
+  - The agent planned a separate Postgres image and a second Ollama daemon. The user rejected both, establishing the single-instance rule.
+- **Coordination:** another session committed ARA-055 on `feat/managed-ollama` during planning, and ARA-019 is active on `feat/fulltext-access`. This work therefore reserves ARA-070 to ARA-079 instead of the next free number.
+- **Approved plan:** spec `docs/superpowers/specs/2026-10-09-rag-context-design.md`; issues ARA-070 to ARA-079 under the ARA-021 and ARA-043 epics. Wave 0 measurement spikes (S1 for models and Ollama, S2 for parsing and pgvector) run as throwaway scratch work before Gate G0. No product code has changed at this entry.

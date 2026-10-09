@@ -1,0 +1,36 @@
+{
+  "id": "ARA-070",
+  "title": "Retrieval infrastructure on the single Postgres and Ollama",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Swap the existing Postgres service image to the official pgvector Postgres 17 bookworm image (pinned digest, same volume), add Alembic migrations for sections, chunks, embeddings, retrieval indexes, chat memories and turn embeddings, extend shared API contracts, make Ollama multi-model residency configurable on the existing service, add deterministic fixtures and isolated test-stack project names. No additional database, vector store, parser or model runtime services.",
+  "dependencies": [
+    "ARA-021",
+    "ARA-043"
+  ],
+  "acceptance_criteria": [
+    "Given an existing Postgres 17.9 volume, when the stack restarts on the pgvector image, then all data remains and the vector extension is available.",
+    "Given the migration chain, when migrations run from an empty database and from the previous head, then the new tables, columns, indexes and the vector extension exist without startup create_all.",
+    "Given the compose files, when the stack is configured, then exactly one Postgres and one Ollama service exist and Ollama model residency is configurable.",
+    "Given two agents running backend suites, when each uses a different test-stack project name, then their containers and volumes are isolated."
+  ],
+  "test_cases": [
+    "Migration upgrade/downgrade on real Postgres; compose config assertions; volume-compatibility evidence from the Phase 0 spike; fixture server routes for OpenAI embeddings and Ollama embed/rerank."
+  ],
+  "status": "planned",
+  "related_files": [
+    "compose.yaml",
+    "compose.test.yaml",
+    "compose.e2e.yaml",
+    "src/backend/alembic/versions",
+    "src/backend/app/models/research.py",
+    "src/backend/app/schemas/ai.py",
+    "scripts/test-stack.py",
+    "tests/fixtures/server.py",
+    "tests/fixtures/ollama_fixture.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

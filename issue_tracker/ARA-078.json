@@ -1,0 +1,27 @@
+{
+  "id": "ARA-078",
+  "title": "Conversation context visibility in the interface",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Show retrieval progress through message.status events, a composer footnote when earlier messages are summarized with a popover showing the summary, and context usage in the answer details.",
+  "dependencies": [
+    "ARA-075",
+    "ARA-077"
+  ],
+  "acceptance_criteria": [
+    "Given a streamed answer, when retrieval and generation progress, then the stage is shown and announced to assistive technology.",
+    "Given a summarized conversation, when viewing the composer, then the summary note appears and opens the current summary."
+  ],
+  "test_cases": [
+    "Vitest/RTL and Playwright coverage of status events and the summary popover."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/chat",
+    "src/frontend/src/api/sse.ts"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

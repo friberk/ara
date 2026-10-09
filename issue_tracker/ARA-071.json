@@ -1,0 +1,30 @@
+{
+  "id": "ARA-071",
+  "title": "Structure-aware PDF parsing and chunking with PyMuPDF4LLM and LlamaIndex",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Replace flat page text and fixed character windows with PyMuPDF4LLM (layout model on) through its documented LlamaIndex reader, LlamaMarkdownReader, run in the existing isolated child process. Chunk with LlamaIndex MarkdownNodeParser and SentenceSplitter (~512 tokens), carrying the section heading path across page boundaries, keeping page ranges, table and reference kinds, and a contextualized text for embedding and keyword search. Re-ingest existing documents; backward compatibility is not required.",
+  "dependencies": [
+    "ARA-070"
+  ],
+  "acceptance_criteria": [
+    "Given a structured fixture paper, when ingestion finishes, then sections, heading paths, page ranges and a table chunk are persisted and the references section is excluded from default retrieval.",
+    "Given a section that continues onto the next page, when chunks are built, then the continuation keeps the section's heading path.",
+    "Given the layout model fails on a document, when ingestion retries without layout, then the document still becomes ready with page-level provenance.",
+    "Given an encrypted, oversized or text-less PDF, when ingestion runs, then the existing safe error codes are returned."
+  ],
+  "test_cases": [
+    "Child-process parser unit tests with fixture PDFs; ingestion integration test; fenced job and duplicate-delivery regression; reindex command test."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/jobs/pdf_parser.py",
+    "src/backend/app/services/ingestion.py",
+    "src/backend/pyproject.toml",
+    "src/backend/tests"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

@@ -1,26 +1,35 @@
 {
   "id": "ARA-021",
-  "title": "Optional pgvector and embeddings",
+  "title": "Structure-aware hybrid retrieval with selectable embedding profiles",
   "type": "improvement",
-  "priority": "P2",
-  "description": "Add versioned chunk embeddings, pgvector storage/indexes and paper-scoped semantic/hybrid retrieval. Preserve lexical fallback, immutable document citations and token budgets; evaluate retrieval quality against representative questions.",
+  "priority": "P1",
+  "description": "Epic. Replace naive page text, fixed windows and lexical-only retrieval with structure-aware parsing (PyMuPDF4LLM through LlamaIndex), hybrid keyword and vector retrieval on the single Postgres, selectable embedding profiles (OpenAI default, Qwen3 on the single Ollama), optional local reranking and verifiable short-handle citations. Subtasks: ARA-070 to ARA-075.",
   "dependencies": [
-    "ARA-011"
+    "ARA-011",
+    "ARA-070",
+    "ARA-071",
+    "ARA-072",
+    "ARA-073",
+    "ARA-074",
+    "ARA-075"
   ],
   "acceptance_criteria": [
-    "Versioned semantic/hybrid retrieval evaluated without breaking lexical search."
+    "Given a ready paper, when a question is asked, then hybrid retrieval scoped to that paper supplies cited evidence with section and page provenance.",
+    "Given any configured embedding profile, when it is unavailable, then keyword retrieval still answers.",
+    "Subtasks ARA-070 to ARA-075 are completed or explicitly deferred with evidence."
   ],
   "test_cases": [
-    "Versioned semantic/hybrid retrieval evaluated without breaking lexical search."
+    "Covered by ARA-070 to ARA-075."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
+    "docs/superpowers/specs/2026-10-09-rag-context-design.md",
     "docs/implementation-plan.md"
   ],
   "commits": [
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "Reopened planning. Current retrieval is lexical; no embeddings/vector indexes implemented.",
-  "updated_at": "2026-10-08"
+  "verification": "Reopened as a P1 epic on 2026-10-09 after the user prioritized retrieval. Dataset evaluation is out of scope by user decision.",
+  "updated_at": "2026-10-09"
 }

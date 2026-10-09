@@ -1,0 +1,33 @@
+{
+  "id": "ARA-073",
+  "title": "Hybrid retrieval pipeline with short-handle citations and traces",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Retrieve with LlamaIndex retrievers over the single Postgres (weighted full-text and pgvector exact scan inside the chat's immutable document), fuse with reciprocal rank fusion, optionally rerank, expand neighbouring context and pack evidence by token budget. The model sees short [S#] handles; the server maps them to canonical [source:chunk-uuid] markers while streaming and validates document membership. Persist a retrieval trace, emit message.status events, add an explicit insufficient-evidence sentinel, and move summaries to section-aware batches.",
+  "dependencies": [
+    "ARA-071",
+    "ARA-072",
+    "ARA-076"
+  ],
+  "acceptance_criteria": [
+    "Given two documents, when retrieving for a chat, then no chunk from the other document is ever retrieved or accepted as a citation.",
+    "Given a fixture question with a known answer section, when lexical, dense and hybrid retrieval run, then the expected chunk is retrieved.",
+    "Given a model answer citing [S2] or a bracket variant, when streaming completes, then the persisted answer contains the canonical source marker of the supplied chunk; a foreign or unknown handle fails with UNGROUNDED_OUTPUT.",
+    "Given insufficient evidence, when the model emits the sentinel, then the message completes with grounding marked insufficient and no citations.",
+    "Given a replayed request UUID, when it is resent, then retrieval, planning and generation are not rerun."
+  ],
+  "test_cases": [
+    "Retriever unit and real-SQL tests; RRF determinism; stream transducer tests across chunk boundaries; chat replay and isolation regressions; summary map-reduce with handles."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/rag",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/retrieval.py",
+    "src/backend/app/services/summarization.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

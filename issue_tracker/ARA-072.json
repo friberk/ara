@@ -1,0 +1,33 @@
+{
+  "id": "ARA-072",
+  "title": "Selectable embedding profiles and versioned retrieval indexes",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Add embedding profiles (default OpenAI text-embedding-3-large; Qwen3 Embedding 4B and 8B served by the existing Ollama), a global default in Settings and a per-paper override. Build versioned, resumable, blue/green indexes per (document, profile, chunk set) through fenced background jobs; unavailable profiles fall back to keyword-only retrieval. Local embedding models join the managed catalog with kind-specific verification.",
+  "dependencies": [
+    "ARA-070",
+    "ARA-071"
+  ],
+  "acceptance_criteria": [
+    "Given a ready document and the default profile, when indexing completes, then every chunk has exactly one embedding for that profile and the index is ready.",
+    "Given a duplicate or resumed embed job, when it runs again, then no duplicate embeddings are written and a lost lease cannot write.",
+    "Given a paper switched to another profile, when the new index is still building, then retrieval keeps working and the previous ready index stays in use until the new one is ready.",
+    "Given a profile without an API key or an uninstalled local model, when a question is asked, then keyword retrieval answers and the reason is visible.",
+    "Given a Qwen embedding model, when it is installed through Settings, then its digest, embedding capability and dimensions are verified before use."
+  ],
+  "test_cases": [
+    "Embed job idempotency and lease fencing on real Postgres; profile switch state machine; OpenAI and Ollama embedding fixtures; local catalog verification tests."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/integrations/embedding_catalog.py",
+    "src/backend/app/integrations/model_catalog.py",
+    "src/backend/app/services/local_models.py",
+    "src/backend/app/jobs",
+    "src/backend/app/routes"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}

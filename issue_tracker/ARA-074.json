@@ -1,0 +1,28 @@
+{
+  "id": "ARA-074",
+  "title": "Local reranking with Qwen3-Reranker through Ollama",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Ollama has no rerank endpoint. Score candidates with Qwen3-Reranker through /api/generate raw prompts and next-token log probabilities (P(yes) versus P(no)), served by the existing Ollama. Ships only if the Phase 0 probe shows correct relevance ordering and acceptable latency; otherwise this issue is deferred and retrieval uses fusion only.",
+  "dependencies": [
+    "ARA-070",
+    "ARA-073"
+  ],
+  "acceptance_criteria": [
+    "Given probe pairs, when reranking, then relevant passages score above irrelevant ones.",
+    "Given the reranker is unavailable or disabled, when a question is asked, then retrieval completes with fusion ranking and the trace says reranking was skipped.",
+    "Given 30 candidates, when reranking on the reference machine, then latency stays within the budget recorded from Phase 0."
+  ],
+  "test_cases": [
+    "Probe-pair ordering test against fixtures; skip/fallback path; latency evidence from Phase 0 and live verification."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/rag",
+    "src/backend/app/integrations/model_catalog.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "updated_at": "2026-10-09"
+}
