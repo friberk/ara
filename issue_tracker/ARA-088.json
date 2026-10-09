@@ -1,0 +1,46 @@
+{
+  "id": "ARA-088",
+  "title": "Chats over several library papers",
+  "type": "feature",
+  "priority": "P2",
+  "description": "User idea on 2026-10-09: \"In a chat, I want to be able to add multiple selected papers. Then this chat will appear in all papers it includes.\" Today a chat belongs to exactly one paper and one PDF version (chat_sessions.paper_id/document_id), retrieval runs over one document, and citation validation requires every citation to belong to that document. Lead assessment: doable but cross-cutting.\n- Schema: a chat-paper link table with a pinned document per paper, an Alembic migration and a backfill; the first schema change since 0007.\n- Listing: the chat appears in every included paper's list (easy once the link exists).\n- Composer: the existing @ PaperPicker gains multi-select and adding papers mid-chat (easy).\n- Retrieval: search runs across several documents with per-paper evidence quotas, so one long paper cannot crowd out others, and per-paper embedding profiles. This is the hard part.\n- Citations: validation accepts any document in the chat, and chips name their paper.\n- Reader: a citation to another paper switches the reader to that PDF.\n- Local models: the ~3k-token local input budget splits across papers, so the 7B answers degrade.\nProposed defaults:\n- add papers via @ at the start or mid-chat;\n- removal is allowed and history keeps its citation snapshots;\n- a fair per-paper evidence share;\n- chips like 'Smith 2023 \u00b7 p. 4';\n- at most 5 papers, driven by the local budget;\n- a paper-chip header with per-paper summaries on demand instead of stacked summary cards.\nThroughput-based estimate: about 1.5-2.5 h of one Opus agent (ARA-084 took ~65 min, ARA-086 ~90 min), plus browser verification. Status: not started; the user is deciding whether to add it.",
+  "dependencies": [
+    "ARA-014",
+    "ARA-021",
+    "ARA-043",
+    "ARA-083"
+  ],
+  "acceptance_criteria": [
+    "Given a chat, when the user adds papers through the composer's @ picker at the start or mid-chat, then the chat includes up to five ready papers and lists them at the top.",
+    "Given a chat with several papers, when any of those papers is opened, then the chat appears in its chat list.",
+    "Given a question over several papers, when evidence is retrieved, then every included paper gets a fair share of the context and comparisons cite each relevant paper.",
+    "Given an answer citing several papers, when it renders, then each citation names its paper and page, and opening it switches the reader to that paper's PDF.",
+    "Given a citation to a document outside the chat's papers, when the answer is validated, then it fails as today.",
+    "Given a paper removed from a chat, when history is viewed, then earlier answers keep their citations, and the chat no longer appears under that paper.",
+    "Given existing single-paper chats, when the migration runs, then each becomes a one-paper chat with its pinned PDF and unchanged history.",
+    "Given a local model, when a multi-paper chat answers, then the input budget is shared across papers without exceeding it."
+  ],
+  "test_cases": [
+    "Migration upgrade/backfill test from 0007 with existing chats.",
+    "Retrieval across documents with per-paper quotas and mixed embedding profiles.",
+    "Citation validation across chat documents; foreign documents rejected.",
+    "Frontend: multi-select picker, paper chips, cross-paper citation reader switch, chat listed under each paper.",
+    "Browser journey comparing two papers."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/models/research.py",
+    "src/backend/app/routes/chat.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/rag/retrievers.py",
+    "src/backend/app/rag/citations.py",
+    "src/backend/app/rag/packing.py",
+    "src/frontend/src/components/composer/PaperPicker.tsx",
+    "src/frontend/src/features/chat/ConversationPane.tsx",
+    "src/frontend/src/features/workspace/PaperWorkspacePage.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Ticketed on 2026-10-09 at the user's request. Not started; the user is deciding whether to add it.",
+  "updated_at": "2026-10-09"
+}

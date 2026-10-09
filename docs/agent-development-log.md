@@ -908,3 +908,5 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
 - OpenAlex's record for the arXiv DOI of "Attention Is All You Need" reports 2025 and a different DOI, and a lookup copies that.
 - The paid LLM metadata step in ingestion still runs when authors are missing, which is often redundant now.
 - The sidebar still says "Untitled paper" while a PDF is read; it is outside ARA-086's files.
+
+**Multi-paper chats ticketed (ARA-088).** The user asked whether one chat could include several selected papers and appear under each of them. The lead surveyed chat scoping and found that chats pin one paper and one document, retrieval and citation validation are per document, and the workspace reader assumes one PDF. The lead called the feature doable but cross-cutting. It needs a migration plus a link table, cross-document retrieval with per-paper quotas (the hard part), paper-labelled citations, reader switching and a local-budget split. The lead's estimate, based on this round's observed agent times, was about 1.5–2.5 hours of one Opus agent. The user asked for a ticket only, while they decide; ARA-088 is planned and not started.
