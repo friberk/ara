@@ -5,13 +5,13 @@ import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitl
 import { Markdown } from '@/features/content'
 
 /**
- * The composer footnote once a chat's earlier messages are summarized, with the summary on request. The summary is
- * shown as plain Markdown: it has no citations of its own, so any source markers in it render nothing.
+ * The composer footnote once a chat's earlier messages are summarized, with the summary on request. It names the chat
+ * model selected in the composer, whose context the conversation must fit, not memory.model, which wrote the summary.
+ * The summary is shown as plain Markdown: it has no citations of its own, so any source markers in it render nothing.
  */
 export function MemoryNote({ memory }: { memory: ChatMemory }) {
-  const { models } = useGenerationSettings()
+  const model = useGenerationSettings().selectedModel?.display_name
   const titleId = useId()
-  const model = models.find((item) => item.key === memory.model)?.display_name
   return (
     <span>
       {model ? `Earlier messages are summarized to fit ${model}.` : 'Earlier messages are summarized to fit the model’s context.'}{' '}

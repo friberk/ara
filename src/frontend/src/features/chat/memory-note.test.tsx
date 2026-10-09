@@ -47,10 +47,19 @@ test('Given a server that cannot report memory yet, Then the usual footnote show
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
-test('Given a summary made by a model the server no longer lists, Then the footnote does not show its raw id', async () => {
+test('Given a summary written by another model, Then the footnote names the chat model selected in the composer, never the summarizer', async () => {
+  // Hosted chats are summarized by a fixed summarizer; what must fit is the model that answers (lead decision, 2026-10-09).
+  const sol = { ...luna, key: 'gpt-5.6-sol', model_id: 'gpt-5.6-sol', display_name: 'Sol' }
+  mockApi({ 'GET /models': { items: [luna, sol] }, 'GET /settings': { default_model: sol.key, reasoning_effort: 'low' }, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': history, 'GET /chats/c1/memory': { memory: { ...memory, model: luna.key }, total_messages: 24 } })
+  mount('/papers/p1/chats/c1')
+  expect(await screen.findByText('Earlier messages are summarized to fit Sol.')).toBeVisible()
+  expect(screen.queryByText(/fit Luna/)).not.toBeInTheDocument()
+})
+
+test('Given a summary by a model the server no longer lists, Then the footnote names the selected chat model and not the raw id', async () => {
   mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': history, 'GET /chats/c1/memory': { memory: { ...memory, model: 'retired-model:7b' }, total_messages: 24 } })
   mount('/papers/p1/chats/c1')
-  expect(await screen.findByText('Earlier messages are summarized to fit the model’s context.')).toBeVisible()
+  expect(await screen.findByText('Earlier messages are summarized to fit Luna.')).toBeVisible()
   expect(screen.queryByText(/retired-model/)).not.toBeInTheDocument()
 })
 
