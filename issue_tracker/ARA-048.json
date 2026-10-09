@@ -5,20 +5,35 @@
   "priority": "P1",
   "description": "Local model browser and real 7B verification for the approved ARA-022 plan.",
   "dependencies": [
-    "ARA-022"
+    "ARA-044",
+    "ARA-045",
+    "ARA-046",
+    "ARA-047"
   ],
   "acceptance_criteria": [
-    "Satisfy the corresponding task and frozen contracts in docs/plans/ARA-022-managed-local-models.md."
+    "Given isolated real core services and deterministic Ollama HTTP fixtures, when browser workflows run, then background completion, pause/reload/resume, default deletion and grounded local responses persist.",
+    "Given an explicitly authorized fresh live validation volume, when the opt-in runner executes, then only exact7B weights are pulled and measured engine results are separated from fixture results.",
+    "Given process/service interruption, when recovery runs, then persistent jobs settle and resume without editing authoritative state or resetting development data."
   ],
   "test_cases": [
-    "Observed red-green-refactor evidence and relevant regression checks."
+    "Playwright E2E09 background/navigation/browser closure; E2E10 pause/reload/resume; E2E11 default deletion; E2E12 local grounded summary/Q&A fixture.",
+    "Isolated backend real PostgreSQL/Redis/MinIO suites; runtime real-route/race/server tests.",
+    "Opt-in real7B hashes, template, streaming, schema, thinking, memory/latency and independent operation pause/inference."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
-    "docs/plans/ARA-022-managed-local-models.md"
+    "src/frontend/e2e/local-models.spec.ts",
+    "tests/fixtures/ollama_fixture.py",
+    "tests/fixtures/server.py",
+    "compose.test.yaml",
+    "compose.e2e.yaml",
+    "scripts/test-local-models.py",
+    "docker/ollama/test_live_isolation.py"
   ],
-  "commits": [],
+  "commits": [
+    "ee4e3168de97eab0d88ba2f35a57294bc76985d4"
+  ],
   "pull_requests": [],
-  "verification": "Not yet implemented or verified.",
+  "verification": "Fresh full Playwright 12 passed in 2.0 minutes; final deletion/default and local summary/chat (2 tests) passed in 43.8 seconds after refreshed workers. Lead backend 185/frontend 356 passed; infrastructure 4 and HTTP fixture 3 passed. Generated OpenAPI contract byte-matched. Real 7B exact hashes/range resume/stream/schema/thinking, app summary/Q&A/provenance and six-service restart persistence passed with no OpenAI key. Full app peak 11.85 GiB, steady 6.65 GiB, OOM zero. No 3.7B/27B/GPU/amd64 inference claim.",
   "updated_at": "2026-10-08"
 }

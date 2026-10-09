@@ -5,20 +5,44 @@
   "priority": "P1",
   "description": "Local model documentation and independent review for the approved ARA-022 plan.",
   "dependencies": [
-    "ARA-022"
+    "ARA-048"
   ],
   "acceptance_criteria": [
-    "Satisfy the corresponding task and frozen contracts in docs/plans/ARA-022-managed-local-models.md."
+    "Given the implemented routes, schemas and Compose commands, when operator/API docs are read, then they describe actual managed runtime, controls, storage, defaults and errors.",
+    "Given measured runtime evidence and review corrections, when the journal/tracker are updated, then real failures, fixes and limitations remain distinguishable from pending work.",
+    "Given final integration evidence, when the lead closes the milestone, then documented counts, branch state and live application outcomes match actual output."
   ],
   "test_cases": [
-    "Observed red-green-refactor evidence and relevant regression checks."
+    "Documentation-only JSON/tracker/link/source consistency and git diff whitespace checks.",
+    "Inspect actual catalog/migration/routes/DTOs/Compose/wrapper and implementation/re-review reports; no repeated unchanged application suite by documenter.",
+    "Lead final integration and live application evidence update before completion."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
-    "docs/plans/ARA-022-managed-local-models.md"
+    "README.md",
+    "AGENTS.md",
+    "docs/api-contract.md",
+    "docs/implementation-plan.md",
+    "docs/agent-development-log.md",
+    "issue_tracker/ARA-022.json",
+    "issue_tracker/ARA-044.json",
+    "issue_tracker/ARA-045.json",
+    "issue_tracker/ARA-046.json",
+    "issue_tracker/ARA-047.json",
+    "issue_tracker/ARA-048.json",
+    "issue_tracker/ARA-049.json",
+    "issue_tracker/ARA-050.json"
   ],
-  "commits": [],
+  "commits": [
+    "0b31c2339e666fea57d80ce5f163dce413ad4806",
+    "ee4e3168de97eab0d88ba2f35a57294bc76985d4",
+    "7574aed449c5d9fe53610608236a97aff63fa80c",
+    "5a8aac74c7a1f35a5e3c7090e9e50941d4be1a89",
+    "9185663835010cfc26aa8f0bd27351332f2d0fd6",
+    "f32e15d48da2154bae8182b5e5217776b0db184e",
+    "eac4f22ec4466b2b335e6d95b9630b09331f6b1d"
+  ],
   "pull_requests": [],
-  "verification": "Not yet implemented or verified.",
+  "verification": "README/AGENTS/approved specification/architecture/API/current verification/journal/license notices and tracker updated against actual source and evidence. Independent task and branch reviewers cleared all reproduced findings. Focused Conventional Commits, main preserved at c403662, no GitHub push; source data/secrets/private reports excluded. ARA-050 records baseline development-tool advisories separately. Final docs JSON/link/whitespace audit performed by lead.",
   "updated_at": "2026-10-08"
 }

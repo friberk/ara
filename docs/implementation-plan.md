@@ -2,15 +2,15 @@
 
 Approved by the user with “Implement the plan.” The conversation proposal is the source for this persisted implementation specification. Preserve the core choices below; log material corrections before implementing them.
 
-Implementation status is recorded in [execution progress](execution-progress.md) and [final verification](verification-final.md). Planning observations below preserve their original time scope. GitHub pushing is now deferred at the user's request; local source, CI and submission evidence are prepared. Model capabilities reside in typed Python registry metadata; the database stores default preferences and race-safe generation reservations separately. The application uses conservative UTF-8 byte bounds for its 32k input budget when an exact tokenizer is unavailable.
+Implementation status is recorded in [execution progress](execution-progress.md) and [final verification](verification-final.md). Planning observations below preserve their original time scope. The October 8 [managed-local-model specification](plans/ARA-022-managed-local-models.md) supersedes the earlier deferred local-serving proposal. GitHub pushing is deferred at the user's request. Model capabilities reside in typed Python registry metadata and verified local installation records; the database also stores defaults and race-safe generation reservations. Conservative UTF-8 byte bounds protect provider-specific input budgets when an exact tokenizer is unavailable.
 
 ## Requirements, priorities, and assumptions
 
 The authoritative homework is `hw1.md`, due October 10 at 11:59 PM (assume 2026, America/Indiana/Indianapolis). The application accounts for 60% of the grade and the reflection for 40%. The assignment requires search, a persistent library, PDF metadata extraction, content-grounded summaries, paper Q&A, a GUI, backend, database, external API and LLM, a GitHub repository, a short demo of the five workflows, and a genuine coding-agent reflection. The chosen stack, Docker, and TDD/BDD are additional project requirements. The user confirmed 30+ development hours, funded OpenAI access, public GitHub distribution under AGPL-3.0, and a working locally written PDF skill.
 
 - **P0:** Six-service Compose foundation; migrations, bucket initialization and reload; both academic adapters; persistent deduplicated library; original PDF storage, extraction and editable metadata; durable jobs and recovery; hosted model selection and reasoning; page-aware retrieval and citations; persistent streaming multi-turn chat; focused tests; setup docs; repository and submission evidence.
-- **P1:** The user-requested local PDF skill early; accessible full-text retrieval, richer retrieval heuristics and extra UX polish after P0.
-- **P2:** pgvector, embeddings and hybrid retrieval; local inference; OCR; advanced history management.
+- **P1:** The user-requested local PDF skill early; accessible full-text retrieval, richer retrieval heuristics, extra UX polish and user-approved managed local inference (ARA-022, ARA-044–049).
+- **P2:** pgvector, embeddings and hybrid retrieval; OCR; advanced history management.
 
 This is a single-user local app with no authentication, payments or multi-tenancy. API keys stay server-side. The app must start without hosted credentials or local models; analysis reports missing access clearly. Full-text analysis is blocked for metadata-only or unprocessed papers.
 
@@ -57,17 +57,19 @@ flowchart LR
  A --> S[OpenAlex / Semantic Scholar]
  A --> L[Hosted LLM]
  W --> L
- A -.-> O[Optional local LLM]
- W -.-> O
+ A --> O[Managed Ollama]
+ R --> MW[Model worker]
+ MW --> P
+ MW --> O
  DBInit[migrate one-shot] --> P
  ObjInit[storage-init one-shot] --> M
 ```
 
 ### Compose/runtime
 
-Run six persistent services: frontend, api, worker, postgres 17, redis 8.2, and minio. Reuse the backend image for migrate/storage-init. Health gates use service_healthy; initialization gates use service_completed_successfully. Migrations use Alembic's async bridge/run_sync and a short-lived NullPool. Initialize the MinIO bucket through the backend SDK to avoid the unavailable mc image.
+Run eight persistent services: frontend, api, worker, model-worker, Ollama, postgres 17, redis 8.2, and minio. Reuse the backend image for migrate/storage-init and both worker roles. Health gates use service_healthy; initialization gates use service_completed_successfully. Core readiness does not depend on Ollama. Migrations use Alembic's async bridge/run_sync and a short-lived NullPool. Initialize the MinIO bucket through the backend SDK to avoid the unavailable mc image.
 
-Bind source code; dependencies stay in container paths. Support Vite HMR, Uvicorn reload, and Dramatiq's watch extra/--watch app, with polling/restart fallback. Use named DB/storage/Redis volumes. Frontend/API ports are configurable and bound to loopback; infrastructure ports remain unpublished. Vite proxies /api; CORS uses explicit allowed origins. Run apps as non-root, bound resources and concurrency, and support graceful shutdown. /health/live and /health/ready do not require external credentials.
+Bind source code; dependencies stay in container paths. Support Vite HMR, Uvicorn reload and debounced worker reload through `app.jobs.development_worker`. Burst SIGHUP from Dramatiq's original watcher stalled a model worker during E2E; the wrapper instead stops its complete worker process tree before replacement. Use named DB/storage/Redis/model volumes. Frontend/API ports are configurable and bound to loopback; infrastructure and Ollama ports remain unpublished. Vite proxies /api; CORS uses explicit allowed origins. Bound resources/concurrency and support graceful shutdown. /health/live and /health/ready do not require external credentials.
 
 Bootstrap an ignored .env with generated internal credentials; never overwrite an existing .env. The user configures hosted credentials there, never in chat. Runtime precedence is environment > dotenv > defaults; explicit constructor settings are reserved for tests. Examples use placeholders. Browser environment variables expose only the public API path. Reset requires an explicit flag, and tests never touch development data.
 
@@ -96,6 +98,7 @@ Use UUIDs and UTC timestamps. Store PDF bytes only in MinIO. Persist the followi
 - ChatMessage: ordered roles, content, requestUUID, state, model, settings, citations, generationLease and expiry.
 - BackgroundJob/Outbox: durable execution state.
 - ModelConfiguration: registry, capabilities and defaults, with no credentials.
+- ModelInstallation/ModelRequest/ModelUse: local installation intent/validation, operation UUID identities and durable global inference leases (migration `0005_local_models`).
 
 Enforce uniqueness for non-null normalized DOI, source identity, document checksum in the single-user library, chunk/page ordinals, active job keys, session requestUUID, and one active assistant generation per session. Matching DOI, source or checksum deduplicates; title similarity only warns. A conflicting attach returns a reconciliation error. Manual corrections override enrichment. Historical chats and summaries retain their source document versions. Review Alembic migrations and test them from an empty DB and the previous milestone.
 
@@ -115,6 +118,8 @@ Use the prefix /api/v1. Generate TypeScript contracts with openapi-typescript an
 | GET /chats/{id}/messages | Ordered history and generation state |
 | POST /chats/{id}/messages/stream | question/requestUUID/model/settings; SSE |
 | GET /models; GET/PUT /settings | Capabilities, availability and defaults; no secrets |
+| POST /models/{key}/download; DELETE /models/{key}/installation | Durable idempotent local installation/removal; preserved default/history |
+| POST /jobs/{id}/pause; POST /jobs/{id}/resume | Local transfer controls; paused only after acknowledged settlement |
 | POST /papers/{id}/retrieve-fulltext | P1: stored provider PDF candidate; no arbitrary URL |
 
 ## Pipelines and security
@@ -127,7 +132,7 @@ Extract deterministic metadata first. When needed, use structured nullable LLM e
 
 P1 downloads use only configured public hosts and stored provider candidates. Reject credentials, private addresses, unsafe protocols and redirects; validate every hop and enforce streaming limits. Treat untrusted PDFs and context as data, never executable instructions. Include no credentials or tools in prompts, and render no raw HTML in the UI. Logs use safe JSON with request/job IDs, never API keys, full prompts or document contents. Restrict hostnames/origins, use safe filenames/object keys, and bound LLM tokens and cost.
 
-The hosted adapter uses the official AsyncOpenAI/Responses API with store=False. A separate local adapter uses OpenAI-compatible ChatCompletions. The registry supports the three exact requested models and persists effective parameters, capabilities and usage. Default to Luna/low with a 32k input ceiling and 4k output budget, including reasoning. Use a configurable $5 daily budget, conservative reservations and bounded concurrency. Shrink budgets for smaller deployment contexts.
+The hosted adapter uses the official AsyncOpenAI/Responses API with store=False. The local adapter uses Ollama native `/api/chat`, keeping NDJSON thinking separate from answer content and validating structured output. The registry supports the three requested hosted models and three pinned local artifacts; persist effective parameters, capabilities, provider/runtime/artifact provenance and usage. Default to Luna/low with a 32k input ceiling and 4k output budget, including reasoning. Hosted calls use a configurable $5 daily budget and conservative reservations; local calls use no hosted key or dollar reservation and never fall back to a paid provider. Default local allocation is 8,192 context, 2,048 output and 512 safety tokens. Enforce the smaller provider budget throughout history, retrieval, whole-document batching and reduction.
 
 Summaries use the complete extracted text when it fits. Otherwise, use ordered map/reduce with full coverage, retained references and checkpoints. Never silently summarize only the first pages. Q&A uses SQL FTS with GIN/ranking, a strict → OR fallback and bounded section coverage, scoped to the immutable document. Persist all history; limit recent complete turns to 4k history tokens and retrieval to 12k tokens. Use recent questions and deterministic section terms to interpret follow-ups. The effective context reserves instructions, output and a safety margin. Use the tokenizer when known; otherwise, use conservative byte estimates. Report insufficient evidence explicitly. Validate CitationIDs against the supplied passages/document, and obtain page numbers from the DB. Factual support in real answers requires manual checking beyond mock tests.
 
@@ -161,6 +166,7 @@ Use pytest for units, adapters, validation, text and context. Integration tests 
 | 2 Ingestion | Complete | 009–011 | Retained PDF, metadata, editor and page chunks |
 | 3 LLM/chat | Complete | 012–015, expanded by 033–040 | Hosted smoke test, current UI, context/replay/recovery and browser checks |
 | 4 Enhancements | Continued iteration backlog | 019, 021–023, 043 | Safe downloads, semantic retrieval, local-serving feasibility, OCR and longer conversation context; focused verification for each |
+| Managed local inference | Implementation/review and integration verification in progress | 022, 044–049 | Durable controls, native generation, deterministic browser checks and opt-in 7B evidence; final application checks remain a gate |
 | 5 Submission | In progress, alongside feature iterations | 017–018, 042 | Current-UI live demo, authentic reflection, updated evidence, public repository and submission |
 
 The user rejected the agent's recommendation to freeze feature work after reaching the homework baseline. The earlier human-oriented effort ranges and automatic freeze are superseded. Prioritize dependencies and observed agent throughput; investigate actual resource constraints instead of assuming human development speed. Keep the October 10, 11:59 PM submission requirement visible while continuing iterations and preparation in parallel. The lead owns contracts/migrations and integration verification. Delegate independent work to disjoint file owners and review milestones. Scope reductions require a concrete reason and the user's decision.
@@ -193,19 +199,29 @@ Issue IDs map as follows:
 | 022 | Local LLM |
 | 023 | OCR |
 | 024 | Connector bug |
+| 044–049 | Managed runtime, durable operations, native generation, UI, QA and documentation |
+| 050 | Baseline frontend development-tool dependency advisory triage |
 
 Keep full records in issue_tracker; create bug tickets for actual failures.
 
-### Optional local inference
+### Managed local inference
 
-Local inference is P2 only; download no weights during default setup. IFM uses Apache 2, with actual approximately 9B weights occupying 16.8 GiB in BF16 and an advertised 524K context. Optional Linux NVIDIA vLLM at 8K context/one sequence has an estimated 24–32 GB GPU requirement. Audit the trust_remote_code commit before execution.
+The approved ARA-022 work adds default CPU Ollama with no automatic weight download or loading, a persistent `ollama-models` volume, separate `local-models`/`local-generation` queues and Settings controls. Curated Q4_K_M references are IFM K2 Horizon 3.7B, IFM K2 Horizon 7B and Qwen3.8 27B. Missing or unverified weights remain visible and unavailable. Download/pause/resume/retry/delete identities and installation state are durable; deletion preserves histories/defaults and unavailable generation has no paid fallback. See the [API contract](api-contract.md) for exact public fields and errors.
 
-Qwen uses Apache 2; its BF16 weights occupy approximately 51.7 GiB, exceeding the 36 GiB Mac's memory. It has native 262K/extensible 1M context. The exact Q4_K_M candidate has approximately 16.2 GiB of weights and an estimated 20–22 GiB runtime footprint (unmeasured). Use host-native llama.cpp Metal through host.docker.internal. The vLLM GGUF plugin is experimental; Metal excludes K-quants/hybrids.
+Stock Ollama 0.40.1 rejected real IFM 7B with unknown K2 architecture. The reviewed image pins that Ollama source and compatible upstream llama.cpp b11454, adapts Ollama hooks/CLEF integration and adds version-1 operation-scoped acknowledged pause. After restart, an unknown valid operation UUID pause establishes a canceled tombstone before acknowledging; a late same-UUID pull returns 409. This revised ruling supersedes original private 404 behavior. Tombstones last one daemon lifetime, so PostgreSQL recovery re-establishes settlement on the current runtime before releasing ownership. No pause restarts the daemon.
 
-The optional Linux NVIDIA local-llm profile uses prepopulated weights and a pinned engine plus CUDA/PyTorch/driver (current CUDA 12.9/compute 7.5+, Ampere BF16). Test the exact artifact, streaming, reasoning and memory before making it selectable. The core app has no GPU prerequisite.
+Resource defaults are a configurable 12 GiB ceiling, four CPUs/threads, 8,192 context, 2,048 output, one loaded model/inference lane and two-minute idle unload. The memory ceiling is not startup allocation or a guarantee that every artifact fits. The final retained-7B ARM64 CPU engine run measured about 6.52 GiB steady and 10.30 GiB peak in a 15.66 GiB Docker VM. Its exact weight/manifest hashes, real streaming completion, schema output, default/disabled thinking and independent transfer-pause/inference behavior passed. A separate earlier real transfer resumed retained ranges. Only 7B has live evidence; 3.7B and 27B are not claimed from fixtures. Qwen's roughly 17.74 GB catalog download needs a higher container/host memory budget, with its actual footprint unmeasured here.
+
+NVIDIA/CUDA and AMD/ROCm overrides build the same patched sources for compatible native Linux hosts. They and native amd64 CPU are provided configurations, without hardware validation in this run; macOS Docker uses CPU. Runtime patches, pinned source/image identities, included MIT licenses, opt-in isolated live runner and measurements are documented in [the runtime record](../docker/ollama/README.md). Model artifacts have separate Apache-2.0 licenses and are never embedded in the image. Acknowledged pause requires the managed protocol, so an unmodified external endpoint cannot provide that guarantee.
+
+ARA-044–046 implementer handoffs and scoped re-reviews have resolved the reproduced runtime isolation, model ownership/recovery, summary checkpoint/compression and chat-budget defects. The integrated backend run after the first review fixes passed 169 tests against isolated real services; a later pre-recovery-chain-fix run passed 172; the frontend suite passed 354 with strict TypeScript/ESLint and a passing production build. All four new local-model fixture browser journeys passed. Repeated-restart acknowledgment loss and queued-to-claimed pause admission were subsequently reproduced by independent re-review, and their corrections are in progress. These counts do not mark final integration complete. Lead-owned final backend/recovery rerun, debounced reload verification and full application live summary/Q&A evidence must be recorded before closing the milestone. Continue the other P1/P2 iterations and submission preparation according to user priorities.
 
 ### Definition of Done
 
 Acceptance criteria are satisfied; relevant tests actually pass; there is no critical regression; schema/API/types are documented; Compose and reload work; data persists; retry/error states are honest; issues are updated; and genuine agent corrections are recorded without secrets. The student can explain the components.
 
 The reflection journal covers prompts, decisions, visible failures, diagnosis, follow-ups, evidence, issues, commits and screenshots; never hidden reasoning or invented failures. Keep the guide concise and preserve the authenticity of the student report. Verify the public repository, README, video and reflection for submission. The agent cannot claim Brightspace submission without doing it.
+
+### ARA-022 completion on the feature branch
+
+Managed local models are implemented and independently reviewed on `feat/managed-ollama`; `main` is unchanged. The completed slice includes default CPU Ollama orchestration without weights at startup, the three-artifact catalog, durable installation controls/recovery, local native generation, Settings/picker/Activity UI and deterministic browser coverage. Ordinary errors retain settlement fences and summaries retain their generation-time provenance. Native sampling uses explicit temperature 0.0. See [latest verification](verification-final.md) for executed checks, live 7B measurements and untested hardware/model limits. Future enhancements and student submission deliverables remain separately tracked.

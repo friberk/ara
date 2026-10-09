@@ -5,20 +5,39 @@
   "priority": "P1",
   "description": "Durable local model installation and recovery for the approved ARA-022 plan.",
   "dependencies": [
-    "ARA-022"
+    "ARA-004",
+    "ARA-008",
+    "ARA-044"
   ],
   "acceptance_criteria": [
-    "Satisfy the corresponding task and frozen contracts in docs/plans/ARA-022-managed-local-models.md."
+    "Given duplicate request/delivery UUIDs, when model operations replay or race, then one durable owner remains and conflicting reuse is rejected.",
+    "Given restart, partial rollback or lost lease, when recovery runs, then authoritative inventory/checkpoints and acknowledged unresolved current/previous runtime attempts govern fenced writes.",
+    "Given paused intent and verification admission racing, when either wins its database lock, then no incompatible maintenance/inference is admitted before settlement.",
+    "Given a newer installation owner, when a failed historical operation is retried, then current installation state is preserved and superseded retry is rejected.",
+    "Given deletion with no live use, when it completes, then runtime absence is confirmed and defaults/history remain."
   ],
   "test_cases": [
-    "Observed red-green-refactor evidence and relevant regression checks."
+    "Contracts/runtime/SQL/API observed reds then greens; migration0005, dispatcher, heartbeat and readiness checks.",
+    "Independent reviewer reproduced three SQL failures; six regression cases went red then green, and unchanged reviewer harness passed three tests.",
+    "Further two-current/abandoned-operation settlement regressions went red then green; combined SQL/state/API batch passed 29.",
+    "Worker reload burst/stopping-tree real-process regression; final integrated rerun passed."
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
-    "docs/plans/ARA-022-managed-local-models.md"
+    "src/backend/alembic/versions/0005_local_models.py",
+    "src/backend/app/models/local_models.py",
+    "src/backend/app/repositories/local_models.py",
+    "src/backend/app/services/local_models.py",
+    "src/backend/app/integrations/model_catalog.py",
+    "src/backend/app/integrations/ollama.py",
+    "src/backend/app/routes/local_models.py",
+    "src/backend/app/jobs/model_actors.py",
+    "src/backend/app/jobs/development_worker.py"
   ],
-  "commits": [],
+  "commits": [
+    "f32e15d48da2154bae8182b5e5217776b0db184e"
+  ],
   "pull_requests": [],
-  "verification": "Not yet implemented or verified.",
+  "verification": "Lead final real-service backend 185 passed in 38.77 seconds. Targeted model SQL 38 passed; independent original/restart/claim-race probes passed. All unresolved UUIDs survive crash and ordinary failure; unconfirmed settlement blocks competing inference/mutations and cleanup does not replay or double-count attempts. Superseded retry, verification pause, deadline/stall, exhausted/malformed transfer, queued pause and multiple cleanup cases covered. Debounced worker native and forced-polling tests passed; actual six-write Docker burst caused one restart per worker.",
   "updated_at": "2026-10-08"
 }

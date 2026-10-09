@@ -1,0 +1,25 @@
+{
+  "id": "ARA-050",
+  "title": "Triage baseline frontend development-tool dependency advisories",
+  "type": "security",
+  "priority": "P1",
+  "description": "Baseline npm audit reported seven high-severity advisories through the shadcn development-tool dependency chain, rooted in braces deeply nested pattern stack exhaustion (GHSA-vfj7-8cjw-p6xm). Determine the applicable fix without an automatic breaking CLI downgrade or force upgrade.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given the pinned frontend dependency tree, when audit and dependency reachability are inspected, then affected development and production paths are recorded from actual output.",
+    "Given an available compatible remediation, when applied in a separate change, then lockfile/check/build and relevant component-generation behavior remain valid; otherwise record the unresolved upstream constraint."
+  ],
+  "test_cases": [
+    "npm audit --json; npm ls braces micromatch fast-glob shadcn; frontend check/build after any dependency change."
+  ],
+  "status": "observed",
+  "related_files": [
+    "src/frontend/package.json",
+    "src/frontend/package-lock.json",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "October8 baseline audit metadata: seven high, zero critical. Affected chain includes braces, micromatch, fast-glob, @shadcn/registry, @ts-morph/common, ts-morph and direct development dependency shadcn4.21.4. Audit suggested shadcn1.0.0 as a semver-major fix; no force upgrade/downgrade applied. Runtime exploitability and a compatible remediation have not yet been established. Advisory: https://github.com/advisories/GHSA-vfj7-8cjw-p6xm.",
+  "updated_at": "2026-10-08"
+}

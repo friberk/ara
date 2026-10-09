@@ -6,6 +6,8 @@ Project code: GNU Affero General Public License version3; LICENSE contains the l
 - PyMuPDF/MuPDF: AGPL/commercial terms. Source and licensing: https://pymupdf.readthedocs.io/en/latest/about.html and https://github.com/pymupdf/PyMuPDF. The skill and backend resolve their documented versions independently through lockfiles.
 - React, Vite, Tailwind, shadcn/ui and other frontend packages retain upstream notices in their distributed packages/source. shadcn-style component code is adapted for the project; dependencies are listed in package-lock.json.
 - Python/backend dependencies retain their upstream licenses; exact versions/hashes are recorded in uv.lock. Dramatiq is LGPL-3.0; its application integration does not modify the upstream library.
+- Ollama and llama.cpp: MIT. The managed image retains their license texts and dependency notices. Pinned sources and the local changes are documented in [the runtime README](../docker/ollama/README.md); model weights are kept outside the image.
+- Curated model artifacts: Apache-2.0 according to the publishers' [IFM 3.7B](https://huggingface.co/IFM/K2-Horizon-3.7B-GGUF), [IFM 7B](https://huggingface.co/IFM/K2-Horizon-7B-GGUF), and [Qwen 3.8 27B](https://ollama.com/library/qwen3.8:27b-q4_K_M) records. Downloads are explicit user actions. No weights are redistributed in the repository.
 - Assignment materials and pre-existing writing skills remain user reference files. Project licensing does not assert ownership of those materials or uploaded research papers.
 
 Full upstream dependency licensing metadata is available in installed distributions. Do not redistribute third-party model weights or research PDFs without checking their particular licenses.

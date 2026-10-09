@@ -10,12 +10,12 @@ The interface is a chat-centred workspace built with shadcn components, using th
 - **Library.** Saved and uploaded papers persist across restarts. Filter by title, and see each paper's PDF status.
 - **Upload.** Drop or choose a PDF (up to 25 MB) from the home composer or the library. Title, authors, year and abstract are extracted, and progress appears in Activity.
 - **Paper workspace.** The PDF reader sits beside the conversation. The latest summary is the first card. Ask your own questions or use the suggested ones; answers stream in with inline page citations. Clicking a citation scrolls the PDF to that page and highlights the passage. On phones, the workspace switches between Chat, PDF and Details tabs.
-- **Models.** A compact switcher in the composer chooses the model and reasoning effort for the next request. Each answer records the model that produced it, and Settings stores the defaults.
+- **Models.** A compact switcher chooses the model and reasoning effort for the next request. Settings stores defaults and manages local model downloads, pause/resume, verification and deletion. Each answer records the model that produced it.
 - **History.** The sidebar lists recent papers, searches and conversations. Conversations are titled from their first question and can be renamed or deleted. Press ⌘K (Ctrl+K) to find papers and chats.
 
 ## Start locally
 
-Requirements: Docker with Compose, enough memory for approximately six small services, and Python3 for the environment bootstrap. Dockerfiles target ARM64 and x86_64; the verified build is ARM64 on an M3 Pro using OrbStack. GPU inference is optional.
+Requirements: Docker with Compose and Python3 for the environment bootstrap. Compose includes the core services, a separate model worker and a CPU Ollama runtime. The runtime starts without weights; generating locally needs additional disk and memory. The verified local-model host is Linux ARM64 in OrbStack on an M3 Pro. Native x86_64 CPU and NVIDIA/AMD configurations are provided; their hardware validation remains separate.
 
 ```bash
 python3 scripts/bootstrap.py
@@ -29,14 +29,14 @@ docker compose up --build
 
 Open <http://localhost:5173>. API documentation is at <http://localhost:8000/docs>. Change `FRONTEND_PORT`, `API_PORT` and `CORS_ORIGINS` together when using different local ports. Browser calls use the Vite `/api` proxy; credentials remain on the backend. PostgreSQL, Redis and MinIO have no host ports by default.
 
-Default startup initializes the private PDF bucket and runs Alembic before starting the API/worker. It works without LLM credentials; analysis then reports missing model access. No model weights download during startup.
+Default startup initializes the private PDF bucket and runs Alembic before starting the API/workers. It works without LLM credentials. Ollama starts without downloading or loading weights, and core API readiness does not depend on it. Analysis reports unavailable model access until a hosted key is configured or local weights are downloaded and verified.
 
-Source edits use Vite HMR, Uvicorn reload and Dramatiq watch. Rebuild images after dependency or Dockerfile changes. PostgreSQL, Redis and MinIO named volumes survive normal shutdown:
+Source edits use Vite HMR, Uvicorn reload and a debounced worker subprocess wrapper. The wrapper stops the previous worker process tree before starting its replacement. Rebuild images after dependency or Dockerfile changes. PostgreSQL, Redis, MinIO and Ollama named volumes survive normal shutdown:
 
 ```bash
 docker compose down
 docker compose up
-docker compose logs --tail 100 api worker
+docker compose logs --tail 100 api worker model-worker ollama
 docker compose run --rm migrate
 ```
 
@@ -52,7 +52,7 @@ python3 -m unittest discover -s tests/infrastructure -v
 python3 -m unittest discover -s tests/fixtures -v
 ```
 
-The backend helper forces a separate `ara-test` Compose project/database/buckets. It runs Ruff and pytest against real PostgreSQL, Redis and MinIO. Fixtures replace only external academic/LLM HTTP services. They demonstrate deterministic behavior; live provider/model checks are separate.
+The backend helper forces a separate `ara-test` Compose project/database/buckets. It runs Ruff and pytest against real PostgreSQL, Redis and MinIO. HTTP fixtures replace academic and LLM providers. Test Compose uses an empty offline Ollama fixture and disables the model worker; browser Compose enables the model worker against a deterministic model provider. These commands do not build the inference runtime or download weights. Fixtures demonstrate deterministic behavior; live provider/model checks are separate.
 
 Browser test environment:
 
@@ -64,7 +64,7 @@ npx playwright install chromium
 npx playwright test
 ```
 
-The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Test fixtures explicitly use synthetic papers and delayed model streaming; they are never activated by normal startup. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
+The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Model browser tests cover background progress, navigation, pause/reload/resume and default preservation after deletion. Test fixtures use synthetic papers and delayed model streaming; they are never activated by normal startup. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
 
 Test data reset is explicit and affects only `ara-test`:
 
@@ -72,7 +72,7 @@ Test data reset is explicit and affects only `ara-test`:
 python3 scripts/test-stack.py reset --reset-data
 ```
 
-For development data reset, inspect the project and back up original PDFs/database first; `docker compose down --volumes` deliberately deletes the project's persistent volumes. Ordinary shutdown uses `down` without that flag.
+For development data reset, inspect the project and back up original PDFs/database first; `docker compose down --volumes` deliberately deletes the project's persistent volumes, including downloaded model weights. Ordinary shutdown uses `down` without that flag.
 
 ## Models and source grounding
 
@@ -80,7 +80,42 @@ Hosted IDs: `gpt-5.6-luna` (default), `gpt-5.6-terra`, `gpt-5.6-sol`. Supported 
 
 Lexical retrieval stays within the selected document and preserves page references. Conversation history and summaries persist locally. Each assistant response records its model and reasoning effort. Model text is generated; citation controls show source passages and link to the original PDF page. Citation validation checks source identity; readers should verify factual support. Prompt instructions embedded in PDFs are treated as untrusted source text.
 
-Optional local inference is deferred: this Mac cannot use an ordinary CUDA Compose container for Metal GPU inference. Qwen3.8 Q4_K_M would use a separately verified host-native llama.cpp endpoint; NVIDIA vLLM serving would use a separate opt-in profile. See the implementation plan for exact compatibility findings. OCR is also optional.
+### Managed local models
+
+Open **Settings → Local models** to download an exact curated Q4_K_M artifact:
+
+| Model | Runtime reference | Catalog download bytes |
+| --- | --- | ---: |
+| IFM K2 Horizon 3.7B | `hf.co/IFM/K2-Horizon-3.7B-GGUF:Q4_K_M` | 3,156,599,066 |
+| IFM K2 Horizon 7B | `hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M` | 5,592,218,900 |
+| Qwen 3.8 27B | `qwen3.8:27b-q4_K_M` | 17,741,872,132 |
+
+Downloads continue when you leave Settings or close the browser. Activity links back to the model controls. Pause remains pending while the runtime settles its transfer and checkpoints; **Paused** appears after acknowledgment. A manually paused job stays paused across restart. Resume uses retained partial files when the registry supports ranges. Bytes may decrease after a restart if the runtime reports an earlier durable checkpoint. A finished transfer must also pass artifact, streaming and structured-output verification before selection becomes available. Download completion does not change your selection or saved default.
+
+Use **Try again** for a failed operation or **Verify again** when runtime settings changed. **Delete weights** confirms removal and preserves conversations, summaries and the saved default. Generation with a deleted default stays blocked until you reinstall it or choose another model. The app never switches a local request to a paid provider. Shared blobs and retained partial files mean deletion does not promise to reclaim the full catalog size. `OLLAMA_NOPRUNE=true` retains partials for recovery; the app does not perform broad orphan cleanup.
+
+The default runtime uses a Linux CPU container on supported Docker hosts; it also works without GPU passthrough on macOS. It limits context to 8,192 tokens, output to 2,048 tokens, loaded models and concurrent local inference to one, and idle keep-alive to two minutes. The `12g` memory ceiling is a limit, not memory reserved or consumed at startup. Configure `OLLAMA_MEMORY_LIMIT`, `OLLAMA_CPUS`, `OLLAMA_CONTEXT_WINDOW`, `OLLAMA_MAX_OUTPUT_TOKENS` and `OLLAMA_NUM_THREADS` in `.env`; the default four threads match the four-CPU quota. Context changes require revalidation. Local requests use temperature 0.0 and retain the applied settings with their responses; citation checks still reject unsupported output. A busy interactive local request returns a retryable message; background local summaries wait on their separate queue.
+
+The 7B artifact passed live engine checks under the 12 GiB ceiling: roughly 6.52 GiB steady container usage and 10.30 GiB peak in the final retained-weight run. The full application check reached 11.85 GiB peak and about 6.65 GiB steady usage, with zero OOM events; leave additional host/VM memory for the other services. Those readings include cache and do not predict every workload. Qwen's approximately 17.74 GB download exceeds the default ceiling before KV cache and other overhead; raise the container and host/VM limits before attempting it. The 3.7B and 27B artifacts have not been live-tested in this change. They remain unavailable until their own installation verifies successfully. Reasoning choices come from successful runtime probes; the verified 7B supports **Model default** and **None**, while named levels were rejected.
+
+Native Linux GPU overrides:
+
+```bash
+docker compose -f compose.yaml -f compose.nvidia.yaml up --build
+docker compose -f compose.yaml -f compose.amd.yaml up --build
+```
+
+NVIDIA requires NVIDIA Container Toolkit. AMD requires supported ROCm hardware/drivers and the host's `OLLAMA_VIDEO_GID`/`OLLAMA_RENDER_GID`; set `OLLAMA_AMDGPU_TARGETS` for the device. Both overrides build the patched runtime. GPU acceleration and native amd64 execution are provided configurations, with no hardware test claim.
+
+The managed image pins Ollama 0.40.1 and llama.cpp b11454. Stock 0.40.1 rejected the real 7B artifact with `unknown model architecture: 'k2-horizon'`. The custom build uses upstream architecture support, reviewed Ollama hook/CLEF adaptations and operation-scoped pull controls. See [runtime provenance, licenses and measured evidence](docker/ollama/README.md). An external `OLLAMA_BASE_URL` must provide the reviewed control protocol for acknowledged pause; stock endpoints cannot promise it.
+
+Opt-in live engine validation downloads only 7B into a labeled isolated volume and preserves that volume:
+
+```bash
+python3 scripts/test-local-models.py --resume --volume ara-ollama-validation-new-run --output /tmp/ara-local-model-result.json
+```
+
+Use a fresh validation volume to exercise a real resumed transfer. This engine check is separate from the fixture-based browser suite and full application summary/Q&A checks. OCR remains optional.
 
 ## Agent skill and project records
 
@@ -92,4 +127,4 @@ A live five-workflow recording is available locally at `docs/evidence/generated/
 
 ## License and third-party dependencies
 
-Project source is licensed under AGPL-3.0; see LICENSE. MinIO community is archived and source-only. The custom image builds pinned upstream source, retains its license/source references, and is intended for this local homework environment. PyMuPDF has AGPL/commercial licensing. See `docs/third-party-notices.md`. Credentials, original uploaded papers and generated private data are excluded from version control.
+Project source is licensed under AGPL-3.0; see LICENSE. MinIO community is archived and source-only. Its custom image builds pinned upstream source and retains license/source references. PyMuPDF has AGPL/commercial licensing. Ollama and llama.cpp use MIT; curated model artifacts have separate Apache-2.0 licenses and are downloaded only at the user's request. See [third-party notices](docs/third-party-notices.md) and [runtime provenance](docker/ollama/README.md). Credentials, original uploaded papers, weights and generated private data are excluded from version control.

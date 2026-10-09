@@ -61,3 +61,9 @@ BDD: missing weights block selection; browser closure preserves download; pause 
 6. ARA-049 Documentation/review: commands, hardware, patch provenance/licenses, limitations, regression checks and actual journal evidence. Complete docs at each task; final independent branch review before integration.
 
 Every task: write failing behavior test, execute/record red, implement, execute green, refactor/regress, focused Conventional Commit carrying ARA ID. New feature branch; preserve archives, no Co-Authored-By and no push. Definition of Done includes automated checks actually executed, API contract regenerated, Compose persistence, tracker and authentic journal updates. No human-hour scope freeze.
+
+## Verified implementation amendments
+
+The private pause protocol uses a canceled tombstone for an unknown valid UUID, returning 200 and fencing late same-UUID pulls with 409. Recovery retains every unresolved attempt across crashes and ordinary errors; pending settlement blocks competing local admission. Native sampling is explicitly temperature 0.0 and is stored in effective generation provenance. Summary configuration is checkpointed under admission and reused at final persistence; unknown or changed configuration cannot be inferred from current installation state.
+
+Implementation is complete on `feat/managed-ollama`, without merging or pushing. Final evidence: 185 backend tests, 356 frontend tests, strict type/lint checks, build, 12 browser scenarios, reviewed runtime tests and real ARM64 CPU 7B application/restart checks. Exact limits and measured resource behavior are in the runtime README and verification record. Native amd64/GPU and 3.7B/27B inference remain untested; their installation is available for runtime verification.

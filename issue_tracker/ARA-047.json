@@ -5,20 +5,35 @@
   "priority": "P1",
   "description": "Local model management in Settings and model pickers for the approved ARA-022 plan.",
   "dependencies": [
-    "ARA-022"
+    "ARA-015",
+    "ARA-045",
+    "ARA-046"
   ],
   "acceptance_criteria": [
-    "Satisfy the corresponding task and frozen contracts in docs/plans/ARA-022-managed-local-models.md."
+    "Given missing weights, when Settings or a picker opens, then unavailable local choices show reasons and guarded accessible activation.",
+    "Given active or paused work, when navigating/remounting, then Settings and Activity restore authoritative progress and appropriate controls.",
+    "Given verification completion, when availability changes, then selectors refresh without changing the saved default automatically.",
+    "Given default-weight deletion, when confirmed, then saved preferences stay visible and unavailable generation is blocked with actionable controls."
   ],
   "test_cases": [
-    "Observed red-green-refactor evidence and relevant regression checks."
+    "Local-model Settings, picker and Activity RTL tests for progress/stages/pending controls/retries/default preservation.",
+    "Frontend strict TypeScript/ESLint/Vitest and production build.",
+    "ARA-048 browser navigation, pause/reload/resume, deletion and native-provider fixture journeys."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
-    "docs/plans/ARA-022-managed-local-models.md"
+    "src/frontend/src/features/settings/LocalModels.tsx",
+    "src/frontend/src/features/settings/SettingsPage.tsx",
+    "src/frontend/src/components/composer/ModelSwitcher.tsx",
+    "src/frontend/src/features/activity/ActivityPage.tsx",
+    "src/frontend/src/hooks/queries/local-models.ts",
+    "src/frontend/src/hooks/queries/models.ts",
+    "src/frontend/src/api/generated.ts"
   ],
-  "commits": [],
+  "commits": [
+    "7574aed449c5d9fe53610608236a97aff63fa80c"
+  ],
   "pull_requests": [],
-  "verification": "Not yet implemented or verified.",
+  "verification": "Strict TypeScript/ESLint/build and 356 Vitest tests across 54 files passed. Independent review cleared anchor scrolling/focus, focus readiness refresh and persistent terminal live status. Missing-default and settings-outage guards prevent automatic paid selection. Desktop 1440/mobile 390 light+dark inspected without overflow; heading-focus correction confirmed once. Activity reports stopping/verification stages in plain language. All 12 browser scenarios passed, including four local-model journeys; deletion and local generation 2 reran successfully after final backend sampling correction.",
   "updated_at": "2026-10-08"
 }

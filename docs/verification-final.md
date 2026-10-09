@@ -1,6 +1,6 @@
 # Final application verification
 
-Observed October 8, 2026, on macOS/M3 Pro with OrbStack ARM64. These results concern the implemented core application. Optional OCR, semantic embeddings, local inference and automatic PDF downloads are deferred. GitHub publishing is deferred by the user; CI is prepared but has not run remotely.
+Observed October 8, 2026, on macOS/M3 Pro with OrbStack ARM64. The first results below concern the earlier core application. Later sections record newer feature verification. OCR, semantic embeddings and automatic PDF downloads remain separate backlog items; local inference is now verified on its feature branch. GitHub publishing is deferred by the user; CI is prepared but has not run remotely.
 
 ## Automated checks
 
@@ -69,3 +69,28 @@ The user requested focused Conventional Commits after the first oversized local 
 - `8b7dd79` — feat(skills): add the locked local PyMuPDF parser.
 - `1390f9c` — test(e2e): exercise homework workflows with HTTP fixtures.
 - `0e64197` — ci(checks): enforce builds integration and API contract consistency.
+
+## Managed local models — ARA-022, October 8
+
+Verified on `feat/managed-ollama`, based on `main` at `c403662`. No merge or GitHub push was performed.
+
+| Check | Executed result | Scope |
+| --- | --- | --- |
+| Lead `python3 scripts/test-stack.py test` | 185 passed in 38.77s; Ruff/build/migrate/bucket init passed | Isolated real PostgreSQL, Redis and MinIO; deterministic external models |
+| Frontend `npm run check` / `npm run build` | 356 passed across 54 files; strict TypeScript/ESLint and build passed | Settings, guarded models/defaults, progress, status, chat and existing interface regressions |
+| Final Playwright run | 12 passed in 2.0 minutes | Fresh isolated fixture stack; mandatory workflows plus four managed-model journeys |
+| Infrastructure / external-fixture unittest | 4 / 3 passed | Bootstrap/reset/Compose configuration and actual fixture HTTP interfaces |
+| Generated API contract | Live OpenAPI regenerated and byte-matched | Checked against API8002; no schema changes in the subsequent sampling correction |
+| CPU/GPU Compose configuration | All three configurations validated | GPU configurations were not hardware-tested |
+| Fresh ordinary Compose startup | Gates/readiness passed; no installed/loaded models; Ollama 20.91 MiB | Isolated `ara-feature`, alternate ports with matching CORS; no automatic weights |
+| Actual worker reload | Six rapid writes produced one restart per worker | Default debounced development wrapper; temporary probe removed |
+| Runtime source review/tests | Ten control tests, repeated race checks and full server suite passed | Pinned Ollama 0.40.1 plus llama.cpp b11454, reviewed cancellation/control patch |
+| Real 7B engine/application | Streaming/schema/default/disabled thinking, exact hashes, range resume, summary/Q&A and restart persistence passed | ARM64 CPU; only 7B weights; empty OpenAI key for application checks |
+
+The final application sampling check stored a summary covering all three chunks in 38.32 seconds and streamed a cited answer in 10.41 seconds (49 SSE events). Both used temperature 0.0 and recorded the pinned artifact, runtime, context/output/thread/reasoning settings. The saved summary exactly matched its durable provenance snapshot, and hosted reservations remained zero. One preceding default-sampling summary was rejected for missing usable source markers; it was not stored as a valid summary or automatically replayed. Temperature 0 reduces sampling variability, not the need to validate citations or inspect factual support.
+
+Restarting PostgreSQL, MinIO, Ollama, API and both workers preserved histories, local defaults, the byte-identical original PDF and verified weights. The measured full application peak was 11.85 GiB under a 12 GiB ceiling, steady usage about 6.65 GiB, and OOM counters were zero. Leave memory for other services; weights, loaded tensors, KV cache and filesystem cache have different lifetimes. See [runtime evidence](../docker/ollama/README.md).
+
+Independent runtime, backend, generation, frontend and whole-branch reviews reproduced defects before correction. Final probes cleared all findings; the latest whole-branch review also passed 38 native adapter tests and a deletion-race provenance probe after the temperature correction. Native amd64, NVIDIA/AMD hardware and live 3.7B/27B inference were not tested. ARA-050 separately tracks seven baseline development-tool dependency advisories; they were not introduced or force-remediated by this feature.
+
+After the sampling correction, refreshed fixture workers passed E2E-11 and E2E-12 again: two tests in 43.8 seconds. The feature preview runs on localhost:5191 with an empty model store; its ignored worktree configuration uses the separate `ara-feature` project and leaves the original development data intact.
