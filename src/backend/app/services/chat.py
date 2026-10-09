@@ -1,16 +1,23 @@
-"""Persisted streaming chat. A request UUID records one attempt, including failures."""
+"""Persisted streaming chat. A request UUID records one attempt, including failures.
+
+`prepare()` admits a question in short transactions with no network call under the chat lock.
+`stream_answer()` then plans, retrieves and generates, persisting the retrieval trace before the
+provider call (ARA-073).
+"""
 
 import asyncio
 import json
 from contextlib import nullcontext, suppress
+from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Literal
 from uuid import UUID, uuid4
 
 import anyio
 from fastapi import HTTPException
 from sqlalchemy import func, select, update
 
-from app.integrations.context_registry import context_profile
+from app.integrations.context_registry import ContextProfile, context_profile
 from app.integrations.llm import (
     LLMError,
     create_llm,
@@ -20,18 +27,21 @@ from app.integrations.llm import (
     thinking_controls,
     validate_model_available,
 )
-from app.integrations.tokens import count_prompt
-from app.models.research import ChatMessage, ChatSession, Document
+from app.models.research import ChatMessage, ChatSession, Document, Paper, PaperAuthor
+from app.rag.citations import (
+    HandleMap,
+    HandleTransducer,
+    normalize_source_markers,
+    passage_citations,
+)
+from app.rag.indexing import effective_profile
+from app.rag.pipeline import retrieve_evidence
 from app.repositories.jobs import now
 from app.schemas.ai import Message
-from app.services.retrieval import (
-    INSTRUCTIONS,
-    history_context,
-    normalize_source_markers,
-    passage,
-    retrieve,
-    validate_citations,
-)
+from app.services.context import INSTRUCTIONS_VERSION, PaperHeader, assemble_answer_prompt
+
+LEASE = timedelta(seconds=60)
+
 
 # Clause punctuation only: closing brackets, quotes and percent signs carry meaning.
 TITLE_TRAILING = " .,;:!?…-–—。，；：！？、"
@@ -67,50 +77,92 @@ async def expire(session, chat_id):
     )
 
 
-async def prepare(resources, chat_id: UUID, body):
+async def replayed(session, chat_id: UUID, body) -> tuple[ChatSession, ChatMessage | None]:
+    """Lock the chat; return the stored answer when this request UUID was already used."""
+    chat = await session.scalar(
+        select(ChatSession).where(ChatSession.id == chat_id).with_for_update()
+    )
+    if chat is None:
+        raise HTTPException(404, "Chat not found")
+    await expire(session, chat_id)
+    replay = await session.scalar(
+        select(ChatMessage).where(
+            ChatMessage.session_id == chat_id,
+            ChatMessage.role == "assistant",
+            ChatMessage.request_id == body.request_id,
+        )
+    )
+    if replay is None:
+        return chat, None
+    user = await session.scalar(
+        select(ChatMessage).where(
+            ChatMessage.session_id == chat_id,
+            ChatMessage.role == "user",
+            ChatMessage.request_id == body.request_id,
+        )
+    )
+    if (
+        user is None
+        or user.content != body.content
+        or replay.model != body.model
+        or replay.reasoning_effort != body.reasoning_effort
+    ):
+        raise HTTPException(409, "Request UUID was already used for a different message")
+    if replay.state == "processing":
+        raise HTTPException(409, "This request is already processing")
+    return chat, replay
+
+
+async def paper_header(session, paper: Paper) -> PaperHeader:
+    authors = await session.scalars(
+        select(PaperAuthor.name)
+        .where(PaperAuthor.paper_id == paper.id)
+        .order_by(PaperAuthor.ordinal)
+    )
+    return PaperHeader(title=paper.title, authors=list(authors), year=paper.year)
+
+
+@dataclass
+class Prepared:
+    """An admitted question, or the stored answer when its request UUID is replayed."""
+
+    assistant: ChatMessage
+    replay: bool
+    question: str = ""
+    document_id: UUID | None = None
+    chunk_set: str | None = None
+    retrieval_profile: str | None = None
+    paper: PaperHeader | None = None
+    history: list[ChatMessage] = field(default_factory=list)
+    limits: ContextProfile | None = None
+    evidence_budget: int = 0
+
+
+async def prepare(resources, chat_id: UUID, body) -> Prepared:
     async with resources.sessions() as session, session.begin():
-        chat = await session.scalar(
-            select(ChatSession).where(ChatSession.id == chat_id).with_for_update()
-        )
-        if chat is None:
-            raise HTTPException(404, "Chat not found")
-        await expire(session, chat_id)
-        replay = await session.scalar(
-            select(ChatMessage).where(
-                ChatMessage.session_id == chat_id,
-                ChatMessage.role == "assistant",
-                ChatMessage.request_id == body.request_id,
-            )
-        )
-        if replay is not None:
-            user = await session.scalar(
-                select(ChatMessage).where(
-                    ChatMessage.session_id == chat_id,
-                    ChatMessage.role == "user",
-                    ChatMessage.request_id == body.request_id,
-                )
-            )
-            if (
-                user is None
-                or user.content != body.content
-                or replay.model != body.model
-                or replay.reasoning_effort != body.reasoning_effort
-            ):
-                raise HTTPException(409, "Request UUID was already used for a different message")
-            if replay.state == "processing":
-                raise HTTPException(409, "This request is already processing")
-            return replay, None, [], True
+        _, replay = await replayed(session, chat_id, body)
+    if replay is not None:
+        return Prepared(replay, replay=True)
+    # Local validation calls the runtime, so it never runs while the chat row is locked.
+    selection = await validate_model_available(resources, body.model, body.reasoning_effort)
+    configuration = await generation_configuration(resources, body.model, body.reasoning_effort)
+    limits = context_profile(
+        resources, body.model, body.reasoning_effort, thinking=thinking_controls(selection)
+    )
+    async with resources.sessions() as session, session.begin():
+        chat, replay = await replayed(session, chat_id, body)
+        if replay is not None:  # A concurrent duplicate committed first.
+            return Prepared(replay, replay=True)
         if await session.scalar(
             select(ChatMessage.id).where(
                 ChatMessage.session_id == chat_id, ChatMessage.state == "processing"
             )
         ):
             raise HTTPException(409, "Another answer is already processing in this chat")
-        selection = await validate_model_available(resources, body.model, body.reasoning_effort)
         document = await session.get(Document, chat.document_id)
-        if document is None or document.status != "ready":
+        if document is None or document.status != "ready" or document.chunk_set is None:
             raise HTTPException(409, "The selected document is not ready")
-        messages = list(
+        history = list(
             (
                 await session.scalars(
                     select(ChatMessage)
@@ -119,36 +171,21 @@ async def prepare(resources, chat_id: UUID, body):
                 )
             ).all()
         )
-        profile = context_profile(
-            resources, body.model, body.reasoning_effort, thinking=thinking_controls(selection)
+        paper = await session.get(Paper, chat.paper_id)
+        header = await paper_header(session, paper)
+        profile, _ = await effective_profile(session, paper)
+        # Sizing without evidence raises CONTEXT_LIMIT (413) before anything is stored.
+        sizing = assemble_answer_prompt(
+            profile=limits,
+            paper=header,
+            history=history,
+            memory_summary=None,
+            recalled=[],
+            evidence_block=lambda budget: "",
+            question=body.content,
+            retrieved_for=None,
         )
-        counter = profile.counter
-        question = "\nCurrent question:\n" + body.content
-        history_budget = 4000
-        if profile.provider == "ollama":
-            fixed = count_prompt(counter, INSTRUCTIONS, question)
-            history_budget = min(4000, max(0, (profile.input_budget - fixed - 64) // 3))
-        history = history_context(messages, budget=history_budget, counter=counter)
-        base = "Conversation (context only):\n" + history + "\nPaper evidence:\n"
-        budget = profile.input_budget - count_prompt(counter, INSTRUCTIONS, base + question)
-        if budget < 0:
-            raise LLMError("CONTEXT_LIMIT", "The question exceeds the context budget.", 413)
-        chunks = await retrieve(
-            session,
-            chat.document_id,
-            body.content,
-            messages,
-            budget=min(12000, budget),
-            counter=counter,
-        )
-        # passage() already terminates each source with a newline counted by retrieval.
-        prompt = base + "".join(passage(c) for c in chunks) + question
-        input_tokens = count_prompt(counter, INSTRUCTIONS, prompt)
-        if input_tokens > profile.input_budget:
-            raise LLMError(
-                "CONTEXT_LIMIT", "The assembled question exceeds the context budget.", 413
-            )
-        await reserve(resources, body.model, input_tokens)
+        await reserve(resources, body.model, limits.input_budget)
         user = ChatMessage(
             id=uuid4(),
             session_id=chat_id,
@@ -171,44 +208,111 @@ async def prepare(resources, chat_id: UUID, body):
             reasoning_effort=body.reasoning_effort,
             citations=[],
             request_id=body.request_id,
-            lease_expires_at=now() + timedelta(seconds=60),
-            configuration=await generation_configuration(
-                resources, body.model, body.reasoning_effort
-            ),
+            lease_expires_at=now() + LEASE,
+            configuration={**configuration, "prompt_version": INSTRUCTIONS_VERSION},
             created_at=now(),
         )
         if chat.title_source == "default":
             # Same transaction as the user message; replays returned above never retitle.
-            first = next((m.content for m in messages if m.role == "user"), body.content)
+            first = next((m.content for m in history if m.role == "user"), body.content)
             chat.title, chat.title_source = title_from_question(first), "auto"
         session.add_all([user, assistant])
         await session.flush()
-        return assistant, prompt, chunks, False
-
-
-async def save(resources, message_id, content, *, state="processing", citations=None, usage=None):
-    async with resources.sessions() as session, session.begin():
-        message = await session.scalar(
-            select(ChatMessage)
-            .where(ChatMessage.id == message_id, ChatMessage.state == "processing")
-            .with_for_update()
+        return Prepared(
+            assistant,
+            replay=False,
+            question=body.content,
+            document_id=chat.document_id,
+            chunk_set=document.chunk_set,
+            retrieval_profile=profile,
+            paper=header,
+            history=history,
+            limits=limits,
+            evidence_budget=sizing.allocation.evidence,
         )
-        if message is None or message.lease_expires_at is None or message.lease_expires_at <= now():
-            raise LLMError("LEASE_LOST", "The answer was interrupted because its lease expired.")
+
+
+@dataclass(frozen=True)
+class QueryPlan:
+    standalone_question: str
+    search_queries: list[str]
+    needs_paper_evidence: bool
+    source: Literal["model", "fallback", "first_turn"]
+
+
+async def plan_for_answer(resources, prepared: Prepared) -> QueryPlan:
+    """The query planner seam (ARA-077 replaces it): search with the question as asked."""
+    return QueryPlan(
+        standalone_question=prepared.question,
+        search_queries=[prepared.question],
+        needs_paper_evidence=True,
+        source="fallback",
+    )
+
+
+async def leased(session, message_id) -> ChatMessage:
+    message = await session.scalar(
+        select(ChatMessage)
+        .where(ChatMessage.id == message_id, ChatMessage.state == "processing")
+        .with_for_update()
+    )
+    if message is None or message.lease_expires_at is None or message.lease_expires_at <= now():
+        raise LLMError("LEASE_LOST", "The answer was interrupted because its lease expired.")
+    return message
+
+
+async def save(
+    resources,
+    message_id,
+    content,
+    *,
+    state="processing",
+    citations=None,
+    usage=None,
+    grounding=None,
+):
+    async with resources.sessions() as session, session.begin():
+        message = await leased(session, message_id)
         message.content, message.state = content, state
-        message.lease_expires_at = now() + timedelta(seconds=60) if state == "processing" else None
+        message.lease_expires_at = now() + LEASE if state == "processing" else None
         if citations is not None:
             message.citations = [item.model_dump(mode="json") for item in citations]
         if usage is not None:
             message.usage = usage
+        if grounding is not None:
+            message.grounding = grounding
         await session.flush()
         return Message.model_validate(message).model_dump(mode="json")
 
 
-async def stream_answer(
-    resources, request, assistant, prompt, chunks, replay=False, *, inference_slot=None
-):
-    if replay:
+async def record_evidence(resources, message_id, evidence, usage) -> None:
+    """How the evidence was found, stored before any provider call."""
+    async with resources.sessions() as session, session.begin():
+        message = await leased(session, message_id)
+        message.retrieval = {**evidence.summary.model_dump(mode="json"), "trace": evidence.trace}
+        message.context = usage.model_dump(mode="json")
+        message.lease_expires_at = now() + LEASE
+
+
+def grounded(content: str, transducer: HandleTransducer, passages, document_id: UUID):
+    """Canonical content, its citations and grounding; unsupported citations fail."""
+    try:
+        if transducer.unknown:
+            raise ValueError("The answer cited a handle that was not supplied.")
+        content = normalize_source_markers(content)
+        citations = passage_citations(content, passages, document_id)
+    except ValueError:
+        raise LLMError(
+            "UNGROUNDED_OUTPUT", "The answer cited unavailable source evidence."
+        ) from None
+    if not citations and not transducer.insufficient:
+        raise LLMError("UNGROUNDED_OUTPUT", "The answer did not cite the supplied paper evidence.")
+    return content, citations, "insufficient" if transducer.insufficient else "supported"
+
+
+async def stream_answer(resources, request, prepared: Prepared, *, inference_slot=None):
+    assistant = prepared.assistant
+    if prepared.replay:
         yield event("message.started", {"message_id": str(assistant.id)})
         if assistant.state == "completed":
             yield event(
@@ -228,16 +332,50 @@ async def stream_answer(
             )
         return
     content, completed, client, task = "", False, None, None
+    evidence, transducer = None, None
     queue = asyncio.Queue(maxsize=32)
     last_checkpoint = asyncio.get_running_loop().time()
 
-    async def pump():
+    async def produce():
+        """Plan, retrieve and generate; the consumer turns stages and deltas into events."""
+        nonlocal client, evidence
         try:
+            await queue.put(("status", "planning"))
+            plan = await plan_for_answer(resources, prepared)
+            await queue.put(("status", "retrieving"))
+            evidence = await retrieve_evidence(
+                resources,
+                document_id=prepared.document_id,
+                chunk_set=prepared.chunk_set,
+                preferred_profile=prepared.retrieval_profile,
+                queries=plan.search_queries,
+                budget=prepared.evidence_budget,
+                counter=prepared.limits.counter,
+            )
+            if plan.standalone_question != prepared.question:
+                evidence.summary.standalone_query = plan.standalone_question
+            assembled = assemble_answer_prompt(
+                profile=prepared.limits,
+                paper=prepared.paper,
+                history=prepared.history,
+                memory_summary=None,
+                recalled=[],
+                evidence_block=evidence.block,
+                question=prepared.question,
+                retrieved_for=plan.standalone_question,
+            )
+            await record_evidence(resources, assistant.id, evidence, assembled.usage)
+            await queue.put(("evidence", HandleMap(evidence.passages)))
+            selection = await validate_model_available(
+                resources, assistant.model, assistant.reasoning_effort
+            )
+            client = create_llm(resources, assistant.model, selection=selection)
+            await queue.put(("status", "generating"))
             async with (
                 nullcontext() if inference_slot else generation_slots(resources, assistant.model)
             ):
-                async for delta in client.stream(
-                    assistant.model, assistant.reasoning_effort, INSTRUCTIONS, prompt
+                async for delta in client.stream_messages(
+                    assistant.model, assistant.reasoning_effort, assembled.messages
                 ):
                     await queue.put(("delta", delta))
             await queue.put(("done", None))
@@ -246,11 +384,7 @@ async def stream_answer(
 
     try:
         yield event("message.started", {"message_id": str(assistant.id)})
-        selection = await validate_model_available(
-            resources, assistant.model, assistant.reasoning_effort
-        )
-        client = create_llm(resources, assistant.model, selection=selection)
-        task = asyncio.create_task(pump())
+        task = asyncio.create_task(produce())
         while True:
             if await request.is_disconnected():
                 return
@@ -265,25 +399,27 @@ async def stream_answer(
                 raise value
             if kind == "done":
                 break
-            content += value
+            if kind == "status":
+                yield event("message.status", {"message_id": str(assistant.id), "stage": value})
+                continue
+            if kind == "evidence":
+                transducer = HandleTransducer(value)
+                continue
+            text = transducer.feed(value)
+            if not text:
+                continue
+            content += text
             # Bound database writes while the final/disconnect paths always flush partial text.
             if asyncio.get_running_loop().time() - last_checkpoint >= 1:
                 await save(resources, assistant.id, content)
                 last_checkpoint = asyncio.get_running_loop().time()
-            yield event("message.delta", {"text": value})
-        try:
-            content = normalize_source_markers(content)
-            citations = validate_citations(
-                content, chunks, chunks[0].document_id if chunks else UUID(int=0)
-            )
-        except ValueError:
-            raise LLMError(
-                "UNGROUNDED_OUTPUT", "The answer cited unavailable source evidence."
-            ) from None
-        if not citations and "insufficient" not in content.lower():
-            raise LLMError(
-                "UNGROUNDED_OUTPUT", "The answer did not cite the supplied paper evidence."
-            )
+            yield event("message.delta", {"text": text})
+        if tail := transducer.flush():
+            content += tail
+            yield event("message.delta", {"text": tail})
+        content, citations, grounding = grounded(
+            content, transducer, evidence.passages, prepared.document_id
+        )
         final = await save(
             resources,
             assistant.id,
@@ -291,6 +427,7 @@ async def stream_answer(
             state="completed",
             citations=citations,
             usage=client.usage,
+            grounding=grounding,
         )
         completed = True
         yield event("message.completed", final)

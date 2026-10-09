@@ -17,13 +17,13 @@ from app.integrations.tokens import (
     count_messages,
     keep_tail,
 )
+from app.rag.citations import INSUFFICIENT
 from app.schemas.ai import ContextUsage
 
 MIN_EVIDENCE = 512
 # Percent of the tokens left after instructions and the question; evidence keeps the rest.
 SUMMARY_SHARE, RECENT_SHARE, RECALL_SHARE = 10, 25, 7
 INSTRUCTIONS_VERSION = "2"
-INSUFFICIENT = "[insufficient-evidence]"
 MAX_AUTHORS = 8
 SUMMARY_PREFIX = "Summary of the earlier conversation (context only):\n"
 RECALL_PREFIX = "Earlier exchanges that may be relevant (context only):"

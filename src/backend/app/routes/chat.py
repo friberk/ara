@@ -154,7 +154,7 @@ async def answer(chat_id: UUID, body: ChatInput, request: Request):
             if replay_id is None:
                 # Admission happens before returning HTTP headers; busy is actionable 429.
                 await slots.enter_async_context(generation_slots(resources, body.model))
-        assistant, prompt, chunks, replay = await prepare(resources, chat_id, body)
+        prepared = await prepare(resources, chat_id, body)
     except LLMError as exc:
         await slots.aclose()
         raise AppError(exc.status, exc.code, exc.message) from None
@@ -165,11 +165,8 @@ async def answer(chat_id: UUID, body: ChatInput, request: Request):
         stream_answer(
             resources,
             request,
-            assistant,
-            prompt,
-            chunks,
-            replay,
-            inference_slot=slots if local_spec(body.model) and not replay else None,
+            prepared,
+            inference_slot=slots if local_spec(body.model) and not prepared.replay else None,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
