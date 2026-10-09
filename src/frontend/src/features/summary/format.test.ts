@@ -6,6 +6,8 @@ test('Given each reasoning effort, Then the label reads as a phrase', () => {
   expect(effortText('low')).toBe('Low reasoning')
   expect(effortText('xhigh')).toBe('Extra high reasoning')
   expect(effortText('custom')).toBe('custom reasoning')
+  expect(effortText('default')).toBe('Runtime preset')
+  expect(effortText('on')).toBe('Reasoning enabled')
 })
 
 test('Given an unreadable timestamp, Then it is shown as stored instead of "Invalid Date"', () => {

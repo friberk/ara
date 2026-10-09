@@ -22,6 +22,8 @@ test('Given saved local Low reasoning and pending readiness, When verified capab
   expect(choice).toBeChecked()
   expect(choice).toBeDisabled()
   expect(save).toBeDisabled()
+  expect(screen.queryByRole('radiogroup', { name: 'Reasoning effort' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Reasoning' })).not.toBeInTheDocument()
   local = { ...local, status: 'available', unavailable_code: null, unavailable_reason: null, reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], installation: { ...local.installation!, state: 'ready', operation: null, job_id: null } }
   await client.invalidateQueries({ queryKey: queryKeys.models })
   await waitFor(() => expect(screen.getByRole('radio', { name: 'Low' })).toHaveAttribute('aria-checked', 'true'))
@@ -71,14 +73,61 @@ test('Given the appearance setting, When Dark is chosen, Then the dark theme app
 })
 
 
-test('Given local boolean and named thinking controls, When saved in Settings, Then the exact selection persists', async () => {
-  const local = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'] }
-  const { calls } = mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' }, 'PUT /settings': { default_model: local.key, reasoning_effort: 'on' } })
+test('Given verified local named controls, When High is saved, Then Settings offers only explicit levels and sends high', async () => {
+  const local = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } }
+  const { calls } = mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'low' }, 'PUT /settings': { default_model: local.key, reasoning_effort: 'high' } })
   const { user } = renderApp('/settings')
   const effort = await screen.findByRole('radiogroup', { name: 'Reasoning effort' })
-  await waitFor(() => expect(within(effort).getAllByRole('radio').map((item) => item.textContent)).toEqual(['Model default', 'None', 'On', 'Low', 'Medium', 'High']))
-  await user.click(within(effort).getByRole('radio', { name: 'On' }))
+  await waitFor(() => expect(within(effort).getAllByRole('radio').map((item) => item.textContent)).toEqual(['None', 'Low', 'Medium', 'High']))
+  await user.click(within(effort).getByRole('radio', { name: 'High' }))
   await user.click(screen.getByRole('button', { name: 'Save defaults' }))
-  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: local.key, reasoning_effort: 'on' }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: local.key, reasoning_effort: 'high' }))
   expect(await screen.findByText('Model defaults saved.')).toBeVisible()
+})
+
+test.each(['default', 'on'])('Given saved %s aliases High, Then Settings checks High without a dirty form or automatic save', async (reasoning) => {
+  const local = { ...luna, key: 'native-named', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } }
+  const { calls } = mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning } })
+  renderApp('/settings')
+  const high = await screen.findByRole('radio', { name: 'High' })
+  expect(high).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled()
+  expect(screen.queryByRole('radio', { name: 'Model default' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('radio', { name: 'On' })).not.toBeInTheDocument()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+})
+
+test('Given verified boolean-only reasoning, When toggled off, Then Settings saves none without invented effort levels', async () => {
+  const local = { ...luna, key: 'native-boolean', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on'], reasoning_aliases: { default: 'on' } }
+  const { calls } = mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' }, 'PUT /settings': { default_model: local.key, reasoning_effort: 'none' } })
+  const { user } = renderApp('/settings')
+  const toggle = await screen.findByRole('button', { name: 'Reasoning' })
+  expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('radiogroup', { name: 'Reasoning effort' })).not.toBeInTheDocument()
+  await user.click(toggle)
+  expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await user.click(screen.getByRole('button', { name: 'Save defaults' }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: local.key, reasoning_effort: 'none' }))
+})
+
+test('Given unknown default semantics, Then Settings describes model-controlled reasoning rather than inventing a toggle', async () => {
+  const local = { ...luna, key: 'native-unknown', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on'], reasoning_aliases: { default: 'unverified' } }
+  mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' } })
+  renderApp('/settings')
+  expect(await screen.findByText('Reasoning is controlled by this model.')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Reasoning' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('radiogroup', { name: 'Reasoning effort' })).not.toBeInTheDocument()
+})
+
+test('Given hosted Max switches to native High, When the native preset changes, Then the unsaved explicit High choice is preserved', async () => {
+  const hosted = { ...luna, reasoning_efforts: ['low', 'max'] }
+  let local = { ...luna, key: 'native', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'high'], reasoning_aliases: { default: 'high', on: 'high' }, display_name: 'Native model' }
+  mockApi({ 'GET /models': () => json({ items: [hosted, local] }), 'GET /settings': { default_model: hosted.key, reasoning_effort: 'max' } })
+  const { client, user } = renderApp('/settings')
+  await user.click(await screen.findByRole('radio', { name: 'Native model' }))
+  expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('aria-checked', 'true')
+  local = { ...local, reasoning_aliases: { default: 'low', on: 'low' }, display_name: 'Updated native model' }
+  await client.invalidateQueries({ queryKey: queryKeys.models })
+  await screen.findByRole('radio', { name: 'Updated native model' })
+  expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('aria-checked', 'true')
 })

@@ -13,15 +13,53 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 function Selection() { const { settings } = useGenerationSettings(); return <output aria-label="Selection">{`${settings.model}/${settings.reasoning_effort}`}</output> }
 // Submenus are driven by keyboard: jsdom pointer events do not follow Radix's submenu pointer grace.
 async function chooseEffort(user: ReturnType<typeof renderWithProviders>['user'], label: string) {
-  screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus()
+  act(() => screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus())
   await user.keyboard('{ArrowRight}')
   const option = await screen.findByRole('menuitemradio', { name: label })
-  option.focus()
+  act(() => option.focus())
   await user.keyboard('{Enter}')
 }
 function mount() {
   return renderWithProviders(<TooltipProvider><GenerationSettingsProvider><ModelSwitcher purpose="chat" /><Selection /></GenerationSettingsProvider></TooltipProvider>)
 }
+
+test.each(['default', 'on'])('Given saved %s aliases High, Then the composer shows four explicit choices and retains default status', async (reasoning) => {
+  const local = { ...luna, key: 'native-named', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } }
+  const { calls } = mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
+  expect(screen.getByRole('menuitem', { name: 'Default model' })).toHaveAttribute('aria-disabled', 'true')
+  act(() => screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus())
+  await user.keyboard('{ArrowRight}')
+  const high = await screen.findByRole('menuitemradio', { name: 'High' })
+  const menu = high.closest('[role="menu"]') as HTMLElement
+  expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['None', 'Low', 'Medium', 'High'])
+  expect(high).toHaveAttribute('aria-checked', 'true')
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+})
+
+test('Given verified boolean-only reasoning, When toggled in the composer, Then none and on remain the exact native request values', async () => {
+  const local = { ...luna, key: 'native-boolean', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on'], reasoning_aliases: { default: 'none' } }
+  mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model:/ }))
+  const toggle = await screen.findByRole('menuitemcheckbox', { name: 'Reasoning' })
+  expect(toggle).toHaveAttribute('aria-checked', 'false')
+  expect(screen.queryByRole('menuitem', { name: /Reasoning effort/ })).not.toBeInTheDocument()
+  await user.click(toggle)
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('native-boolean/on')
+})
+
+test('Given unavailable named reasoning metadata, Then the composer preserves its choice and cannot modify reasoning', async () => {
+  const local = { ...luna, key: 'native-pending', provider: 'ollama', status: 'unavailable', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: 'Preparing model automatically.' }
+  mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'low' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model:/ }))
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('native-pending/low')
+  expect(screen.queryByRole('menuitem', { name: /Reasoning effort/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('menuitemcheckbox', { name: 'Reasoning' })).not.toBeInTheDocument()
+  expect(screen.getByRole('menuitemradio', { name: /GPT-5.6 Luna/ })).toHaveAttribute('aria-disabled', 'true')
+})
 
 const localMissing = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'], unavailable_reason: 'Download weights in Settings to use this model.', unavailable_code: 'MODEL_WEIGHTS_MISSING', installation: { state: 'missing', weights_present: false, quantization: 'Q4_K_M', download_bytes: 5592218900, completed_bytes: 0, total_bytes: 5592218900, job_id: null, digest: null, updated_at: null, error: null } }
 
@@ -128,14 +166,14 @@ test('Given saving the default fails, Then the menu stays open and explains the 
 })
 
 
-test('Given a verified local thinking model, When choosing On or a named level, Then exact native selection IDs are kept', async () => {
-  const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high', 'research'], unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
+test('Given a verified local thinking model, When choosing explicit levels, Then aliases stay out of its menu and named IDs are kept', async () => {
+  const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high', 'research'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
   mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' } })
   const { user } = mount()
-  await user.click(await screen.findByRole('button', { name: 'Model: K2 Horizon 7B, Model default reasoning' }))
-  await chooseEffort(user, 'On')
-  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/on')
-  await user.click(screen.getByRole('button', { name: 'Model: K2 Horizon 7B, On reasoning' }))
+  await user.click(await screen.findByRole('button', { name: 'Model: K2 Horizon 7B, High reasoning' }))
+  await chooseEffort(user, 'Low')
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/low')
+  await user.click(screen.getByRole('button', { name: 'Model: K2 Horizon 7B, Low reasoning' }))
   await chooseEffort(user, 'research')
   expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/research')
 })
@@ -143,7 +181,7 @@ test('Given a verified local thinking model, When choosing On or a named level, 
 
 test('Given local and hosted models, When switching between them, Then their reasoning options remain separate', async () => {
   const hosted = { ...luna, reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }
-  const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
+  const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
   mockApi({ 'GET /models': { items: [hosted, local] }, 'GET /settings': { default_model: hosted.key, reasoning_effort: 'xhigh' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: 'Model: GPT-5.6 Luna, Extra high reasoning' }))
@@ -151,11 +189,13 @@ test('Given local and hosted models, When switching between them, Then their rea
   expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/max')
   await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, Max reasoning' }))
   await user.click(screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ }))
-  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/default')
-  await user.click(screen.getByRole('button', { name: 'Model: K2 Horizon 7B, Model default reasoning' }))
-  screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus()
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/high')
+  await user.click(screen.getByRole('button', { name: 'Model: K2 Horizon 7B, High reasoning' }))
+  act(() => screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus())
   await user.keyboard('{ArrowRight}')
-  expect(await screen.findByRole('menuitemradio', { name: 'On' })).toBeVisible()
+  const high = await screen.findByRole('menuitemradio', { name: 'High' })
+  expect(high).toBeVisible()
+  expect(within(high.closest('[role="menu"]') as HTMLElement).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['None', 'Low', 'Medium', 'High'])
   expect(screen.queryByRole('menuitemradio', { name: 'Extra high' })).not.toBeInTheDocument()
   expect(screen.queryByRole('menuitemradio', { name: 'Max' })).not.toBeInTheDocument()
 })
