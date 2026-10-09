@@ -216,6 +216,7 @@ async def test_given_racing_duplicate_jobs_when_both_generate_then_one_summary_v
         "chat_id": str(chat_id),
         "through_message_id": str(added[0].answer),
         "model": "gpt-5.6-luna",
+        "effort": "none",
     }
     claims = []
     for _ in range(2):
@@ -264,6 +265,7 @@ async def test_given_covered_range_when_stale_job_runs_then_it_skips_without_a_c
         "chat_id": str(chat_id),
         "through_message_id": str(added[1].answer),
         "model": "gpt-5.6-luna",
+        "effort": "none",
     }
     earlier = {**later, "through_message_id": str(added[0].answer)}
     async with resources.sessions() as session, session.begin():
