@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import weakref
 from pathlib import Path
 from uuid import UUID
 
@@ -11,55 +12,87 @@ from sqlalchemy import delete, select, update
 
 from app.integrations.academic import normalized_doi
 from app.integrations.storage import read_object
+from app.jobs.pdf_parser import THREAD_TUNING
 from app.models.jobs import BackgroundJob
 from app.models.research import Document, DocumentChunk, DocumentPage, Paper
 from app.repositories.jobs import fence, now, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
 from app.services.uploads import MAX_UPLOAD_BYTES
 
+# One parse child per event loop: the 2 GiB worker cannot hold two layout models.
+_parse_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def parser_environment() -> dict[str, str]:
+    # The parser gets no hosted keys or storage/database credentials.
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in {"PATH", "LANG", "LC_ALL", "PYTHONPATH"}
+    }
+    # MALLOC_ARENA_MAX only takes effect when set before the child starts.
+    environment.update(THREAD_TUNING)
+    if os.environ.get("APP_ENV") == "test" and "ARA_PARSER_FORCE_LAYOUT_ERROR" in os.environ:
+        environment["APP_ENV"] = "test"
+        environment["ARA_PARSER_FORCE_LAYOUT_ERROR"] = os.environ["ARA_PARSER_FORCE_LAYOUT_ERROR"]
+    return environment
+
+
+def read_parsed(output: Path) -> dict | None:
+    return json.loads(output.read_text(encoding="utf-8")) if output.exists() else None
+
+
+async def run_parser(source: Path, output: Path, deadline_seconds: float, legacy: bool):
+    """Return the child's JSON, a timeout error, or None when the child did not finish."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "app.jobs.pdf_parser",
+        str(source),
+        str(output),
+        *(["--legacy"] if legacy else []),
+        env=parser_environment(),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        await asyncio.wait_for(process.wait(), deadline_seconds)
+    except (TimeoutError, asyncio.CancelledError):
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        if asyncio.current_task().cancelling():
+            raise
+        return {
+            "error": {
+                "code": "PDF_PARSE_TIMEOUT",
+                "message": "PDF extraction exceeded the 120-second limit.",
+            }
+        }
+    if process.returncode != 0:
+        return None
+    return await asyncio.to_thread(read_parsed, output)
+
 
 async def parse_in_child(data: bytes, deadline_seconds: float = 120) -> dict:
-    with tempfile.TemporaryDirectory(prefix="ara-pdf-") as temporary:
-        source, output = Path(temporary) / "original.pdf", Path(temporary) / "parsed.json"
-        await asyncio.to_thread(source.write_bytes, data)
-        # The parser gets no hosted keys or storage/database credentials.
-        environment = {
-            key: value
-            for key, value in os.environ.items()
-            if key in {"PATH", "LANG", "LC_ALL", "PYTHONPATH"}
-        }
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "app.jobs.pdf_parser",
-            str(source),
-            str(output),
-            env=environment,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        try:
-            await asyncio.wait_for(process.wait(), deadline_seconds)
-        except (TimeoutError, asyncio.CancelledError):
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            if asyncio.current_task().cancelling():
-                raise
-            return {
-                "error": {
-                    "code": "PDF_PARSE_TIMEOUT",
-                    "message": "PDF extraction exceeded the 120-second limit.",
+    slot = _parse_slots.setdefault(asyncio.get_running_loop(), asyncio.Lock())
+    async with slot:
+        with tempfile.TemporaryDirectory(prefix="ara-pdf-") as temporary:
+            directory = Path(temporary)
+            source = directory / "original.pdf"
+            await asyncio.to_thread(source.write_bytes, data)
+            parsed = await run_parser(source, directory / "layout.json", deadline_seconds, False)
+            if parsed is None:
+                # A crashed layout pass gets one fresh child without the layout model.
+                parsed = await run_parser(source, directory / "legacy.json", deadline_seconds, True)
+            if parsed is None:
+                return {
+                    "error": {
+                        "code": "PDF_PARSE_FAILED",
+                        "message": "The isolated PDF parser could not finish.",
+                    }
                 }
-            }
-        if process.returncode != 0 or not output.exists():
-            return {
-                "error": {
-                    "code": "PDF_PARSE_FAILED",
-                    "message": "The isolated PDF parser could not finish.",
-                }
-            }
-        return json.loads(await asyncio.to_thread(output.read_text, encoding="utf-8"))
+            return parsed
 
 
 async def finish_failure(
@@ -246,7 +279,14 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         ordinal = 0
         for page in parsed["pages"]:
-            session.add(DocumentPage(document_id=document_id, **page))
+            session.add(
+                DocumentPage(
+                    document_id=document_id,
+                    page=page["page"],
+                    text=page["text"],
+                    printed_label=page["printed_label"],
+                )
+            )
             text = page["text"]
             for start in range(0, len(text), 2720):
                 passage = text[start : start + 3200]
