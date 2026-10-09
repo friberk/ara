@@ -8,7 +8,7 @@ recent turns, and a completed turn queues memory upkeep (ARA-077).
 
 import asyncio
 import json
-from contextlib import nullcontext, suppress
+from contextlib import AsyncExitStack, nullcontext, suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -27,6 +27,7 @@ from app.integrations.llm import (
     thinking_controls,
     validate_model_available,
 )
+from app.integrations.model_catalog import local_spec
 from app.models.research import (
     ChatMessage,
     ChatSession,
@@ -44,6 +45,7 @@ from app.rag.citations import (
 from app.rag.indexing import effective_profile
 from app.rag.pipeline import evidence_ceiling, retrieve_evidence
 from app.repositories.jobs import now
+from app.repositories.local_models import use_held
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
 from app.services import memory
@@ -57,6 +59,10 @@ from app.services.context import (
 from app.services.memory import AnswerMemory, QueryPlan
 
 LEASE = timedelta(seconds=60)
+# Background local work (a conversation or paper summary) may hold the local runtime; a
+# question waits this long for it, polling the slot's lease, then fails busy as before.
+LOCAL_ADMISSION_WAIT_SECONDS = 60
+ADMISSION_POLL_SECONDS = 1
 
 
 # Clause punctuation only: closing brackets, quotes and percent signs carry meaning.
@@ -364,7 +370,51 @@ def grounded(content: str, transducer: HandleTransducer, passages, document_id: 
     return content, citations, "insufficient" if transducer.insufficient else "supported"
 
 
-async def stream_answer(resources, request, prepared: Prepared, *, inference_slot=None):
+async def held_by_background(resources) -> bool:
+    """Whether background work, not another local answer, holds the local generation slot."""
+    async with resources.sessions() as session:
+        answering = await session.scalars(
+            select(ChatMessage.model).where(
+                ChatMessage.role == "assistant",
+                ChatMessage.state == "processing",
+                ChatMessage.lease_expires_at > func.now(),
+            )
+        )
+        if any(local_spec(model or "") for model in answering):
+            return False
+    return await use_held(resources.sessions)
+
+
+async def admit_after_wait(resources, model: str, slots: AsyncExitStack, on_wait) -> None:
+    """Enter the local generation slot into `slots`, waiting out background work.
+
+    `on_wait` runs once, before the first wait. A wait that expires raises the busy error.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + LOCAL_ADMISSION_WAIT_SECONDS
+    waiting = False
+    while True:
+        try:
+            await slots.enter_async_context(generation_slots(resources, model))
+            return
+        except LLMError as exc:
+            if exc.code != "LOCAL_MODEL_BUSY" or loop.time() >= deadline:
+                raise
+        if not waiting:
+            waiting = True
+            await on_wait()
+        # Admission checks the runtime too; only a free lease is worth another attempt.
+        while loop.time() < deadline:
+            await asyncio.sleep(ADMISSION_POLL_SECONDS)
+            if not await use_held(resources.sessions):
+                break
+
+
+async def stream_answer(
+    resources, request, prepared: Prepared, *, inference_slot=None, wait_for_slot=False
+):
+    """`wait_for_slot`: background work held the local slot at admission; take it into
+    `inference_slot` before planning, telling the reader it is waiting."""
     assistant = prepared.assistant
     if prepared.replay:
         yield event("message.started", {"message_id": str(assistant.id)})
@@ -394,6 +444,13 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
         """Plan, retrieve and generate; the consumer turns stages and deltas into events."""
         nonlocal client, evidence
         try:
+            if wait_for_slot:
+                await admit_after_wait(
+                    resources,
+                    assistant.model,
+                    inference_slot,
+                    lambda: queue.put(("status", "waiting")),
+                )
             await queue.put(("status", "planning"))
             remembered = await memory.answer_memory(
                 resources, assistant.session_id, prepared.history
@@ -450,6 +507,11 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
             try:
                 kind, value = await asyncio.wait_for(queue.get(), timeout=10)
             except TimeoutError:
+                if task.done():
+                    # Only a lost runtime lease cancels the producer before it reports.
+                    raise LLMError(
+                        "LOCAL_MODEL_LEASE_LOST", "Local generation lost its runtime lease.", 409
+                    ) from None
                 await save(resources, assistant.id, content)
                 last_checkpoint = asyncio.get_running_loop().time()
                 yield ": heartbeat\n\n"

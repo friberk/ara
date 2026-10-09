@@ -246,6 +246,15 @@ async def acquire_use(
         return token
 
 
+async def use_held(sessions, slot: str = "inference") -> bool:
+    """A cheap look at the slot's lease, without admission's runtime checks."""
+    async with sessions() as session:
+        held = await session.scalar(
+            select(ModelUse.token).where(ModelUse.slot == slot, ModelUse.expires_at > func.now())
+        )
+        return held is not None
+
+
 async def heartbeat_use(sessions, token: UUID, lease_seconds: int = 60) -> bool:
     async with sessions() as session, session.begin():
         return (
