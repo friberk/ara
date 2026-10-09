@@ -23,8 +23,7 @@ async def ready_models(resources, *keys):
     def runtime(request):
         if request.url.path == "/api/tags":
             models = [
-                {"name": spec.model_id, "digest": spec.expected_digest, "size": 1}
-                for spec in specs
+                {"name": spec.model_id, "digest": spec.expected_digest, "size": 1} for spec in specs
             ]
             return httpx.Response(200, json={"models": models})
         if request.url.path == "/api/version":

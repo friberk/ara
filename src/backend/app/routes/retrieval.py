@@ -1,18 +1,31 @@
-"""Retrieval controls and conversation memory. Stubs until ARA-072 and ARA-077 implement them."""
+"""Retrieval controls (ARA-072). Conversation memory is a stub until ARA-077 implements it."""
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
+from app.integrations.embedding_catalog import PROFILES, embedding_profile
+from app.integrations.llm import configured
+from app.integrations.model_catalog import local_spec
+from app.models.local_models import ModelInstallation
+from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
+from app.models.retrieval import DocumentSection, RetrievalIndex
+from app.rag.indexing import REBUILD, default_profile, effective_profile, ensure_index
+from app.schemas.jobs import JobError
 from app.schemas.retrieval import (
     ChatMemoryState,
+    EmbeddingProfileOut,
     EmbeddingProfilePage,
     PaperRetrieval,
     PaperRetrievalUpdate,
     RebuildInput,
+    RetrievalIndexOut,
     RetrievalSettings,
 )
+from app.services.local_models import model_dto
 
 router = APIRouter(prefix="/api/v1", tags=["retrieval"])
 
@@ -21,34 +34,251 @@ def not_ready() -> AppError:
     return AppError(501, "NOT_IMPLEMENTED", "Retrieval controls are not available yet.")
 
 
+async def profile_status(session, settings, profile) -> tuple[str, str | None]:
+    if profile.provider == "openai":
+        if configured(settings):
+            return "available", None
+        return "unavailable", "Add an OpenAI API key on the server."
+    download = f"Download {profile.display_name} in Settings."
+    spec = local_spec(profile.local_model_key)
+    if spec is None:
+        return "unavailable", download
+    row = await session.get(ModelInstallation, spec.key)
+    model = model_dto(spec, row, context_window=settings.ollama_context_window)
+    if model.status == "available":
+        return "available", None
+    if row is None or row.state == "missing":
+        return "unavailable", download
+    return "unavailable", model.unavailable_reason
+
+
 @router.get("/retrieval/profiles", response_model=EmbeddingProfilePage)
-async def profiles():
-    raise not_ready()
+async def profiles(request: Request):
+    resources = request.app.state.resources
+    async with resources.sessions() as session:
+        items = []
+        for profile in PROFILES.values():
+            status, reason = await profile_status(session, resources.settings, profile)
+            items.append(
+                EmbeddingProfileOut(
+                    key=profile.key,
+                    provider=profile.provider,
+                    model_id=profile.model_id,
+                    display_name=profile.display_name,
+                    dimensions=profile.dimensions,
+                    status=status,
+                    unavailable_reason=reason,
+                    local_model_key=profile.local_model_key,
+                )
+            )
+        return EmbeddingProfilePage(items=items, default_profile=await default_profile(session))
 
 
 @router.get("/retrieval/settings", response_model=RetrievalSettings)
-async def retrieval_settings():
-    raise not_ready()
+async def retrieval_settings(request: Request):
+    async with request.app.state.resources.sessions() as session:
+        row = await session.get(ModelConfiguration, "retrieval")
+        return RetrievalSettings.model_validate(row.value) if row else RetrievalSettings()
 
 
 @router.put("/retrieval/settings", response_model=RetrievalSettings)
-async def update_retrieval_settings(body: RetrievalSettings):
-    raise not_ready()
+async def update_retrieval_settings(body: RetrievalSettings, request: Request):
+    # Availability is not required: a default can be chosen before its model is installed.
+    # reranker_enabled is stored only; reranking is deferred (ARA-074).
+    embedding_profile(body.embedding_profile)
+    async with request.app.state.resources.sessions() as session, session.begin():
+        await session.execute(
+            insert(ModelConfiguration)
+            .values(key="retrieval", value=body.model_dump())
+            .on_conflict_do_update(index_elements=["key"], set_={"value": body.model_dump()})
+        )
+    return body
+
+
+def percent(index: RetrievalIndex) -> int:
+    return index.embedded * 100 // index.total if index.total else 0
+
+
+def index_out(index: RetrievalIndex) -> RetrievalIndexOut:
+    return RetrievalIndexOut(
+        profile=index.profile,
+        state=index.state,
+        embedded=index.embedded,
+        total=index.total,
+        updated_at=index.updated_at,
+        error=JobError(code=index.error_code, message=index.error_message or "Indexing failed.")
+        if index.error_code
+        else None,
+    )
+
+
+def unready_note(index: RetrievalIndex | None) -> str:
+    if index is None:
+        return "Search index has not been built yet."
+    if index.state == "unavailable":
+        return f"Search index unavailable: {index.error_message}"
+    if index.state == "failed":
+        return f"Search index could not be built: {index.error_message}"
+    return f"Search index is building ({percent(index)}%)."
+
+
+async def paper_retrieval(session, paper_id: UUID) -> PaperRetrieval:
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+    profile, source = await effective_profile(session, paper)
+    document = (
+        await session.get(Document, paper.active_document_id) if paper.active_document_id else None
+    )
+    result = PaperRetrieval(
+        paper_id=paper.id,
+        document_id=document.id if document else None,
+        effective_profile=profile,
+        source=source,
+        parser=document.parser if document else None,
+        chunk_count=0,
+        section_count=0,
+        mode="unavailable",
+        mode_note="Upload and process a PDF to search this paper.",
+        indexes=[],
+    )
+    if document is not None and document.status in {"uploading", "processing"}:
+        result.mode_note = "The PDF is still being processed."
+    elif document is not None and document.status == "failed":
+        result.mode_note = "The PDF could not be processed, so it cannot be searched."
+    if document is None or document.status != "ready" or document.chunk_set is None:
+        return result
+    chunk_set = document.chunk_set
+    for model, field in ((DocumentChunk, "chunk_count"), (DocumentSection, "section_count")):
+        count = await session.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.document_id == document.id, model.chunk_set == chunk_set)
+        )
+        setattr(result, field, count)
+    rows = (
+        await session.scalars(
+            select(RetrievalIndex)
+            .where(
+                RetrievalIndex.document_id == document.id,
+                RetrievalIndex.chunk_set.in_([chunk_set, chunk_set + REBUILD]),
+            )
+            .order_by(RetrievalIndex.created_at)
+        )
+    ).all()
+    serving = {row.profile: row for row in rows if row.chunk_set == chunk_set}
+    rebuilding = {row.profile: row for row in rows if row.chunk_set != chunk_set}
+    # One entry per profile: an unfinished rebuild reports its own progress.
+    shown = {**serving, **rebuilding}
+    result.indexes = [index_out(index) for index in shown.values()]
+    ready = sorted(
+        (row for row in serving.values() if row.state == "ready"),
+        key=lambda row: (row.profile == profile, row.updated_at),
+        reverse=True,
+    )
+    wanted = shown.get(profile)
+    if not ready:
+        result.mode, result.mode_note = "keyword", unready_note(wanted)
+        return result
+    result.mode, result.mode_note = "hybrid", None
+    if ready[0].profile != profile:
+        result.mode_note = (
+            f"Searching with {PROFILES[ready[0].profile].display_name} until "
+            f"{PROFILES[profile].display_name} is ready ({percent(wanted) if wanted else 0}%)."
+        )
+    elif profile in rebuilding:
+        rebuild = rebuilding[profile]
+        result.mode_note = (
+            f"Rebuild failed: {rebuild.error_message} The current index keeps serving."
+            if rebuild.state in {"failed", "unavailable"}
+            else f"Rebuilding the search index ({percent(rebuild)}%). "
+            "The current index keeps serving."
+        )
+    return result
 
 
 @router.get("/papers/{paper_id}/retrieval", response_model=PaperRetrieval)
-async def paper_retrieval(paper_id: UUID):
-    raise not_ready()
+async def read_paper_retrieval(paper_id: UUID, request: Request):
+    async with request.app.state.resources.sessions() as session:
+        return await paper_retrieval(session, paper_id)
+
+
+async def replayed(session, request_id: UUID, intent: dict) -> PaperRetrieval | None:
+    """Claim a request UUID; a concurrent duplicate waits for the first to commit."""
+    key = f"retrieval_request:{request_id}"
+    claimed = await session.scalar(
+        insert(ModelConfiguration)
+        .values(key=key, value=intent)
+        .on_conflict_do_nothing()
+        .returning(ModelConfiguration.key)
+    )
+    if claimed is not None:
+        return None
+    previous = await session.get(ModelConfiguration, key)
+    stored = {name: value for name, value in previous.value.items() if name != "response"}
+    if stored != intent or "response" not in previous.value:
+        raise AppError(
+            409,
+            "RETRIEVAL_REQUEST_CONFLICT",
+            "This request UUID was already used for a different search index change.",
+        )
+    return PaperRetrieval.model_validate(previous.value["response"])
+
+
+async def remember(session, request_id: UUID, intent: dict, response: PaperRetrieval) -> None:
+    row = await session.get(ModelConfiguration, f"retrieval_request:{request_id}")
+    row.value = {**intent, "response": response.model_dump(mode="json")}
+
+
+async def indexable_document(session, paper: Paper) -> Document | None:
+    document = (
+        await session.get(Document, paper.active_document_id) if paper.active_document_id else None
+    )
+    if document is None or document.status != "ready" or document.chunk_set is None:
+        return None
+    return document
 
 
 @router.put("/papers/{paper_id}/retrieval", response_model=PaperRetrieval)
-async def update_paper_retrieval(paper_id: UUID, body: PaperRetrievalUpdate):
-    raise not_ready()
+async def update_paper_retrieval(paper_id: UUID, body: PaperRetrievalUpdate, request: Request):
+    if body.profile is not None:
+        embedding_profile(body.profile)
+    intent = {"paper_id": str(paper_id), "action": "profile", "profile": body.profile}
+    async with request.app.state.resources.sessions() as session, session.begin():
+        paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
+        if paper is None:
+            raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+        if previous := await replayed(session, body.request_id, intent):
+            return previous
+        paper.retrieval_profile = body.profile
+        document = await indexable_document(session, paper)
+        if document is not None:
+            profile, _ = await effective_profile(session, paper)
+            await ensure_index(session, document.id, profile)
+        response = await paper_retrieval(session, paper_id)
+        await remember(session, body.request_id, intent, response)
+        return response
 
 
 @router.post("/papers/{paper_id}/retrieval/rebuild", response_model=PaperRetrieval, status_code=202)
-async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput):
-    raise not_ready()
+async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput, request: Request):
+    intent = {"paper_id": str(paper_id), "action": "rebuild"}
+    async with request.app.state.resources.sessions() as session, session.begin():
+        paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
+        if paper is None:
+            raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+        if previous := await replayed(session, body.request_id, intent):
+            return previous
+        document = await indexable_document(session, paper)
+        if document is None:
+            raise AppError(
+                409, "DOCUMENT_NOT_INDEXABLE", "Upload and process a PDF before rebuilding."
+            )
+        profile, _ = await effective_profile(session, paper)
+        await ensure_index(session, document.id, profile, rebuild=True)
+        response = await paper_retrieval(session, paper_id)
+        await remember(session, body.request_id, intent, response)
+        return response
 
 
 @router.get("/chats/{chat_id}/memory", response_model=ChatMemoryState)
