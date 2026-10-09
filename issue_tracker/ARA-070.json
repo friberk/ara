@@ -17,7 +17,7 @@
   "test_cases": [
     "Migration upgrade/downgrade on real Postgres; compose config assertions; volume-compatibility evidence from the Phase 0 spike; fixture server routes for OpenAI embeddings and Ollama embed/rerank."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "compose.yaml",
     "compose.test.yaml",
@@ -29,8 +29,20 @@
     "tests/fixtures/server.py",
     "tests/fixtures/ollama_fixture.py"
   ],
-  "commits": [],
+  "commits": [
+    "175208e",
+    "5089d79",
+    "ff1008c",
+    "ccbaae5",
+    "7f97323",
+    "6aab634",
+    "d260efd",
+    "d4552c9",
+    "570b9f2",
+    "4583e78",
+    "2fd8f0d"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "TDD per task, red then green:\n- Test-stack project names: 3 failed / 1 passed before the change.\n- Fixtures: 3 failed, 6 errors.\n- Contracts: 4 failed, then the reranker-status contract failed 1.\n- pgvector compose: 2 failed.\n- Ollama residency: failed with '1' != '3'.\n- Budget passthrough: None != '2048'.\n- Dependencies: 2 failed.\n- Schema: 63 failed / 357 passed on the first full run. Old chunk fields in test helpers, document-before-paper flush order and the migration head pin were corrected; the rerun passed 420.\nWave 2 merged suite: 601 passed with Ruff clean. Frontend: 409 tests passed and the build succeeded. pgvector 0.8.7-pg17 on an existing 17.9 volume was verified in Phase 0 S2.",
   "updated_at": "2026-10-09"
 }
