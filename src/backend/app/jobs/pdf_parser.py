@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 # Without these the layout model's import hangs under the address-space limit (ARA-071 S2).
@@ -19,6 +20,31 @@ CPU_SECONDS_LIMIT = 150
 # C0 controls other than tab, newline and carriage return, plus DEL. TeX math-extension fonts
 # encode big delimiters at code points 0 and 1, and PostgreSQL text rejects NUL.
 CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+DOI = re.compile(r"\b10\.\d{4,9}/[^\s<>\"\]]+", re.I)
+ARXIV = re.compile(r"\barXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
+# Info titles that name a file or a toolchain step rather than the paper (ARA-086).
+FILE_EXTENSION = re.compile(
+    r"\.(?:dvi|tex|ltx|pdf|ps|eps|docx?|rtf|odt|txt|md|indd|qxd|qxp|pages|pptx?|xlsx?|html?)$",
+    re.I,
+)
+APPLICATION = re.compile(r"(?:microsoft\s+)?(?:word|powerpoint|excel)\s+-\s", re.I)
+IDENTIFIER = re.compile(r"(?:doi|arxiv|pii|isbn|issn)\s*:", re.I)
+PLACEHOLDER = re.compile(
+    r"(?:untitled(?: document)?|document|title|paper|article|manuscript|draft|main|template|"
+    r"slides|presentation|layout|none|null|unknown|no title)(?:[\s_-]*\d+)?",
+    re.I,
+)
+PLACEHOLDER_AUTHOR = re.compile(
+    r"(?:user|admin(?:istrator)?|author|owner|unknown|anonymous|editor|ieee|acm|springer|"
+    r"elsevier|microsoft.*)\d*",
+    re.I,
+)
+# First-page lines that are never part of a title: stamps, links, venue and rights notices.
+NOT_TITLE = re.compile(
+    r"^(?:arxiv|doi|https?:|www\.|©|copyright|preprint|proceedings|published|accepted|received|"
+    r"vol\.|volume|issn|isbn)|@|https?://",
+    re.I,
+)
 
 
 def error(code: str, message: str) -> dict:
@@ -103,6 +129,93 @@ def legacy_markdown(path: str) -> list[tuple[str, list[dict]]]:
     return [(chunk["text"], []) for chunk in chunks]
 
 
+def squashed(text: str) -> str:
+    """Letters and digits only, so line breaks, hyphens and case never decide a comparison."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[\W_]+", "", ascii_text).lower()
+
+
+def artifact_title(value: str | None) -> bool:
+    """Whether a PDF Info title names a file, an application or a placeholder, not a paper."""
+    text = " ".join((value or "").split())
+    if sum(character.isalpha() for character in text) < 4 or "\\" in text:
+        return True
+    if FILE_EXTENSION.search(text) or APPLICATION.match(text) or IDENTIFIER.match(text):
+        return True
+    # A single token with separators or digits is a file stem, such as final_v2 or sec18-han.
+    return bool(PLACEHOLDER.fullmatch(text) or (" " not in text and re.search(r"[_/\d]", text)))
+
+
+def join_lines(lines: list[str]) -> str:
+    title = ""
+    for line in lines:
+        if title.endswith("-"):
+            # A hyphen before a lowercase continuation splits a word; otherwise it is a compound.
+            title = title[:-1] + line if line[:1].islower() else title + line
+        else:
+            title = f"{title} {line}" if title else line
+    return title
+
+
+def page_title(page) -> str | None:
+    """The first page's largest horizontal text near the top, as printed (ARA-086).
+
+    Rotated text such as arXiv's margin stamp is skipped, and a group that does not read like
+    a title gives way to the next size down.
+    """
+    lines = []
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            dx, dy = line["dir"]
+            spans = [span for span in line["spans"] if span["text"].strip()]
+            text = " ".join(storable("".join(span["text"] for span in spans)).split())
+            x0, top, _, bottom = line["bbox"]
+            if (
+                dx < 0.99
+                or abs(dy) > 0.01
+                or not spans
+                or top > page.rect.height * 0.6
+                or not re.search(r"[^\W\d_]", text)
+                or NOT_TITLE.search(text)
+            ):
+                continue
+            lines.append((top, x0, bottom, round(max(span["size"] for span in spans), 1), text))
+    lines.sort()
+    for size in sorted({line[3] for line in lines}, reverse=True)[:3]:
+        group, end = [], None
+        for top, _, bottom, line_size, text in lines:
+            if abs(line_size - size) > 0.5:
+                if group:
+                    break
+                continue
+            if group and top - end > size * 1.2:
+                break
+            group.append(text)
+            end = bottom
+        title = join_lines(group)
+        words = title.split()
+        if 2 <= len(words) <= 40 and sum(character.isalpha() for character in title) >= 8:
+            return title
+    return None
+
+
+def choose_title(info_title: str | None, printed: str | None, first_pages: str) -> str | None:
+    """A usable Info title wins only when the first pages print it; else the printed title."""
+    usable = info_title if info_title and not artifact_title(info_title) else None
+    if usable and (printed is None or squashed(usable) in squashed(first_pages)):
+        return usable
+    return printed or usable
+
+
+def embedded_text(document, metadata: dict) -> str:
+    try:
+        xmp = document.get_xml_metadata() or ""
+    except Exception:
+        xmp = ""
+    fields = [metadata.get("subject"), metadata.get("keywords"), xmp[:200_000]]
+    return "\n".join(value for value in fields if isinstance(value, str))
+
+
 def extract(document) -> dict:
     pages, total = [], 0
     for index, page in enumerate(document):
@@ -115,10 +228,17 @@ def extract(document) -> dict:
         return error("OCR_REQUIRED", "No readable text found. Upload a text PDF; OCR is disabled.")
     first = "\n".join(page["text"] for page in pages[:2])
     metadata = document.metadata or {}
-    title = storable(metadata.get("title") or "").strip() or None
+    info_title = " ".join(storable(metadata.get("title") or "").split()) or None
+    title = choose_title(info_title, page_title(document[0]), first)
     author = storable(metadata.get("author") or "").strip()
-    authors = [x.strip() for x in re.split(r";|\s+and\s+", author) if x.strip()]
-    doi = re.search(r"\b10\.\d{4,9}/[^\s<>\"\]]+", first, re.I)
+    authors = [
+        name
+        for name in (x.strip() for x in re.split(r";|\s+and\s+", author))
+        if name and not PLACEHOLDER_AUTHOR.fullmatch(name) and not re.search(r"[\d\\/@]", name)
+    ]
+    # Publishers embed the paper's own DOI; one in the text may belong to a cited reference.
+    doi = DOI.search(embedded_text(document, metadata)) or DOI.search(first)
+    arxiv = ARXIV.search(pages[0]["text"])
     year = re.search(
         r"(?:published|publication year|copyright|©)\s*[:(]?\s*((?:19|20)\d{2})\b",
         first,
@@ -135,6 +255,7 @@ def extract(document) -> dict:
             "authors": authors,
             "year": int(year[1]) if year else None,
             "doi": doi[0].rstrip(".,;) ").lower() if doi else None,
+            "arxiv_id": arxiv[1] if arxiv else None,
             "abstract": abstract[1].strip() if abstract else None,
         },
         "pages": pages,
