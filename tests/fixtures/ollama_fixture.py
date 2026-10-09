@@ -22,6 +22,10 @@ MODELS = {
         "25b843619e944cd0ae6069f94ff4e5e26a16e109ccbc0a66a0f05979ed70098e",
         17741872132,
     ),
+    "fanyx/Qwen3-Reranker-0.6B-Q8_0:latest": (
+        "fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3",
+        639152466,
+    ),
 }
 
 
@@ -128,7 +132,7 @@ class OllamaFixture:
                         },
                     }
                 )
-            elif "reranker" in model:
+            elif "reranker" in model.lower():
                 handler.send_json(
                     {
                         "template": "{{ .Prompt }}",
@@ -151,7 +155,7 @@ class OllamaFixture:
         elif path == "/api/embed":
             self.embed(handler, body)
         elif path == "/api/generate":
-            if body.get("logprobs") and "reranker" in str(body.get("model", "")):
+            if body.get("logprobs") and "reranker" in str(body.get("model", "")).lower():
                 self.rerank(handler, body)
             else:
                 handler.send_json({"done": True, "done_reason": "stop"})

@@ -62,6 +62,17 @@ LOCAL_MODELS = {
             kind="embedding",
             embedding_dimensions=4096,
         ),
+        # Not the broken dengcao Q8_0 file (uniform logits); measured 12/12 by the lead.
+        # Ollama lists the untagged pull as ":latest", and inventory matching is exact.
+        LocalModelSpec(
+            "qwen3-reranker-0.6b",
+            "fanyx/Qwen3-Reranker-0.6B-Q8_0:latest",
+            "Qwen3 Reranker 0.6B",
+            "fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3",
+            639152466,
+            quantization="Q8_0",
+            kind="reranker",
+        ),
     )
 }
 

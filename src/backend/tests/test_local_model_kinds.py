@@ -37,7 +37,7 @@ def test_given_catalog_then_embedding_models_are_pinned_and_chat_models_keep_the
         "ifm-k2-horizon-7b",
         "qwen3.8-27b",
     }
-    assert "reranker" not in kinds.values()
+    assert {key for key, kind in kinds.items() if kind == "reranker"} == {"qwen3-reranker-0.6b"}
 
 
 def test_given_embedding_model_when_selecting_for_generation_then_it_is_rejected():
