@@ -146,6 +146,13 @@ async def test_given_old_failed_unicode_answer_when_replayed_then_failure_is_not
     assert requests == []
 
 
+def cited(prompt, wrapper="[{}]"):
+    """Cite every passage handle a map prompt shows, else every source marker it carries."""
+    handles = list(dict.fromkeys(re.findall(r"^\[(S\d+)\] ", prompt, re.M)))
+    sources = re.findall(r"\[(source:[0-9a-f-]{36})\]", prompt)
+    return " ".join(wrapper.format(marker) for marker in handles or dict.fromkeys(sources))
+
+
 @pytest.mark.parametrize("map_size", [100, 2000])
 async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_are_canonical(
     resources,
@@ -166,11 +173,9 @@ async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_
 
     def output(body):
         prompt = body["messages"][-1]["content"]
-        identifiers = list(dict.fromkeys(re.findall(r"\[source:([0-9a-f-]{36})\]", prompt)))
-        assert identifiers
-        prefix = "Supported result " + " ".join(
-            f"【source:{identifier}】" for identifier in identifiers
-        )
+        markers = cited(prompt, "【{}】")
+        assert markers
+        prefix = "Supported result " + markers
         # Real tokens: 2,000-word sections exceed the reduction share and need compression.
         return prefix + " word" * map_size if prompt.startswith("Summarize") else prefix
 
@@ -215,8 +220,7 @@ async def test_given_bad_unicode_summary_source_when_generating_then_no_bad_chec
 
     def output(body):
         prompt = body["messages"][-1]["content"]
-        ids = list(dict.fromkeys(re.findall(r"\[source:([0-9a-f-]{36})\]", prompt)))
-        valid = "Supported " + " ".join(f"[source:{id}]" for id in ids)
+        valid = "Supported " + cited(prompt)
         is_bad = prompt.startswith("Summarize") if phase == "map" else prompt.startswith("Combine")
         return valid + f" unsupported 【source:{bad}】" if is_bad else valid
 

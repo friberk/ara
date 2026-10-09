@@ -388,6 +388,14 @@ async def summary_job_fixture(resources, spec, count):
     return identifier, token, payload
 
 
+def cited_markers(prompt: str) -> str:
+    """A fixture summary cites every passage handle it was shown, else the source markers."""
+    import re
+
+    handles = re.findall(r"^(\[S\d+\]) ", prompt, re.M)
+    return " ".join(dict.fromkeys(handles or re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
+
+
 @pytest.mark.parametrize("busy_kind", ["slot", "http"])
 async def test_given_completed_reduction_when_later_group_busy_then_resume_skips_completed_group(
     resources,
@@ -395,7 +403,6 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
     busy_kind,
 ):
     import json
-    import re
     from collections import Counter
     from contextlib import asynccontextmanager
 
@@ -424,7 +431,7 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
         prompts.append(prompt)
         if busy_kind == "http" and len(prompts) == 6:
             return httpx.Response(503, json={"error": "busy"})
-        markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
+        markers = cited_markers(prompt)
         # About 1,200 tokens: two outputs share a reduction batch, three do not.
         content = markers + " word" * 1100
         return httpx.Response(
@@ -462,7 +469,6 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
     compression,
 ):
     import json
-    import re
 
     from app.models.jobs import BackgroundJob
     from app.services import summarization
@@ -475,7 +481,7 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         body = json.loads(request.content)
         calls.append(body)
         prompt = body["messages"][-1]["content"]
-        markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
+        markers = cited_markers(prompt)
         # 2,000-word outputs cannot pair in a reduction; 500-word compressions can.
         words = 500 if prompt.startswith("Compress") and compression == "short" else 2000
         content = markers + " word" * words
@@ -841,7 +847,6 @@ async def test_given_summary_fixture_when_generated_then_domain_and_job_complete
     resources, monkeypatch
 ):
     import json
-    import re
 
     from pydantic import SecretStr
 
@@ -857,10 +862,7 @@ async def test_given_summary_fixture_when_generated_then_domain_and_job_complete
     def provider(request):
         prompt = json.loads(request.content)["input"]
         seen_inputs.append(prompt)
-        citations = re.findall(r"\[source:([\w-]+)\]", prompt)
-        content = "Supported full paper summary: " + " ".join(
-            f"[source:{identifier}]" for identifier in citations
-        )
+        content = "Supported full paper summary: " + cited_markers(prompt)
         return httpx.Response(200, json=response_payload(content))
 
     monkeypatch.setattr(
@@ -980,7 +982,6 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     resources, monkeypatch
 ):
     import json
-    import re
 
     from pydantic import SecretStr
 
@@ -1011,10 +1012,7 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     def provider(request):
         prompt = json.loads(request.content)["input"]
         seen_inputs.append(prompt)
-        sources = re.findall(r"\[source:([\w-]+)\]", prompt)
-        answer = "Complete covered sections: " + " ".join(
-            f"[source:{source}]" for source in sources
-        )
+        answer = "Complete covered sections: " + cited_markers(prompt)
         return httpx.Response(200, json=response_payload(answer))
 
     monkeypatch.setattr(
