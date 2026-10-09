@@ -152,7 +152,7 @@ services:
 
   # Independent of core readiness: no weights are fetched or loaded on startup.
   ollama:
-    image: ara-ollama:0.40.1-ara.1
+    image: ara-ollama:0.40.1-ara.2
     build:
       context: .
       dockerfile: docker/ollama.Dockerfile

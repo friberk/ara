@@ -28,9 +28,11 @@ The slow-registry test checks transfer cessation, checkpointed range resume, dup
 
 ## Validation
 
-Build CPU: `docker build --target runtime -f docker/ollama.Dockerfile -t ara-ollama:0.40.1-ara.1 .`. Build concurrency defaults to two jobs. The build executes the private protocol tests. For a race/full server suite, use the pinned source plus `003-pull-control.patch` and the two `ara_pull*.go` files, then run `go test -race ./server -run TestARA` and `go test ./server`.
+Build CPU: `docker build --target runtime -f docker/ollama.Dockerfile -t ara-ollama:0.40.1-ara.2 .`. Build concurrency defaults to two jobs. The build executes the private protocol and IFM thinking tests. The pinned-source verification runs `go test ./server ./llm` and `go test -race ./server -run TestARA` after applying both Go patches and copying the runtime files, tests and IFM template fixture as shown in the Dockerfile.
 
 The explicit live command `python3 scripts/test-local-models.py --resume --volume ara-ollama-validation-new-run --output /tmp/ara-local-model-result.json` downloads **only** `hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M`, pauses/resumes a real transfer, verifies the 5,592,217,984-byte weight SHA-256 and manifest identity, and checks the model's real chat template, streamed content, terminal completion, latency, and cgroup memory. Use a fresh validation volume to exercise resume. `--stock` checks the stock architecture failure. The runner only removes its own uniquely named test container and preserves its labeled test volume.
+
+Use `python3 scripts/test-local-models.py --retained-only --volume ara-ollama-validation-20261008 --output /tmp/ara-local-model-result.json` to validate the already retained 7B artifact. This mode requires a pre-existing validation-owned volume and installed artifact, skips all pull calls, and fails if either is missing. It checks the canonical thinking descriptor, complete rendered prompts for all six settings, real streamed completion, separate reasoning fields, strict `xhigh` rejection and the structured-output schema.
 
 Core/test Compose uses an empty offline fixture instead of building the runtime. The fixture rejects actual downloads/inference. It demonstrates deterministic empty-state behavior, not provider/model access.
 
@@ -57,3 +59,27 @@ PostgreSQL recorded the Ollama provider, pinned artifact digest, runtime version
 Restarting PostgreSQL, MinIO, Ollama, API and both workers preserved the summary, chat, saved local default, byte-identical original PDF and verified installation. No additional weights were downloaded, and no 3.7B, 27B, amd64 or GPU inference was tested.
 
 The final application adapter explicitly uses temperature `0.0` and stores it in generation provenance. A prior provider-default sampling attempt omitted usable source markers and was rejected rather than saved. A controlled same-paper temperature-0 probe cited all three chunks. The final full application rerun stored a three-chunk summary in 38.32 seconds and streamed a cited answer in 10.41 seconds (49 SSE events), with zero hosted reservations and an exact durable provenance snapshot. The temperature setting does not guarantee citations or factual accuracy; source validation remains strict.
+
+## IFM thinking contract in 0.40.1-ara.2
+
+`004-ifm-thinking.patch` exposes controls only for a local GGUF served through native Jinja, with architecture `k2-horizon` and the complete template SHA-256 `f6e3cd6dbf0f95016fff531f41f921dee541025733c14580a881cf5a5f9fa750`. The retained catalog 7B artifact and a read-only check of the user-installed 3.7B artifact returned identical templates. A modified template, another architecture, a Go template, a custom renderer/parser or a remote model receives no IFM descriptor from this patch. Fixture source and Apache-2.0 attribution are in [testdata/README.md](testdata/README.md).
+
+`/api/show` now reports `thinking.values` as `[false, true, "low", "medium", "high"]` and `thinking.default` as `"high"`. Ollama's existing native transport sends `enable_thinking` for booleans and also sends the exact `reasoning_effort` for named levels. The template renders these controls as follows:
+
+| `think` request | Generation suffix after the assistant marker |
+| --- | --- |
+| omitted or `null` | `<ifm\|think>` followed by a newline |
+| `true` or `"high"` | `<ifm\|think>` followed by a newline |
+| `"medium"` | `<ifm\|think_fast>` followed by a newline |
+| `"low"` | `<ifm\|think_faster>` followed by a newline |
+| `false` | An empty `<ifm\|think>` / `</ifm\|think>` block |
+
+Unsupported names return HTTP 400 with the supported values before runner admission. This exact IFM path deliberately rejects unknown names rather than applying the generic renderer fallback described in [Ollama's thinking documentation](https://docs.ollama.com/capabilities/thinking). `/api/generate` also rejects named efforts when `raw`, a custom `template` or a `suffix` bypasses the verified Jinja template. Its ordinary native-template flow consumes IFM reasoning closing tags before returning the answer. The pull-control patch and protocol remain unchanged.
+
+Live testing found a second upstream compatibility problem: with the correct medium `<ifm|think_fast>` prefill, the retained model emitted `</ifm|think>` before its correct answer. Native chat returned an empty answer because its parser waited for `</ifm|think_fast>`. Raw completion of the identical rendered prompt confirmed the closing token and answer. `005-ifm-thinking-close.patch` retains the selected prefill while preserving and recognizing all three legitimate IFM closing tags inside an active reasoning block. Ordinary IFM generation opts into the same close aliases in its Go parser; existing models retain their single-close behavior. Structured-output transitions receive every legitimate close. Arbitrary closing tags and tags occurring in disabled-mode answer content remain literal.
+
+The CPU build derives a parser layer from the cached CPU/CMake build, recompiles only `k2-horizon.cpp` and dependent links, then runs the complete-template parser fixture. Optional GPU source builds apply the same parser correction; neither GPU target was hardware-tested. The 24-case C++ fixture covers incremental text, schema parsing, alternative closes, disabled output and unknown tags. All 12 newly reproduced alternative-close failures passed after the fix, the full pinned upstream chat suite passed, and the Go tests passed every two-chunk split of the IFM closing-tag examples plus the existing server, transport and parser suites. Pull-control tests passed under the race detector.
+
+The controls select template modes. A simple question can complete without reasoning tokens even when thinking is enabled; the validator records the observed counts. Neither tag selection nor those counts establish a relative reasoning-quality result.
+
+Final ARM64 CPU image `sha256:6bc3fbbc22ace56b18cd953818e934c2beec3d7123a99a486e1ccf758fbe2220` passed retained-only live validation with the pinned 7B weight and manifest hashes unchanged. All six settings rendered their exact complete prompts and finished with clean answers and `done_reason=stop`. Observed separate-thinking character counts were 419 for default, 419 for true, 0 for false, 0 for low, 139 for medium and 218 for high. Each named level also produced the required `{"answer":4}` schema output; `xhigh` returned 400. Steady container usage was 6.582 GiB and cgroup peak 11.361 GiB under the 12 GiB limit. These are individual measured requests, including cache pressure, rather than a reasoning-quality or universal capacity guarantee. No additional weights were downloaded, and no 3.7B or 27B inference was run.

@@ -4,6 +4,7 @@
 Examples:
   python3 scripts/test-local-models.py --stock
   python3 scripts/test-local-models.py --resume
+  python3 scripts/test-local-models.py --retained-only --volume ara-ollama-validation-20261008
 A fresh --volume ara-ollama-validation-... is required to observe actual resume.
 Results go to an explicit JSON file or stdout; model weights remain in Docker.
 """
@@ -11,6 +12,7 @@ Results go to an explicit JSON file or stdout; model weights remain in Docker.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import time
@@ -29,6 +31,8 @@ MANIFEST_DIGEST = (
 )
 STOCK_IMAGE = "ollama/ollama:0.40.1@sha256:69f27594d8127cb43db1edcafa5e2d3cd8f88bdbc54a2cf3ceb11b8d138a24b1"
 LABEL = "ara.local-model-validation"
+TEMPLATE_SHA256 = "f6e3cd6dbf0f95016fff531f41f921dee541025733c14580a881cf5a5f9fa750"
+THINKING = {"values": [False, True, "low", "medium", "high"], "default": "high"}
 
 
 def docker(*args: str) -> str:
@@ -63,6 +67,89 @@ def stream(base, path, data, on_event=None):
     return events
 
 
+def validate_thinking_controls(base: str, report: dict) -> None:
+    """Prove native rendering and field separation; do not rank reasoning quality."""
+    prompt = "What is 2 + 2? Answer in one short sentence."
+    prefix = (
+        "<|ifm|im_start|>user\n"
+        + prompt
+        + "<|ifm|im_end|><|ifm|im_start|>assistant\n"
+    )
+    controls = [
+        ("default", None, "<ifm|think>\n"),
+        ("enabled", True, "<ifm|think>\n"),
+        ("disabled", False, "<ifm|think>\n</ifm|think>\n"),
+        ("low", "low", "<ifm|think_faster>\n"),
+        ("medium", "medium", "<ifm|think_fast>\n"),
+        ("high", "high", "<ifm|think>\n"),
+    ]
+    for label, think, suffix in controls:
+        body = {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+            "options": {
+                "num_ctx": 8192,
+                "num_predict": 2048,
+                "num_thread": 4,
+                "temperature": 0,
+            },
+        }
+        if think is not None:
+            body["think"] = think
+        rendered = json_request(
+            base, "/api/chat", {**body, "_debug_render_only": True}
+        )["_debug_info"]["rendered_template"]
+        assert rendered == prefix + suffix, (label, rendered)
+        started = time.monotonic()
+        events = stream(base, "/api/chat", body)
+        assert events[-1].get("done") is True, (label, events[-1])
+        assert events[-1].get("done_reason") == "stop", (label, events[-1])
+        answer = "".join(e.get("message", {}).get("content", "") for e in events)
+        thoughts = "".join(e.get("message", {}).get("thinking", "") for e in events)
+        assert answer and ("4" in answer or "four" in answer.lower()), (label, answer)
+        assert "<ifm|" not in answer and "</ifm|" not in answer, (label, answer)
+        if think is False:
+            assert not thoughts, "disabled request returned thinking"
+        elif label in {"default", "enabled", "high"}:
+            assert thoughts, f"{label} thinking was not observed separately"
+        report[label] = {
+            "request_think": think,
+            "rendered_suffix": suffix,
+            "final_answer": answer,
+            "separate_thinking_characters": len(thoughts),
+            "seconds": time.monotonic() - started,
+            "done_reason": events[-1]["done_reason"],
+            "eval_count": events[-1].get("eval_count"),
+        }
+        if label in {"low", "medium", "high"}:
+            schema = {
+                "type": "object",
+                "properties": {"answer": {"type": "integer"}},
+                "required": ["answer"],
+                "additionalProperties": False,
+            }
+            structured = stream(base, "/api/chat", {**body, "format": schema})
+            assert structured[-1].get("done_reason") == "stop", (label, structured[-1])
+            document = json.loads(
+                "".join(e.get("message", {}).get("content", "") for e in structured)
+            )
+            assert document == {"answer": 4}, (label, document)
+            report[label]["structured_answer"] = document
+    try:
+        json_request(
+            base,
+            "/api/chat",
+            {"model": MODEL, "think": "xhigh", "_debug_render_only": True},
+        )
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode()
+        assert error.code == 400 and "supported values" in detail, detail
+        report["unsupported_xhigh"] = {"status": error.code, "error": detail}
+    else:
+        raise AssertionError("xhigh was accepted or silently replaced")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -70,6 +157,11 @@ def main():
     )
     parser.add_argument(
         "--resume", action="store_true", help="Pause a real transfer before resuming"
+    )
+    parser.add_argument(
+        "--retained-only",
+        action="store_true",
+        help="Require an existing labeled volume and installed 7B; never call pull",
     )
     parser.add_argument("--volume", default="ara-ollama-validation-models")
     parser.add_argument("--output", type=Path)
@@ -82,7 +174,9 @@ def main():
         )
     if args.stock and args.resume:
         parser.error("stock Ollama has no acknowledged-pause protocol")
-    image = STOCK_IMAGE if args.stock else "ara-ollama:0.40.1-ara.1"
+    if args.retained_only and args.resume:
+        parser.error("retained-only validation cannot resume a download")
+    image = STOCK_IMAGE if args.stock else "ara-ollama:0.40.1-ara.2"
     name = f"ara-ollama-validation-{uuid.uuid4().hex[:10]}"
     # Label ownership is checked even for a pre-existing dedicated test volume.
     listed = docker("volume", "ls", "--format", "{{.Name}}").splitlines()
@@ -95,12 +189,15 @@ def main():
                 "refusing an existing volume without the validation ownership label"
             )
     else:
+        if args.retained_only:
+            parser.error("retained-only validation requires an existing labeled volume")
         docker("volume", "create", "--label", f"{LABEL}=true", args.volume)
     report = {
         "model": MODEL,
         "image": image,
         "volume": args.volume,
         "stock": args.stock,
+        "retained_only": args.retained_only,
     }
     docker(
         "run",
@@ -207,13 +304,19 @@ def main():
             if event.get("digest") == WEIGHT_DIGEST and event.get("completed", 0):
                 observed.append(event["completed"])
 
-        path = "/api/pull" if args.stock else "/api/ara/pull"
-        events = stream(
-            base, path, {"model": MODEL, "operation_id": str(uuid.uuid4())}, progress
-        )
-        assert events[-1].get("status") == "success", events[-1]
-        report["pull_seconds"] = time.monotonic() - pull_start
-        report["first_resume_progress_bytes"] = observed[0] if observed else None
+        if args.retained_only:
+            installed = json_request(base, "/api/tags")["models"]
+            assert any(m["name"].lower() == MODEL.lower() for m in installed), (
+                "retained 7B is missing; no pull was attempted"
+            )
+        else:
+            path = "/api/pull" if args.stock else "/api/ara/pull"
+            events = stream(
+                base, path, {"model": MODEL, "operation_id": str(uuid.uuid4())}, progress
+            )
+            assert events[-1].get("status") == "success", events[-1]
+            report["pull_seconds"] = time.monotonic() - pull_start
+            report["first_resume_progress_bytes"] = observed[0] if observed else None
         if args.resume:
             assert observed and observed[0] >= report["paused_at_bytes"]
         # Independent on-disk hash and size validation (not only API metadata).
@@ -228,6 +331,12 @@ def main():
         assert report["architecture"] == "k2-horizon"
         assert show.get("template"), "missing real chat template"
         report["template_characters"] = len(show["template"])
+        report["template_sha256"] = hashlib.sha256(show["template"].encode()).hexdigest()
+        assert report["template_sha256"] == TEMPLATE_SHA256
+        if not args.stock:
+            assert show.get("thinking") == THINKING, show.get("thinking")
+            assert "thinking" in show.get("capabilities", []), show.get("capabilities")
+            report["thinking_descriptor"] = show["thinking"]
         report["manifest_digest"] = next(
             m["digest"]
             for m in json_request(base, "/api/tags")["models"]
@@ -338,44 +447,8 @@ def main():
             )
             assert document == {"answer": 4, "explanation": "two plus two"}, document
             report["structured_schema_answer"] = document
-            reasoning = stream(
-                base,
-                "/api/chat",
-                {
-                    "model": MODEL,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": "What is 2 + 2? Answer in one short sentence.",
-                        }
-                    ],
-                    "stream": True,
-                    "options": {
-                        "num_ctx": 8192,
-                        "num_predict": 2048,
-                        "num_thread": 4,
-                        "temperature": 0,
-                    },
-                },
-            )
-            assert reasoning[-1].get("done_reason") == "stop", reasoning[-1]
-            final_answer = "".join(
-                e.get("message", {}).get("content", "") for e in reasoning
-            )
-            thoughts = "".join(
-                e.get("message", {}).get("thinking", "") for e in reasoning
-            )
-            assert (
-                "4" in final_answer
-                and "think" not in final_answer.lower()
-                and len(final_answer) < 100
-            ), final_answer
-            assert thoughts, "default thinking was not observed"
-            report["default_thinking"] = {
-                "final_answer": final_answer,
-                "separate_thinking_characters": len(thoughts),
-                "final_metrics": reasoning[-1],
-            }
+            report["thinking_controls"] = {}
+            validate_thinking_controls(base, report["thinking_controls"])
         report["container_memory"] = docker(
             "stats", "--no-stream", "--format", "{{.MemUsage}}", name
         )

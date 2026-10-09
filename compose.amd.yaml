@@ -2,7 +2,7 @@
 # docker compose -f compose.yaml -f compose.amd.yaml up --build
 services:
   ollama:
-    image: ara-ollama:0.40.1-ara.1-amd
+    image: ara-ollama:0.40.1-ara.2-amd
     platform: linux/amd64
     build:
       target: amd

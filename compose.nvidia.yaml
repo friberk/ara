@@ -2,7 +2,7 @@
 # docker compose -f compose.yaml -f compose.nvidia.yaml up --build
 services:
   ollama:
-    image: ara-ollama:0.40.1-ara.1-nvidia
+    image: ara-ollama:0.40.1-ara.2-nvidia
     build:
       target: nvidia
       args:

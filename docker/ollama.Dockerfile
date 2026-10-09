@@ -17,10 +17,15 @@ FROM source AS go-build
 COPY docker/ollama/003-pull-control.patch /tmp/pull-control.patch
 COPY docker/ollama/ara_pull.go docker/ollama/ara_pull_test.go server/
 RUN git apply --check /tmp/pull-control.patch && git apply /tmp/pull-control.patch
+COPY docker/ollama/004-ifm-thinking.patch /tmp/ifm-thinking.patch
+COPY docker/ollama/ara_ifm_thinking.go docker/ollama/ara_ifm_thinking_test.go server/
+COPY docker/ollama/ara_ifm_kwargs_test.go llm/
+COPY docker/ollama/testdata/ara_ifm_chat_template.jinja server/testdata/
+RUN git apply --check /tmp/ifm-thinking.patch && git apply /tmp/ifm-thinking.patch
 ENV GOMAXPROCS=2
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go test -p 2 ./server -run TestARA -count=1 \
-    && go build -p 2 -trimpath -ldflags='-w -s -X github.com/ollama/ollama/version.Version=0.40.1-ara.1' -o /out/ollama .
+    go test -p 2 ./server ./llm -run TestARA -count=1 \
+    && go build -p 2 -trimpath -ldflags='-w -s -X github.com/ollama/ollama/version.Version=0.40.1-ara.2' -o /out/ollama .
 RUN cmake -S . -B build/go-license -DOLLAMA_LLAMA_BACKENDS= -DOLLAMA_MLX_BACKENDS= \
     && cmake --build build/go-license --target ollama-go-license
 
@@ -31,14 +36,29 @@ RUN cmake -S llama/server --preset cpu -DOLLAMA_LLAMA_CPP_SKIP_COMPAT_PATCH=ON \
     && cmake --build build/llama-server-cpu --target llama-server llama-quantize --parallel ${BUILD_JOBS} \
     && cmake --install build/llama-server-cpu --component llama-server --strip
 
+# This derived layer retains the original CMake objects; only the IFM parser
+# object and dependent links need rebuilding for the closing-token correction.
+FROM cpu-build AS cpu-thinking-build
+COPY docker/ollama/005-ifm-thinking-close.patch /tmp/ifm-thinking-close.patch
+COPY docker/ollama/ara_ifm_parser_test.cpp /tmp/ara_ifm_parser_test.cpp
+COPY docker/ollama/testdata/ara_ifm_chat_template.jinja /tmp/ara_ifm_chat_template.jinja
+RUN git -C /llama apply --check /tmp/ifm-thinking-close.patch \
+    && git -C /llama apply /tmp/ifm-thinking-close.patch \
+    && cmake --build build/llama-server-cpu --target llama-server llama-quantize --parallel 2 \
+    && c++ -std=c++17 -I/llama/common -I/llama/vendor -I/llama/include -I/llama/ggml/include \
+        /tmp/ara_ifm_parser_test.cpp -L/src/build/llama-server-cpu/bin \
+        -Wl,-rpath,/src/build/llama-server-cpu/bin -lllama-common -lllama -o /tmp/ara-ifm-parser-test \
+    && /tmp/ara-ifm-parser-test /tmp/ara_ifm_chat_template.jinja \
+    && cmake --install build/llama-server-cpu --component llama-server --strip
+
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libgomp1 curl && rm -rf /var/lib/apt/lists/*
 COPY --from=go-build /out/ollama /usr/bin/ollama
 COPY --from=go-build /src/LICENSE /usr/share/licenses/ollama/LICENSE
 COPY --from=go-build /src/build/go-license/lib/ollama/GO_LICENSE /usr/share/licenses/ollama/GO_LICENSE
-COPY --from=cpu-build /src/dist/lib/ollama /usr/lib/ollama
+COPY --from=cpu-thinking-build /src/dist/lib/ollama /usr/lib/ollama
 LABEL org.opencontainers.image.title="ARA managed Ollama" \
-    org.opencontainers.image.version="0.40.1-ara.1" \
+    org.opencontainers.image.version="0.40.1-ara.2" \
     org.opencontainers.image.source="https://github.com/ollama/ollama" \
     org.opencontainers.image.revision="cf2a313a298066d572c36812e5ad30a21c0db13b" \
     org.opencontainers.image.licenses="MIT" \
@@ -53,6 +73,8 @@ FROM nvidia/cuda:12.8.1-devel-ubuntu24.04@sha256:520292dbb4f755fd360766059e62956
 RUN apt-get update && apt-get install -y --no-install-recommends cmake ninja-build git && rm -rf /var/lib/apt/lists/*
 COPY --from=source /src /src
 COPY --from=source /llama /llama
+COPY docker/ollama/005-ifm-thinking-close.patch /tmp/ifm-thinking-close.patch
+RUN git -C /llama apply --check /tmp/ifm-thinking-close.patch && git -C /llama apply /tmp/ifm-thinking-close.patch
 WORKDIR /src
 ARG BUILD_JOBS=2
 ARG CUDA_ARCHITECTURES="75;80;86;89;90"
@@ -68,6 +90,8 @@ FROM rocm/dev-ubuntu-24.04:7.2.1-complete@sha256:3db551c4e1229aac1857ac44fcb6141
 RUN apt-get update && apt-get install -y --no-install-recommends cmake ninja-build git && rm -rf /var/lib/apt/lists/*
 COPY --from=source /src /src
 COPY --from=source /llama /llama
+COPY docker/ollama/005-ifm-thinking-close.patch /tmp/ifm-thinking-close.patch
+RUN git -C /llama apply --check /tmp/ifm-thinking-close.patch && git -C /llama apply /tmp/ifm-thinking-close.patch
 WORKDIR /src
 ARG BUILD_JOBS=2
 ARG AMDGPU_TARGETS="gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201"
