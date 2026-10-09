@@ -20,6 +20,7 @@ from app.rag import hooks
 from app.rag.chunking import ChunkPlan, build_chunk_plan
 from app.repositories.jobs import fence, now, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
+from app.services.metadata import queue_lookup
 from app.services.uploads import MAX_UPLOAD_BYTES
 
 # One parse child per event loop: the 2 GiB worker cannot hold two layout models.
@@ -336,6 +337,7 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
                 else {"source": "pdf"}
             )
         paper.metadata_provenance = provenance
+        await queue_lookup(session, paper, document.id, metadata)
         await session.execute(delete(DocumentPage).where(DocumentPage.document_id == document_id))
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         await session.execute(

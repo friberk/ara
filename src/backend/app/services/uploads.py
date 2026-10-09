@@ -134,6 +134,7 @@ async def ingest_pdf_bytes(
                     409,
                     "DOCUMENT_ALREADY_ATTACHED",
                     "This PDF belongs to another paper. Open that paper to reconcile it.",
+                    details=[{"paper_id": str(existing.paper_id)}],
                 )
             if guard and paper:
                 paper.active_document_id = existing.id
@@ -146,7 +147,8 @@ async def ingest_pdf_bytes(
                 or job.state != "failed"
                 or job.error_code not in {"STORAGE_UPLOAD_FAILED", "STORAGE_OBJECT_MISSING"}
             ):
-                return references(existing)
+                # A new request for bytes already stored opens that paper; a replay is not new.
+                return references(existing).model_copy(update={"duplicate": binding is None})
             # Same bytes can resume an interrupted upload using the retained object key.
             existing.status, existing.warnings = "uploading", []
             job.state, job.stage, job.progress = "queued", "queued", 0

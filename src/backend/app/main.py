@@ -22,6 +22,7 @@ from app.routes.fulltext import router as fulltext_router
 from app.routes.history import router as history_router
 from app.routes.jobs import router
 from app.routes.local_models import router as local_models_router
+from app.routes.metadata import router as metadata_router
 from app.routes.research import router as research_router
 from app.routes.retrieval import router as retrieval_router
 from app.services.dispatcher import dispatcher_loop
@@ -103,7 +104,7 @@ def create_app(
             "code": exc.code,
             "message": exc.message,
             "request_id": request.state.request_id,
-            "details": [],
+            "details": exc.details,
         }
         headers = {}
         if exc.retry_after is not None:
@@ -150,6 +151,7 @@ def create_app(
     app.include_router(chat_router)
     app.include_router(history_router)
     app.include_router(retrieval_router)
+    app.include_router(metadata_router)
     return app
 
 

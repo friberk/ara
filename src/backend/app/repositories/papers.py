@@ -145,6 +145,13 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
     status = document.status if document else "metadata_only"
     if status == "uploading":
         status = "processing"
+    snapshots = [SearchResult.model_validate(x.metadata_snapshot) for x in sources]
+    # The venue lives in the provider record its provenance names, else any record (ARA-086).
+    venue_source = (paper.metadata_provenance.get("venue") or {}).get("source")
+    venue = next(
+        (x.venue for x in sorted(snapshots, key=lambda x: x.provider != venue_source) if x.venue),
+        None,
+    )
     return PaperDetail(
         id=paper.id,
         title=paper.title,
@@ -152,7 +159,8 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
         year=paper.year,
         abstract=paper.abstract,
         doi=paper.doi,
-        sources=[SearchResult.model_validate(x.metadata_snapshot) for x in sources],
+        venue=venue,
+        sources=snapshots,
         document_status=status,
         active_document_id=paper.active_document_id,
         metadata_provenance=paper.metadata_provenance,

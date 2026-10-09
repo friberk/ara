@@ -8,7 +8,10 @@ import httpx
 from app.core.errors import AppError
 from app.schemas.research import FullTextLocation, SearchHit, SearchPage, SearchResult
 
-FIELDS = "title,authors,year,abstract,externalIds,url,openAccessPdf,isOpenAccess"
+FIELDS = (
+    "title,authors,year,abstract,externalIds,url,openAccessPdf,isOpenAccess,"
+    "venue,publicationVenue,journal"
+)
 
 
 def normalized_doi(doi: str | None) -> str | None:
@@ -36,6 +39,11 @@ def object_list(value) -> list[dict]:
     return [object_value(item) for item in value]
 
 
+def text_value(*values) -> str | None:
+    """The first non-blank string; providers report missing names as null or ""."""
+    return next((v.strip() for v in values if isinstance(v, str) and v.strip()), None)
+
+
 def normalize(provider: str, row: dict) -> SearchResult:
     row = object_value(row)
     if provider == "semantic_scholar":
@@ -49,7 +57,8 @@ def normalize(provider: str, row: dict) -> SearchResult:
             abstract=row.get("abstract"),
             doi=normalized_doi(object_value(row.get("externalIds")).get("DOI")),
             external_url=row.get("url"),
-            pdf_url=pdf.get("url"),
+            # Live records report a missing open-access copy as url "" (ARA-086).
+            pdf_url=text_value(pdf.get("url")),
             is_open_access=row.get("isOpenAccess"),
             locations=[
                 FullTextLocation(
@@ -60,8 +69,13 @@ def normalize(provider: str, row: dict) -> SearchResult:
                     oa_status=pdf.get("status"),
                 )
             ]
-            if pdf.get("url")
+            if text_value(pdf.get("url"))
             else [],
+            venue=text_value(
+                row.get("venue"),
+                object_value(row.get("publicationVenue")).get("name"),
+                object_value(row.get("journal")).get("name"),
+            ),
         )
     index = object_value(row.get("abstract_inverted_index"))
     positions = {
@@ -120,6 +134,7 @@ def normalize(provider: str, row: dict) -> SearchResult:
         pdf_url=pdf,
         is_open_access=object_value(row.get("open_access")).get("is_oa"),
         locations=locations,
+        venue=text_value(object_value(location.get("source")).get("display_name")),
     )
 
 
@@ -156,6 +171,63 @@ class AcademicSearch:
                 "The academic provider returned malformed paper metadata.",
             ) from None
         return result if normalized_doi(result.doi) == identity else None
+
+    async def by_arxiv(self, provider: str, arxiv_id: str) -> SearchResult | None:
+        """An arXiv identifier: OpenAlex knows it as the 10.48550 DOI, Semantic Scholar by ID."""
+        if not re.fullmatch(r"\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7}", arxiv_id):
+            return None
+        try:
+            if provider == "openalex":
+                # The arXiv DOI selects the work; its reported DOI may be a later publication's.
+                data = await self.request(
+                    provider,
+                    "works",
+                    {"filter": f"doi:https://doi.org/10.48550/arxiv.{arxiv_id.lower()}"},
+                )
+                rows = object_list(data.get("results"))
+                return normalize(provider, rows[0]) if rows else None
+            row = await self.request(
+                provider, f"paper/ARXIV:{quote(arxiv_id, safe='/')}", {"fields": FIELDS}
+            )
+            reported = object_value(row.get("externalIds")).get("ArXiv")
+            return normalize(provider, row) if reported == arxiv_id else None
+        except AppError as error:
+            if error.code == "PAPER_NOT_FOUND":
+                return None
+            raise
+        except (ValueError, KeyError, TypeError):
+            raise AppError(
+                502,
+                "PROVIDER_INVALID_RESPONSE",
+                "The academic provider returned malformed paper metadata.",
+            ) from None
+
+    async def match_title(self, provider: str, title: str, limit: int = 5) -> list[SearchResult]:
+        """Records whose title matches; callers still decide whether one is the same paper."""
+        try:
+            if provider == "openalex":
+                # Commas, pipes and colons are filter operators, so only words are sent.
+                words = " ".join(re.sub(r"[^\w\s]", " ", title).split())[:300]
+                data = await self.request(
+                    provider, "works", {"filter": f"title.search:{words}", "per-page": limit}
+                )
+                rows = object_list(data.get("results"))
+            else:
+                data = await self.request(
+                    provider, "paper/search/match", {"query": title[:300], "fields": FIELDS}
+                )
+                rows = object_list(data.get("data"))
+            return [normalize(provider, row) for row in rows[:limit]]
+        except AppError as error:
+            if error.code == "PAPER_NOT_FOUND":
+                return []
+            raise
+        except (ValueError, KeyError, TypeError):
+            raise AppError(
+                502,
+                "PROVIDER_INVALID_RESPONSE",
+                "The academic provider returned malformed paper metadata.",
+            ) from None
 
     async def request(self, provider: str, path: str, params: dict) -> dict:
         base = (

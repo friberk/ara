@@ -20,7 +20,7 @@ def router(development: bool) -> APIRouter:
         request: Request,
         limit: int = Query(default=50, ge=1, le=100),
         paper_id: UUID | None = None,
-        kind: Literal["ingest", "summary", "fulltext", "model_download", "model_delete"]
+        kind: Literal["ingest", "summary", "fulltext", "metadata", "model_download", "model_delete"]
         | None = None,
         active: bool | None = None,
     ):
@@ -36,7 +36,7 @@ def router(development: bool) -> APIRouter:
             statement = statement.where(
                 or_(
                     and_(
-                        BackgroundJob.kind.in_(["summary", "fulltext", "embed"]),
+                        BackgroundJob.kind.in_(["summary", "fulltext", "embed", "metadata"]),
                         BackgroundJob.payload["paper_id"].astext == str(paper_id),
                     ),
                     and_(
@@ -105,6 +105,9 @@ def router(development: bool) -> APIRouter:
                 "STORAGE_UNAVAILABLE",
                 "PDF_PARSE_TIMEOUT",
                 "PDF_PARSE_FAILED",
+                # A metadata lookup that ran out of attempts while sources were busy (ARA-086).
+                "PROVIDER_RATE_LIMITED",
+                "PROVIDER_UNAVAILABLE",
             }:
                 raise AppError(
                     409, "JOB_NOT_RETRYABLE", "This failure needs a corrected upload or request."
