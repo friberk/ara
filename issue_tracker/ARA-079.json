@@ -21,6 +21,6 @@
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Deferred (P2) on 2026-10-09: not implemented on feat/rag-context. Live local answers fit 8-9 passages within the 3,072-token budget; broad questions on long papers remain the open case.",
   "updated_at": "2026-10-09"
 }

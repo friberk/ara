@@ -18,14 +18,31 @@
   "test_cases": [
     "Compaction job idempotency on real Postgres; planner structured-output fixtures; recall retrieval tests; long-conversation fixture."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/app/services/memory.py",
     "src/backend/app/services/chat.py",
     "src/backend/app/jobs"
   ],
-  "commits": [],
+  "commits": [
+    "8f31410",
+    "78a2436",
+    "8728495",
+    "d25c928",
+    "0c48f5a",
+    "2bcc6b8",
+    "5f99cf4",
+    "ec98f52",
+    "0171246",
+    "46e9b4a",
+    "c92f3db",
+    "f6e12a9",
+    "c7e7c2d",
+    "bb81e9b",
+    "fb5bf0f",
+    "c869233"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Agent G (feat/rag-memory) built the structured query planner, versioned running summaries (compact_chat) and turn recall, TDD per task.\nTests: test_query_planner.py (17 tests, including first turn without a call, fallback, local planning without hosted calls, and the summary head surviving long answers); test_compaction_integration.py (idempotent ranges, stale jobs skip without a call, local chats never use a hosted model).\nLive: a 20-turn Luna chat built summary versions 1-3 and recalled 2-3 turns per answer. The final question lost the user's goal because the planner kept only the newest 1,500 tokens; c869233 gives the summary head its own share and keeps every recent question (red: the prompt held only long-answer text). The replay cited pages 4 and 18-19. A local IFM 7B chat compacted with the 7B itself (summary v1, 6 of 8 messages).\nFinal: backend 760 passed with Ruff clean. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.",
   "updated_at": "2026-10-09"
 }

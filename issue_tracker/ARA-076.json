@@ -31,9 +31,10 @@
     "8f31410",
     "779a749",
     "b22b853",
-    "4583e78"
+    "4583e78",
+    "d9155cd"
   ],
   "pull_requests": [],
-  "verification": "Agent C (feat/rag-context-budget), TDD per task.\n- Tokens: 6 failed before.\n- Registry: 16 failed / 1 passed before.\n- Chat and metadata in tokens: assert 4 == 10 before.\n- Summaries: 3 unit and 13 integration failures before.\n- Context assembly: 56 failed before.\n- Providers: 10 failed before.\n- 3,072 local cap: assert 5632 == 3072 before.\nByte-based tests were deliberately migrated to token semantics; the agent listed each one. Agent full run: 513 passed. The lead added compose passthrough for the budget settings.",
+  "verification": "Agent C (feat/rag-context-budget), TDD per task.\n- Tokens: 6 failed before.\n- Registry: 16 failed / 1 passed before.\n- Chat and metadata in tokens: assert 4 == 10 before.\n- Summaries: 3 unit and 13 integration failures before.\n- Context assembly: 56 failed before.\n- Providers: 10 failed before.\n- 3,072 local cap: assert 5632 == 3072 before.\nByte-based tests were deliberately migrated to token semantics; the agent listed each one. Agent full run: 513 passed. The lead added compose passthrough for the budget settings.\nLive 2026-10-09: ContextUsage gained input_budget so answers report use against the cap that applied (d9155cd; red: AttributeError for input_budget).",
   "updated_at": "2026-10-09"
 }

@@ -534,3 +534,41 @@ The user challenged three reranker decisions during Wave 3. Each changed the imp
    - The user chose 40 for OpenAI (about 2–3 s and $0.004 per question, extrapolated from the measured 20-candidate run). The local profile stays at 12 for CPU latency (`6f81ffe`).
 
 Lesson recorded for future work: state when a parameter is a local latency or cost choice rather than an established practice, and keep model-backed choices in catalogs rather than in code.
+
+### Wave 3 merge, Wave 4 integration and live verification (ARA-071, ARA-073–ARA-078)
+
+Wave 3 agents built the retrieval pipeline with catalog reranking (F), conversation memory (G), and answer and context UI (H). The lead merged each branch with `--no-ff`. A `retrieval_query` import broke after F and G met; it moved into `memory.py` (`c92f3db`). The retrieval agent then added an autouse test guard that refuses any request to a real external host (`69cd092`). The default reranker and planner fall back quietly, so a test could otherwise reach `api.openai.com` and still pass.
+
+**Browser tests (Playwright, fresh `ara-rag-e2e` stack):**
+- The first run had 9 passing and 3 failing. All three could not highlight the cited passage: "Showing page 1. The cited passage could not be highlighted."
+- Cause: stored chunks are layout Markdown since ARA-071, so a short chunk such as `# Traceable Research Systems Ada Researcher` never matched the PDF text layer.
+- Fix (`422ebb5`): the reader converts the passage once with the GFM parser react-markdown already uses. The hover preview shows plain text, and the source dialog renders headings and tables. Red: `expected [] to deeply equal [0, 1, 2]`. A rerun failed E2E-02 only because the first run had saved the fixture paper. After the documented `down --volumes` reset of the test project, 12 of 12 passed.
+
+**Live verification (`ara-rag-live`: real OpenAI key, retained Phase 0 weights, the Attention and RAG papers):**
+- Upload, layout parsing and the OpenAI index worked. Attention gave 36 passages in 25 sections; RAG gave 61 passages in 35 sections.
+- A Luna question about the 1/√d_k scaling answered in 3.4 s (planning, retrieving, reranking, generating). It used 16 of 32 passages with Decisions reranking and cited §3.2.1 on page 4. In a browser, the reader highlighted the exact supporting sentence.
+- Switching Attention to Qwen3 Embedding 4B kept the OpenAI index serving, with the note "until Qwen3 Embedding 4B is ready (44%)". The local index took about 1.5 min per 16 passages. Afterwards a BLEU question cited §5.2 and the abstract correctly.
+- A 20-turn Luna conversation built summary versions 1–3 at turns 10, 15 and 19, recalled 2–3 turns per answer, and stayed at 16–20k input tokens under the 64k cap.
+- IFM 7B answered within 2,956–3,046 of its 3,072 input tokens. After the fourth local turn, `compact_chat` wrote summary v1 with the 7B itself.
+- A `down`/`up` restart without removing volumes left indexes, chats, summaries, citations and settings identical, and the original PDF still downloaded.
+
+**Defects found live and fixed test-first:**
+1. **NUL in a formula (`bfe1287`).** RAG ingest failed permanently with `JOB_EXECUTION_FAILED`. The safe log omitted the exception; reproducing in the worker showed `psycopg.DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`. TeX math-extension fonts encode big delimiters at code points 0 and 1, and formula filling copied the clipped text. Control characters now become U+FFFD, as layout Markdown already renders them, which keeps box offsets valid. The first red test put the characters in body text and failed for the wrong reason, because layout already replaced them there. The corrected test puts them inside a formula.
+2. **Misleading context total (`d9155cd`).** Answer details read "5,665 of 1,050,000 tokens" for a request capped at 64,000. `ContextUsage` gained an additive `input_budget`.
+3. **Planner lost the summary (`c869233`).** Turn 20 ("Remind me which number I said I care most about") was rewritten as "Which numbered section or contribution…", so retrieval missed page 4 and the answer was insufficient, although summary v3 held "21 million passages". The planner kept only the newest 1,500 tokens, which two long answers filled. The summary head now has its own share, and every recent question stays whole. A first fix kept the summary but dropped the newest question. In the live replay, the planner searched "RAG 21 million Wikipedia passages" and the answer cited pages 4 and 18–19.
+4. **Local answer without citations (`986e6a7`).** IFM 7B with reasoning None answered correctly but cited nothing, so it failed with `UNGROUNDED_OUTPUT`. At Medium it cited six passages. The rule is now restated right before the question. The same None question then cited four passages.
+
+**Observations not changed on this branch:**
+- The spike volume's IFM 3.7B and 7B failed `MODEL_DIGEST_MISMATCH`. The 7B manifest files in the spike and validation volumes have the same SHA-256 (`1de372ce…`), but Ollama lists them as `1de372ce1566` and `3a4c598f85cc` respectively. This belongs to managed-ollama identity checks. The local check used the preserved validation volume, mounted read-only.
+- Local planning adds 11–20 s, and local answers took 97–123 s at the 3,072-token budget, consistent with Phase 0 prefill rates.
+
+**Lead process errors:**
+- An unquoted variable holding compose flags was passed as one argument. Compose rejected the project name and changed nothing.
+- The lead pulled `alpine:latest` for a one-off file hash without asking and removed it afterwards.
+- The README fixture command the lead first wrote (`unittest tests/fixtures/…py`) errors on sibling imports. Running it caught this, and the README now uses `discover`.
+
+**Totals at `986e6a7`:**
+- Backend: 760 passed, Ruff clean.
+- Frontend: check (449 tests) and build pass.
+- Browser: 12/12 on a fresh stack.
+- Fixtures: the fixture suite passes with PyMuPDF 1.28.2.

@@ -9,23 +9,46 @@
     "ARA-073"
   ],
   "acceptance_criteria": [
-    "Given the reranker is installed and enabled, when a question is answered, then the top 12 fused passages are reordered by reranker score and the answer trace says it was reranked.",
-    "Given the reranker is disabled, missing or failing, when a question is answered, then fusion order is used, the answer completes, and the trace records why reranking was skipped.",
-    "Given the reranker model is installed, when it is verified, then its pinned digest, completion capability and a relevant-above-irrelevant logprob probe must pass before it can be enabled.",
-    "Given Settings, when the reranker is not installed, then the toggle is disabled with a plain reason and a link to download it."
+    "Given a reranker profile is selected and available, when a question is answered, then the profile's candidate window of fused passages (40 for OpenAI Decisions, 12 for the local Qwen3 reranker) is reordered by reranker score and the answer trace says it was reranked.",
+    "Given the reranker is off, missing or failing, when a question is answered, then fusion order is used, the answer completes, and the trace records why reranking was skipped.",
+    "Given the local reranker model is installed, when it is verified, then its pinned digest, completion capability and a relevant-above-irrelevant logprob probe must pass before it can be chosen.",
+    "Given Settings, when a reranker is unavailable, then it cannot be chosen and a plain reason links to Local models."
   ],
   "test_cases": [
     "Probe-pair ordering test against fixtures; skip/fallback path; latency evidence from Phase 0 and live verification."
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "docs/superpowers/specs/2026-10-09-rag-context-design.md",
     "src/backend/app/integrations/model_catalog.py",
     "src/backend/app/rag",
     "src/backend/app/schemas/retrieval.py"
   ],
-  "commits": [],
+  "commits": [
+    "d4552c9",
+    "570b9f2",
+    "dc5ed01",
+    "4a2598c",
+    "2fd8f0d",
+    "bd84d19",
+    "6ff54d2",
+    "19442c4",
+    "6ba7f19",
+    "9e6aeca",
+    "1d14f72",
+    "685647b",
+    "80bc8e8",
+    "6f81ffe",
+    "3cdcaf4",
+    "cfcab55",
+    "1158581",
+    "4dae91f",
+    "b9f0457",
+    "ac766f6",
+    "a2dd29c",
+    "69cd092"
+  ],
   "pull_requests": [],
-  "verification": "Phase 0 S1 (2026-10-09): the method works on ara-ollama 0.40.1-ara.2. dengcao 0.6B Q8_0 is broken (uniform logits). dengcao 0.6B F16 took 54 s for 30 candidates. At the user's request the lead tested fanyx/Qwen3-Reranker-0.6B-Q8_0 (digest fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3, 639,152,466 bytes): 12/12 probe pairs, relevant median 0.997, irrelevant median 0.094. 30 candidates took 21.99 s (p50 0.72 s per call) against 51.37 s for F16 in the same session, so about 9 s for 12. The user chose opt-in, off by default (2026-10-09). Not yet implemented. Later the user asked for an OpenAI-based reranker as the default, with the model not hardcoded. The lead verified /v1/decisions with gpt-6-luna using the project key: 12/12 sanity pairs (relevant 1.0, irrelevant 0.00–0.46); 20 candidates at concurrency 8 took 1.21 s total, p50 0.28 s, $0.0019. The contract became a catalog key (1d14f72).",
+  "verification": "Acceptance wording updated on 2026-10-09 to the user's decisions: catalog profiles instead of a hardcoded model, OpenAI Decisions as the default with 40 candidates, local Qwen3 (fanyx Q8_0) opt-in with 12. The original criteria said 'top 12' and 'toggle'.\nTests: test_given_decisions_reranker_when_reranking_then_relevance_orders_candidates; test_given_unknown_reranker_when_reranking_then_it_is_skipped_plainly; test_given_uninstalled_local_reranker_when_reranking_then_it_is_skipped; test_given_skipped_reranker_when_retrieving_then_only_relevant_reasons_are_noted; test_given_reranker_when_verifying_then_a_logprob_probe_runs_without_chat; retrieval-settings.test.tsx (catalog list, Off, uninstalled local reranker cannot be chosen and links to Local models).\nAn autouse guard (69cd092) refuses real external requests in backend tests, so a quietly skipped default reranker cannot hide a call to api.openai.com.\nLive: Decisions reranking ran on every Luna answer (reranking about 1 s); the local reranker verified on the retained fanyx weights.\nFinal: backend 760 passed with Ruff clean; browser 12/12. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.",
   "updated_at": "2026-10-09"
 }

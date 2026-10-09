@@ -29,9 +29,10 @@
     "380f2fd",
     "e7c3a24",
     "0c599ea",
-    "ffe9421"
+    "ffe9421",
+    "bfe1287"
   ],
   "pull_requests": [],
-  "verification": "Agent A (feat/rag-ingest), TDD per task.\n- Parsing uses layout to_markdown with tuned child threads, formula boxes and a legacy fallback.\n- One whole-paper LlamaIndex Document with MarkdownNodeParser and SentenceSplitter(512/64), plus page and box offset mapping.\n- Structured persistence and the hook call; reindex; chunk-source provenance contract (red from the old schema: missing fields).\nAgent full run: 454 passed. Lead integration: the chunker raised ValueError on '<|endoftext|>' in paper text (red reproduced), fixed by using the shared TiktokenCounter with disallowed_special=(). Chunking tests 15 passed; merged suite 601 passed.",
+  "verification": "Agent A (feat/rag-ingest), TDD per task.\n- Parsing uses layout to_markdown with tuned child threads, formula boxes and a legacy fallback.\n- One whole-paper LlamaIndex Document with MarkdownNodeParser and SentenceSplitter(512/64), plus page and box offset mapping.\n- Structured persistence and the hook call; reindex; chunk-source provenance contract (red from the old schema: missing fields).\nAgent full run: 454 passed. Lead integration: the chunker raised ValueError on '<|endoftext|>' in paper text (red reproduced), fixed by using the shared TiktokenCounter with disallowed_special=(). Chunking tests 15 passed; merged suite 601 passed.\nLive 2026-10-09: the RAG paper (arXiv 2005.11401) failed ingest because a display formula's clipped text carried NUL, which PostgreSQL text rejects. bfe1287 maps control characters to U+FFFD in page text, Markdown and metadata (red: psycopg.DataError in the ingest test); the paper then ingested with 61 passages in 35 sections.",
   "updated_at": "2026-10-09"
 }

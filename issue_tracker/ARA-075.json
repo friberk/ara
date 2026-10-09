@@ -17,7 +17,7 @@
   "test_cases": [
     "Vitest/RTL component tests; generated OpenAPI types; Playwright updates for citation selectors, the Advanced panel and indexing progress."
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/settings",
     "src/frontend/src/features/workspace/DetailsPanel.tsx",
@@ -28,9 +28,12 @@
   "commits": [
     "4a2598c",
     "bd97837",
-    "689f6a7"
+    "689f6a7",
+    "003c3ef",
+    "d1432c9",
+    "422ebb5"
   ],
   "pull_requests": [],
-  "verification": "Part 1 (agent E, feat/rag-ui-a): Settings default search model, paper Search index panel, chat pickers limited to chat models. Merged; frontend 409 tests passed. Part 2 is in Wave 3 (agent H).",
+  "verification": "Part 1 (agent E): Settings default search model, paper Search index panel, chat pickers limited to chat models. Part 2 (agent H): answer details, chunk-level chips, reranker choice.\nTests: retrieval-settings.test.tsx; search-index.test.tsx; answer-details.test.tsx; remark-citations.test.ts ('Given the same chunk cited in separate sentences, Then each sentence keeps its chip'); CitationChip.test.tsx.\nBrowser tests first failed 3 of 12: Markdown chunks never matched the PDF text layer, so citations could not highlight. 422ebb5 converts passages with the GFM parser before matching and renders them in the source dialog (red: expected [] to deeply equal [0, 1, 2]); 12/12 passed afterwards.\nLive: switching Attention to Qwen3 4B showed progress (44%, 88%) while OpenAI kept serving; a citation click highlighted the exact supporting sentence on page 4; Details listed query, search, reranking and 16 of 32 passages.\nLive (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.",
   "updated_at": "2026-10-09"
 }

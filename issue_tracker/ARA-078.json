@@ -15,13 +15,18 @@
   "test_cases": [
     "Vitest/RTL and Playwright coverage of status events and the summary popover."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/chat",
     "src/frontend/src/api/sse.ts"
   ],
-  "commits": [],
+  "commits": [
+    "f75910c",
+    "c1748fa",
+    "597cb1b",
+    "d9155cd"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Agent H: SSE message.status stages shown and announced (ConversationPane.status.test.tsx); the memory footnote opens the current summary and names the model (memory-note.test.tsx).\nLive: answers streamed planning, retrieving, reranking and generating; Details showed 'Context: 5,665 of 1,050,000 tokens' for a request capped at 64,000, so d9155cd adds ContextUsage.input_budget and counts against it (red: AttributeError for input_budget; the Details test lacked 'Context: 2,900 of 3,072 tokens').\nFinal: frontend check 449 passed and build passed; browser 12/12. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.",
   "updated_at": "2026-10-09"
 }
