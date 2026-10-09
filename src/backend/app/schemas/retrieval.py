@@ -28,7 +28,8 @@ class EmbeddingProfilePage(BaseModel):
 class RetrievalSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     embedding_profile: str = "openai-3-large"
-    reranker_enabled: bool = True
+    # ARA-074 deferred: CPU reranking measured ~54 s per question (Phase 0 S1).
+    reranker_enabled: bool = False
 
 
 class RetrievalIndexOut(BaseModel):

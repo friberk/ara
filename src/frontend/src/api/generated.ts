@@ -1104,7 +1104,7 @@ export interface components {
             embedding_profile: string;
             /**
              * Reranker Enabled
-             * @default true
+             * @default false
              */
             reranker_enabled: boolean;
         };

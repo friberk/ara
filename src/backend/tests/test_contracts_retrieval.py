@@ -75,7 +75,14 @@ def test_retrieval_dtos_have_exact_shapes():
 def test_retrieval_settings_default_to_openai_profile():
     from app.schemas.retrieval import RetrievalSettings
 
+    # ARA-074 is deferred: CPU reranking measured ~54 s per question, so it is off by default.
     assert RetrievalSettings().model_dump() == {
         "embedding_profile": "openai-3-large",
-        "reranker_enabled": True,
+        "reranker_enabled": False,
     }
+
+
+async def test_indexing_hook_is_a_safe_no_op_until_indexing_lands():
+    from app.rag.hooks import after_chunks_persisted
+
+    assert await after_chunks_persisted(None, document_id=None) is None
