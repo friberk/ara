@@ -153,26 +153,46 @@ async def memory_model(resources, chat_model: str):
     return HOSTED_MEMORY_MODEL, "none", None
 
 
+def planner_turns(counter, turns, room: int | None) -> str:
+    """The latest turns; when they do not fit, every question stays and answers keep their head."""
+    pairs = turns[-PLANNER_TURNS:]
+    if not pairs:
+        return ""
+    header = "Recent turns:\n"
+    full = header + "\n\n".join(f"User: {q.content}\nAssistant: {a.content}" for q, a in pairs)
+    if room is None or counter.count(full) <= room:
+        return full
+    each = max(0, room - counter.count(header)) // len(pairs)
+    blocks = []
+    for asked, answered in pairs:
+        opening = f"User: {asked.content}\nAssistant: "
+        share = each - counter.count(opening) - counter.count(ELLIPSIS) - 1
+        answer = keep_head(counter, answered.content, share) + ELLIPSIS if share > 0 else ELLIPSIS
+        blocks.append(opening + answer)
+    # The newest context matters most for resolving references.
+    return keep_tail(counter, header + "\n\n".join(blocks), room)
+
+
 def planner_prompt(counter, budget: int, turns, memory_summary: str | None, question: str):
-    parts = []
-    if memory_summary:
-        parts.append("Conversation summary:\n" + memory_summary)
-    recent = [
-        f"User: {asked.content}\nAssistant: {answered.content}"
-        for asked, answered in turns[-PLANNER_TURNS:]
-    ]
-    if recent:
-        parts.append("Recent turns:\n" + "\n\n".join(recent))
     tail = "\n\nFollow-up question: " + question
     fixed = count_messages(
         counter, [PromptMessage("system", PLANNER_INSTRUCTIONS), PromptMessage("user", tail)]
     )
-    # The newest context matters most for resolving references.
     room = max(0, min(PLANNER_CONTEXT_TOKENS, budget - fixed))
-    context = keep_tail(counter, "\n\n".join(parts), room)
+    parts = []
+    if memory_summary:
+        # The summary opens with the user's goals and facts; long answers must not push its
+        # head out. It yields up to half the room to recent turns.
+        recent_need = counter.count(planner_turns(counter, turns, None))
+        share = room - min(recent_need, room // 2)
+        parts.append(keep_head(counter, "Conversation summary:\n" + memory_summary, share))
+    spent = counter.count(parts[0] + "\n\n") if parts else 0
+    recent = planner_turns(counter, turns, max(0, room - spent))
+    if recent:
+        parts.append(recent)
     return [
         PromptMessage("system", PLANNER_INSTRUCTIONS),
-        PromptMessage("user", context + tail),
+        PromptMessage("user", "\n\n".join(parts) + tail),
     ]
 
 

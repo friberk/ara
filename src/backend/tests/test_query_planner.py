@@ -320,3 +320,42 @@ async def test_given_caller_holds_local_slot_when_planning_then_planner_still_ru
     finally:
         await release_use(resources.sessions, use)
     assert plan.source == "model" and len(local) == 1
+
+
+def test_given_long_recent_answers_when_prompting_the_planner_then_the_summary_head_survives():
+    """A live 20-turn chat asked "Remind me which number I said I care most about". Two long
+    answers filled the planner's room, the summary's goals fell out, and the rewrite lost them."""
+    from app.integrations.tokens import TiktokenCounter, count_messages
+    from app.services.memory import PLANNER_CONTEXT_TOKENS, planner_prompt
+
+    counter = TiktokenCounter()
+    summary = (
+        "## User goals\n\n- Their thesis cares most about the Wikipedia index size.\n\n"
+        "## Established facts\n\n" + "- RAG combines a retriever with a generator (p. 3).\n" * 200
+    )
+    long_answer = "The paper reports detailed results across tasks. " * 120
+    turns = [
+        (SimpleNamespace(content=f"Question {n}?"), SimpleNamespace(content=long_answer))
+        for n in range(1, 4)
+    ]
+    question = "Remind me which number matters?"
+    messages = planner_prompt(counter, 3000, turns, summary, question)
+    prompt = messages[-1].content
+    assert "Wikipedia index size" in prompt
+    assert "Question 3?" in prompt and prompt.endswith(question)
+    bare = count_messages(counter, planner_prompt(counter, 3000, [], None, question))
+    assert count_messages(counter, messages) <= bare + PLANNER_CONTEXT_TOKENS
+
+
+def test_given_a_short_summary_when_prompting_the_planner_then_recent_turns_use_the_rest():
+    from app.integrations.tokens import TiktokenCounter
+    from app.services.memory import planner_prompt
+
+    counter = TiktokenCounter()
+    turns = [
+        (SimpleNamespace(content="Earliest question?"), SimpleNamespace(content="Short answer.")),
+        (SimpleNamespace(content="Latest question?"), SimpleNamespace(content="Short answer.")),
+    ]
+    summary = "## User goals\n\n- BM25."
+    prompt = planner_prompt(counter, 3000, turns, summary, "And then?")[-1].content
+    assert "BM25" in prompt and "Earliest question?" in prompt and "Latest question?" in prompt
