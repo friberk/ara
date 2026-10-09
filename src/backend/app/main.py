@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from uuid import uuid4
 
@@ -28,13 +29,17 @@ from app.services.health import readiness
 logger = logging.getLogger(__name__)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    resource_factory: Callable[[Settings], Resources] = Resources,
+) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         configure_logging(settings.secret_values())
-        resources = Resources(settings)
+        resources = resource_factory(settings)
         app.state.resources = resources
         from app.jobs.actors import execute_job
         from app.jobs.model_actors import execute_local_summary, execute_model_job

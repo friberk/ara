@@ -7,9 +7,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from fulltext_fixture import FullTextFixture
 from ollama_fixture import OllamaFixture
 
 OLLAMA = OllamaFixture()
+FULLTEXT = FullTextFixture()
 
 TITLE = "Traceable Research Systems"
 ABSTRACT = (
@@ -151,6 +153,8 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         if OLLAMA.get(self, parsed.path):
             return
+        if FULLTEXT.get(self, parsed.path, query):
+            return
         if parsed.path == "/health":
             self.send_json({"status": "ok"})
         elif parsed.path == "/graph/v1/paper/search":
@@ -197,6 +201,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "Unknown fixture endpoint"}, 404)
 
     def do_POST(self):
+        if FULLTEXT.post(self, urlparse(self.path).path):
+            return
         if urlparse(self.path).path.startswith("/api/"):
             self.ollama_mutation()
             return
