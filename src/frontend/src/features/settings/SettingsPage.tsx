@@ -12,7 +12,7 @@ import { normaliseSettings, reasoningControls } from '@/components/composer/reas
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useTheme } from '@/components/theme/theme-context'
-import { unavailableReason, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
+import { isChatModel, unavailableReason, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
 import { LocalModels } from './LocalModels'
@@ -117,6 +117,7 @@ export default function SettingsPage() {
   const models = useModels()
   const saved = useSavedSettings()
   const headingId = useId()
+  const chatModels = models.data?.items.filter(isChatModel)
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
@@ -130,8 +131,8 @@ export default function SettingsPage() {
             <div role="status" className="grid gap-3"><span className="sr-only">Loading models…</span><Skeleton className="h-16 w-full rounded-xl" /><Skeleton className="h-16 w-full rounded-xl" /></div>
           )}
           <ErrorNotice error={models.error ?? saved.error} retry={() => { void models.refetch(); void saved.refetch() }} />
-          {models.data && saved.data && (models.data.items.length ? (
-            <ModelDefaults models={models.data.items} saved={saved.data} labelledBy={headingId} />
+          {chatModels && saved.data && (chatModels.length ? (
+            <ModelDefaults models={chatModels} saved={saved.data} labelledBy={headingId} />
           ) : (
             <EmptyState title="No models configured">Configure model access on the server, then reload this page.</EmptyState>
           ))}

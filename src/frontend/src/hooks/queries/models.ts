@@ -25,6 +25,9 @@ export function useSaveDefaults() {
   })
 }
 
+/** Only chat models generate; search and ranking models serve retrieval. The schema defaults a missing kind to chat. */
+export function isChatModel(model: Model) { return (model.kind ?? 'chat') === 'chat' }
+
 export type Purpose = 'chat' | 'summary'
 /** Whether a model can serve this kind of generation at all, independent of the chosen effort. */
 export function modelSupports(model: Model | undefined, purpose?: Purpose) {

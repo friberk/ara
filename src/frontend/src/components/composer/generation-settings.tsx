@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { GenerationSettings } from '@/api/types'
-import { modelSupports, useModels, useSavedSettings } from '@/hooks/queries/models'
+import { isChatModel, modelSupports, useModels, useSavedSettings } from '@/hooks/queries/models'
 import { GenerationSettingsContext, type GenerationSettingsValue } from './generation-settings-context'
 import { normaliseSettings } from './reasoning'
 
@@ -9,7 +9,7 @@ export function GenerationSettingsProvider({ children }: { children: React.React
   const saved = useSavedSettings()
   const [choice, setChoice] = useState<GenerationSettings | null>(null)
   const value = useMemo<GenerationSettingsValue>(() => {
-    const items = models.data?.items ?? []
+    const items = (models.data?.items ?? []).filter(isChatModel)
     const savedPreference = saved.data?.default_model ? { model: saved.data.default_model, reasoning_effort: saved.data.reasoning_effort } : null
     const savedDefaults = savedPreference ? normaliseSettings(items, savedPreference) : null
     // Missing defaults may choose a first model; a failed settings request is not evidence
