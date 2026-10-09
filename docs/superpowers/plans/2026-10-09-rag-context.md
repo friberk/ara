@@ -1356,57 +1356,58 @@ async def retrieve_evidence(resources, *, document_id: UUID, chunk_set: str, pre
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(summary): summarize by section with short handles (ARA-073)`.
 
-### Task 28: Opt-in Ollama reranker (ARA-074; user decision: opt-in, off by default)
+### Task 28: Catalog rerankers, with OpenAI Decisions as the default (ARA-074; user decisions 2026-10-09)
 
-Measured: `fanyx/Qwen3-Reranker-0.6B-Q8_0` passed 12/12 probe pairs, and 30 candidates took 22 s, so 12 take about 9 s. `dengcao` Q8_0 is broken and F16 is 2.3× slower.
+**Design.** Reranking follows the extensibility of LLM and embedding selection.
+- `app/integrations/reranker_catalog.py` (already committed) defines `RerankerProfile(key, provider, method, model_id, display_name, candidates, concurrency, price_per_million_input, local_model_key)`.
+- Profiles:
+  - `openai-gpt-6-luna`: method `openai-decisions`, `gpt-6-luna`, 20 candidates, concurrency 8, $0.10 per million input tokens. **This is the default.**
+  - `qwen3-rerank-0.6b`: method `ollama-logprobs`, `fanyx/Qwen3-Reranker-0.6B-Q8_0`, 12 candidates, concurrency 1, local.
+- `RetrievalSettings.reranker` holds a profile key or `None` (off).
+- The seam `app/rag/rerank.py::rerank_candidates(resources, *, query, nodes, reranker) -> RerankOutcome` is already committed as a pass-through. The pipeline calls only this function.
+
+**Measured (Phase 0 S4, the user's key):** `POST /v1/decisions` with a `predicate` question returned 1.0/0.0 on the probe pair and 12/12 on the sanity set. 20 candidates at concurrency 8 took 1.21 s total (p50 0.28 s) and about $0.0019.
 
 **Files:**
-- Create `app/rag/rerank.py`.
-- Modify `app/integrations/model_catalog.py` (reranker spec), `app/integrations/ollama.py` (verification branch `kind == "reranker"`), `app/services/local_models.py` (`model_dto` kind) and `app/routes/retrieval.py` (`EmbeddingProfilePage.reranker`, a `RerankerOut` with availability).
-- Tests: `tests/test_rerank.py` (MockTransport) plus catalog and route tests against the fixtures.
+- Implement `app/rag/rerank.py`.
+- Add the local reranker spec to `app/integrations/model_catalog.py`: key `qwen3-reranker-0.6b`, `kind="reranker"`, digest `fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3`, 639152466 bytes, Q8_0.
+- Add a reranker verification branch to `app/integrations/ollama.py`.
+- In `app/routes/retrieval.py`, fill `EmbeddingProfilePage.rerankers`:
+  - OpenAI profiles are available when an OpenAI key is configured.
+  - Local profiles are available when the installation is ready and verified; otherwise the reason is "Download Qwen3 Reranker 0.6B in Settings."
+- Fixture: add the local reranker to `tests/fixtures/ollama_fixture.py` `MODELS`. The OpenAI fixture `/v1/decisions` already exists: it scores by word overlap, refuses on `REFUSE-FIXTURE`, and returns 500 on `DECISIONS-ERROR-FIXTURE`.
 
-**Interfaces:**
+**OpenAI method (`openai-decisions`):**
+- Call `POST /v1/decisions` through the existing `AsyncOpenAI` client's generic `client.post("/decisions", body=..., cast_to=...)`. **Do not upgrade the SDK**: the project pins `openai>=2,<3`, and the typed `decisions` resource needs 3.26.
+- Body: `{model: profile.model_id, input: f"Query:\n{query}\n\nPassage ({section} · p. {page}):\n{text}", questions: [{type: "predicate", name: "relevance", instructions: RELEVANCE_INSTRUCTIONS}]}`.
+- Run the candidate calls in parallel with `asyncio.Semaphore(profile.concurrency)`.
+- Reserve cost before the calls with `price_per_million_input` and the estimated input tokens (reuse or generalize the embedding reservation helper).
+- No SDK retries for 5xx: a failed call gets no score.
+- A `refusal` answer means no score.
 
-```python
-# model_catalog.py
-LocalModelSpec("qwen3-reranker-0.6b", "fanyx/Qwen3-Reranker-0.6B-Q8_0", "Qwen3 Reranker 0.6B",
-               "fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3", 639152466,
-               quantization="Q8_0", kind="reranker")
-RERANK_CANDIDATES = 12
+**Local method (`ollama-logprobs`):** as previously planned. Raw `/api/generate` with `logprobs`, `top_logprobs` 20, options `{temperature 0, num_predict 1, num_ctx 2048, num_thread}`, `keep_alive` 10m, run sequentially inside `retrieval_inference_slot`. The document is cut to 1,800 tokens with `keep_head`. Score = P(yes)/(P(yes)+P(no)), case-insensitive.
 
-RERANK_TEMPLATE = ("<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and "
-                   "the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n"
-                   "<|im_start|>user\n<Instruct>: Given a question about a scientific paper, retrieve passages "
-                   "of the paper that answer the question\n<Query>: {query}\n<Document>: {document}<|im_end|>\n"
-                   "<|im_start|>assistant\n<think>\n\n</think>\n\n")
+**Ordering.** Score only the first `profile.candidates` fused nodes, then sort them by (score desc, fused rank asc). Ties are common, because Decisions saturates at 1.0. Unscored nodes keep their fused rank after the scored ones. The rest of the list follows unchanged.
 
-def yes_probability(logprobs: list[dict]) -> float | None
-    # Sum exp(logprob) over first-entry top_logprobs whose token.strip().lower() is "yes" or "no";
-    # return yes/(yes+no), or None if neither is present.
+**Never raise.**
+- Any total failure (missing key, model not ready, budget, network) returns fusion order with `skipped` set to a plain code.
+- Partial failures still rerank the scored subset.
+- `RerankOutcome.scores` maps node id to score, for the trace.
 
-class OllamaQwenRerank(BaseNodePostprocessor):   # LlamaIndex interface
-    async def _apostprocess_nodes(self, nodes, query_bundle) -> list[NodeWithScore]
-    def _postprocess_nodes(self, nodes, query_bundle=None): raise NotImplementedError("async only")
-```
+**Local chats** use the configured reranker like embeddings do (user decision): reranking is not answer generation.
 
-Behavior:
-- **Request:** one `/api/generate` call per candidate (`raw: true`, `stream: false`, `logprobs: true`, `top_logprobs: 20`, `keep_alive: "10m"`, options `{temperature: 0, num_predict: 1, num_ctx: 2048, num_thread: settings.ollama_num_threads}`), run sequentially inside `retrieval_inference_slot(resources, "qwen3-reranker-0.6b")`.
-- **Truncation:** the document is cut to 1,800 tokens with `keep_head`.
-- **Scope:** only the top 12 fused candidates are reranked. The rest keep fusion order after them.
-- **Failure:** on any error, or a `None` score, return fusion order unchanged and set `trace["rerank_skipped"]` to the error code.
-- **Verification** (`kind == "reranker"`): require `"completion"` in capabilities, the pinned digest, and a logprob probe where a relevant pair's score exceeds an irrelevant pair's by at least 0.3. Otherwise `MODEL_VALIDATION_FAILED`.
-- **Profiles route:** `reranker` is `RerankerOut(model_id, display_name, status, unavailable_reason, local_model_key="qwen3-reranker-0.6b", candidates=12)`. It is `available` only when the installation is ready and verified; otherwise the reason is "Download Qwen3 Reranker 0.6B in Settings to use reranking."
-- **Pipeline:** rerank only when `RetrievalSettings.reranker_enabled` and the reranker is available.
-
-- [ ] **Step 1: Write the failing tests.**
-  - `yes_probability` math, including the capitalised "Yes"/"No".
-  - Fixture ordering: the relevant passage moves to the top.
-  - The runtime is unavailable: order unchanged and the skip recorded.
-  - Disabled setting: zero HTTP calls.
-  - Verification passes for a good fixture and fails for a uniform-logit fixture.
-  - The profiles route reports the reranker as unavailable before install.
+- [ ] **Step 1: Write the failing tests:**
+  - Decisions ordering against the fixture.
+  - Ties broken by fused rank.
+  - Refusal and 500 partial failure.
+  - Missing key gives skipped `MODEL_NOT_CONFIGURED`.
+  - Budget exceeded gives skipped `DAILY_BUDGET_EXCEEDED` with zero HTTP calls.
+  - Concurrency is bounded.
+  - Local logprob ordering, uniform-logit verification failure, and the uninstalled local model reported unavailable.
+  - `None` means zero calls.
+  - The profiles route lists both profiles with availability.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** `feat(rag): rerank locally with Qwen3-Reranker through Ollama (ARA-074)`.
+- [ ] **Step 5: Commit** `feat(rag): rerank with catalog profiles, OpenAI Decisions by default (ARA-074)`.
 
 ---
 
@@ -1548,17 +1549,17 @@ Hidden for messages without `retrieval`.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(ui): explain how an answer was found (ARA-075)`.
 
-### Task 35b: Reranker toggle in Settings (ARA-074)
+### Task 35b: Reranker choice in Settings (ARA-074)
 
 **Files:** Modify `src/features/settings/RetrievalSettingsSection.tsx`. Test: `retrieval-settings.test.tsx`.
 
 **Behavior:**
-- Under the default search model there is a switch, "Rerank results", with the helper text "Finds the most relevant passages more precisely. Adds about 10 seconds to each answer."
-- The switch is disabled when `profiles.reranker` is null or unavailable, and shows the `unavailable_reason` with a link to Local models.
-- Saving sends `PUT /retrieval/settings` with `reranker_enabled`.
-- Local models labels kind `reranker` as "Reranker".
+- Below the default search model, a radio list labelled "Rerank results", built from `profiles.rerankers`, plus "Off".
+- Each option shows its `display_name` and a mono `model_id` line, with plain helper text by provider: OpenAI "Fast, with a small cost per answer"; local "Private. Adds about 10 seconds to each answer".
+- Unavailable options are disabled and show `unavailable_reason` with a link to Local models.
+- The default selection comes from `settings.reranker` (null means Off). Save sends `reranker` as a key or null.
 
-- [ ] **Steps:** failing test, observe red, implement, green, then commit `feat(ui): let power users turn on reranking (ARA-074)`.
+- [ ] **Steps:** failing test, observe red, implement, green, then commit `feat(ui): choose how results are reranked (ARA-074)`.
 
 ### Task 36: Memory footnote
 
