@@ -14,7 +14,13 @@ from app.integrations.context_registry import (
     context_profile,
     hosted_profile,
 )
-from app.integrations.tokens import PromptMessage, count_messages, count_prompt, keep_head
+from app.integrations.tokens import (
+    PromptMessage,
+    check_roles,
+    count_messages,
+    count_prompt,
+    keep_head,
+)
 from app.schemas.ai import Model
 
 OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
@@ -253,10 +259,11 @@ class HostedLLM:
         await self.client.close()
 
     def request(self, model, effort, messages, *, max_output_tokens=None) -> dict:
-        """Responses arguments: the leading system message becomes `instructions`, and any
-        later system messages (summaries, recalled turns) become developer messages."""
+        """Responses arguments: the leading system message becomes `instructions`; the rest,
+        including summaries and recalled turns, keep their user or assistant roles."""
         if not messages or messages[0].role != "system":
             raise ValueError("A message list must start with the system instructions.")
+        check_roles(messages)
         if model not in PRICES:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
@@ -270,10 +277,7 @@ class HostedLLM:
             "model": model,
             "reasoning": {"effort": effort},
             "instructions": messages[0].content,
-            "input": [
-                {"role": "developer" if m.role == "system" else m.role, "content": m.content}
-                for m in messages[1:]
-            ],
+            "input": [{"role": m.role, "content": m.content} for m in messages[1:]],
             "store": False,
             "max_output_tokens": output,
         }

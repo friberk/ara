@@ -16,7 +16,7 @@ def conversation():
 
     return [
         PromptMessage("system", "Instructions"),
-        PromptMessage("system", "Summary of the earlier conversation"),
+        PromptMessage("user", "Summary of the earlier conversation (context only)"),
         PromptMessage("user", "What accuracy?"),
         PromptMessage("assistant", "It reached 87% (p. 6)."),
         PromptMessage(
@@ -49,7 +49,7 @@ HOSTED_BODY = {
     "reasoning": {"effort": "low"},
     "instructions": "Instructions",
     "input": [
-        {"role": "developer", "content": "Summary of the earlier conversation"},
+        {"role": "user", "content": "Summary of the earlier conversation (context only)"},
         {"role": "user", "content": "What accuracy?"},
         {"role": "assistant", "content": "It reached 87% (p. 6)."},
         {
@@ -209,6 +209,30 @@ async def test_given_list_without_leading_instructions_when_calling_hosted_then_
             await adapter.complete_messages(
                 "gpt-5.6-luna", "low", [PromptMessage("user", "Question?")]
             )
+    finally:
+        await adapter.close()
+    assert requests == []
+
+
+@pytest.mark.parametrize("provider", ["hosted", "local"])
+async def test_given_a_later_system_message_when_calling_then_rejected_without_request(provider):
+    from app.integrations.tokens import PromptMessage
+
+    requests = []
+    adapter = (hosted if provider == "hosted" else local)(lambda request: requests.append(request))
+    model = "gpt-5.6-luna" if provider == "hosted" else "ifm-k2-horizon-7b"
+    effort = "low" if provider == "hosted" else "none"
+    # Untrusted context must never gain the instructions' authority.
+    messages = [
+        PromptMessage("system", "Instructions"),
+        PromptMessage("system", "Summary of the earlier conversation"),
+        PromptMessage("user", "Question?"),
+    ]
+    try:
+        with pytest.raises(ValueError, match="instructions"):
+            await adapter.complete_messages(model, effort, messages)
+        with pytest.raises(ValueError, match="instructions"):
+            _ = [d async for d in adapter.stream_messages(model, effort, messages)]
     finally:
         await adapter.close()
     assert requests == []
