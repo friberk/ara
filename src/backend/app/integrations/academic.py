@@ -12,23 +12,42 @@ FIELDS = "title,authors,year,abstract,externalIds,url,openAccessPdf,isOpenAccess
 
 
 def normalized_doi(doi: str | None) -> str | None:
+    if doi is not None and not isinstance(doi, str):
+        raise ValueError("Malformed DOI")
     if not doi:
         return None
     value = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:\s*)", "", doi.strip(), flags=re.I).lower()
     return value if re.fullmatch(r"10\.\d{4,9}/\S+", value) else None
 
 
+def object_value(value) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("Malformed provider object")
+    return value
+
+
+def object_list(value) -> list[dict]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Malformed provider collection")
+    return [object_value(item) for item in value]
+
+
 def normalize(provider: str, row: dict) -> SearchResult:
+    row = object_value(row)
     if provider == "semantic_scholar":
-        pdf = row.get("openAccessPdf") or {}
+        pdf = object_value(row.get("openAccessPdf"))
         return SearchResult(
             provider=provider,
             external_id=row["paperId"],
             title=row.get("title"),
-            authors=[a["name"] for a in row.get("authors") or [] if a.get("name")],
+            authors=[a["name"] for a in object_list(row.get("authors")) if a.get("name")],
             year=row.get("year"),
             abstract=row.get("abstract"),
-            doi=normalized_doi((row.get("externalIds") or {}).get("DOI")),
+            doi=normalized_doi(object_value(row.get("externalIds")).get("DOI")),
             external_url=row.get("url"),
             pdf_url=pdf.get("url"),
             is_open_access=row.get("isOpenAccess"),
@@ -44,7 +63,7 @@ def normalize(provider: str, row: dict) -> SearchResult:
             if pdf.get("url")
             else [],
         )
-    index = row.get("abstract_inverted_index") or {}
+    index = object_value(row.get("abstract_inverted_index"))
     positions = {
         position: word
         for word, offsets in index.items()
@@ -52,21 +71,23 @@ def normalize(provider: str, row: dict) -> SearchResult:
         if isinstance(position, int) and 0 <= position < 50000
     }
     abstract = " ".join(positions[i] for i in sorted(positions)) or None
-    location = row.get("primary_location") or {}
+    location = object_value(row.get("primary_location"))
+    best = object_value(row.get("best_oa_location"))
+    reported = object_list(row.get("locations"))
     pdf = (
-        (row.get("best_oa_location") or {}).get("pdf_url")
+        best.get("pdf_url")
         or location.get("pdf_url")
-        or next((x.get("pdf_url") for x in row.get("locations") or [] if x.get("pdf_url")), None)
+        or next((x.get("pdf_url") for x in reported if x.get("pdf_url")), None)
     )
     locations, seen = [], set()
-    for item in [location, row.get("best_oa_location") or {}, *(row.get("locations") or [])]:
+    for item in [location, best, *reported]:
         if not item or not (item.get("pdf_url") or item.get("landing_page_url")):
             continue
         key = (item.get("pdf_url"), item.get("landing_page_url"))
         if key in seen:
             continue
         seen.add(key)
-        source_type = (item.get("source") or {}).get("type")
+        source_type = object_value(item.get("source")).get("type")
         locations.append(
             FullTextLocation(
                 pdf_url=item.get("pdf_url"),
@@ -81,21 +102,23 @@ def normalize(provider: str, row: dict) -> SearchResult:
                 else "unknown",
             )
         )
+    if not isinstance(row.get("id"), str):
+        raise ValueError("Malformed provider identity")
     return SearchResult(
         provider=provider,
         external_id=row["id"].rsplit("/", 1)[-1],
         title=row.get("display_name"),
         authors=[
             x["author"]["display_name"]
-            for x in row.get("authorships") or []
-            if (x.get("author") or {}).get("display_name")
+            for x in object_list(row.get("authorships"))
+            if object_value(x.get("author")).get("display_name")
         ],
         year=row.get("publication_year"),
         abstract=abstract,
         doi=normalized_doi(row.get("doi")),
         external_url=location.get("landing_page_url"),
         pdf_url=pdf,
-        is_open_access=(row.get("open_access") or {}).get("is_oa"),
+        is_open_access=object_value(row.get("open_access")).get("is_oa"),
         locations=locations,
     )
 
@@ -126,6 +149,12 @@ class AcademicSearch:
             if error.code == "PAPER_NOT_FOUND":
                 return None
             raise
+        except (ValueError, KeyError, TypeError):
+            raise AppError(
+                502,
+                "PROVIDER_INVALID_RESPONSE",
+                "The academic provider returned malformed paper metadata.",
+            ) from None
         return result if normalized_doi(result.doi) == identity else None
 
     async def request(self, provider: str, path: str, params: dict) -> dict:

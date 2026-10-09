@@ -66,6 +66,7 @@ test('Given downloaded bytes whose ingestion failed, Then retrieval does not res
   await waitFor(() => expect(calls.some((call) => call.path === '/jobs/ingest-1')).toBe(true))
   expect(accepted).not.toHaveBeenCalled()
   expect(screen.queryByText(/Processing its pages/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Find PDF' })).toBeEnabled()
 })
 
 test('Given a manually replaced PDF, Then old acquisition details are refreshed immediately', async () => {
@@ -120,6 +121,7 @@ test('Given blocked access, Then network guidance and safe browser links accompa
   const { calls } = mockApi({ 'GET /papers/p1/fulltext': { ...idle, retrieval_job: denied }, 'POST /papers/p1/retrieve-fulltext': { paper_id: 'p1', job_id: 'j2' } })
   const { user } = renderWithProviders(<FullTextAccess paper={paper} />)
   expect(await screen.findByText(/This site blocked the download/)).toBeVisible()
+  expect(screen.getByRole('alert')).toHaveTextContent('This site blocked the download')
   expect(screen.getByText(/computer running its backend/)).toBeVisible()
   expect(screen.getByRole('link', { name: 'Open Semantic Scholar' })).toHaveAttribute('href', source.external_url)
   expect(screen.getByRole('link', { name: 'Open publisher' })).toHaveAttribute('href', 'https://doi.org/10.5555/paper')

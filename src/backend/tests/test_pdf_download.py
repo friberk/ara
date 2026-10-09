@@ -95,6 +95,8 @@ async def test_http_outcomes_describe_observed_barrier(status, outcome):
         ("http://127.0.0.1/private", "unsafe_url"),
         ("https://arxiv.org@127.0.0.1/private", "unsafe_url"),
         ("https://user:password@arxiv.org/private", "unsafe_url"),
+        ("https://arxiv.org:0/pdf/one", "unsafe_url"),
+        ("http://arxiv.org:0/pdf/one", "unsafe_url"),
         ("file:///etc/passwd", "unsafe_url"),
         ("https://arxiv.org:8443/private", "unsafe_url"),
         ("https://arxiv.org:bad/private", "unsafe_url"),

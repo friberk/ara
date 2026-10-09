@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.core.config import Settings
+from app.core.errors import AppError
 from app.integrations.academic import AcademicSearch, normalize
 from app.schemas.research import SearchResult
 
@@ -83,6 +84,29 @@ def test_old_source_snapshots_remain_unknown_not_paywalled():
     ).model_dump()
     assert closed.get("is_open_access") is False
     assert closed.get("locations") == []
+
+
+@pytest.mark.parametrize("lookup", ["canonical", "by_doi"])
+async def test_malformed_location_source_is_a_safe_provider_error(lookup):
+    """Given malformed access metadata, then it stays within the provider error boundary."""
+    row = {
+        "id": "https://openalex.org/W123",
+        "doi": "10.5555/paper",
+        "locations": [{"pdf_url": "https://arxiv.org/pdf/one", "source": ["bad"]}],
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, json={"results": [row]} if "filter" in request.url.params else row
+            )
+        )
+    ) as client:
+        adapter = AcademicSearch(client, Settings(_env_file=None))
+        with pytest.raises(AppError) as error:
+            await getattr(adapter, lookup)(
+                "openalex", "W123" if lookup == "canonical" else "10.5555/paper"
+            )
+        assert error.value.code == "PROVIDER_INVALID_RESPONSE"
 
 
 @pytest.mark.parametrize("provider", ["openalex", "semantic_scholar"])

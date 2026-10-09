@@ -39,13 +39,15 @@ export function FullTextAccess({ paper, onAccepted }: { paper: Paper; onAccepted
     return <p className="text-sm text-muted-foreground">{[provider && `Retrieved via ${provider}`, version, license && `License: ${license}`].filter(Boolean).join(' · ')}</p>
   }
   if (paper.active_document_id && documentId && paper.active_document_id !== documentId) return null
-  if (job?.state === 'completed' && documentId && ingestId) return paper.document_status === 'failed' ? null : <p role="status" className="text-sm text-muted-foreground">PDF downloaded. Processing its pages continues in the background.</p>
+  if (job?.state === 'completed' && documentId && ingestId && paper.document_status !== 'failed') return <p role="status" className="text-sm text-muted-foreground">PDF downloaded. Processing its pages continues in the background.</p>
   if (!paper.sources.length && !paper.doi) return null
   return <div className="grid gap-3">
     {active && <><p role="status" className="text-sm font-medium">{jobStageLabel(job)}</p><p className="text-sm text-muted-foreground">This continues in the background. You can leave this page.</p></>}
     {failed && <>
+      <div role="alert" className="grid gap-3">
       <p className="text-sm">{retrievalMessage(job.result?.outcome)}</p>
       {['blocked', 'access_required'].includes(String(job.result?.outcome)) && <p className="text-sm text-muted-foreground">If your university provides access, connect to its network or supported VPN and retry. The app downloads using the network of the computer running its backend. Browser sign-in does not sign the app in; you can download there and upload here.</p>}
+      </div>
       {wait > 0 && <p className="text-sm text-muted-foreground">Try again in {wait} seconds.</p>}
     </>}
     <div className="flex flex-wrap items-center gap-2">

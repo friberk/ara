@@ -72,7 +72,9 @@ class PublicPDFTransport(httpx.AsyncBaseTransport):
             ):
                 raise ValueError
             hostname = parts.hostname.rstrip(".").encode("idna").decode("ascii").lower()
-            port = parts.port or (443 if parts.scheme == "https" else 80)
+            port = (
+                parts.port if parts.port is not None else (443 if parts.scheme == "https" else 80)
+            )
             if port != (443 if parts.scheme == "https" else 80):
                 raise ValueError
             try:
