@@ -98,7 +98,7 @@ async def test_given_ready_document_when_embedding_then_index_is_ready_with_vect
     from app.integrations.embedding_catalog import embedding_profile
     from app.integrations.embeddings import create_embedder
 
-    _, document_id = await seed_paper(resources)
+    paper_id, document_id = await seed_paper(resources)
     index_id, job_id = await ensure(resources, document_id, OPENAI)
     index = await load(resources, RetrievalIndex, index_id)
     assert (index.state, index.total, index.chunk_set) == ("queued", 5, CHUNK_SET)
@@ -107,6 +107,7 @@ async def test_given_ready_document_when_embedding_then_index_is_ready_with_vect
     assert job.payload == {
         "index_id": str(index_id),
         "document_id": str(document_id),
+        "paper_id": str(paper_id),
         "profile": OPENAI,
     }
     await run_job(resources, job_id)

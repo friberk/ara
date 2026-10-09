@@ -272,3 +272,22 @@ async def test_given_ready_index_when_rebuilding_then_it_keeps_serving(resources
     assert missing.status_code == 409 and missing.json()["code"] == "DOCUMENT_NOT_INDEXABLE"
     async with resources.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(BackgroundJob)) == 1
+
+
+async def test_given_embed_job_when_listing_jobs_then_it_links_to_its_paper(resources, client):
+    paper_id, _ = await seed_paper(resources)
+    other_paper, _ = await seed_paper(resources)
+    for paper in (paper_id, other_paper):
+        response = await client.put(
+            f"/api/v1/papers/{paper}/retrieval", json={"profile": QWEN, "request_id": str(uuid4())}
+        )
+        assert response.status_code == 200, response.text
+    page = (await client.get("/api/v1/jobs", params={"paper_id": str(paper_id)})).json()
+    (job,) = page["items"]
+    assert (job["kind"], job["paper_id"], job["paper_title"]) == (
+        "embed",
+        str(paper_id),
+        "Sparse Retrieval",
+    )
+    listed = (await client.get("/api/v1/jobs")).json()["items"]
+    assert {item["paper_id"] for item in listed} == {str(paper_id), str(other_paper)}

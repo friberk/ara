@@ -248,7 +248,7 @@ def payload_uuid(payload: dict, key: str) -> UUID | None:
 
 
 async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
-    """Link summary jobs through their payload paper and ingest jobs through their document."""
+    """Link summary and embed jobs through their payload paper, ingest jobs via their document."""
     from app.models.research import Document, Paper
 
     documents = {payload_uuid(job.payload, "document_id") for job in jobs if job.kind == "ingest"}
@@ -266,7 +266,7 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     )
 
     def linked_paper(job: BackgroundJob) -> UUID | None:
-        if job.kind == "summary":
+        if job.kind in {"summary", "embed"}:
             return payload_uuid(job.payload, "paper_id")
         if job.kind == "ingest":
             return document_papers.get(payload_uuid(job.payload, "document_id"))

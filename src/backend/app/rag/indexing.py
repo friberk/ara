@@ -111,6 +111,8 @@ async def ensure_index(
         payload={
             "index_id": str(target.id),
             "document_id": str(document_id),
+            # The paper link lets the Jobs API label and filter indexing work.
+            "paper_id": str(document.paper_id),
             "profile": profile_key,
         },
     )
