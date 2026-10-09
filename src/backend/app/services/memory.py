@@ -1,4 +1,4 @@
-"""Conversation memory: follow-up planning and running summaries (ARA-077).
+"""Conversation memory: follow-up planning, running summaries and turn recall (ARA-077).
 
 Local chats only ever use their own local model; hosted chats plan and compact with Luna.
 Summaries are versioned rows anchored to a message; original messages are never altered.
@@ -12,11 +12,13 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-from sqlalchemy import or_, select, update
+from sqlalchemy import or_, select, true, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
 from app.integrations.context_registry import context_profile, hosted_profile, local_profile
+from app.integrations.embedding_catalog import embedding_profile
+from app.integrations.embeddings import create_embedder
 from app.integrations.llm import (
     LLMError,
     create_llm,
@@ -30,13 +32,15 @@ from app.integrations.tokens import (
     MESSAGE_OVERHEAD,
     REPLY_PRIMING,
     PromptMessage,
+    TiktokenCounter,
     count_messages,
     keep_head,
     keep_tail,
 )
 from app.models.jobs import BackgroundJob
-from app.models.memory import ChatMemory
-from app.models.research import ChatMessage, ChatSession
+from app.models.memory import ChatMemory, ChatTurnEmbedding
+from app.models.research import ChatMessage, ChatSession, Paper
+from app.rag.indexing import UNAVAILABLE, effective_profile
 from app.repositories.jobs import continue_locked, enqueue, fence, now
 from app.schemas.retrieval import ChatMemoryOut, ChatMemoryState
 from app.services.context import (
@@ -65,6 +69,9 @@ SUMMARY_SECTIONS = (
 SUMMARY_TOKEN_LIMIT = 2000
 COMPACTION_MIN_OUTPUT = 1024
 BUSY_WAIT_SECONDS = 10
+# Under the 2,048-token local embedding context; the start of an answer carries its gist.
+TURN_EMBED_TOKENS = 1800
+RECALL_SIMILARITY = 0.3
 PLANNER_TURNS = 2
 PLANNER_CONTEXT_TOKENS = 1500
 PLANNER_OUTPUT_TOKENS = 300
@@ -390,12 +397,13 @@ async def checkpoint(resources, job_id, generation, token, payload) -> bool:
         return saved is not None
 
 
-async def wait_for_runtime(resources, job_id, generation, token, payload) -> None:
-    """A busy local runtime started no generation: retry later without spending attempts."""
+async def wait_for_runtime(resources, job_id, generation, token, payload=None) -> None:
+    """A busy local runtime started no work: retry later without spending attempts."""
     async with resources.sessions() as session, session.begin():
         job = await owned_job(session, job_id, generation, token)
         if job is not None:
-            job.payload = {**payload, "paid_call_inflight": False}
+            if payload is not None:
+                job.payload = payload
             continue_locked(
                 session,
                 job,
@@ -484,6 +492,7 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
             settle_locked(job, result={"version": version} if version else {"skipped": True})
     except (LLMError, AppError) as exc:
         if exc.code == "LOCAL_MODEL_BUSY" and not payload.get("paid_call_inflight"):
+            payload = {**payload, "paid_call_inflight": False}
             await wait_for_runtime(resources, job_id, generation, token, payload)
             return
         error = exc if isinstance(exc, LLMError) else LLMError(exc.code, exc.message)
@@ -520,3 +529,116 @@ async def memory_state(session, chat_id: UUID) -> ChatMemoryState:
         created_at=latest.created_at,
     )
     return ChatMemoryState(memory=memory, total_messages=len(ids))
+
+
+async def enqueue_embed_turn(session, message_id: UUID) -> BackgroundJob | None:
+    """Queue embedding of a completed answer and its question, once per answer."""
+    message = await session.get(ChatMessage, message_id)
+    if message is None:
+        return None
+    queued = await session.scalar(
+        select(BackgroundJob.id)
+        .where(
+            BackgroundJob.kind == "embed_turn",
+            BackgroundJob.payload["message_id"].astext == str(message_id),
+        )
+        .limit(1)
+    )
+    if queued is not None:
+        return None
+    return await enqueue(
+        session,
+        kind="embed_turn",
+        payload={"message_id": str(message_id), "chat_id": str(message.session_id)},
+    )
+
+
+async def run_embed_turn_job(resources, job_id, generation, token, payload) -> None:
+    """Embed one turn as "Q: <question>" and "A: <answer>" lines with the paper's profile.
+
+    Embedding is idempotent: a failure retries through the job's attempts.
+    """
+    message_id = UUID(payload["message_id"])
+    async with resources.sessions() as session:
+        if await session.scalar(select(BackgroundJob.id).where(*fence(job_id, generation, token))):
+            answer = await session.get(ChatMessage, message_id)
+        else:
+            return  # A duplicate or stale delivery holds no lease and writes nothing.
+        pairs = turn_pairs(await chat_messages(session, answer.session_id)) if answer else []
+        question = next((asked for asked, answered in pairs if answered.id == message_id), None)
+        if question is not None:
+            # The paper's profile at embedding time, the same one its index will use.
+            chat = await session.get(ChatSession, answer.session_id)
+            profile, _ = await effective_profile(session, await session.get(Paper, chat.paper_id))
+    if question is None:
+        await settle(resources, job_id, generation, token, result={"skipped": True})
+        return
+    text = f"Q: {question.content}\nA: {render_history_turn(answer)}"
+    text = keep_head(TiktokenCounter(), text, TURN_EMBED_TOKENS)
+    embedder = None
+    try:
+        embedder = create_embedder(resources, embedding_profile(profile))
+        (vector,) = await embedder.embed_documents([text])
+    except AppError as error:
+        if error.code in UNAVAILABLE:
+            # Recall skips this turn; configuration problems do not get better on retry.
+            await settle(resources, job_id, generation, token, result={"unavailable": error.code})
+            return
+        if error.code == "LOCAL_MODEL_BUSY":
+            await wait_for_runtime(resources, job_id, generation, token)
+            return
+        raise
+    finally:
+        if embedder is not None:
+            await embedder.close()
+    async with resources.sessions() as session, session.begin():
+        job = await owned_job(session, job_id, generation, token)
+        if job is None:
+            return
+        await session.execute(
+            insert(ChatTurnEmbedding)
+            .values(
+                message_id=message_id,
+                profile=profile,
+                session_id=answer.session_id,
+                embedding=vector,
+            )
+            .on_conflict_do_update(
+                index_elements=["message_id", "profile"], set_={"embedding": vector}
+            )
+        )
+        settle_locked(job, result={"profile": profile})
+
+
+async def recall_turns(
+    resources, *, chat_id: UUID, profile: str, query_vector, exclude_ids: set[UUID], limit: int = 3
+) -> list[tuple[str, str]]:
+    """Earlier (question, answer) pairs most similar to the query, above the threshold.
+
+    `exclude_ids` holds the answer ids already in the prompt (the recent window). Only
+    vectors of `profile` are compared, so dimensions always match.
+    """
+    distance = ChatTurnEmbedding.embedding.cosine_distance(query_vector)
+    async with resources.sessions() as session:
+        rows = (
+            await session.execute(
+                select(ChatTurnEmbedding.message_id, distance.label("distance"))
+                .where(
+                    ChatTurnEmbedding.session_id == chat_id,
+                    ChatTurnEmbedding.profile == profile,
+                    ChatTurnEmbedding.message_id.notin_(exclude_ids) if exclude_ids else true(),
+                )
+                .order_by(distance)
+                .limit(limit)
+            )
+        ).all()
+        wanted = [row.message_id for row in rows if 1 - row.distance > RECALL_SIMILARITY]
+        if not wanted:
+            return []
+        pairs = turn_pairs(await chat_messages(session, chat_id))
+    found = {
+        answer.id: (question.content, render_history_turn(answer))
+        for question, answer in pairs
+        if answer.id in wanted
+    }
+    return [found[message_id] for message_id in wanted if message_id in found]

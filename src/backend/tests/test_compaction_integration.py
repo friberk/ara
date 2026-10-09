@@ -365,3 +365,19 @@ async def test_given_summary_when_reading_chat_memory_then_summary_and_covered_m
     assert missing.status_code == 404
     async with resources.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(ChatMemory)) == 1
+
+
+async def test_given_compact_chat_job_when_worker_executes_then_summary_is_written(
+    resources, monkeypatch
+):
+    from app.jobs import actors
+
+    monkeypatch.setattr(actors, "_resources", resources)
+    hosted_responses(monkeypatch, resources, lambda body: SUMMARY_V1)
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3))
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id)
+    await actors.execute_job.fn.__wrapped__(str(job_id), 1)
+    assert (await load_job(resources, job_id)).result == {"version": 1}
+    assert [memory.version for memory in await memories(resources, chat_id)] == [1]
