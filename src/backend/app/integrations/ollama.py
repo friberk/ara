@@ -98,6 +98,30 @@ def runtime_error(value: str) -> AppError:
     )
 
 
+def protocol_error() -> AppError:
+    return AppError(502, "MODEL_PROTOCOL_ERROR", "The runtime returned an invalid response.")
+
+
+def inventory_models(data: dict) -> list[dict]:
+    models = data.get("models", [])
+    if not isinstance(models, list) or any(not isinstance(item, dict) for item in models):
+        raise protocol_error()
+    return models
+
+
+def probe_message(data: dict) -> dict:
+    if not isinstance(data, dict):
+        raise protocol_error()
+    message = data.get("message", {})
+    if (
+        not isinstance(message, dict)
+        or not isinstance(message.get("content", ""), str)
+        or not isinstance(message.get("thinking", ""), str)
+    ):
+        raise protocol_error()
+    return message
+
+
 class OllamaRuntime:
     def __init__(
         self,
@@ -144,9 +168,7 @@ class OllamaRuntime:
             response.raise_for_status()
             data = response.json() if response.content else {}
             if not isinstance(data, dict):
-                raise AppError(
-                    502, "MODEL_PROTOCOL_ERROR", "The runtime returned an invalid response."
-                )
+                raise protocol_error()
             return data
         except (httpx.HTTPError, ValueError):
             raise AppError(
@@ -214,7 +236,7 @@ class OllamaRuntime:
 
     async def artifact(self, spec: LocalModelSpec, *, verify_digest=True) -> dict | None:
         data = await self.request("GET", "/api/tags")
-        for item in data.get("models", []):
+        for item in inventory_models(data):
             if item.get("name") == spec.model_id or item.get("model") == spec.model_id:
                 digest = str(item.get("digest", "")).removeprefix("sha256:")
                 if verify_digest and digest != spec.expected_digest:
@@ -234,15 +256,25 @@ class OllamaRuntime:
                 "The downloaded model is absent from runtime inventory.",
             )
         show = await self.request("POST", "/api/show", json={"model": spec.model_id})
-        if not show.get("template") or "completion" not in show.get("capabilities", []):
+        template = show.get("template", "")
+        capabilities = show.get("capabilities", [])
+        model_info = show.get("model_info", {})
+        if (
+            not isinstance(template, str)
+            or not isinstance(capabilities, list)
+            or any(not isinstance(value, str) for value in capabilities)
+            or not isinstance(model_info, dict)
+        ):
+            raise protocol_error()
+        if not template or "completion" not in capabilities:
             raise AppError(
                 409,
                 "MODEL_VALIDATION_FAILED",
                 "The local model does not provide a usable chat template.",
             )
-        lengths = [
-            v for k, v in show.get("model_info", {}).items() if k.endswith(".context_length")
-        ]
+        lengths = [v for k, v in model_info.items() if k.endswith(".context_length")]
+        if any(type(value) is not int or value <= 0 for value in lengths):
+            raise protocol_error()
         if lengths and min(lengths) < context_window:
             raise AppError(
                 409,
@@ -250,6 +282,9 @@ class OllamaRuntime:
                 "The local model cannot support the configured context.",
             )
         version = await self.request("GET", "/api/version")
+        runtime_version = version.get("version")
+        if not isinstance(runtime_version, str) or not runtime_version.strip():
+            raise protocol_error()
         probe = await self.request(
             "POST",
             "/api/chat",
@@ -267,10 +302,11 @@ class OllamaRuntime:
                 },
             },
         )
+        message = probe_message(probe)
         if (
             probe.get("done") is not True
             or probe.get("done_reason") != "stop"
-            or not str(probe.get("message", {}).get("content", "")).strip()
+            or not message.get("content", "").strip()
         ):
             raise AppError(
                 409, "MODEL_VALIDATION_FAILED", "The local model did not return a usable response."
@@ -299,7 +335,7 @@ class OllamaRuntime:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     event = json.loads(line)
-                    streamed += event.get("message", {}).get("content", "")
+                    streamed += probe_message(event).get("content", "")
                     if event.get("done") is True and event.get("done_reason") != "stop":
                         raise AppError(
                             409,
@@ -320,7 +356,7 @@ class OllamaRuntime:
         candidates = local_think_mapping(thinking)
         # Older runtimes may have no metadata. Only a demonstrated change from
         # default private thinking to none can establish the boolean off control.
-        if "thinking" not in show and probe.get("message", {}).get("thinking"):
+        if "thinking" not in show and message.get("thinking"):
             candidates["none"] = False
         verified_mapping = {}
         for effort, value in candidates.items():
@@ -343,11 +379,12 @@ class OllamaRuntime:
                         },
                     },
                 )
+                candidate_message = probe_message(response)
                 if (
                     response.get("done") is True
                     and response.get("done_reason") == "stop"
-                    and str(response.get("message", {}).get("content", "")).strip()
-                    and (value is not False or not response.get("message", {}).get("thinking"))
+                    and candidate_message.get("content", "").strip()
+                    and (value is not False or not candidate_message.get("thinking"))
                 ):
                     reasoning.append(effort)
                     verified_mapping[effort] = value
@@ -380,7 +417,7 @@ class OllamaRuntime:
                     },
                 },
             )
-            content = json.loads(response.get("message", {}).get("content", ""))
+            content = json.loads(probe_message(response).get("content", ""))
             structured = (
                 response.get("done") is True
                 and response.get("done_reason") == "stop"
@@ -394,7 +431,7 @@ class OllamaRuntime:
                 raise
         return {
             "digest": spec.expected_digest,
-            "runtime_version": version.get("version"),
+            "runtime_version": runtime_version,
             "context_window": context_window,
             "reasoning_efforts": reasoning,
             "thinking_schema": 1,
@@ -411,7 +448,7 @@ class OllamaRuntime:
         running = await self.request("GET", "/api/ps")
         if any(
             item.get("name") == spec.model_id or item.get("model") == spec.model_id
-            for item in running.get("models", [])
+            for item in inventory_models(running)
         ):
             raise AppError(
                 409, "MODEL_UNLOAD_FAILED", "The model is still loaded; deletion was stopped."
