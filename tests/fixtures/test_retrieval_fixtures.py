@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import threading
 import unittest
+import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
@@ -120,6 +121,62 @@ class RetrievalFixtureTests(unittest.TestCase):
         )
         text = result["output"][0]["content"][0]["text"]
         self.assertTrue(text.startswith("[insufficient-evidence]"))
+
+    def test_structured_arrays_honour_min_items_for_query_plans(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "standalone_question": {"type": "string"},
+                "search_queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 3,
+                },
+                "needs_paper_evidence": {"type": "boolean"},
+            },
+            "required": ["standalone_question", "search_queries", "needs_paper_evidence"],
+        }
+        result = self.post(
+            "/v1/responses",
+            {
+                "model": "gpt-5.6-luna",
+                "input": "Plan the search",
+                "text": {"format": {"type": "json_schema", "name": "plan", "schema": schema}},
+            },
+        )
+        plan = json.loads(result["output"][0]["content"][0]["text"])
+        self.assertGreaterEqual(len(plan["search_queries"]), 1)
+        self.assertTrue(all(isinstance(q, str) and q for q in plan["search_queries"]))
+
+    def decide(self, text):
+        return self.post(
+            "/v1/decisions",
+            {
+                "model": "gpt-6-luna",
+                "input": text,
+                "questions": [{"type": "predicate", "name": "relevance", "instructions": "Relevant?"}],
+            },
+        )
+
+    def test_decisions_predicate_scores_relevant_above_irrelevant(self):
+        relevant = self.decide("Query:\nBM25 recall benchmark\n\nPassage:\nBM25 recall is 0.61 on the benchmark.")
+        unrelated = self.decide("Query:\nBM25 recall benchmark\n\nPassage:\nProteins fold in yeast cells.")
+        for result in (relevant, unrelated):
+            answer = result["answers"][0]
+            self.assertEqual((answer["type"], answer["name"]), ("predicate", "relevance"))
+            self.assertGreater(result["usage"]["input_tokens"], 0)
+            self.assertEqual(result["usage"]["output_tokens"], 0)
+        self.assertGreater(
+            relevant["answers"][0]["probability"], unrelated["answers"][0]["probability"] + 0.3
+        )
+
+    def test_decisions_fixture_can_refuse_and_fail(self):
+        refused = self.decide("Query:\nREFUSE-FIXTURE\n\nPassage:\nText.")
+        self.assertEqual(refused["answers"][0]["type"], "refusal")
+        with self.assertRaises(urllib.error.HTTPError) as failure:
+            self.decide("Query:\nDECISIONS-ERROR-FIXTURE\n\nPassage:\nText.")
+        self.assertEqual(failure.exception.code, 500)
 
     def test_ollama_embed_returns_model_dimensions_and_ignores_query_instruction(self):
         self.module.OLLAMA.installed.add("qwen3-embedding:4b-q4_K_M")

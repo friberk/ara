@@ -71,25 +71,34 @@ async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(r
 
 async def test_given_settings_when_saving_then_profile_is_validated_and_stored(resources, client):
     response = await client.get("/api/v1/retrieval/settings")
-    assert response.json() == {"embedding_profile": OPENAI, "reranker_enabled": False}
+    assert response.json() == {"embedding_profile": OPENAI, "reranker": "openai-gpt-6-luna"}
     saved = await client.put(
         "/api/v1/retrieval/settings",
-        json={"embedding_profile": "qwen3-embed-8b", "reranker_enabled": True},
+        json={"embedding_profile": "qwen3-embed-8b", "reranker": "qwen3-rerank-0.6b"},
     )
     assert saved.status_code == 200, saved.text
-    assert saved.json() == {"embedding_profile": "qwen3-embed-8b", "reranker_enabled": True}
+    assert saved.json() == {"embedding_profile": "qwen3-embed-8b", "reranker": "qwen3-rerank-0.6b"}
     assert (await client.get("/api/v1/retrieval/settings")).json() == saved.json()
     page = (await client.get("/api/v1/retrieval/profiles")).json()
     assert page["default_profile"] == "qwen3-embed-8b"
     invalid = await client.put(
         "/api/v1/retrieval/settings",
-        json={"embedding_profile": "bge-small", "reranker_enabled": False},
+        json={"embedding_profile": "bge-small", "reranker": None},
     )
     assert invalid.status_code == 422 and invalid.json()["code"] == "INVALID_EMBEDDING_PROFILE"
     extra = await client.put(
         "/api/v1/retrieval/settings", json={"embedding_profile": OPENAI, "rerank_top_k": 30}
     )
     assert extra.status_code == 422
+    unknown_reranker = await client.put(
+        "/api/v1/retrieval/settings", json={"embedding_profile": OPENAI, "reranker": "cohere"}
+    )
+    assert unknown_reranker.status_code == 422
+    assert unknown_reranker.json()["code"] == "INVALID_RERANKER"
+    off = await client.put(
+        "/api/v1/retrieval/settings", json={"embedding_profile": OPENAI, "reranker": None}
+    )
+    assert off.status_code == 200 and off.json()["reranker"] is None
 
 
 async def test_given_paper_without_document_when_reading_then_retrieval_is_unavailable(

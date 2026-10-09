@@ -38,7 +38,7 @@ Non-goals:
 - **Default embeddings:** OpenAI `text-embedding-3-large`. Qwen3 Embedding 4B and 8B (`qwen3-embedding:4b-q4_K_M`, `qwen3-embedding:8b-q4_K_M`) are served by the existing Ollama. Power users choose per paper.
 - **Reranker:** through Ollama if feasible; otherwise deferred under its own ticket (ARA-074).
 - **Retrieval:** always used for Q&A. No full-paper context mode.
-- **Privacy:** a local chat on a paper indexed with OpenAI embeddings may send its search queries to OpenAI for embedding. No extra disclosure is needed.
+- **Privacy:** a local chat on a paper indexed with OpenAI embeddings may send its search queries to OpenAI for embedding. Completed turns are embedded the same way, for recall. No extra disclosure is needed. "Local conversations are never sent to a hosted model" applies to generation: planning, compaction and answers.
 - **Process:** TDD first for every production change. Commits carry no Co-Authored-By trailer.
 
 ## 4. Architecture

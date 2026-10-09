@@ -487,3 +487,29 @@ The lead started Wave 0 after the user approved implementation. Two throwaway sp
   - The first generation used `create_app()` with the default development settings and included the dev-only canary route. Regenerating with `APP_ENV=test` matched CI's source.
   - Strict TypeScript then failed in 3 test fixtures, because `Model.kind` is required in output schemas. After adding `kind: 'chat'`, all 392 frontend tests passed and the build succeeded. (`d260efd`)
 - Another session committed ARA-055 on `feat/managed-ollama` during planning, so this work uses the reserved IDs ARA-070 to ARA-079.
+
+### Wave 2 integration and the reranker decision (ARA-071, ARA-072, ARA-074, ARA-075, ARA-076)
+
+Four agents worked in separate worktrees on ingest, index, context budgets and retrieval UI, each with its own isolated test stack.
+
+**Results:**
+- Agent full runs: ingest 454 passed, index 474, context 513. The UI frontend check passed.
+- No agent commit carries a Co-Authored-By trailer.
+- The ingest agent proposed an additive contract change (provenance fields on the chunk-source response) that keeps the existing OpenAPI keys; the lead approved it.
+- The index agent ran embed jobs on the default worker queue with 240 s continuations instead of a separate queue; the lead accepted the deviation.
+
+**Integration:**
+- The lead merged the branches with `--no-ff`; there were no conflicts.
+- Integration testing exposed a real chunking defect. tiktoken raised `ValueError: Encountered text corresponding to disallowed special token '<|endoftext|>'`, which an LLM paper quoting tokenizer markers would trigger. A failing test reproduced it; the chunker now uses the shared `TiktokenCounter` and treats special tokens as ordinary text.
+- The merged suite passed 601 tests with Ruff clean; the frontend passed 409 tests and built.
+- The lead added compose passthrough for the token budgets and the reranker-availability contract.
+
+**Reranker decision:**
+- The S1 spike found the 0.6B F16 reranker working but slow (54 s for 30 candidates). The lead deferred ARA-074.
+- The user asked why F16 rather than a 4-bit or 8-bit version, then asked whether two community Q8_0 uploads had been tried.
+  - `pdurugyan`: S1 had found it embedding-only, returning zero vectors.
+  - `fanyx`: not tried. The lead tested it in an isolated container. Its digest `fd021d86…` differs from the broken dengcao Q8_0. It ranked 12/12 probe pairs with the same score distribution as F16, and 30 candidates took 21.99 s against 51.37 s for F16 in the same session.
+- The user chose to ship it opt-in, off by default, reranking the top 12 passages (about 9 s per answer). ARA-074 was reopened.
+- Earlier in this exchange the user rejected one question tool call and asked the lead to stop and wait. The lead held all work until the user's next instruction.
+
+**Wave 3** started from `bd84d19`: retrieval and reranker (F), memory (G), and answer/context UI (H).
