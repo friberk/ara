@@ -125,7 +125,7 @@ Frozen contract for the retrieval and context overhaul. Spec: `docs/superpowers/
   - Each `EmbeddingProfileOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `dimensions`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, and `local_model_key` for local install links.
   - Keys: `openai-3-large` (default), `qwen3-embed-4b`, `qwen3-embed-8b`.
 - `EmbeddingProfilePage.reranker: RerankerOut | null` describes the optional local reranker (ARA-074; opt-in, off by default, adds about 10 s per answer on CPU). `RerankerOut` has `model_id`, `display_name`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, `local_model_key` for the install link, and `candidates` (how many fused passages are reranked).
-- `GET`/`PUT /api/v1/retrieval/settings` reads and writes `RetrievalSettings {embedding_profile="openai-3-large", reranker_enabled=true}`.
+- `GET`/`PUT /api/v1/retrieval/settings` reads and writes `RetrievalSettings {embedding_profile="openai-3-large", reranker_enabled=false}`.
   - These settings are separate from the model defaults in `/settings`.
   - `PUT` validates the key but does not require the profile to be available.
 - `GET /api/v1/papers/{paper_id}/retrieval` returns `PaperRetrieval`:
