@@ -63,6 +63,19 @@ class ComposeRetrievalTests(unittest.TestCase):
         # Swap equal to memory turns overload into a visible error instead of 12 GiB of swapping.
         self.assertEqual(ollama["memswap_limit"], ollama["mem_limit"])
 
+    def test_context_budget_settings_reach_every_backend_process(self):
+        overrides = {
+            "LOCAL_INPUT_BUDGET_TOKENS": "2048",
+            "OLLAMA_THINKING_TOKENS": "512",
+            "LOCAL_TOKEN_FACTOR": "1.1",
+            "HOSTED_WORKING_CONTEXT_TOKENS": "32000",
+        }
+        services = compose_services("compose.yaml", **overrides)
+        for name in ("api", "worker", "model-worker"):
+            environment = services[name]["environment"]
+            for key, value in overrides.items():
+                self.assertEqual(environment.get(key), value, (name, key))
+
 
 if __name__ == "__main__":
     unittest.main()
