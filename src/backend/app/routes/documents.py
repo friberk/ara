@@ -71,5 +71,9 @@ async def excerpt(document_id: UUID, chunk_id: UUID, request: Request):
             chunk_id=chunk.id,
             document_id=chunk.document_id,
             page=chunk.page,
+            page_end=chunk.page_end,
+            section=chunk.heading or None,
+            kind=chunk.kind,
+            bboxes=chunk.bboxes,
             excerpt=chunk.text,
         )

@@ -141,6 +141,7 @@ Frozen contract for the retrieval and context overhaul. Spec: `docs/superpowers/
   - `grounding: "supported" | "insufficient" | null`.
 - Messages persisted before this change report `retrieval`/`context` as `null`.
 - `Citation` gains `page_end`, `section` (heading path), `kind` (`front_matter|text|table|references`) and `bboxes` (`[[page,x0,y0,x1,y1]]`). Persisted answers keep canonical `[source:<chunk-uuid>]` markers; the model's short `[S#]` handles never reach clients.
+- `GET /documents/{id}/chunks/{chunk_id}` returns the same provenance fields. A section-aware chunk can span pages: `page` is its first physical page and `page_end` its last.
 - `Model` gains `kind` (`chat|embedding|reranker`). The composer lists only `chat` models; Settings shows every kind.
 - New SSE event `message.status`: `{message_id, stage}`, where `stage` is `planning|retrieving|reranking|generating`. It is emitted between `message.started` and the first `message.delta`. Clients ignore unknown stages.
 
