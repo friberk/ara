@@ -157,6 +157,17 @@ test('Given a ready paper whose catalog lookup is running, When it finishes, The
   expect(screen.getByText('Ready to read')).toBeVisible()
 })
 
+test('Given the catalog lookup ran out of attempts, Then Details explains it and can look the paper up again', async () => {
+  const failed = { id: 'lookup-2', kind: 'metadata', state: 'failed', stage: 'failed', progress: 50, error: { code: 'PROVIDER_RATE_LIMITED', message: 'The metadata sources are rate limited, so the details read from the PDF were kept. Retry the lookup later.' }, result: null, attempts: 3, paper_id: 'p1', paper_title: paper.title, created_at: '2026-10-09T00:00:00Z' }
+  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? [failed] : [] }), 'POST /jobs/lookup-2/retry': { ...failed, state: 'queued', stage: 'queued', error: null } })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('tab', { name: 'Details' }))
+  const details = screen.getByRole('tabpanel', { name: 'Details' })
+  expect(await within(details).findByText(/the details read from the PDF were kept/)).toBeVisible()
+  await user.click(within(details).getByRole('button', { name: 'Look up again' }))
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/jobs/lookup-2/retry')).toBe(true))
+})
+
 test('Given field provenance, Then the details show the bibliography and where each field came from', async () => {
   mockApi({ 'GET /papers/p1': paper })
   const { user } = renderApp('/papers/p1')

@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { paperName } from '@/features/research/paper-format'
 import { BibliographyEditor } from './BibliographyEditor'
+import { LookupNotice } from './LookupNotice'
 import { MetadataSources } from './MetadataSources'
 import { FullTextAccess } from './FullTextAccess'
 import { SearchIndexPanel } from './SearchIndexPanel'
@@ -65,6 +66,7 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
               {paper.abstract ? <p className="max-w-[70ch] text-sm leading-relaxed whitespace-pre-line text-pretty">{paper.abstract}</p> : <p className="text-sm text-muted-foreground">No abstract is available for this paper yet.</p>}
             </section>
             <MetadataSources provenance={paper.metadata_provenance} headingId={`${id}-sources`} />
+            <LookupNotice paper={paper} />
           </section>
         )}
         <Separator />

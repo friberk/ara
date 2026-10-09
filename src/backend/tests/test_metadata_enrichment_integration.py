@@ -239,6 +239,17 @@ async def test_unavailable_sources_keep_local_metadata_and_retry_durably(resourc
     assert job.error_code == expected
     assert "kept" in job.error_message
     assert (await detail(resources, accepted.paper_id)).title == TITLE
+    from app.main import create_app
+
+    app = create_app(resources.settings)
+    app.state.resources = resources
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app), base_url="http://test"
+    ) as client:
+        # Details offers "Look up again": a lookup out of attempts is retryable.
+        retried = await client.post(f"/api/v1/jobs/{job.id}/retry")
+    assert retried.status_code == 202, retried.text
+    assert retried.json()["state"] == "queued" and retried.json()["attempts"] == 0
 
 
 async def test_rate_limited_selected_source_falls_back_to_the_other_source(resources):
