@@ -195,6 +195,8 @@ async def reconcile_indexes(resources) -> int:
             for key, profile in PROFILES.items()
             if (await profile_status(session, resources.settings, profile))[0] == "available"
         }
+        if not available:
+            return 0
         documents = (
             await session.scalars(
                 select(Document.id)
@@ -202,8 +204,6 @@ async def reconcile_indexes(resources) -> int:
                 .order_by(Document.created_at, Document.id)
             )
         ).all()
-    if not available:
-        return 0
     queued = 0
     for document_id in documents:
         async with resources.sessions() as session, session.begin():
