@@ -1356,41 +1356,57 @@ async def retrieve_evidence(resources, *, document_id: UUID, chunk_set: str, pre
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(summary): summarize by section with short handles (ARA-073)`.
 
-### Task 28: Ollama reranker (ARA-074; only if G0 says go)
+### Task 28: Opt-in Ollama reranker (ARA-074; user decision: opt-in, off by default)
 
-**Files:** Create `app/rag/rerank.py`. Test: `tests/test_rerank.py` (MockTransport) and the integration test against the fixture.
+Measured: `fanyx/Qwen3-Reranker-0.6B-Q8_0` passed 12/12 probe pairs, and 30 candidates took 22 s, so 12 take about 9 s. `dengcao` Q8_0 is broken and F16 is 2.3× slower.
+
+**Files:**
+- Create `app/rag/rerank.py`.
+- Modify `app/integrations/model_catalog.py` (reranker spec), `app/integrations/ollama.py` (verification branch `kind == "reranker"`), `app/services/local_models.py` (`model_dto` kind) and `app/routes/retrieval.py` (`EmbeddingProfilePage.reranker`, a `RerankerOut` with availability).
+- Tests: `tests/test_rerank.py` (MockTransport) plus catalog and route tests against the fixtures.
 
 **Interfaces:**
 
 ```python
+# model_catalog.py
+LocalModelSpec("qwen3-reranker-0.6b", "fanyx/Qwen3-Reranker-0.6B-Q8_0", "Qwen3 Reranker 0.6B",
+               "fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3", 639152466,
+               quantization="Q8_0", kind="reranker")
+RERANK_CANDIDATES = 12
+
 RERANK_TEMPLATE = ("<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and "
                    "the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n"
                    "<|im_start|>user\n<Instruct>: Given a question about a scientific paper, retrieve passages "
                    "of the paper that answer the question\n<Query>: {query}\n<Document>: {document}<|im_end|>\n"
                    "<|im_start|>assistant\n<think>\n\n</think>\n\n")
 
-class OllamaQwenRerank(BaseNodePostprocessor):
-    top_n: int = 12
-    def __init__(self, resources, model_key: str, *, top_n: int = 12, concurrency: int = <G0>): ...
+def yes_probability(logprobs: list[dict]) -> float | None
+    # Sum exp(logprob) over first-entry top_logprobs whose token.strip().lower() is "yes" or "no";
+    # return yes/(yes+no), or None if neither is present.
+
+class OllamaQwenRerank(BaseNodePostprocessor):   # LlamaIndex interface
     async def _apostprocess_nodes(self, nodes, query_bundle) -> list[NodeWithScore]
     def _postprocess_nodes(self, nodes, query_bundle=None): raise NotImplementedError("async only")
-
-def yes_probability(logprobs_entry: dict) -> float   # softmax over yes/no top_logprobs; 0.5 when neither present
 ```
 
-- Each node becomes a `/api/generate` request (`raw: true`, `options: {temperature: 0, num_predict: 1}`, `logprobs: true`, `top_logprobs: 20`, `keep_alive: <G0>`) inside `retrieval_inference_slot`, with document text truncated to 512 tokens.
-- Results are sorted by the score.
-- On any error, return the input order unchanged and set `trace["rerank_skipped"] = <code>`.
+Behavior:
+- **Request:** one `/api/generate` call per candidate (`raw: true`, `stream: false`, `logprobs: true`, `top_logprobs: 20`, `keep_alive: "10m"`, options `{temperature: 0, num_predict: 1, num_ctx: 2048, num_thread: settings.ollama_num_threads}`), run sequentially inside `retrieval_inference_slot(resources, "qwen3-reranker-0.6b")`.
+- **Truncation:** the document is cut to 1,800 tokens with `keep_head`.
+- **Scope:** only the top 12 fused candidates are reranked. The rest keep fusion order after them.
+- **Failure:** on any error, or a `None` score, return fusion order unchanged and set `trace["rerank_skipped"]` to the error code.
+- **Verification** (`kind == "reranker"`): require `"completion"` in capabilities, the pinned digest, and a logprob probe where a relevant pair's score exceeds an irrelevant pair's by at least 0.3. Otherwise `MODEL_VALIDATION_FAILED`.
+- **Profiles route:** `reranker` is `RerankerOut(model_id, display_name, status, unavailable_reason, local_model_key="qwen3-reranker-0.6b", candidates=12)`. It is `available` only when the installation is ready and verified; otherwise the reason is "Download Qwen3 Reranker 0.6B in Settings to use reranking."
+- **Pipeline:** rerank only when `RetrievalSettings.reranker_enabled` and the reranker is available.
 
 - [ ] **Step 1: Write the failing tests.**
-  - `yes_probability` math.
+  - `yes_probability` math, including the capitalised "Yes"/"No".
   - Fixture ordering: the relevant passage moves to the top.
-  - Runtime unavailable: the order is unchanged and the skip is recorded.
-  - The disabled setting means no calls.
+  - The runtime is unavailable: order unchanged and the skip recorded.
+  - Disabled setting: zero HTTP calls.
+  - Verification passes for a good fixture and fails for a uniform-logit fixture.
+  - The profiles route reports the reranker as unavailable before install.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(rag): rerank locally with Qwen3-Reranker through Ollama (ARA-074)`.
-
-If G0 is no-go: skip this task, set ARA-074 to `deferred` with the S1 evidence, and keep `rerank=False` in the pipeline.
 
 ---
 
@@ -1531,6 +1547,18 @@ Hidden for messages without `retrieval`.
 - [ ] **Step 1: Write the failing tests.** Hybrid and keyword renderings, limited-context wording, and hidden for old messages.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(ui): explain how an answer was found (ARA-075)`.
+
+### Task 35b: Reranker toggle in Settings (ARA-074)
+
+**Files:** Modify `src/features/settings/RetrievalSettingsSection.tsx`. Test: `retrieval-settings.test.tsx`.
+
+**Behavior:**
+- Under the default search model there is a switch, "Rerank results", with the helper text "Finds the most relevant passages more precisely. Adds about 10 seconds to each answer."
+- The switch is disabled when `profiles.reranker` is null or unavailable, and shows the `unavailable_reason` with a link to Local models.
+- Saving sends `PUT /retrieval/settings` with `reranker_enabled`.
+- Local models labels kind `reranker` as "Reranker".
+
+- [ ] **Steps:** failing test, observe red, implement, green, then commit `feat(ui): let power users turn on reranking (ARA-074)`.
 
 ### Task 36: Memory footnote
 
