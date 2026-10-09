@@ -40,7 +40,9 @@ x-backend: &backend
 
 services:
   postgres:
-    image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+    # pgvector 0.8.7 on PostgreSQL 17.11 with the same Debian 12 glibc/ICU as the former 17.9
+    # image; an existing volume starts unchanged (verified in the ARA-070 Phase 0 spike).
+    image: pgvector/pgvector:0.8.7-pg17-bookworm@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ara}
       POSTGRES_DB: ${POSTGRES_DB:-ara}
@@ -164,7 +166,7 @@ services:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_NOPRUNE: "true"
       OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_WINDOW:-8192}
-      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_KEEP_ALIVE: 2m
     volumes:
