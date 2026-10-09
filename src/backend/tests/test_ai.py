@@ -76,17 +76,19 @@ def test_given_large_utf8_passage_when_local_batching_then_split_preserves_every
     assert len(fragments) == 4
 
 
-def test_given_batches_when_labelling_then_each_batch_numbers_its_passages_from_s1():
+def test_given_document_handles_when_batching_then_later_batches_keep_their_numbers():
+    from dataclasses import replace
+
     from app.integrations.tokens import TiktokenCounter
     from app.services.summarization import batches
 
     counter = TiktokenCounter("o200k_base")
     # About 1,000 tokens each: three fit a 3,500-token batch, four do not.
-    passages = [summary_passage(" word" * 1000) for _ in range(5)]
+    passages = [replace(summary_passage(" word" * 1000), handle=f"S{n}") for n in range(1, 6)]
     groups = batches(passages, budget=3500, counter=counter)
     assert [[item.handle for item in group] for group in groups] == [
         ["S1", "S2", "S3"],
-        ["S1", "S2"],
+        ["S4", "S5"],
     ]
 
 
