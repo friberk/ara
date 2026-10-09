@@ -740,3 +740,5 @@ No migrations and no new dependencies are allowed.
   - read XMP and the arXiv margin stamp as clues;
   - remove `extract_metadata` from ingestion, test-first, while keeping older queued payloads safe;
   - rely only on deterministic local extraction plus the OpenAlex or Semantic Scholar lookup.
+
+**Metadata decision revised.** After hearing what the lead's no-LLM instruction would remove, the user reversed it: "Let's keep the LLM based metadata extraction intact then. I think it makes sense." The ARA-086 agent was told to keep `extract_metadata`, with its existing gating, stage and payload handling, and to restore any removal with forward commits. A title rejected by the junk filter counts as missing, so the existing LLM fallback still runs for it. The LLM's title and DOI may also seed the registry lookup. When values conflict, user edits win over registry values, and registry values win over LLM and local values. XMP reading stays in scope and GROBID stays out.
