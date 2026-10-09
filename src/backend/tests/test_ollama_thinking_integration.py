@@ -92,21 +92,14 @@ async def test_given_native_choice_when_streaming_then_snapshot_effective_value_
     body = ChatInput(
         model=spec.key, reasoning_effort=effort, content="What accuracy?", request_id=uuid4()
     )
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
+    prepared = await chat.prepare(resources, chat_id, body)
     request = type(
         "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
     )()
-    output = "".join(
-        [
-            item
-            async for item in chat.stream_answer(
-                resources, request, assistant, prompt, chunks, replay
-            )
-        ]
-    )
+    output = "".join([item async for item in chat.stream_answer(resources, request, prepared)])
     assert "message.completed" in output
     async with resources.sessions() as session:
-        saved = await session.get(ChatMessage, assistant.id)
+        saved = await session.get(ChatMessage, prepared.assistant.id)
         assert saved.state == "completed"
         assert saved.configuration["reasoning_effort"] == effort
         assert saved.configuration["effective_think"] == effective

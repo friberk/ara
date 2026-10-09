@@ -230,6 +230,7 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     from fastapi.responses import StreamingResponse
 
     from app.services import chat
+    from tests.support.answers import offline_answer
 
     closed = []
     saved = []
@@ -238,7 +239,7 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     class Provider:
         usage = {}
 
-        async def stream(self, *args):
+        async def stream_messages(self, *args):
             yield "Visible partial answer"
             await asyncio.Event().wait()
 
@@ -258,9 +259,9 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     resources = SimpleNamespace(
         settings=Settings(openai_api_key="fixture", _env_file=None), llm_slots=asyncio.Semaphore(2)
     )
-    assistant = SimpleNamespace(id=uuid4(), model="gpt-5.6-luna", reasoning_effort="low")
+    prepared = offline_answer(monkeypatch, resources, "gpt-5.6-luna", "low")
     request = SimpleNamespace(is_disconnected=lambda: asyncio.sleep(0, result=False))
-    response = StreamingResponse(chat.stream_answer(resources, request, assistant, "evidence", []))
+    response = StreamingResponse(chat.stream_answer(resources, request, prepared))
 
     async def receive():
         await delta_sent.wait()
@@ -274,7 +275,7 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
         response({"type": "http", "asgi": {"spec_version": "2.3"}}, receive, send), timeout=3
     )
     assert closed == [True]
-    assert saved[-1] == (assistant.id, "Visible partial answer", "interrupted")
+    assert saved[-1] == (prepared.assistant.id, "Visible partial answer", "interrupted")
 
 
 @pytest.mark.parametrize(

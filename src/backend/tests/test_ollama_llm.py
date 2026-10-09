@@ -398,10 +398,10 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
     monkeypatch,
 ):
     from contextlib import asynccontextmanager
-    from uuid import uuid4
 
     from app.integrations.llm import validate_selection
     from app.services import chat, local_models
+    from tests.support.answers import offline_answer
 
     @asynccontextmanager
     async def slot(resources, model):
@@ -421,7 +421,7 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
         for x in [
             {"message": {"thinking": "private", "content": ""}, "done": False},
             {
-                "message": {"content": "Evidence is insufficient."},
+                "message": {"content": "[insufficient-evidence] Evidence is insufficient."},
                 "done": True,
                 "done_reason": "stop",
             },
@@ -434,14 +434,9 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
             settings=Settings(openai_api_key=None, _env_file=None), ollama_generation_http=client
         )
         request = SimpleNamespace(is_disconnected=lambda: asyncio.sleep(0, result=False))
-        assistant = SimpleNamespace(
-            id=uuid4(), model="ifm-k2-horizon-7b", reasoning_effort="default"
-        )
+        prepared = offline_answer(monkeypatch, resources, "ifm-k2-horizon-7b", "default")
         output = "".join(
-            [
-                event
-                async for event in chat.stream_answer(resources, request, assistant, "paper", [])
-            ]
+            [event async for event in chat.stream_answer(resources, request, prepared)]
         )
     assert "event: message.completed" in output and "private" not in output
-    assert "Evidence is insufficient." in output
+    assert "Evidence is insufficient." in output and "insufficient-evidence" not in output
