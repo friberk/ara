@@ -456,3 +456,34 @@ The final root format check found one newly added test signature needing Ruff fo
   - The agent planned a separate Postgres image and a second Ollama daemon. The user rejected both, establishing the single-instance rule.
 - **Coordination:** another session committed ARA-055 on `feat/managed-ollama` during planning, and ARA-019 is active on `feat/fulltext-access`. This work therefore reserves ARA-070 to ARA-079 instead of the next free number.
 - **Approved plan:** spec `docs/superpowers/specs/2026-10-09-rag-context-design.md`; issues ARA-070 to ARA-079 under the ARA-021 and ARA-043 epics. Wave 0 measurement spikes (S1 for models and Ollama, S2 for parsing and pgvector) run as throwaway scratch work before Gate G0. No product code has changed at this entry.
+
+### Wave 0 measurements and Wave 1 foundation (ARA-070)
+
+The lead started Wave 0 after the user approved implementation. Two throwaway spike agents measured in isolated containers; their scripts and raw output stay in private scratch space.
+
+**S2 (parsing and pgvector), completed:**
+- The agent could not write its report file because the harness blocked subagent report files, so it sent the report as messages.
+- The documented `pymupdf4llm.LlamaMarkdownReader` runs the legacy heading heuristic and found only the title. Layout `to_markdown(page_chunks=True)` recovered 22/22 headings on Attention and 29/29 on RAG.
+  - The plan therefore uses `to_markdown` plus LlamaIndex node parsers instead of the reader. This contradicts an earlier assumption that the documented reader was the layout path.
+- Under the current 1 GiB child address-space limit, the default ONNX/BLAS thread settings hang during import.
+  - With `OPENBLAS_NUM_THREADS=1`, `MALLOC_ARENA_MAX=2` and two ONNX Runtime intra-op threads, a 200-page PDF fits in 1.5 GiB in 42–46 s. Papers parse at 167–300 ms per page.
+- Display formulas are dropped in layout mode, so the plan fills formula boxes with clipped PyMuPDF text.
+- `pgvector/pgvector:0.8.7-pg17-bookworm` (PostgreSQL 17.11) started on a copy of a 17.9 volume with identical data and no collation warnings.
+  - Per-document exact search took about 1 ms for 150 chunks and 4–8 ms for 2,000 chunks.
+  - 196 of 300 AND-style full-text queries matched nothing, which requires an OR fallback.
+
+**S1 (models and Ollama):** went idle once while waiting on its own background download and needed a prompt to continue polling. It was still measuring at this entry.
+
+**Wave 1 (lead, TDD):**
+- **Task 1, test-stack project names:** 3 failed and 1 passed before the change; afterwards all 7 infrastructure tests passed. (`175208e`)
+- **Task 6, fixtures:** the new fixture tests reported 3 failures, 6 errors and 1 skip; afterwards all 13 passed, and the structured-PDF test passed under PyMuPDF 1.28.2. (`5089d79`)
+- **Task 5, contracts:** 4 failed, then 4 passed. (`ff1008c`)
+- **Task 2, compose:** 2 failed, then all 9 infrastructure tests passed. (`ccbaae5`)
+- **Tasks 3 and 4, dependencies and schema:** dependency tests 2 failed and 1 passed on the host before the change.
+  - The first full isolated run reported 63 failed and 357 passed. Fifty-eight failures were test helpers still constructing the removed `char_start`/`token_estimate` fields. Three were our new schema tests inserting a document before its paper without an ORM relationship. Two were health checks pinned to migration `0005`.
+  - Corrections: migrate the helpers to the new chunk shape, keep ingestion on interim page windows until ARA-071, flush the parent row first, and advance `SCHEMA_REVISION`.
+  - Second run: 420 passed, Ruff clean. (`7f97323`, `6aab634`)
+- **Frontend contracts:**
+  - The first generation used `create_app()` with the default development settings and included the dev-only canary route. Regenerating with `APP_ENV=test` matched CI's source.
+  - Strict TypeScript then failed in 3 test fixtures, because `Model.kind` is required in output schemas. After adding `kind: 'chat'`, all 392 frontend tests passed and the build succeeded. (`d260efd`)
+- Another session committed ARA-055 on `feat/managed-ollama` during planning, so this work uses the reserved IDs ARA-070 to ARA-079.
