@@ -742,6 +742,10 @@ export interface components {
         };
         /** Model */
         Model: {
+            /** Reasoning Aliases */
+            reasoning_aliases?: {
+                [key: string]: string;
+            };
             thinking?: components["schemas"]["ThinkingControls"] | null;
             /** Unavailable Reason */
             unavailable_reason?: string | null;

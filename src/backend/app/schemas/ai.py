@@ -74,6 +74,7 @@ class ThinkingControls(BaseModel):
 
 
 class Model(DTO):
+    reasoning_aliases: dict[str, str] = Field(default_factory=dict)
     thinking: ThinkingControls | None = None
     unavailable_reason: str | None = None
     unavailable_code: str | None = None
