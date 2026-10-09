@@ -8,7 +8,7 @@ from app.core.errors import AppError
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Document
 from app.repositories.jobs import enqueue, job_statuses, now
-from app.schemas.jobs import CanaryInput, JobPage, JobStatus, ModelOperationInput
+from app.schemas.jobs import CanaryInput, JobPage, JobRetryInput, JobStatus, ModelOperationInput
 from app.services.local_models import transition_job
 
 
@@ -20,7 +20,8 @@ def router(development: bool) -> APIRouter:
         request: Request,
         limit: int = Query(default=50, ge=1, le=100),
         paper_id: UUID | None = None,
-        kind: Literal["ingest", "summary", "model_download", "model_delete"] | None = None,
+        kind: Literal["ingest", "summary", "fulltext", "model_download", "model_delete"]
+        | None = None,
         active: bool | None = None,
     ):
         statement = select(BackgroundJob).order_by(BackgroundJob.created_at.desc()).limit(limit)
@@ -35,7 +36,7 @@ def router(development: bool) -> APIRouter:
             statement = statement.where(
                 or_(
                     and_(
-                        BackgroundJob.kind == "summary",
+                        BackgroundJob.kind.in_(["summary", "fulltext"]),
                         BackgroundJob.payload["paper_id"].astext == str(paper_id),
                     ),
                     and_(
@@ -63,11 +64,11 @@ def router(development: bool) -> APIRouter:
             raise HTTPException(status_code=404, detail="Not found")
 
     @routes.post("/{job_id}/retry", response_model=JobStatus, status_code=202)
-    async def retry_job(job_id: UUID, request: Request, body: ModelOperationInput | None = None):
+    async def retry_job(job_id: UUID, request: Request, body: JobRetryInput | None = None):
         async with request.app.state.resources.sessions() as lookup:
             local_job = await lookup.get(BackgroundJob, job_id)
             if local_job and local_job.kind in {"model_download", "model_delete"}:
-                if body is None:
+                if body is None or body.request_id is None:
                     raise AppError(
                         422,
                         "MODEL_REQUEST_ID_REQUIRED",
@@ -82,6 +83,12 @@ def router(development: bool) -> APIRouter:
             )
             if job is None:
                 raise AppError(404, "JOB_NOT_FOUND", "Job not found.")
+            if job.kind == "fulltext":
+                raise AppError(
+                    409,
+                    "NEW_FULLTEXT_REQUEST_REQUIRED",
+                    "Start a new PDF retrieval request to retry access.",
+                )
             if job.state != "failed":
                 raise AppError(
                     409, "JOB_NOT_RETRYABLE", "Only eligible failed jobs can be retried."

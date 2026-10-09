@@ -13,9 +13,11 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { isActiveJob, jobKindLabels, jobStageLabel } from '@/components/jobs/job-labels'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
 import { useModels } from '@/hooks/queries/models'
+import { useRetrieveFullText } from '@/hooks/queries/fulltext'
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from '@/features/settings/segmented'
 import { absoluteTime, relativeTime, useNow } from './relative-time'
+import { retryWait } from '@/features/workspace/fulltext-copy'
 
 type Filter = 'all' | 'active' | 'failed'
 const filters: { value: Filter; label: string; matches: (job: JobView) => boolean }[] = [
@@ -50,6 +52,8 @@ function JobTime({ job, now }: { job: JobView; now: number }) {
 
 function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?: string }) {
   const retry = useRetryJob()
+  const download = useRetrieveFullText(job.paper_id ?? '')
+  const wait = retryWait(job, now)
   const preparation = job.model_operation === 'verify'
   const label = preparation ? 'Model preparation' : kindLabel(job.kind)
   const active = isActiveJob(job)
@@ -97,8 +101,10 @@ function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?
             <RotateCcw aria-hidden="true" />{retry.isPending ? 'Retrying…' : 'Retry processing'}
           </Button>
         )}
+        {job.state === 'failed' && job.kind === 'fulltext' && job.paper_id && <div className="flex flex-wrap items-center gap-2">{wait > 0 && <span>Try again in {wait} seconds.</span>}<Button variant="outline" size="sm" disabled={download.isPending || wait > 0} onClick={() => download.mutate({ request_id: crypto.randomUUID() }, { onSuccess: () => toast.success('PDF retrieval queued again') })}><RotateCcw aria-hidden="true" />{download.isPending ? 'Retrying…' : 'Retry download'}</Button></div>}
       </div>
       <ErrorNotice error={retry.error} />
+      <ErrorNotice error={download.error} />
     </li>
   )
 }
@@ -117,7 +123,7 @@ function RowSkeleton() {
 export default function ActivityPage() {
   const jobs = useJobs()
   const models = useModels()
-  const now = useNow()
+  const now = useNow(1000)
   const [filter, setFilter] = useState<Filter>('all')
   const items = (jobs.data?.items ?? []).filter(isReaderJob)
   const matches = filters.find((item) => item.value === filter)?.matches ?? (() => true)

@@ -1,27 +1,62 @@
 {
   "id": "ARA-019",
-  "title": "Safe accessible full-text retrieval",
+  "title": "PDF retrieval, access information and institutional retries",
   "type": "improvement",
   "priority": "P1",
-  "description": "Fetch a saved paper's accessible full-text PDF from canonical provider candidates. Validate public destinations and redirects, enforce PDF signature/size/time limits, retain original bytes in MinIO, and reuse durable ingestion/status/error handling without accepting arbitrary browser URLs.",
+  "description": "Retrieve supported provider-supplied PDFs for saved OpenAlex and Semantic Scholar papers, prefer reported open copies, discover exact-DOI alternatives, and show observed access barriers with campus/VPN retry and browser/upload fallback. Reuse durable ingestion with UUID deduplication, lease fencing and document-version provenance. Browser institutional sessions are not inherited by the backend.",
   "dependencies": [
     "ARA-006",
     "ARA-010"
   ],
   "acceptance_criteria": [
-    "Stored public candidate download validates redirects/signature/limits and uses ingestion."
+    "Given either provider with a supported PDF, when retrieval is requested, then original storage and page-grounded ingestion complete on the same saved paper.",
+    "Given no Semantic Scholar open PDF and an exact DOI alternative, when discovery runs, then the other provider copy is used without a duplicate paper or manual metadata overwrite.",
+    "Given authentication, generic blocking, HTML, rate limiting or missing links, when retrieval stops, then the observed reason and useful retry/browser/upload actions are shown without an unsupported paywall claim.",
+    "Given access denial, when a fresh UUID retries after the network permits access, then retrieval succeeds while the old UUID still replays its original job.",
+    "Given duplicate deliveries, crash recovery, stale leases or concurrent upload, when retrieval continues, then document/ingest state is deduplicated and newer attachments and historical citations are preserved.",
+    "Given unsafe destinations, redirect/DNS changes, oversized bytes or timeouts, when downloading is attempted, then defined bounds and public-destination checks are enforced.",
+    "Given the local-model WIP base, when verification runs, then its model/readiness workflows and the core paper workflows remain covered in isolated test services.",
+    "Given every behavior change, when implementation proceeds, then an actual failing behavior assertion precedes production code and relevant green regressions are recorded."
   ],
   "test_cases": [
-    "Stored public candidate download validates redirects/signature/limits and uses ingestion."
+    "Provider location/OA/license/version normalization, old snapshots, exact DOI discovery, identity conflict and provider-error fallback.",
+    "Real isolated PostgreSQL/MinIO request replay, concurrent coalescing, attempt fencing, migration preservation and paper-linked jobs.",
+    "DNS pinning/TLS hostname, redirect validation, private/mixed addresses, size/decompression/time bounds and honest HTTP outcome classification.",
+    "Denial then success, stable attachment checkpoint recovery, duplicate delivery, lease loss, storage recovery and manual-upload race.",
+    "RTL and Playwright Get/Find PDF, institutional/browser guidance, navigation recovery, extraction gating, source versions and mobile/keyboard behavior.",
+    "Fresh full regression, contract drift, one Alembic head, current upstream integration and restart persistence; live university entitlement remains a separate actual-network check."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
-    "docs/implementation-plan.md"
+    "docs/implementation-plan.md",
+    "docs/superpowers/specs/2026-10-08-fulltext-access-design.md",
+    "docs/superpowers/plans/2026-10-08-fulltext-access.md",
+    "docs/agent-development-log.md",
+    "src/backend/app/services/fulltext.py",
+    "src/backend/app/integrations/pdf_download.py",
+    "src/backend/app/integrations/public_http.py",
+    "src/backend/app/repositories/fulltext.py",
+    "src/backend/alembic/versions/0006_fulltext.py",
+    "src/frontend/src/features/workspace/FullTextAccess.tsx",
+    "src/frontend/e2e/fulltext.spec.ts",
+    "docs/api-contract.md",
+    "docs/verification-final.md"
   ],
   "commits": [
-    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15",
+    "76dd5c6924dd143866027a24e74693ea90f5c12d",
+    "d8bf27b4ce626039c596582c9f13aace71872f85",
+    "ab5db05f3a5ab583e428e68e255fbbb231110ba3",
+    "ae072a8cc05ca6448fb254ad5fc6038ffd36d472",
+    "475f34e19b08ca2cace6ded59279eec49d409626",
+    "cde76b878ae8df44760acdc48356e6df596ab5b6",
+    "161dc856b1a4ec704236eb5be88267c4212ba9cb",
+    "bc52556368fccc751d80f133fcc29723fe7a0e83",
+    "b6fc226accc13f27a1161cdbbd7a40447a2153df",
+    "5b15d70e062c484025cca302e735c91f0893dc55",
+    "7fe4f7e53e7fa8b32764ce0e2eb2d2d723926afa"
   ],
   "pull_requests": [],
-  "verification": "Reopened for continued iteration after user feedback. Download/ingestion is not implemented yet.",
-  "updated_at": "2026-10-08"
+  "verification": "Completed on feat/fulltext-access, based on committed managed-ollama through 6b53fd1. Final isolated backend: 510 passed in 58.12s; frontend: 417 passed in 67.42s plus strict tsc/ESLint/build; browser: 16 passed in 2.6m; fixture-server: 11 passed; infrastructure: 6 passed; Ruff/config checks passed; generated OpenAPI contract byte-identical; one 0006 Alembic head. Exact restart persistence passed for six papers, originals, access attempts and analysis/citations. Active download SIGKILL recovered generation 2 to one document/one ingest with original UUID replay. Five code review findings and one UI accessibility correction reproduced red then fixed and reviewed. Journal records initial ranking draft/process correction and test harness failures. No real university entitlement, main merge or remote push claimed.",
+  "updated_at": "2026-10-09"
 }

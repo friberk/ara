@@ -230,7 +230,7 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     )
 
     def linked_paper(job: BackgroundJob) -> UUID | None:
-        if job.kind == "summary":
+        if job.kind in {"summary", "fulltext"}:
             return payload_uuid(job.payload, "paper_id")
         if job.kind == "ingest":
             return document_papers.get(payload_uuid(job.payload, "document_id"))

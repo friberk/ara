@@ -1,6 +1,6 @@
 # AI Research Assistant
 
-A local research workspace for CS59300. Search Semantic Scholar or OpenAlex, save papers, upload PDFs, and use paper content for summaries and questions. The architecture is a React SPA and a modular FastAPI backend with durable workers and persistent storage.
+A local research workspace for CS59300. Search Semantic Scholar or OpenAlex, save papers, retrieve or upload PDFs, and use paper content for summaries and questions. The architecture is a React SPA and a modular FastAPI backend with durable workers and persistent storage.
 
 ## Features
 
@@ -9,6 +9,7 @@ The interface is a chat-centred workspace built with shadcn components, using th
 - **Search.** The home screen is one composer. Type a topic and choose OpenAlex or Semantic Scholar. Results show title, authors, year, abstract and DOI or PDF links. Each result can be saved to the library, and papers already saved show "In library".
 - **Library.** Saved and uploaded papers persist across restarts. Filter by title, and see each paper's PDF status.
 - **Upload.** Drop or choose a PDF (up to 25 MB) from the home composer or the library. Title, authors, year and abstract are extracted, and progress appears in Activity.
+- **Get or find a PDF.** Saved papers offer retrieval in the PDF and Details views. The app checks both providers, including exact DOI alternatives, and tries reported open copies first. Retrieval continues in the background, then hands the original to PDF processing. Reported open access does not guarantee a working download.
 - **Paper workspace.** The PDF reader sits beside the conversation. The latest summary is the first card. Ask your own questions or use the suggested ones; answers stream in with inline page citations. Clicking a citation scrolls the PDF to that page and highlights the passage. On phones, the workspace switches between Chat, PDF and Details tabs.
 - **Models.** A compact switcher chooses the model and reasoning effort for the next request. Settings stores defaults and manages local model downloads, pause/resume, verification and deletion. Each answer records the model that produced it.
 - **History.** The sidebar lists recent papers, searches and conversations. Conversations are titled from their first question and can be renamed or deleted. Press ⌘K (Ctrl+K) to find papers and chats.
@@ -42,6 +43,10 @@ docker compose run --rm migrate
 
 Redis is job transport; PostgreSQL stores durable execution state and outbox records. Dispatch/recovery runs in API lifespan, so pending work resumes when the API returns. PDF parsing runs in an isolated child process. MinIO stores original bytes; PostgreSQL stores bibliographic data, pages/chunks, jobs and analysis history.
 
+If a source requires authentication or blocks a download, the PDF view explains the observed response and offers a fresh retry, publisher/Semantic Scholar links, and upload. If your university provides access, connect the computer running the backend to its network or supported VPN and retry. A browser login does not authenticate the backend; download in that browser and upload the PDF here when needed. A generic 403 or HTML response is not treated as proof of a paywall. Rate-limited retries respect the source’s reported wait.
+
+`FULLTEXT_ALLOWED_HOSTS` is a JSON list of exact public hostnames, with no wildcards. Its default list covers selected repositories and publishers; each redirect must also use an allowed host. For example, `FULLTEXT_ALLOWED_HOSTS='["arxiv.org","aclanthology.org"]'` replaces the default list. Unsupported hosts use browser/upload fallback. Downloads are capped at 25 MiB, five redirects and 45 seconds per candidate; the job has a 420-second discovery/download deadline. Encoded responses use browser fallback. The downloader sends no browser cookies or provider API keys to PDF sites and checks public DNS destinations and TLS names.
+
 ## Verify
 
 ```bash
@@ -64,7 +69,7 @@ npx playwright install chromium
 npx playwright test
 ```
 
-The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Model browser tests cover background progress, navigation, pause/reload/resume and default preservation after deletion. Test fixtures use synthetic papers and delayed model streaming; they are never activated by normal startup. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
+The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Model browser tests cover background progress, navigation, pause/reload/resume and default preservation after deletion. PDF fixtures cover both providers, denial followed by success, HTML fallback and 390px keyboard upload. Compose mounts the generated synthetic PDF from `/tmp/ara-fixtures/research.pdf`; set `E2E_PDF_PATH` for a different absolute path in both Compose and Playwright. The test-only resource factory relays approved synthetic PDF cases to the fixture server without weakening production public-host checks. Fixtures prove deterministic behavior; university subscription access needs a separate actual-network check. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
 
 Test data reset is explicit and affects only `ara-test`:
 

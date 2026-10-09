@@ -1,5 +1,6 @@
 import hashlib
 import io
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import PurePath
 from uuid import UUID, uuid4
@@ -9,11 +10,40 @@ from sqlalchemy import func, select, update
 from app.core.errors import AppError
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Document, DocumentUploadRequest, Paper
-from app.repositories.jobs import enqueue, now
+from app.repositories.jobs import enqueue, fence, now
 from app.repositories.papers import identity_locks
 from app.schemas.research import UploadAccepted
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class AttachmentGuard:
+    job_id: UUID
+    generation: int
+    lease_token: UUID
+    expected_active_document_id: UUID | None
+
+
+class AttachmentLeaseLost(Exception):
+    pass
+
+
+class AttachmentSuperseded(Exception):
+    pass
+
+
+async def check_storage_owner(session, guard: AttachmentGuard | None):
+    if (
+        guard
+        and await session.scalar(
+            select(BackgroundJob)
+            .where(*fence(guard.job_id, guard.generation, guard.lease_token))
+            .with_for_update()
+        )
+        is None
+    ):
+        raise AttachmentLeaseLost
 
 
 def references(document: Document) -> UploadAccepted:
@@ -36,8 +66,39 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
         :1024
     ].lstrip().startswith(b"%PDF-"):
         raise AppError(415, "INVALID_PDF_SIGNATURE", "Upload a valid PDF file.")
+    return await ingest_pdf_bytes(
+        resources,
+        data=bytes(data),
+        filename=file.filename or "paper.pdf",
+        request_id=request_id,
+        paper_id=paper_id,
+    )
+
+
+async def ingest_pdf_bytes(
+    resources,
+    *,
+    data: bytes,
+    filename: str,
+    request_id: UUID,
+    paper_id: UUID | None,
+    guard: AttachmentGuard | None = None,
+    acquisition: dict | None = None,
+) -> UploadAccepted:
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise AppError(413, "PDF_SIZE_LIMIT", "Upload a PDF smaller than 25 MiB.")
+    if not data[:1024].lstrip().startswith(b"%PDF-"):
+        raise AppError(415, "INVALID_PDF_SIGNATURE", "Upload a valid PDF file.")
     digest = hashlib.sha256(data).hexdigest()
     async with resources.sessions() as session, session.begin():
+        if guard:
+            owned = await session.scalar(
+                select(BackgroundJob)
+                .where(*fence(guard.job_id, guard.generation, guard.lease_token))
+                .with_for_update()
+            )
+            if owned is None:
+                raise AttachmentLeaseLost
         await identity_locks(session, [f"pdf:{digest}", f"upload:{request_id}"])
         binding = await session.get(DocumentUploadRequest, request_id)
         existing = (
@@ -45,6 +106,21 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
             if binding
             else await session.scalar(select(Document).where(Document.sha256 == digest))
         )
+        paper = None
+        if paper_id:
+            paper = await session.scalar(
+                select(Paper).where(Paper.id == paper_id).with_for_update()
+            )
+            if paper is None:
+                raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+        if guard and (
+            paper is None
+            or (
+                paper.active_document_id != guard.expected_active_document_id
+                and (binding is None or paper.active_document_id != binding.document_id)
+            )
+        ):
+            raise AttachmentSuperseded
         grace = now() + timedelta(seconds=120)
         if existing:
             if binding and existing.sha256 != digest:
@@ -59,10 +135,13 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
                     "DOCUMENT_ALREADY_ATTACHED",
                     "This PDF belongs to another paper. Open that paper to reconcile it.",
                 )
+            if guard and paper:
+                paper.active_document_id = existing.id
             if binding is None:
                 session.add(DocumentUploadRequest(request_id=request_id, document_id=existing.id))
             job = await session.get(BackgroundJob, existing.ingest_job_id)
-            if (
+            interrupted_owned_upload = guard and binding and existing.status == "uploading"
+            if not interrupted_owned_upload and (
                 job is None
                 or job.state != "failed"
                 or job.error_code not in {"STORAGE_UPLOAD_FAILED", "STORAGE_OBJECT_MISSING"}
@@ -80,11 +159,7 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
             document_id, key = existing.id, existing.object_key
             accepted = references(existing)
         else:
-            if paper_id:
-                paper = await session.get(Paper, paper_id)
-                if paper is None:
-                    raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
-            else:
+            if paper is None:
                 paper = Paper(metadata_provenance={})
                 session.add(paper)
                 await session.flush()
@@ -94,13 +169,12 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
                 paper_id=paper.id,
                 object_key=f"originals/{document_id}.pdf",
                 sha256=digest,
-                original_filename=PurePath((file.filename or "paper.pdf").replace("\\", "/")).name[
-                    :160
-                ],
+                original_filename=PurePath(filename.replace("\\", "/")).name[:160],
                 byte_size=len(data),
                 request_id=request_id,
                 status="uploading",
                 warnings=[],
+                acquisition=acquisition,
             )
             session.add(document)
             await session.flush()
@@ -126,6 +200,7 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
         )
     except Exception:
         async with resources.sessions() as session, session.begin():
+            await check_storage_owner(session, guard)
             await session.execute(
                 update(Document).where(Document.id == document_id).values(status="failed")
             )
@@ -143,15 +218,27 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
         raise AppError(
             503, "STORAGE_UNAVAILABLE", "PDF storage is unavailable. Try again shortly."
         ) from None
+    await activate_ingestion(resources, accepted, generation, guard)
+    return accepted
+
+
+async def activate_ingestion(
+    resources, accepted: UploadAccepted, generation: int, guard: AttachmentGuard | None = None
+):
     async with resources.sessions() as session, session.begin():
+        await check_storage_owner(session, guard)
         await session.execute(
             update(Document)
-            .where(Document.id == document_id, Document.status == "uploading")
+            .where(Document.id == accepted.document_id, Document.status == "uploading")
             .values(status="processing")
         )
         await session.execute(
             update(BackgroundJob)
-            .where(BackgroundJob.id == accepted.job_id, BackgroundJob.generation == generation)
+            .where(
+                BackgroundJob.id == accepted.job_id,
+                BackgroundJob.generation == generation,
+                BackgroundJob.state == "queued",
+            )
             .values(available_at=func.now())
         )
         await session.execute(
@@ -159,4 +246,3 @@ async def upload(resources, file, request_id: UUID, paper_id: UUID | None) -> Up
             .where(JobOutbox.job_id == accepted.job_id, JobOutbox.generation == generation)
             .values(available_at=func.now())
         )
-    return accepted

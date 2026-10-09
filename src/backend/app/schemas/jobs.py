@@ -15,6 +15,11 @@ class ModelOperationInput(BaseModel):
     request_id: UUID
 
 
+class JobRetryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID | None = None
+
+
 class JobError(BaseModel):
     code: str
     message: str

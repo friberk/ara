@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { BibliographyEditor } from './BibliographyEditor'
 import { MetadataSources } from './MetadataSources'
+import { FullTextAccess } from './FullTextAccess'
 
 const pdfState: Record<Exclude<Paper['document_status'], 'ready'>, string> = {
   metadata_only: 'No PDF attached yet. Attach one to read, summarize and ask about this paper.',
@@ -69,6 +70,7 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
             )}
           </div>
           {/* Attaching and recovering happen in the PDF view's gate; here a ready paper can take a new version. */}
+          {paper.document_status !== 'processing' && <FullTextAccess paper={paper} />}
           {paper.document_status === 'ready' || replacing ? (
             <UploadDropzone paperId={paper.id} title="Replace the PDF" description="A new upload becomes the version you read and ask about. Earlier answers keep citing the PDF they used." onAccepted={() => setReplacing(true)} />
           ) : (

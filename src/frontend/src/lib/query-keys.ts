@@ -15,6 +15,7 @@ export const queryKeys = {
   },
   messages: (chatId: string) => ['messages', chatId] as const,
   summaries: (paperId: string) => ['summaries', paperId] as const,
+  fulltext: (paperId: string) => ['fulltext', paperId] as const,
   jobs: {
     all: ['jobs'] as const,
     list: (filters: { paperId?: string | null; kind?: string | null; active?: boolean | null }) => ['jobs', 'list', filters] as const,

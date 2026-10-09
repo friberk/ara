@@ -16,6 +16,13 @@ test('Given job states, Then only queued and processing jobs count as active', (
   expect(['queued', 'processing', 'completed', 'failed'].map((state) => isActiveJob({ state: state as 'queued' }))).toEqual([true, true, false, false])
 })
 
+test('Given full-text retrieval, Then its kind and stages describe PDF retrieval separately from model transfer', () => {
+  expect(jobKindLabel('fulltext')).toBe('PDF retrieval')
+  expect(jobStageLabel({ state: 'processing', stage: 'discovering_fulltext' })).toBe('Looking for a PDF')
+  expect(jobStageLabel({ state: 'processing', stage: 'fetching_pdf' })).toBe('Downloading the PDF')
+  expect(jobStageLabel({ state: 'processing', stage: 'storing_pdf' })).toBe('Saving the PDF')
+})
+
 test('Given model transfer stages, Then Activity uses readable labels and paused work stays unfinished', () => {
   expect(jobKindLabel('model_download')).toBe('Model download')
   expect(jobKindLabel('model_delete')).toBe('Model weights deletion')

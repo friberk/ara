@@ -10,6 +10,7 @@ import { JobProgress } from '@/components/jobs/JobProgress'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
 import { queryKeys } from '@/lib/query-keys'
+import { FullTextAccess } from './FullTextAccess'
 
 function Abstract({ text }: { text: string | null }) {
   if (!text) return null
@@ -59,7 +60,8 @@ function FailedGate({ paper, onAccepted }: { paper: Paper; onAccepted: (accepted
           <ErrorNotice error={retry.error} />
         </div>
       )}
-      <UploadDropzone paperId={paper.id} title="Upload a different PDF" onAccepted={onAccepted} />
+      <FullTextAccess paper={paper} onAccepted={onAccepted} />
+      <UploadDropzone paperId={paper.id} title="Upload a different PDF" chooseLabel="Upload PDF" onAccepted={onAccepted} />
     </div>
   )
 }
@@ -74,7 +76,7 @@ export function ReaderGate({ paper }: { paper: Paper }) {
         {uploaded ? <ProcessingGate paper={paper} jobId={uploaded.job_id} onSettled={(failed) => { if (failed) setUploaded(null) }} />
           : paper.document_status === 'processing' ? <ProcessingGate paper={paper} />
           : paper.document_status === 'failed' ? <FailedGate paper={paper} onAccepted={setUploaded} />
-          : <UploadDropzone paperId={paper.id} title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={setUploaded} />}
+          : <><FullTextAccess paper={paper} onAccepted={setUploaded} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={setUploaded} /></>}
         <Abstract text={paper.document_status === 'metadata_only' && !uploaded ? paper.abstract : null} />
       </div>
     </div>

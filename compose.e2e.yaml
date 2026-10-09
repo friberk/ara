@@ -6,6 +6,7 @@ services:
     command: ["python", "/fixtures/server.py"]
     volumes:
       - ./tests/fixtures:/fixtures:ro
+      - ${E2E_PDF_PATH:-/tmp/ara-fixtures/research.pdf}:/fulltext-fixtures/research.pdf:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3).close()"]
       interval: 2s
@@ -13,8 +14,12 @@ services:
       retries: 20
     mem_limit: 256m
   api:
+    command: ["uv", "run", "--frozen", "python", "/fixtures/fulltext_runtime.py", "api"]
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
     environment: &fixture-env
       APP_ENV: test
+      PYTHONPATH: /app:/fixtures
       OPENAI_API_KEY: fixture-test-key
       OPENAI_BASE_URL: http://external-fixtures:8080/v1
       OLLAMA_BASE_URL: http://external-fixtures:8080
@@ -28,7 +33,9 @@ services:
       external-fixtures:
         condition: service_healthy
   worker:
-    command: ["uv", "run", "--frozen", "dramatiq", "app.jobs.actors", "--queues", "default", "--processes", "1", "--threads", "2"]
+    command: ["uv", "run", "--frozen", "python", "/fixtures/fulltext_runtime.py", "worker"]
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
     environment: *fixture-env
   frontend:
     ports: !override

@@ -44,6 +44,15 @@ async def save_canonical(session, result: SearchResult) -> tuple[Paper, bool]:
         )
     paper = paper or matched
     created = paper is None
+    if paper is not None:
+        paper = await session.scalar(
+            select(Paper)
+            .where(Paper.id == paper.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if paper is None:
+            raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
     if paper is None:
         paper = Paper(
             title=result.title,

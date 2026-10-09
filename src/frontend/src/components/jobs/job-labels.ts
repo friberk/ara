@@ -1,9 +1,12 @@
 import type { Job } from '@/api/types'
 
-export const jobKindLabels: Record<string, string> = { ingest: 'PDF processing', summary: 'Paper summary', model_download: 'Model download', model_delete: 'Model weights deletion' }
+export const jobKindLabels: Record<string, string> = { fulltext: 'PDF retrieval', ingest: 'PDF processing', summary: 'Paper summary', model_download: 'Model download', model_delete: 'Model weights deletion' }
 const stageLabels: Record<string, string> = {
   queued: 'Waiting to start',
   processing: 'Reading the PDF',
+  discovering_fulltext: 'Looking for a PDF',
+  fetching_pdf: 'Downloading the PDF',
+  storing_pdf: 'Saving the PDF',
   extracting_metadata: 'Extracting title, authors and abstract',
   summarizing: 'Summarizing sections',
   combining: 'Combining the summary',

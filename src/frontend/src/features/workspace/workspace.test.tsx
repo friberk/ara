@@ -58,6 +58,16 @@ const paper = {
 }
 const metadataOnly = { ...paper, document_status: 'metadata_only', active_document_id: null }
 
+test('Given a metadata-only paper, Then the PDF gate and Details offer retrieval alongside manual attachment without posting', async () => {
+  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'GET /papers/p1/fulltext': { paper_id: 'p1', availability: 'unknown', locations: [], attempts: [] } })
+  const { user } = renderApp('/papers/p1')
+  expect(await screen.findByRole('button', { name: 'Find PDF' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Upload PDF' })).toBeVisible()
+  await user.click(screen.getByRole('tab', { name: 'Details' }))
+  expect(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('button', { name: 'Find PDF' })).toBeVisible()
+  expect(calls.some((call) => call.method === 'POST')).toBe(false)
+})
+
 function narrowScreen() {
   vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
     matches: query === '(max-width: 767px)', media: query, onchange: null,

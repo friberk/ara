@@ -10,7 +10,7 @@ The approved plan's core application is integrated into `main`. The user request
 | 1 — Search/library | Complete | Both provider adapters, normalized pagination/errors, canonical save, DOI deduplication and persistent library. |
 | 2 — PDF ingestion | Complete | Private originals in MinIO, bounded child-process extraction, page-aware chunks, metadata/provenance/editor and durable status/recovery. |
 | 3 — Summaries/chat | Complete | Hosted Responses integration, complete-text summary jobs, lexical retrieval, persistent multi-turn SSE chat, scoped citations, model settings and cost reservations. |
-| 4 — Enhancements | Planned continued iterations | Managed local serving (ARA-022) is verified on `feat/managed-ollama`, awaiting a user-requested merge. Automatic open-access downloads, semantic retrieval, OCR and longer conversation context remain to implement. The user rejected a premature scope freeze; these are a prioritized backlog. The UI overhaul (033–040) is complete. |
+| 4 — Enhancements | Continued iterations | Managed local serving (ARA-022) is verified on `feat/managed-ollama`, awaiting a user-requested merge. PDF retrieval/access retries (ARA-019) are implemented on `feat/fulltext-access`, stacked on that branch’s committed work. Semantic retrieval, OCR and longer conversation context remain to implement. The user rejected a premature scope freeze; these are a prioritized backlog. The UI overhaul (033–040) is complete. |
 | 5 — Verification/submission | Application checks complete; submission pending | Automated and live checks, local demo recording, README, license notices, prepared CI, issue records and authentic agent evidence. No remote CI run or Brightspace submission claimed. |
 
 ## Ownership and integration

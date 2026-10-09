@@ -30,6 +30,21 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /models → `{items:Model[]}`; GET/PUT /settings → Settings.
 - GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
+## PDF retrieval and access information (ARA-019)
+
+Alembic `0006_fulltext` follows the local-model migration. It adds durable request/attempt records and nullable document acquisition metadata. Old provider snapshots and manually uploaded PDFs remain valid.
+
+- `SearchResult` adds nullable `is_open_access` and default-empty `locations`. Each location has nullable `pdf_url`, `landing_page_url`, `is_oa`, `license`, `version`, `oa_status`, and `host_type` (`publisher`/`repository`/`unknown`). These are provider reports, not download results.
+- `POST /papers/{id}/retrieve-fulltext` accepts exactly `{request_id: UUID}` and returns 202 `{paper_id,job_id}`. User-supplied URLs or credentials are rejected. The server refreshes saved identities and verifies exact DOI equality before adding another provider’s source to the same paper; manual bibliographic edits survive.
+- A request UUID always replays its original job. Binding it to another paper returns 409 `FULLTEXT_REQUEST_CONFLICT`. Concurrent fresh UUIDs share active retrieval, with each binding persisted. A deliberate retry after a terminal result needs a fresh UUID and can succeed after access changes.
+- `GET /papers/{id}/fulltext` reads only PostgreSQL: `paper_id`, `availability` (`open_copy_reported`/`publisher_link_only`/`unknown`), `locations`, nullable `retrieval_job`, `document_id`, `ingest_job_id`, `last_checked_at`, `acquisition`, and bounded `attempts`. Attempts include provider/source label, version/license/OA report, HTTP status, outcome, reason and checked time. Neither browsing, saving, nor this GET contacts PDF hosts.
+- `/jobs` supports `kind=fulltext` and `paper_id`. Retrieval stages are `discovering_fulltext`, `fetching_pdf`, `storing_pdf`, `completed` and `failed`; progress describes stages. POST `/jobs/{id}/retry` rejects retrieval with 409 `NEW_FULLTEXT_REQUEST_REQUIRED`. Ingestion still uses its existing retry route.
+- Retrieval outcomes distinguish `downloaded`, `access_required`, `blocked`, `not_found`, `rate_limited`, `unavailable`, `invalid_pdf`, `unsafe_url`, `unsupported_source`, `no_pdf_link`, `already_attached`, and `superseded`. A rate-limit result can carry bounded `retry_after` seconds. Authentication/403/HTML responses do not prove a paywall.
+- A successful parent carries `{outcome,document_id,ingest_job_id}`. Download/storage completion is separate from extraction readiness; analysis stays gated until the document is ready. Existing usable attachments skip downloads; a newer manual attachment supersedes retrieval. Stable attachment IDs and job lease/generation fences protect recovery and historical citations.
+- Acquisition metadata can include provider, candidate/final URL, reported OA/license/version, retrieval time and job ID. PDF Details labels accepted/submitted manuscripts distinctly from a published version. A manual replacement refreshes this metadata immediately.
+
+The backend’s network determines IP-based access. Browser university sessions are not inherited. Retry does not run automatically on focus/network changes; browser links and manual upload remain the fallback. `FULLTEXT_ALLOWED_HOSTS` controls exact supported public hostnames, including redirect hosts. The HTTP boundary pins validated DNS addresses while retaining original Host/TLS verification; it sends no provider credentials, ignores proxy environment configuration, rejects encoded bodies and enforces byte/redirect/time bounds described in README. Normal startup never enables the deterministic fixture relay or fixture control routes.
+
 ## Workspace history additions (ARA-034, UI overhaul)
 
 All additions are backward compatible. They support the chat-centred sidebar, the unified composer and progress that survives a reload. Alembic revision `0004_workspace_history` owns the schema changes.
