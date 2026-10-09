@@ -1,0 +1,39 @@
+{
+  "id": "ARA-084",
+  "title": "Retrieve available PDFs automatically and summarize them without clicks",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "A metadata-only paper with a known PDF location shows 'Get PDF', and the user must click it, wait for processing, then click 'Generate summary'. Status copy such as 'PDF downloaded. Processing its pages continues in the background.' adds confusion. User feedback on 2026-10-09: \"Download PDF feature is currently not working well. We need to overhaul the experience there. I need to click Get PDF manually. However if the PDF is available it should get it automatically and do the summary generation etc. as well.\"",
+  "dependencies": [
+    "ARA-019",
+    "ARA-083"
+  ],
+  "acceptance_criteria": [
+    "Given a paper saved to the library whose provider metadata lists an open-access PDF, or that has an identifier allowing discovery, when it is saved, then one durable full-text retrieval job starts without a click, and duplicate saves or deliveries never start a second one.",
+    "Given a metadata-only paper saved before this change that has never had a retrieval attempt, when its workspace opens, then retrieval starts once automatically; after a failure, retries stay manual and respect the provider's reported wait.",
+    "Given any document that finishes processing (downloaded or uploaded), when it becomes ready, then one summary job starts automatically with the saved default model and effort, once per document.",
+    "Given the default model is local and not ready, or hosted generation is unconfigured or over budget, when auto-summary would start, then nothing falls back to a paid model and the summary card offers Generate summary with the reason.",
+    "Given the automatic flow is running, when the user watches the workspace, then one progress story shows (finding PDF, downloading from the source, reading pages, summarizing) without 'continues in the background' boilerplate or a manual Get PDF button, and the reader opens without a reload.",
+    "Given no PDF is available, access is blocked or the source is rate limited, when retrieval ends, then the UI says so plainly and offers retry (after the wait), the publisher link and upload."
+  ],
+  "test_cases": [
+    "Backend: save enqueues exactly one retrieval job; duplicate save and redelivery are idempotent; no automatic retry loop after failure.",
+    "Backend: document ready enqueues one summary job with the saved defaults; local-not-ready and budget/unconfigured cases enqueue nothing paid.",
+    "Frontend: FullTextAccess and SummaryCard states for automatic retrieval, automatic summary, failure and wait.",
+    "Browser regression for the provider PDF journey, run at integration."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/services/fulltext.py",
+    "src/backend/app/services/fulltext_discovery.py",
+    "src/backend/app/services/summarization.py",
+    "src/backend/app/services/ingestion.py",
+    "src/backend/app/routes/research.py",
+    "src/frontend/src/features/workspace/FullTextAccess.tsx",
+    "src/frontend/src/features/summary/SummaryCard.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09 from user feedback. Branch feat/ara-084-auto-pdf.",
+  "updated_at": "2026-10-09"
+}

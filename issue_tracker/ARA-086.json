@@ -1,0 +1,43 @@
+{
+  "id": "ARA-086",
+  "title": "Upload overhaul and accurate metadata from OpenAlex or Semantic Scholar",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "After Upload, the user sees 'PDF uploaded. Processing continues in the background.', which is confusing; the experience falls short of chatgpt.com, claude.ai, Elicit, SciSpace, Scite and Undermind. Metadata is inaccurate: an uploaded paper took the PDF Info title 'paper.dvi'. Local extraction should become the fallback; after upload the app should query OpenAlex (default) or Semantic Scholar (chosen in Settings) with the extracted clues and use the authoritative record, resilient to rate limits. User feedback on 2026-10-09.",
+  "dependencies": [
+    "ARA-009",
+    "ARA-010",
+    "ARA-084"
+  ],
+  "acceptance_criteria": [
+    "Given a PDF whose Info title is a file name or toolchain artifact (for example paper.dvi, Microsoft Word - draft.docx, untitled, *.tex), when it is processed, then the title comes from the first page or an identifier lookup, never from the artifact.",
+    "Given extracted clues with a DOI or arXiv ID, when the PDF is processed, then the selected metadata source is queried by identifier and its title, authors, year, venue, abstract and DOI fill the paper with provider provenance, linking the provider record and keeping DOI deduplication intact.",
+    "Given only title and author clues, when the PDF is processed, then a title search runs and a candidate is accepted only when the normalized title matches closely and author or year agree; otherwise local metadata stays.",
+    "Given the metadata source is rate limited or unavailable, when the PDF is processed, then reading, summaries and Q&A are not blocked, local metadata is kept, and enrichment retries later as a durable background job that respects Retry-After with bounded attempts.",
+    "Given metadata the user edited, when enrichment runs, then it never overwrites the user's values.",
+    "Given Settings, when the user picks OpenAlex or Semantic Scholar as the metadata source, then the choice persists and later enrichments use it; OpenAlex is the default.",
+    "Given the user uploads from home, the library or a paper, when the upload starts, then they see inline progress and land in the paper workspace with one clear stage indicator; no confusing 'processing continues in the background' message, dead-end dialog or extra click remains.",
+    "Given several PDFs dropped on the library, when they upload, then each becomes its own paper with its own progress; a duplicate PDF opens the existing paper with a clear note instead of an error."
+  ],
+  "test_cases": [
+    "Parser unit tests for artifact titles and first-page title extraction.",
+    "Backend: identifier and title lookup with fixtures for both providers, threshold rejection, 429 with Retry-After, outage, user-edited provenance.",
+    "Backend: metadata-source setting persistence and default.",
+    "Frontend: upload stages, multi-file library upload, duplicate handling, settings control.",
+    "Browser regression for upload journeys, run at integration."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/jobs/pdf_parser.py",
+    "src/backend/app/services/ingestion.py",
+    "src/backend/app/integrations/academic.py",
+    "src/frontend/src/components/upload/UploadDropzone.tsx",
+    "src/frontend/src/features/workspace/ReaderGate.tsx",
+    "src/frontend/src/features/library/LibraryPage.tsx",
+    "src/frontend/src/features/research/HomePage.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09 from user feedback. Branch feat/ara-086-upload-metadata.",
+  "updated_at": "2026-10-09"
+}

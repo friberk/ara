@@ -1,0 +1,36 @@
+{
+  "id": "ARA-085",
+  "title": "Context and cost meter beside the chat composer",
+  "type": "feature",
+  "priority": "P1",
+  "description": "The chat gives no sense of how much of the model's context a conversation uses or what it has cost. User request on 2026-10-09: \"In the chat aligned to bottom left of the chat input box there should be a hollow progress circle type of thing that will show the used and total context info with all the monetary cost for this chat so far.\"",
+  "dependencies": [
+    "ARA-043",
+    "ARA-083"
+  ],
+  "acceptance_criteria": [
+    "Given an open chat, when the composer renders, then a hollow ring at the bottom left of the input fills to the share of context used, and hovering, focusing or tapping it shows used and total tokens with the percentage and the chat's cost so far in USD.",
+    "Given a completed turn, when the meter computes used context, then it reflects the tokens that turn actually sent, and the total is the active model's effective input budget in this app (with the model's full window shown as secondary text when they differ).",
+    "Given hosted calls made for this chat (answers, follow-up planning, compaction, query embeddings and reranking where attributable), when the cost is shown, then it sums their recorded usage priced from the catalogs, with no hardcoded model IDs; local models cost $0.00 and say so.",
+    "Given the user switches the model in the composer, when the meter re-renders, then the total and percentage follow the newly selected model at once.",
+    "Given a streamed answer completes, when the turn settles, then the meter and cost update without a reload.",
+    "Given a new chat with no turns, when it opens, then the ring is empty and the cost is $0.00; the shared paper summary is not counted in the chat total."
+  ],
+  "test_cases": [
+    "Backend: usage aggregation per chat across answers, planner and compaction records; pricing through catalogs; local is zero.",
+    "Frontend: ring percentage, tooltip text, keyboard focus, model switch, post-stream refresh, empty chat.",
+    "Generated OpenAPI contract matches the backend."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/routes/chat.py",
+    "src/backend/app/repositories/chats.py",
+    "src/backend/app/integrations/llm.py",
+    "src/frontend/src/features/chat/ConversationComposer.tsx",
+    "src/frontend/src/components/composer/Composer.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09 from user feedback. Branch feat/ara-085-context-meter.",
+  "updated_at": "2026-10-09"
+}
