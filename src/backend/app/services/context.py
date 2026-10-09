@@ -15,6 +15,7 @@ from app.integrations.tokens import (
     PromptMessage,
     TokenCounter,
     count_messages,
+    keep_head,
     keep_tail,
 )
 from app.rag.citations import INSUFFICIENT
@@ -159,7 +160,8 @@ def recent_messages(counter: TokenCounter, turns, budget: int) -> tuple[list[Pro
 # Builders count piece by piece, matching how their shares were sized, and return that cost.
 def summary_message(counter: TokenCounter, text: str, budget: int):
     framing = MESSAGE_OVERHEAD + counter.count(SUMMARY_PREFIX)
-    kept = keep_tail(counter, text, budget - framing) if budget > framing else ""
+    # The summary opens with the user's goals; a cut drops its least useful detail at the end.
+    kept = keep_head(counter, text, budget - framing) if budget > framing else ""
     if not kept:
         return None, 0
     return PromptMessage("system", SUMMARY_PREFIX + kept), framing + counter.count(kept)

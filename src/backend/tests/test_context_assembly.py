@@ -227,6 +227,15 @@ def test_given_summary_and_recall_when_assembling_then_messages_are_role_separat
     assert all("improved accuracy by" not in m.content for m in result.messages[:-1])
 
 
+def test_given_summary_over_its_share_when_assembling_then_its_opening_sections_are_kept():
+    summary = "## User goals\nCompare recall.\n## Open threads\n" + " detail" * 3000 + " LAST"
+    result, _ = assemble(local(), summary=(4, summary))
+    sent = result.messages[1].content
+    # "User goals" opens the summary and matters most; the least useful detail goes last.
+    assert "## User goals\nCompare recall." in sent and "LAST" not in sent
+    assert result.usage.summary_version == 4 and result.usage.truncated
+
+
 def test_given_two_questions_when_assembling_then_the_stable_prefix_is_identical():
     first, _ = assemble(hosted(), history=turn("Q", "A"), question="First?")
     second, _ = assemble(hosted(), history=turn("Q", "A"), question="Second?")
