@@ -22,6 +22,14 @@ MODELS = {
         "25b843619e944cd0ae6069f94ff4e5e26a16e109ccbc0a66a0f05979ed70098e",
         17741872132,
     ),
+    "qwen3-embedding:4b-q4_K_M": (
+        "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+        2496704041,
+    ),
+    "qwen3-embedding:8b-q4_K_M": (
+        "64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b",
+        4676805193,
+    ),
     "fanyx/Qwen3-Reranker-0.6B-Q8_0:latest": (
         "fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3",
         639152466,

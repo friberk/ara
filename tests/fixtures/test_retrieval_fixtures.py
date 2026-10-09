@@ -197,6 +197,17 @@ class RetrievalFixtureTests(unittest.TestCase):
         self.assertAlmostEqual(cosine(query, document), 1.0, places=5)
         self.assertGreater(result["prompt_eval_count"], 0)
 
+    def test_installed_embedders_are_listed_with_pinned_digests(self):
+        expected = {
+            "qwen3-embedding:4b-q4_K_M": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+            "qwen3-embedding:8b-q4_K_M": "64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b",
+        }
+        self.module.OLLAMA.installed.update(expected)
+        with urllib.request.urlopen(self.base + "/api/tags") as response:
+            listed = {item["name"]: item["digest"] for item in json.load(response)["models"]}
+        for name, digest in expected.items():
+            self.assertEqual(listed[name], digest)
+
     def test_ollama_show_reports_embedding_capability(self):
         result = self.post("/api/show", {"model": "qwen3-embedding:8b-q4_K_M"})
         self.assertEqual(result["capabilities"], ["embedding"])
