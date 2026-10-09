@@ -1,7 +1,9 @@
 """In-process provider fixtures mirroring tests/fixtures/server.py and ollama_fixture.py."""
 
+import asyncio
 import base64
 import json
+import re
 import struct
 
 import httpx
@@ -55,3 +57,49 @@ def overlap_relevance(query: str, document: str) -> float:
     terms = {w for w in WORD.findall(query.lower()) if w not in STOP}
     words = {w for w in WORD.findall(document.lower()) if w not in STOP}
     return 0.02 + 0.96 * len(terms & words) / max(1, len(terms))
+
+
+DECISION_INPUT = re.compile(r"Query:\s*(.*?)\n\s*\n(?:Passage|Document)[^:\n]*:\s*(.*)", re.S)
+
+
+def decisions_fixture(requests, *, delay=0.0, peak=None):
+    """Mirrors tests/fixtures/server.py /v1/decisions. `delay` may depend on the input text, and
+    `peak[0]` records the most calls in flight."""
+    active = 0
+
+    async def handler(request):
+        nonlocal active
+        requests.append(request)
+        body = json.loads(request.content)
+        text = body.get("input", "")
+        active += 1
+        if peak is not None:
+            peak[0] = max(peak[0], active)
+        try:
+            await asyncio.sleep(delay(text) if callable(delay) else delay)
+        finally:
+            active -= 1
+        if "DECISIONS-ERROR-FIXTURE" in text:
+            return httpx.Response(500, json={"error": {"message": "Synthetic decisions failure"}})
+        match = DECISION_INPUT.search(text)
+        answers = []
+        for question in body.get("questions", []):
+            name = question.get("name", "answer")
+            if "REFUSE-FIXTURE" in text:
+                answers.append({"type": "refusal", "name": name})
+            else:
+                probability = overlap_relevance(*match.groups()) if match else 0.5
+                answers.append(
+                    {"type": "predicate", "name": name, "probability": round(probability, 4)}
+                )
+        tokens = max(1, len(text.split()))
+        return httpx.Response(
+            200,
+            json={
+                "model": body.get("model"),
+                "answers": answers,
+                "usage": {"input_tokens": tokens, "output_tokens": 0, "total_tokens": tokens},
+            },
+        )
+
+    return httpx.MockTransport(handler)

@@ -574,13 +574,19 @@ class OllamaRuntime:
         }
 
     async def relevance(
-        self, model_id: str, query: str, document: str, *, keep_alive: int | str
+        self,
+        model_id: str,
+        query: str,
+        document: str,
+        *,
+        keep_alive: int | str,
+        timeout_seconds: float | None = None,
     ) -> float | None:
         """One raw-template scoring call: the next token is "yes" or "no"."""
         data = await self.request(
             "POST",
             "/api/generate",
-            timeout=self.probe_timeout,
+            timeout=timeout_seconds or self.probe_timeout,
             json={
                 "model": model_id,
                 "prompt": rerank_prompt(query, document),
