@@ -1361,7 +1361,7 @@ async def retrieve_evidence(resources, *, document_id: UUID, chunk_set: str, pre
 **Design.** Reranking follows the extensibility of LLM and embedding selection.
 - `app/integrations/reranker_catalog.py` (already committed) defines `RerankerProfile(key, provider, method, model_id, display_name, candidates, concurrency, price_per_million_input, local_model_key)`.
 - Profiles:
-  - `openai-gpt-6-luna`: method `openai-decisions`, `gpt-6-luna`, 20 candidates, concurrency 8, $0.10 per million input tokens. **This is the default.**
+  - `openai-gpt-6-luna`: method `openai-decisions`, `gpt-6-luna`, 40 candidates (user decision), concurrency 8, $0.10 per million input tokens. **This is the default.**
   - `qwen3-rerank-0.6b`: method `ollama-logprobs`, `fanyx/Qwen3-Reranker-0.6B-Q8_0`, 12 candidates, concurrency 1, local.
 - `RetrievalSettings.reranker` holds a profile key or `None` (off).
 - The seam `app/rag/rerank.py::rerank_candidates(resources, *, query, nodes, reranker) -> RerankOutcome` is already committed as a pass-through. The pipeline calls only this function.

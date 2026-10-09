@@ -33,13 +33,14 @@ RERANKERS: dict[str, RerankerProfile] = {
     profile.key: profile
     for profile in (
         # Measured 2026-10-09: 20 candidates in 1.2 s at concurrency 8, 12/12 probe pairs, ~$0.002.
+        # The user chose 40 candidates (about half of a paper's chunks; ~2–3 s, ~$0.004).
         RerankerProfile(
             key="openai-gpt-6-luna",
             provider="openai",
             method="openai-decisions",
             model_id="gpt-6-luna",
             display_name="OpenAI GPT-6 Luna",
-            candidates=20,
+            candidates=40,
             concurrency=8,
             price_per_million_input=Decimal("0.10"),
         ),

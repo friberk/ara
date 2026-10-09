@@ -86,7 +86,8 @@ def test_reranker_catalog_is_extensible_like_embedding_profiles():
 
     default = reranker_profile(DEFAULT_RERANKER)
     assert default.provider == "openai" and default.method == "openai-decisions"
-    assert default.model_id == "gpt-6-luna" and default.candidates == 20
+    # User decision (2026-10-09): 40 candidates, about half of a paper's chunks (~2–3 s, ~$0.004).
+    assert default.model_id == "gpt-6-luna" and default.candidates == 40
     local = next(p for p in RERANKERS.values() if p.provider == "ollama")
     assert local.method == "ollama-logprobs" and local.local_model_key and local.candidates == 12
     assert all(p.key == key for key, p in RERANKERS.items())
