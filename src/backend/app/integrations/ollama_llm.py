@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Sequence
 
 import httpx
 
-from app.integrations.llm import Completion, LLMError, estimate_tokens
+from app.integrations.llm import LOCAL_TEMPERATURE, Completion, LLMError, estimate_tokens
 
 
 class OllamaLLM:
@@ -73,6 +73,7 @@ class OllamaLLM:
                 "num_ctx": self.settings.ollama_context_window,
                 "num_predict": output_limit,
                 "num_thread": self.settings.ollama_num_threads,
+                "temperature": LOCAL_TEMPERATURE,
             },
         }
         if effort != "default":

@@ -90,7 +90,12 @@ async def test_given_local_schema_when_completing_then_native_limits_and_no_cred
             {"role": "system", "content": "Ground it"},
             {"role": "user", "content": "Paper"},
         ]
-        assert payload["options"] == {"num_ctx": 8192, "num_predict": 2048, "num_thread": 4}
+        assert payload["options"] == {
+            "num_ctx": 8192,
+            "num_predict": 2048,
+            "num_thread": 4,
+            "temperature": 0.0,
+        }
         assert payload["format"] == {"type": "object"} and "think" not in payload
         await llm.close()
         assert not client.is_closed

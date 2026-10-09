@@ -123,6 +123,7 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
             and saved.configuration["artifact_digest"] == spec.expected_digest
         )
         assert saved.configuration["runtime_version"] == "0.40.1-ara.fixture"
+        assert saved.configuration["temperature"] == 0.0
         assert (
             saved.configuration["input_limit"] == 5632
             and saved.configuration["output_limit"] == 2048

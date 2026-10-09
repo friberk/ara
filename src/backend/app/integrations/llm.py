@@ -13,6 +13,7 @@ from app.schemas.ai import Model
 
 INPUT_LIMIT = 32000
 OUTPUT_LIMIT = 4000
+LOCAL_TEMPERATURE = 0.0
 EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"]
 PRICES = {
     "gpt-5.6-sol": (Decimal("4"), Decimal("20")),
@@ -150,6 +151,7 @@ async def generation_configuration(resources, model: str, effort: str) -> dict:
             context_window=resources.settings.ollama_context_window,
             num_thread=resources.settings.ollama_num_threads,
             safety_tokens=512,
+            temperature=LOCAL_TEMPERATURE,
         )
     return configuration
 
