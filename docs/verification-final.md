@@ -134,3 +134,26 @@ The user's UX correction removed redundant Model default/On entries from IFM eff
 The backend's first RED was 32 failures/4 passes, and the frontend's complete initial RED was 18 failures/33 passes. Review exposed two further issues before correction: an explicit model switch could follow a later preset change, and a verified Boolean IFM preset produced an intermediate On alias. Both had failing regressions before the narrow fixes. The journal separates product defects from test locator/output-path corrections. No new weights, local/paid inference, preference writes, main merge or GitHub push occurred during ARA-055. Earlier six-control evidence describes raw API support and the UI before this correction.
 
 Focused commits: `3c3e0d6` (verified aliases/contracts) and `6b721fd` (explicit UI levels). Final root Ruff formatting corrected one test signature; all 39 alias unit tests then passed in 1.28 seconds. Original API8000 and feature API8003 both returned ready HTTP200. Main remains at `c403662`; development data and retained weights are preserved.
+
+
+## PDF retrieval/access retries — ARA-019, October 9
+
+Implemented on `feat/fulltext-access` in `/Users/bcakar/orca/workspaces/hw1/ara-019-fulltext`, initially from the WIP local-model branch at `ddced81`, with its committed changes incorporated through `6b53fd1`. Main, archive branches and the other agent’s uncommitted worktree were preserved; no push or merge into main.
+
+| Check | Result | Scope |
+| --- | --- | --- |
+| Backend pytest | 510 passed in 58.12s | Isolated real PostgreSQL/Redis/MinIO; provider/discovery/UUID/migration/download/TLS/fencing/recovery/manual-edit and existing local-model/core regressions |
+| Frontend check | 417 passed in 67.42s; strict TypeScript and ESLint passed | Get/Find/retry outcomes, UUID replay, extraction handoff, manual replacement, source versions and Activity |
+| Production build | Passed | Existing large-chunk warning retained |
+| External fixture server | 11 passed in 37.725s | Direct S2 and OpenAlex, exact DOI alternatives, denial/grant, HTML/rate/unsafe/no-link and held recovery cases |
+| Infrastructure | 6 passed | Exact host policy forwarding, explicit browser resource factory/PDF mount and existing isolation checks |
+| Ruff | Passed | Backend and changed fixture/infrastructure files; overlong SQL test literal corrected |
+| Browser | 16 passed in 2.6m | Fresh isolated fixture project, all paper and local-model workflows |
+| Contract/migration/config | Byte-identical regenerated TypeScript; one `0006_fulltext` head; Compose configs passed | Fresh fixture API OpenAPI omits all test-only control routes |
+| Restart persistence | Exact comparison passed for six synthetic papers | PostgreSQL/MinIO/API/worker restart preserved metadata, original-byte hashes, attempts, summaries/chats and citation records |
+| Killed-worker recovery | Generation 2/attempt 2 completed to ready; one document/ingest job; original UUID replays | Held real HTTP fixture download, SIGKILL of default worker and automatic durable recovery |
+| Fresh code/UI review | Five named code findings resolved; accessibility correction scored resolved | Code review + fresh-context Impeccable substitute agents; validated 1440px/390px captures, detector empty, incumbent design docs preserved |
+
+TDD evidence and genuine setup/correction failures are recorded in the [journal](agent-development-log.md). The first browser assertions were red on missing retrieval controls; subsequent product defects had observed failing regressions before fixes. The initial ranking draft preceded its dedicated test, was removed, and was reimplemented after the actual red; this process correction is recorded rather than claiming a pristine history. Supplemental TLS/recovery/browser checks are verification evidence, not invented first-red claims.
+
+The fixture relay is test-only and retains the production URL/DNS/HTTP boundary. No live university subscription or network entitlement was tested. Provider-reported OA metadata does not prove access, and backend downloads do not inherit browser authentication. Private/unapproved hosts and encoded-only responses use browser/upload fallback. No real model weights or paid live generation were required for this feature’s tests.
