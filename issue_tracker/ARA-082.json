@@ -1,0 +1,51 @@
+{
+  "id": "ARA-082",
+  "title": "Integrate managed models, full-text access and retrieval/context into main",
+  "type": "infrastructure",
+  "priority": "P0",
+  "description": "Merge the three reviewed feature branches without losing source history, combine migration heads and shared workflows, verify the integrated application, then clear Docker build cache and rebuild the current main services while retaining data and weights.",
+  "dependencies": [
+    "ARA-019",
+    "ARA-022",
+    "ARA-021",
+    "ARA-043",
+    "ARA-055"
+  ],
+  "acceptance_criteria": [
+    "Given all three feature tips, when integration succeeds, then main contains each tip and original branches remain available; worktrees are removed only under the user\u2019s later explicit cleanup instruction with local evidence archived.",
+    "Given either feature migration or the previous main schema, when upgrade head runs, then a single merge revision installs both schemas and preserves model intent, paper originals and generation history.",
+    "Given combined full-text/RAG/model workflows, when checks run, then backend, frontend and deterministic browser regression suites pass and generated contracts match.",
+    "Given successful integration, when Docker build cache is cleared and images rebuilt, then main runs the current images on its documented ports without removing persistent volumes or weights."
+  ],
+  "test_cases": [
+    "Full backend and frontend suites plus strict type/lint/build checks.",
+    "Upgrade from both sibling migration heads; API readiness and contract generation.",
+    "Combined browser journeys including provider PDF retrieval, managed models, citations and history.",
+    "Real main schema/data/object checks before and after restart, plus safe cache cleanup and rebuilt image identities."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/alembic/versions/0007_feature_merge.py",
+    "src/backend/app/services/health.py",
+    "src/backend/tests/test_fulltext_migration.py",
+    "docs/agent-development-log.md",
+    "docs/verification-final.md",
+    "src/backend/tests/test_public_http.py",
+    "src/backend/tests/test_fulltext_integration.py",
+    "src/backend/app/models/research.py",
+    "src/backend/app/repositories/jobs.py",
+    "src/backend/app/routes/jobs.py",
+    "src/frontend/src/features/workspace/DetailsPanel.tsx",
+    "tests/fixtures/server.py",
+    "src/frontend/src/api/generated.ts",
+    "AGENTS.md"
+  ],
+  "commits": [
+    "a9eb592",
+    "7f11706",
+    "5084b4f"
+  ],
+  "pull_requests": [],
+  "verification": "Combined checks passed: 905 backend tests in 151.72s; 479 frontend tests in 26.76s, strict TypeScript/ESLint and a 2.19s build; 16 browser scenarios in 3.8m; 15 infrastructure and 26 fixture tests. Three starting migration revisions converge on 0007_feature_merge; independent reviews approved the fixes and generated contracts match. The first backend run reproduced a TLS fixture/network-guard conflict; the narrow correction passed seven targeted cases and the full suite. OrbStack cache pruning reclaimed 20.41 GB, followed by cache-free backend/frontend/MinIO/Ollama builds and a healthy eight-service main startup. All six rebuilt service image IDs match their tags. Existing record counts, history/provenance hashes, original PDF checksum and defaults are preserved; re-ingestion produced 36 chunks. The read-only main browser smoke passed old citations and combined controls with zero mutations. All three feature tips are contained in main and their archival branches are unchanged. User-authorized cleanup removed all linked worktrees, archived private configuration/evidence and stopped preview/test stacks without deleting volumes. Existing weights remain in their original volumes; no remote push occurred.",
+  "updated_at": "2026-10-09"
+}

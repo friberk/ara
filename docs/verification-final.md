@@ -157,3 +157,27 @@ Implemented on `feat/fulltext-access` in `/Users/bcakar/orca/workspaces/hw1/ara-
 TDD evidence and genuine setup/correction failures are recorded in the [journal](agent-development-log.md). The first browser assertions were red on missing retrieval controls; subsequent product defects had observed failing regressions before fixes. The initial ranking draft preceded its dedicated test, was removed, and was reimplemented after the actual red; this process correction is recorded rather than claiming a pristine history. Supplemental TLS/recovery/browser checks are verification evidence, not invented first-red claims.
 
 The fixture relay is test-only and retains the production URL/DNS/HTTP boundary. No live university subscription or network entitlement was tested. Provider-reported OA metadata does not prove access, and backend downloads do not inherit browser authentication. Private/unapproved hosts and encoded-only responses use browser/upload fallback. No real model weights or paid live generation were required for this feature’s tests.
+
+## Three-feature main integration — ARA-082, October 9
+
+The user authorized integrating all three feature branches. Main advanced from `c403662` to `5084b4f` through an isolated Orca checkout. It contains managed tip `6b53fd1`, full-text tip `9fdd8c1` and RAG tip `e55a304`. Each original branch/worktree remains unchanged and available; no remote push occurred.
+
+| Check | Executed result | Scope |
+| --- | --- | --- |
+| Backend final suite / Ruff | 905 passed in 151.72s; backend lint and changed-file format passed | Isolated real PostgreSQL/Redis/MinIO; combined full-text, RAG/context and managed models |
+| Frontend check / build | 479 tests across 63 files in 26.76s; strict TypeScript/ESLint; build 2.19s | Combined UI and existing workflows; no fixture/source edits needed |
+| Full Playwright | 16 passed in 3.8 minutes | Fresh isolated combined HTTP fixture stack; provider PDF retrieval/recovery, processing, models, grounded analysis, mobile/keyboard |
+| Infrastructure / fixture checks | 15 / 26 passed | Actual Compose configuration, test isolation and HTTP/PDF fixtures |
+| Migration convergence | Three start revisions passed | Old managed head and either sibling feature head converge on `0007_feature_merge`; both schemas and paused model intent retained |
+| Final source OpenAPI | Host/container contracts byte-identical | Combined access, retrieval, context and managed-model fields |
+| Independent reviews | Conflict unions, merge graph and loopback fixture approved | Bounded read-only checks; deployment persistence remains separately measured |
+
+Initial integrated backend verification had 904 passes plus one failed TLS test and teardown error. RAG’s guard blocked a synthetic public destination before its explicit loopback network backend could route to the test server. The narrow fixture correction passed with the unchanged external-network guard, then the full suite passed. An executable two-head migration RED preceded the merge revision. Existing npm audit and large-bundle warnings remain; the unrelated broad-root lint findings are distinguished from the required backend lint in the journal.
+
+The active OrbStack build cache was pruned only after successful integration, reclaiming 20.41 GB. `docker compose build --no-cache api frontend minio ollama` rebuilds the final main source; the shared backend image supplies the API, both workers and initialization services. Persistent volumes, model artifacts and unrelated project services were not pruned. A private PostgreSQL backup and API/count/PDF checksum baseline were captured before startup; final deployment evidence follows.
+
+Fresh build and deployment completed: backend, frontend, MinIO and patched Ollama images rebuilt without cache; all six service images match their tags. Main runs eight services on frontend5173/API8000, with database/storage/Redis readiness OK and PostgreSQL17 pgvector plus `0007_feature_merge`. The original2papers/1document/1summary/3chats/4messages survived. Stored-history/provenance hashes, original PDF bytes and default model/effort match the pre-upgrade baseline. Re-ingestion produced36structured chunks with zero active jobs.
+
+Read-only main browser verification passed for the old summary, saved citation preview and original page2, combined Search index/Settings controls, no horizontal overflow and zero mutations. Its first obsolete test-ID assertion was corrected to the current semantic Page group after independent reproduction; no product fix was needed.
+
+At the user’s subsequent request, all three feature worktrees and the temporary integration checkout were removed. Their original branches remain at the exact source tips and are contained in main. Private configurations/evidence are archived in ignored `docs/evidence/generated/worktree-archives/`; preview/test stacks stopped without deleting any volumes. Existing model-weight volumes remain available; they were not consolidated into the new main model store or downloaded again. Only main remains registered as a Git worktree. Existing unrelated services and the user’s untracked assignment/skill files remain intact. ARA-080/081 and remote submission deliverables remain separate work.
