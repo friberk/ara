@@ -5,7 +5,7 @@
 **Goal:** Replace naive page-text retrieval with structure-aware parsing, hybrid keyword+vector retrieval, selectable embedding profiles, optional local reranking, verifiable short-handle citations, and token-accurate conversation memory.
 
 **Architecture:**
-- **Parsing and chunking:** PyMuPDF4LLM, with its layout model, parses PDFs through its documented LlamaIndex reader inside the existing isolated child process. LlamaIndex node parsers produce section-aware chunks.
+- **Parsing and chunking:** PyMuPDF4LLM's layout `to_markdown(page_chunks=True)` parses PDFs inside the existing isolated child process, with tuned threads. LlamaIndex node parsers produce section-aware chunks from one whole-paper Document.
 - **Storage and retrieval:** chunks, embeddings and memory live in the single existing Postgres, which gains pgvector. Retrieval runs LlamaIndex retrievers over our own AsyncSessions, fuses their results with RRF, optionally reranks through the single existing Ollama, and packs evidence by real token budgets.
 - **Chat:** chat sends a role-separated message list with a running summary, recent turns, recalled turns and `[S#]`-labelled evidence. The server maps handles back to canonical `[source:<uuid>]` markers.
 
@@ -18,7 +18,7 @@
 ## Global Constraints
 
 - **Infrastructure:** exactly one PostgreSQL service (`postgres`) and one Ollama service (`ollama`). Add no vector DB, parser service, reranker service or second runtime.
-- **Off-the-shelf first:** prefer documented LlamaIndex and PyMuPDF4LLM APIs over custom code. The only parsing glue allowed is the cross-page `header_path` carry (Task 9).
+- **Off-the-shelf first:** prefer documented LlamaIndex and PyMuPDF4LLM APIs over custom code. Our own parsing code is limited to child-process tuning, formula-box filling (Task 8) and chunk-to-page/box offset mapping (Task 9).
 - **Persistence:** Alembic owns all schema. LlamaIndex must never create tables (no `PGVectorStore`, no LlamaIndex chat stores).
 - **Sessions and processes:** every request, actor and parallel task opens its own `AsyncSession` via `resources.sessions()`. PyMuPDF/PyMuPDF4LLM run only in the child process `python -m app.jobs.pdf_parser`.
 - **Paid calls:** generation calls never retry. Embedding calls may retry at most 2 times with backoff, because they are idempotent and cheap. Every OpenAI call reserves budget through `reserve()`.
@@ -33,9 +33,9 @@
 
 | Name | Value | Source |
 |---|---|---|
-| `PGVECTOR_IMAGE` | `pgvector/pgvector:<tag>@sha256:<digest>` | S2 Part B |
-| Child parser `RLIMIT_AS` / `RLIMIT_CPU` | `<GiB>` / `<s>` | S2 Part A |
-| Worker `mem_limit` | `<g>` | S2 Part A |
+| `PGVECTOR_IMAGE` | `pgvector/pgvector:0.8.7-pg17-bookworm@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d` (PostgreSQL 17.11, pgvector 0.8.7) | S2 Part B |
+| Child parser `RLIMIT_AS` / `RLIMIT_CPU` | 1.5 GiB / 150 s, with tuned threads (mandatory) | S2 Part A |
+| Worker `mem_limit` | 2g (unchanged), one parse child at a time | S2 Part A |
 | `OLLAMA_MAX_LOADED_MODELS` default | `<n>` | S1 §3 |
 | `OLLAMA_CONTEXT_WINDOW` default | `<tokens>` | S1 §4 |
 | `OLLAMA_FLASH_ATTENTION` / `OLLAMA_KV_CACHE_TYPE` | `<on/off>` / `<type>` | S1 §4 |
@@ -80,7 +80,7 @@
 
 **Backend, modified:**
 - `app/models/research.py`: `DocumentChunk` reshaped, plus `Paper.retrieval_profile`, `Document.parser`/`chunk_set` and `ChatMessage.retrieval`/`context`/`grounding`.
-- `app/jobs/pdf_parser.py`: PyMuPDF4LLM reader.
+- `app/jobs/pdf_parser.py`: PyMuPDF4LLM layout `to_markdown`, with tuned child threads and the legacy fallback.
 - `app/services/ingestion.py`: chunk persistence plus the embed-job enqueue.
 - `app/services/chat.py`: split `prepare`, status events, transducer.
 - `app/services/summarization.py`: new chunks and handles.
@@ -584,52 +584,82 @@ git worktree add ../rag-<name> -b feat/rag-<name> feat/rag-context
 - [ ] **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(jobs): let long jobs continue without spending attempts (ARA-071)`.
 
-### Task 8: PyMuPDF4LLM child parser
+### Task 8: PyMuPDF4LLM child parser (layout `to_markdown`)
 
-**Files:** Modify `app/jobs/pdf_parser.py`. Test: `tests/test_pdf_parser_structured.py` (unit; generates a PDF with `tests/fixtures/create_structured_pdf.py` into `tmp_path`, then runs the child via `parse_in_child`).
+S2 measured this design (`scratchpad/spikes/s2/REPORT.md`). `LlamaMarkdownReader` is NOT used: it runs the legacy heading heuristic and found only the title, whereas layout `to_markdown` found 22/22 headings on Attention and 29/29 on RAG.
 
-**Interfaces:** The child JSON output (consumed by Task 10):
+**Files:** Modify `app/jobs/pdf_parser.py` and `app/services/ingestion.py` (`parse_in_child` environment and limits). Test: `tests/test_pdf_parser_structured.py` (unit). It generates the fixture PDF with `tests/fixtures/create_structured_pdf.py` (copy that generator to `tests/support/structured_pdf.py`, because backend tests cannot import repo-root fixtures) and runs the real child via `parse_in_child`.
+
+**Interfaces.** The child JSON output, consumed by Tasks 9 and 10:
 
 ```python
 {
   "metadata": {"title": str|None, "authors": list[str], "year": int|None, "doi": str|None, "abstract": str|None},
-  "pages": [{"page": 1, "text": "<plain text, PyMuPDF get_text(sort=True)>", "printed_label": str|None,
-             "markdown": "<pymupdf4llm Markdown for this page>"}],
+  "pages": [{"page": 1,
+             "text": "<plain text, PyMuPDF get_text(sort=True)>",       # unchanged: DocumentPage + fallback
+             "printed_label": str|None,
+             "markdown": "<pymupdf4llm layout Markdown for this page>",
+             "boxes": [{"class": "section-header", "bbox": [x0, y0, x1, y1], "start": 268, "end": 309}]}],
   "warnings": [str],
-  "extractor_version": "pymupdf4llm-1.28.2+layout" | "pymupdf4llm-1.28.2+plain",
-  "parser": "pymupdf4llm-layout" | "pymupdf4llm-plain",
+  "extractor_version": "pymupdf4llm-1.28.2+layout" | "pymupdf4llm-1.28.2+legacy",
+  "parser": "pymupdf4llm-layout" | "pymupdf4llm-legacy",
 }
 ```
 
-- Keep every existing pre-check and error code: password, the 200-page limit, `PDF_TEXT_LIMIT`, `OCR_REQUIRED` and invalid PDF.
-- Use `pymupdf4llm.LlamaMarkdownReader().load_data(path, header=False, footer=False, use_ocr=False)` and map each returned Document's `text` to `markdown`, by `metadata["page"]`. If the reader raises, call `pymupdf4llm.use_layout(False)`, rerun the reader, and set `parser="pymupdf4llm-plain"`.
-- Suppress the reader's import-time print (`contextlib.redirect_stdout(io.StringIO())`).
-- rlimits come from G0.
+Child rules:
+- **Pre-checks:** keep every existing check and error code: password, the 200-page limit, `PDF_TEXT_LIMIT`, `OCR_REQUIRED` and invalid PDF. They run with plain `pymupdf` before pymupdf4llm is imported.
+- **Thread and memory tuning, set before importing pymupdf4llm (mandatory).** Without it, the import hangs under any RLIMIT_AS of 1–2 GiB.
+  - Set `os.environ["OPENBLAS_NUM_THREADS"]="1"`, `os.environ["MALLOC_ARENA_MAX"]="2"` and `OMP_NUM_THREADS="2"`.
+  - Install an `onnxruntime.InferenceSession` subclass whose `__init__` forces `SessionOptions(intra_op_num_threads=2, inter_op_num_threads=1)`, then assign it to `onnxruntime.InferenceSession`. The parent also passes these environment variables through its scrubbed environment.
+- **Layout pass:** `pymupdf4llm.to_markdown(path, page_chunks=True, header=False, footer=False, use_ocr=False, show_progress=False)`. Each page dict gives `markdown = page["text"]` and `boxes` from `page["page_boxes"]` (`class`, `bbox`, `start`, `end` from `pos`).
+- **Display formulas** (S2: layout renders them as empty `\n\n`): for each box with class `formula` whose slice is blank, insert `page.get_text("text", clip=bbox).strip()` from plain PyMuPDF into that slice, wrapped as `\n\n$$ {text} $$\n\n`. Then recompute the `start`/`end` offsets of the later boxes.
+- **Fallback:** if the layout pass raises, run a **fresh** child invocation with `--legacy`. That invocation sets `sys.modules["pymupdf.layout"] = None` before importing pymupdf4llm and calls `to_markdown(path, page_chunks=True)`. `use_layout(False)` is not enough: it still loads ONNX, at 3.1 GiB VmPeak. The fallback output has `parser="pymupdf4llm-legacy"` and `boxes=[]`. The parent retries with `--legacy` once on a non-timeout parse error.
+- **Limits:** `RLIMIT_AS = 1.5 GiB` and `RLIMIT_CPU = 150 s`. The parent's wall deadline stays at 120 s. The worker runs one parse child at a time (`mem_limit` stays 2g).
 
 - [ ] **Step 1: Write the failing tests:**
 
 ```python
-async def test_given_structured_pdf_when_parsed_then_markdown_has_headings_and_table(tmp_path):
-    pdf = make_structured_pdf(tmp_path)              # helper wraps tests/fixtures/create_structured_pdf.py
+from support.structured_pdf import create_structured_pdf
+
+async def test_given_structured_pdf_when_parsed_then_layout_markdown_has_headings_table_boxes(tmp_path):
+    pdf = create_structured_pdf(tmp_path / "s.pdf")
     parsed = await parse_in_child(pdf.read_bytes())
     assert parsed["parser"] == "pymupdf4llm-layout"
-    joined = "\n".join(p["markdown"] for p in parsed["pages"])
-    assert "# " in joined and "Method" in joined
-    assert "| Model |" in joined.replace("**", "")   # table rendered as Markdown
-    assert [p["page"] for p in parsed["pages"]] == [1, 2, 3, 4]
+    pages = parsed["pages"]
+    assert [p["page"] for p in pages] == [1, 2, 3, 4]
+    joined = "\n".join(p["markdown"] for p in pages).replace("**", "")
+    assert "# " in joined and "2 Method" in joined and "References" in joined
+    assert "|Model|Recall@10|Latency (ms)|" in joined.replace(" ", "")
+    for page in pages:   # boxes tile the page Markdown exactly
+        spans = sorted((b["start"], b["end"]) for b in page["boxes"])
+        assert spans[0][0] == 0 and spans[-1][1] == len(page["markdown"])
+        assert all(a[1] == b[0] for a, b in zip(spans, spans[1:]))
+    assert any(b["class"] == "section-header" for p in pages for b in p["boxes"])
 
-async def test_given_layout_failure_when_parsed_then_plain_fallback(tmp_path, monkeypatch):
-    # Run the parse() function in-process with a reader stub that raises on first call.
-    ...
+async def test_given_layout_failure_when_parsed_then_legacy_fallback(tmp_path, monkeypatch):
+    pdf = create_structured_pdf(tmp_path / "s.pdf")
+    monkeypatch.setenv("ARA_PARSER_FORCE_LAYOUT_ERROR", "1")    # test-only hook honoured only when APP_ENV=test
+    parsed = await parse_in_child(pdf.read_bytes())
+    assert parsed["parser"] == "pymupdf4llm-legacy" and parsed["pages"][0]["boxes"] == []
+    assert "2 Method" in "\n".join(p["markdown"] for p in parsed["pages"])
 
 async def test_given_image_only_pdf_then_ocr_required(tmp_path):
-    ...  # page with an inserted image and no text -> {"error": {"code": "OCR_REQUIRED", ...}}
+    import pymupdf
+    document = pymupdf.open(); page = document.new_page()
+    page.insert_image(pymupdf.Rect(50, 50, 300, 300), pixmap=pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 32, 32), 0))
+    path = tmp_path / "image.pdf"; document.save(path)
+    parsed = await parse_in_child(path.read_bytes())
+    assert parsed["error"]["code"] == "OCR_REQUIRED"
+
+async def test_given_parse_when_child_runs_then_it_fits_tuned_limits(tmp_path):
+    # A 40-page concatenation of the fixture must parse under RLIMIT_AS 1.5 GiB within the deadline.
+    ...
 ```
 
-  Write the two elided tests fully. For the fallback, call `pdf_parser.parse()` directly with `monkeypatch.setattr(pymupdf4llm.LlamaMarkdownReader, "load_data", raising_once)`. This is allowed in a unit test that imports the child module explicitly.
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement** per the interface.
-- [ ] **Step 4: Run.** Expected: PASS. Record per-page timing on the fixture in the journal.
+  Write the last test fully: build a 40-page PDF by `insert_pdf` of the fixture ten times, then assert a `parser` of `pymupdf4llm-layout` and no `error`. `parse_in_child` passes `ARA_PARSER_FORCE_LAYOUT_ERROR` through only when `APP_ENV=test`.
+- [ ] **Step 2: Run.** Expected: FAIL (no `markdown`/`boxes` keys).
+- [ ] **Step 3: Implement** per the rules above.
+- [ ] **Step 4: Run.** Expected: PASS. Record the per-page time and the child `ru_maxrss` for the fixture in the journal.
 - [ ] **Step 5: Commit** `feat(parser): parse PDFs with PyMuPDF4LLM layout (ARA-071)`.
 
 ### Task 9: Chunk plan with LlamaIndex parsers
@@ -639,7 +669,7 @@ async def test_given_image_only_pdf_then_ocr_required(tmp_path):
 **Interfaces:**
 
 ```python
-CHUNK_SET = "pymupdf4llm-1.28.2:md-sentence-512-64:v1"   # bump on any parameter change
+CHUNK_SET = "pymupdf4llm-1.28.2-layout:md-sentence-512-64:v1"   # bump on any parameter change
 
 @dataclass(frozen=True)
 class SectionDraft:
@@ -648,7 +678,7 @@ class SectionDraft:
 @dataclass(frozen=True)
 class ChunkDraft:
     ordinal: int; section_ordinal: int | None; section_path: list[str]; heading: str; kind: str
-    page: int; page_end: int; text: str; context_text: str; token_count: int
+    page: int; page_end: int; bboxes: list[list[float]]; text: str; context_text: str; token_count: int
 
 @dataclass(frozen=True)
 class ChunkPlan:
@@ -658,56 +688,66 @@ def build_chunk_plan(pages: list[dict], *, title: str | None, chunk_tokens: int 
                      overlap_tokens: int = 64, counter: TokenCounter | None = None) -> ChunkPlan
 ```
 
-Algorithm. Only the header carry is custom; everything else is LlamaIndex:
-1. Build one `llama_index.core.Document(text=page["markdown"], metadata={"page": n})` per page.
-2. Run `MarkdownNodeParser()` over the documents to get nodes with `metadata["header_path"]` (e.g. `"/Results/Open-domain QA/"`).
-3. **Header carry:** iterate nodes in page order. If a node's `header_path` is `"/"` or empty, it is the first node on its page and starts with no heading, so set it to the last non-empty path of the previous page.
-4. Run `SentenceSplitter(chunk_size=chunk_tokens, chunk_overlap=overlap_tokens, tokenizer=TiktokenCounter("cl100k_base").encode)` over the carried nodes. Splitting keeps the metadata.
-5. **Sections:** each distinct `header_path` in reading order becomes a `SectionDraft`. `level` is the path depth. `role` is `references` when the last path segment matches `(?i)^(\d+\s*)?(references|bibliography|works cited)$`, `front_matter` for content before the first heading, otherwise `body`.
-6. **Kind:** `references` if the section role is references; `table` if the chunk text has a Markdown table row (`^\|.*\|$`) on ≥2 lines; `front_matter` if the section is front matter; otherwise `text`.
-7. **Text fields:** `heading = " > ".join(path)`. `context_text = "\n".join(filter(None, [title, heading, text]))`. `token_count = counter.count(text)`.
-8. **No headings at all:** the plan still has chunks with `section_path=[]` and `heading=""`, and `context_text` starts with the title. A page whose Markdown is empty produces no chunks.
+Algorithm. Everything is LlamaIndex except the offset mapping:
+1. **One Document for the whole paper.** Concatenate the page Markdown with `"\n\n"` and record `page_offsets[i] = (start, end)` in the concatenation. The Document has **no metadata**; S2 found PDF metadata costs about 110 tokens per chunk. A single Document makes MarkdownNodeParser keep the heading stack across page breaks, which avoids S2's "one level short" carry problem.
+2. `IngestionPipeline(transformations=[MarkdownNodeParser(), SentenceSplitter(chunk_size=chunk_tokens, chunk_overlap=overlap_tokens, tokenizer=tiktoken.get_encoding("o200k_base").encode)])`, run with `.run(documents=[doc])`. No docstore, cache or vector store.
+3. **Section path:** take the `metadata["header_path"]` segments (the parents) plus the node's own heading when its first line starts with `#`. Strip `#`, `**`, `_`, `<sup>…</sup>` and whitespace from every segment. `level` is the number of `#` in the own heading.
+4. **Heading-only nodes:** a node whose text is only its heading line merges into the following node in the same section, so no chunk under 50 tokens is just a heading.
+5. **Offsets:** locate each chunk's text in the concatenation with a monotonic cursor (`text.find(chunk, cursor_start)`, where `cursor_start` = previous chunk start + 1, to tolerate overlaps). If it isn't found, fall back to the parent node's offset.
+   - `page` is the page containing the chunk start; `page_end` is the page containing its end.
+   - `bboxes` is `[[page, x0, y0, x1, y1]]` for every page box whose `[start, end)` (shifted by the page offset) overlaps the chunk range, excluding classes `page-header`, `page-footer` and `picture`.
+6. **Sections:** each distinct path in reading order becomes a `SectionDraft`. `role` is `references` when the last segment matches `(?i)^(\d+\.?\s*)?(references|bibliography|works cited)$`, `front_matter` for chunks before the first heading, otherwise `body`.
+7. **Kind:** `references` if in a references section; `table` if ≥2 lines match `^\|.*\|\s*$`; `front_matter` if in front matter; otherwise `text`.
+8. **Text fields:** `heading = " > ".join(path)`; `context_text = "\n".join(filter(None, [title, heading, text]))`; `token_count = counter.count(text)`.
+9. **No headings at all:** chunks still exist, with `section_path=[]` and `heading=""`, and `context_text` starts with the title.
 
-- [ ] **Step 1: Write the failing tests** with literal Markdown pages (no PDF needed):
+- [ ] **Step 1: Write the failing tests** with literal pages (no PDF needed):
 
 ```python
 PAGES = [
-    {"page": 1, "markdown": "# Sparse Retrieval\n\n## Abstract\n\nWe study sparse retrieval."},
-    {"page": 2, "markdown": "## 2 Method\n\nWe index passages with BM25 and"},
-    {"page": 3, "markdown": "continue with dense vectors.\n\n## 3 Results\n\n| Model | Recall@10 |\n|---|---|\n| BM25 | 0.61 |"},
-    {"page": 4, "markdown": "## References\n\n[1] Robertson. BM25."},
+    {"page": 1, "markdown": "# **Sparse Retrieval**\n\n## Abstract\n\nWe study sparse retrieval.\n\n", "boxes": []},
+    {"page": 2, "markdown": "## **2 Method**\n\n### 2.1 Indexing\n\nWe index passages with BM25 and", "boxes": []},
+    {"page": 3, "markdown": "continue with dense vectors.\n\n## 3 Results\n\n|Model|Recall@10|\n|---|---|\n|BM25|0.61|\n\n",
+     "boxes": [{"class": "table", "bbox": [72, 300, 540, 360], "start": 50, "end": 100}]},
+    {"page": 4, "markdown": "## References\n\n- [1] Robertson. BM25.", "boxes": []},
 ]
 
-def test_continuation_keeps_section_heading():
+def test_continuation_keeps_full_heading_stack_across_pages():
     plan = build_chunk_plan(PAGES, title="Sparse Retrieval")
-    cont = next(c for c in plan.chunks if c.text.startswith("continue with dense"))
-    assert cont.section_path[-1] == "2 Method" and cont.page == 3
+    cont = next(c for c in plan.chunks if "continue with dense" in c.text)
+    assert cont.section_path[-2:] == ["2 Method", "2.1 Indexing"] and cont.page == 2 and cont.page_end == 3
 
-def test_table_and_references_kinds():
+def test_headings_are_clean_and_heading_only_nodes_merge():
     plan = build_chunk_plan(PAGES, title="Sparse Retrieval")
-    assert any(c.kind == "table" and "Recall@10" in c.text for c in plan.chunks)
+    assert all("**" not in s.title for s in plan.sections)
+    assert not any(c.text.strip() in {"## **2 Method**", "## 2 Method"} for c in plan.chunks)
+
+def test_table_kind_with_box_and_references_excluded_role():
+    plan = build_chunk_plan(PAGES, title="Sparse Retrieval")
+    table = next(c for c in plan.chunks if c.kind == "table")
+    assert "Recall@10" in table.text and table.bboxes and table.bboxes[0][0] == 3
+    assert any(s.role == "references" for s in plan.sections)
     assert any(c.kind == "references" for c in plan.chunks)
-    assert {s.role for s in plan.sections} >= {"body", "references"}
 
 def test_context_text_prefixes_title_and_heading():
     plan = build_chunk_plan(PAGES, title="Sparse Retrieval")
     chunk = next(c for c in plan.chunks if "BM25 and" in c.text)
     lines = chunk.context_text.splitlines()
-    assert lines[0] == "Sparse Retrieval" and lines[1].endswith("2 Method") and chunk.heading.endswith("2 Method")
+    assert lines[0] == "Sparse Retrieval" and lines[1].endswith("2 Method > 2.1 Indexing")
 
-def test_no_headings_still_chunks():
-    plan = build_chunk_plan([{"page": 1, "markdown": "plain text " * 400}], title=None)
-    assert plan.chunks and all(c.context_text for c in plan.chunks)
-    assert max(c.token_count for c in plan.chunks) <= 512 + 16
+def test_no_headings_still_chunks_within_budget():
+    plan = build_chunk_plan([{"page": 1, "markdown": "plain text " * 400, "boxes": []}], title=None)
+    assert plan.chunks and all(c.context_text and c.section_path == [] for c in plan.chunks)
+    assert max(c.token_count for c in plan.chunks) <= 512
 
-def test_chunks_respect_token_budget():
-    long = [{"page": 1, "markdown": "## Intro\n\n" + ("Sentence about retrieval. " * 600)}]
+def test_long_section_respects_token_budget():
+    long = [{"page": 1, "markdown": "## Intro\n\n" + ("Sentence about retrieval. " * 600), "boxes": []}]
     plan = build_chunk_plan(long, title="T")
-    assert all(c.token_count <= 512 + 16 for c in plan.chunks) and len(plan.chunks) > 3
+    assert all(c.token_count <= 512 for c in plan.chunks) and len(plan.chunks) > 3
 ```
 
 - [ ] **Step 2: Run** `pytest tests/test_chunking.py -v`. Expected: FAIL (module missing).
-- [ ] **Step 3: Implement** per the algorithm. Use `TokenCounter` from Task 17 if it has merged; otherwise use a local `tiktoken.get_encoding("cl100k_base")` and switch when Task 17 lands. Agent C owns `tokens.py`, so do not create it here.
+- [ ] **Step 3: Implement** per the algorithm. Use `TokenCounter` from Task 17 if merged, otherwise a local `tiktoken.get_encoding("o200k_base")` (switch when Task 17 lands; agent C owns `tokens.py`).
 - [ ] **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(rag): build section-aware chunks with LlamaIndex (ARA-071)`.
 

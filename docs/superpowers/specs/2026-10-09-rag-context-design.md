@@ -46,9 +46,9 @@ Non-goals:
 ### 4.1 Parsing and chunking (ARA-071)
 
 - **Packages:** `pymupdf4llm==1.28.2`, `pymupdf==1.28.2` and `pymupdf_layout==1.28.2`, pinned together. All three are AGPL-3.0 or Artifex commercial; this was checked against the wheel's COPYING file on 2026-10-09.
-- **Process:** the existing isolated child process, with its scrubbed environment and rlimits, runs `pymupdf4llm.LlamaMarkdownReader().load_data(path)`. That is the documented LlamaIndex integration. It returns one LlamaIndex `Document` per page, containing layout-aware Markdown (headings, tables, reading order, page headers and footers removed) and metadata (`page`, `total_pages`, PDF info). The child returns the serialized documents as JSON.
+- **Process:** the existing isolated child process, with its scrubbed environment, runs `pymupdf4llm.to_markdown(path, page_chunks=True, header=False, footer=False)` in layout mode. Each page returns Markdown (headings, tables, reading order, no page furniture) plus `page_boxes`: layout regions with class, bbox and exact character offsets. Empty display-formula regions are filled with PyMuPDF's clipped text. Phase 0 rejected the documented `LlamaMarkdownReader`, because it uses the legacy heading heuristic and found only the title.
 - **Chunking:** in the worker, LlamaIndex `MarkdownNodeParser` builds sections with `header_path` metadata. `SentenceSplitter` then caps chunks at about 512 tiktoken tokens with about 64 tokens of overlap.
-- **Our one glue step:** because the reader yields one Document per page, a section that continues onto the next page inherits the previous page's last non-empty `header_path`.
+- **One whole-paper Document:** the page Markdown is concatenated into a single LlamaIndex `Document` (no metadata), so the heading stack survives page breaks. Our only glue maps each chunk's character range back to pages and layout boxes.
 - **Each chunk stores:**
   - `text`, the Markdown shown to users;
   - `context_text`, the title plus heading path plus text, used for embeddings and keyword search;
@@ -57,7 +57,7 @@ Non-goals:
   - `token_count`.
 
   Chunks under a references or bibliography heading are excluded from default retrieval.
-- **Fallbacks:** if the layout model fails, the document is retried with `pymupdf4llm.use_layout(False)`. The existing pre-checks and error codes (password, page and text limits, no text) remain.
+- **Child tuning and fallback:** the child sets `OPENBLAS_NUM_THREADS=1` and `MALLOC_ARENA_MAX=2`, and gives ONNX Runtime 2 intra-op threads. With this, a 200-page PDF fits RLIMIT_AS 1.5 GiB in about 45 s; untuned, the import hangs under 1–2 GiB. If layout parsing fails, a fresh child blocks the `pymupdf.layout` import and uses the legacy path. The existing pre-checks and error codes (password, page and text limits, no text) remain.
 - **Upgrade path:** PyMuPDF4LLM's `to_chunks(...).to_llama_nodes()` exists on GitHub main for PyMuPDF 2.0 but is not on PyPI. It provides layout-aware chunking with section paths, page ranges, bounding boxes, kept-together captions and diagnostics. Chunk columns mirror its metadata (`section_path`, `page_start`/`page_end`, `bboxes`, `types`), so adopting it later replaces only the chunking step. Highlight boxes stay empty until then; the evidence jump uses the page plus the existing sentence text-matching.
 
 ### 4.2 Storage and search on the single Postgres (ARA-070)
@@ -173,16 +173,34 @@ The PDF file, other papers and the full paper on normal questions are never sent
 
 ## 6. Phase 0 measurements (Gate G0)
 
-To be recorded from spikes S1 (models and Ollama) and S2 (parsing and pgvector) before Wave 1 starts:
-- PyMuPDF4LLM ms per page and child memory;
-- the cross-page heading rate;
-- pgvector volume compatibility and query latency;
-- Qwen3 embedding throughput and resident memory;
-- the reranker go/no-go;
-- single-Ollama co-residency and the `OLLAMA_MAX_LOADED_MODELS` default;
-- local 16k/32k context feasibility;
-- tokenizer calibration;
-- the tiktoken encoding for gpt-5.6.
+### S2: parsing and pgvector (2026-10-09)
+
+Setup: a throwaway backend-image container limited to 2 GB and 2 CPUs, on OrbStack arm64. Test papers: Attention, RAG, BERT, the RAG survey and DPR (13–21 pages), plus a 200-page synthetic document.
+
+- **Parser output:**
+  - Layout `to_markdown` recovered 22/22 headings on Attention and 29/29 on RAG, and 33/49 on the survey, where IEEE run-in labels were missed.
+  - Real table grids: 4–9 tables per paper, against 0–3 in legacy mode.
+  - `page_boxes` offsets tile each page's Markdown exactly, on 84 of 84 pages.
+  - Display formulas were dropped (hence the formula-box filling).
+  - `LlamaMarkdownReader` found only the title.
+- **Speed and memory, with tuned threads:**
+  - 167–300 ms per page, 5.5–9.2 CPU-s per paper, 0.37–0.49 GiB peak RSS.
+  - 200 pages in 42–46 s wall time, 0.84–0.88 GiB peak RSS.
+  - Untuned: virtual memory peaked at 3.6–3.8 GiB, and the import hung under 1–2 GiB limits.
+  - Chosen limits: RLIMIT_AS 1.5 GiB, RLIMIT_CPU 150 s, a 120 s wall deadline, one parse at a time in the 2 GB worker.
+- **Chunking** (one Document per page with `MarkdownNodeParser` and a 512/64 `SentenceSplitter`):
+  - 45–94 chunks per paper, median 209–380 tokens.
+  - The heading stack reset at every page; carrying it across pages raised the number of chunks with a two-level path from 2–12 to 43–93. Hence the design uses one whole-paper Document.
+  - PDF metadata would cost about 110 tokens per chunk, so Documents carry no metadata.
+- **pgvector:**
+  - Image `pgvector/pgvector:0.8.7-pg17-bookworm@sha256:ac08538c…` (PostgreSQL 17.11, pgvector 0.8.7, same glibc and ICU as before). It starts on an existing 17.9 volume with identical data and no collation warnings. Once `vector` is used, the old 17.9 image can no longer read those objects.
+  - Exact per-document search: about 1 ms for 150 chunks and 4–8 ms for 2,000 chunks at 2560–4096 dimensions. About 8 KB per 4096-dimension vector, stored in TOAST.
+  - HNSW is impossible above 4,000 dimensions and is not used by per-document queries.
+  - Weighted full-text search: 0.3–0.4 ms. 196 of 300 queries had zero AND-matches, so an OR fallback is required.
+
+### S1: models and Ollama
+
+Pending at this revision.
 
 ## 7. Testing
 
@@ -191,7 +209,7 @@ TDD first: every production change starts with an observed failing Given/When/Th
 ## 8. Risks
 
 - **Memory:** single-Ollama co-residency at 12g. Qwen 8B may need to swap with the chat model; the default OpenAI path avoids this.
-- **Layout model on CPU:** speed and memory checked against the "no seconds per page" requirement, with `use_layout(False)` as the fallback.
-- **Per-page reader:** sections crossing pages depend on the heading-carry glue until `to_chunks()` ships.
+- **Layout model on CPU:** measured at 0.17–0.30 s per page with tuned threads, inside the "no seconds per page" requirement. The fallback is the legacy path with the layout import blocked.
+- **Layout parser limits:** some heading false positives (bullets, author lines), flat IEEE heading levels, occasional two-column order errors, and display formulas recovered only as plain text.
 - **Community reranker GGUF:** pinned by digest and gated by the probe.
 - **Concurrent work:** `feat/managed-ollama` (catalog) and ARA-019 (`feat/fulltext-access`, ingestion) are active in parallel. Issue IDs ARA-070 to ARA-079 are reserved for this work to avoid collisions.
