@@ -513,3 +513,24 @@ Four agents worked in separate worktrees on ingest, index, context budgets and r
 - Earlier in this exchange the user rejected one question tool call and asked the lead to stop and wait. The lead held all work until the user's next instruction.
 
 **Wave 3** started from `bd84d19`: retrieval and reranker (F), memory (G), and answer/context UI (H).
+
+### User corrections to the reranker design (ARA-074)
+
+The user challenged three reranker decisions during Wave 3. Each changed the implementation:
+
+1. **Precision of the local reranker.**
+   - The lead had measured only the F16 Qwen3 reranker (54 s for 30 candidates) and proposed deferral. The user asked: "Why we are using F16? Will Int4 or Q4 speed it up?"
+   - The lead explained that F16 was used only because the one community Q8_0 upload was broken. The user then pointed to two other uploads.
+   - `pdurugyan` had already failed as an embedding-only conversion. `fanyx/Qwen3-Reranker-0.6B-Q8_0` had not been tried. Tested on request, it ranked 12/12 probe pairs with scores matching F16, and 30 candidates took 21.99 s against 51.37 s for F16 in the same session.
+   - The user chose opt-in local reranking instead of deferral.
+2. **Hardcoded model.**
+   - The user asked for an OpenAI reranker as the default. The lead verified the Decisions API with `gpt-6-luna` and first wired the contract to an `openai`/`local`/`off` choice that implied Luna.
+   - The user corrected: "We shouldn't hardcode the reranking OpenAI model as luna. Currently we are supporting luna but it might change in the future. It should follow the extensibility of LLM / embedding selection."
+   - The lead replaced the uncommitted contract with a reranker catalog (`reranker_catalog.py`) keyed like embedding profiles, with key-based settings (`1d14f72`).
+3. **Candidate count.**
+   - The user asked: "Why we are using top-12 specifically? Is it the standard practice?"
+   - The lead had chosen 12 (local) and 20 (OpenAI) from latency budgets alone, without saying they were not standard. Published pipelines rerank a window several times larger than the passages finally used (25–150 candidates).
+   - A paper here has 45–94 chunks, and fusion yields about 40–60 candidates, so 20 left about half the fused list unreachable by the reranker.
+   - The user chose 40 for OpenAI (about 2–3 s and $0.004 per question, extrapolated from the measured 20-candidate run). The local profile stays at 12 for CPU latency (`6f81ffe`).
+
+Lesson recorded for future work: state when a parameter is a local latency or cost choice rather than an established practice, and keep model-backed choices in catalogs rather than in code.
