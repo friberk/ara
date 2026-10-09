@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
@@ -12,6 +13,7 @@ from app.models.local_models import ModelInstallation, ModelRequest, ModelUse
 from app.repositories.jobs import enqueue, now
 from app.repositories.local_models import (
     acquire_use,
+    enqueue_revalidation,
     heartbeat_use,
     installation_locked,
     lock_models,
@@ -19,9 +21,13 @@ from app.repositories.local_models import (
     recovery_operations,
     release_use,
     resume_locked,
+    validation_matches_current,
 )
 from app.schemas.ai import Installation, Model
 from app.schemas.jobs import JobError, JobStatus
+
+logger = logging.getLogger(__name__)
+PREPARATION_MESSAGE = "This installed model is being prepared automatically in the background."
 
 
 def runtime(resources) -> OllamaRuntime:
@@ -80,13 +86,16 @@ def verified_think_mapping(validation: dict) -> dict[str, bool | str]:
     }
 
 
-def model_dto(spec, row: ModelInstallation | None, *, context_window=8192) -> Model:
+def model_dto(spec, row: ModelInstallation | None, *, context_window=8192, operation=None) -> Model:
     from app.integrations.ollama import local_model_thinking
 
     validation = (row.validation or {}) if row else {}
     thinking = local_model_thinking(validation)
     state = row.state if row else "missing"
-    ready = state == "ready" and row.weights_present and bool(validation)
+    installed_ready = state == "ready" and row.weights_present
+    ready = installed_ready and validation_matches_current(
+        validation, digest=spec.expected_digest, context_window=context_window
+    )
     error = (
         JobError(code=row.error_code, message=row.error_message or "Model operation failed.")
         if row and row.error_code
@@ -102,6 +111,10 @@ def model_dto(spec, row: ModelInstallation | None, *, context_window=8192) -> Mo
         "deleting": "Model weights are being removed.",
         "failed": "Retry this model operation in Settings.",
     }.get(state, "Verify this model in Settings before using it.")
+    if operation == "verify" and state in {"queued", "verifying"}:
+        reason = PREPARATION_MESSAGE
+    if installed_ready and not ready:
+        reason = PREPARATION_MESSAGE
     if state == "failed" and error:
         reason = error.message
     return Model(
@@ -117,9 +130,16 @@ def model_dto(spec, row: ModelInstallation | None, *, context_window=8192) -> Mo
         context_window=context_window,
         unavailable_code=None
         if ready
-        else (error.code if state == "failed" and error else "LOCAL_MODEL_NOT_READY"),
+        else (
+            "LOCAL_MODEL_REVALIDATION_REQUIRED"
+            if installed_ready
+            else error.code
+            if state == "failed" and error
+            else "LOCAL_MODEL_NOT_READY"
+        ),
         unavailable_reason=None if ready else reason,
         installation=Installation(
+            operation=operation,
             state=state,
             weights_present=row.weights_present if row else False,
             quantization=spec.quantization,
@@ -139,12 +159,33 @@ async def list_local_models(resources, *, inspect_runtime=True) -> list[Model]:
         rows = {
             row.model_key: row for row in (await session.scalars(select(ModelInstallation))).all()
         }
+        identifiers = [row.active_job_id for row in rows.values() if row.active_job_id]
+        owners = {
+            job.id: job
+            for job in (
+                await session.scalars(
+                    select(BackgroundJob).where(BackgroundJob.id.in_(identifiers))
+                )
+            ).all()
+        }
     items = [
-        model_dto(spec, rows.get(spec.key), context_window=resources.settings.ollama_context_window)
+        model_dto(
+            spec,
+            rows.get(spec.key),
+            context_window=resources.settings.ollama_context_window,
+            operation=(
+                owners[rows[spec.key].active_job_id].model_operation
+                if spec.key in rows
+                and rows[spec.key].active_job_id in owners
+                and owners[rows[spec.key].active_job_id].state != "completed"
+                else None
+            ),
+        )
         for spec in LOCAL_MODELS.values()
     ]
     for model in items:
-        if model.status != "available" or not inspect_runtime:
+        row = rows.get(model.key)
+        if not inspect_runtime or row is None or row.state != "ready" or not row.weights_present:
             continue
         try:
             await check_runtime_validation(resources, checked_spec(model.key), rows[model.key])
@@ -154,30 +195,65 @@ async def list_local_models(resources, *, inspect_runtime=True) -> list[Model]:
     return items
 
 
-async def check_runtime_validation(resources, spec, row):
-    validation = row.validation or {}
-    if (
-        validation.get("thinking_schema") != 1
-        or validation.get("digest") != spec.expected_digest
-        or validation.get("context_window") != resources.settings.ollama_context_window
-    ):
-        raise AppError(
-            409,
-            "LOCAL_MODEL_REVALIDATION_REQUIRED",
-            "Revalidate this model for the current runtime settings.",
+async def reconcile_local_models(resources) -> None:
+    """Schedule stale installed models without a browser or transfer intent."""
+    async with resources.sessions() as session:
+        rows = list(
+            (
+                await session.scalars(
+                    select(ModelInstallation).where(
+                        ModelInstallation.state == "ready",
+                        ModelInstallation.desired_state == "ready",
+                        ModelInstallation.weights_present.is_(True),
+                    )
+                )
+            ).all()
         )
+    control = runtime(resources)
+    for row in rows:
+        spec = local_spec(row.model_key)
+        if spec is None:
+            continue
+        try:
+            artifact = await control.artifact(spec)
+            version = (await control.request("GET", "/api/version")).get("version")
+            if not isinstance(version, str) or not version.strip():
+                continue
+            await enqueue_revalidation(
+                resources.sessions,
+                spec.key,
+                digest=spec.expected_digest,
+                context_window=resources.settings.ollama_context_window,
+                runtime_version=version,
+                expected_validation=row.validation,
+                expected_job_id=row.active_job_id,
+                artifact_present=artifact is not None,
+            )
+        except Exception as error:
+            logger.warning(
+                "Automatic model preparation deferred after inspection failure",
+                extra={"model_key": spec.key, "error_type": type(error).__name__},
+            )
+
+
+async def check_runtime_validation(resources, spec, row):
+    # Availability and inventory precede freshness: an offline runtime cannot
+    # prepare stale weights, and a missing artifact must not be called pending.
     control = runtime(resources)
     if await control.artifact(spec) is None:
         raise AppError(
             409, "MODEL_WEIGHTS_MISSING", "The model weights are missing from the local runtime."
         )
-    version = await control.request("GET", "/api/version")
-    if not version.get("version") or version.get("version") != validation.get("runtime_version"):
-        raise AppError(
-            409,
-            "LOCAL_MODEL_REVALIDATION_REQUIRED",
-            "Revalidate this model after the runtime changed.",
-        )
+    version = (await control.request("GET", "/api/version")).get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise AppError(503, "LOCAL_RUNTIME_UNAVAILABLE", "The local model runtime is unavailable.")
+    if not validation_matches_current(
+        row.validation,
+        digest=spec.expected_digest,
+        context_window=resources.settings.ollama_context_window,
+        runtime_version=version,
+    ):
+        raise AppError(409, "LOCAL_MODEL_REVALIDATION_REQUIRED", PREPARATION_MESSAGE)
 
 
 async def ensure_local_available(resources, key: str) -> Model:
@@ -185,7 +261,7 @@ async def ensure_local_available(resources, key: str) -> Model:
     async with resources.sessions() as session:
         row = await session.get(ModelInstallation, key)
     model = model_dto(spec, row, context_window=resources.settings.ollama_context_window)
-    if model.status != "available":
+    if row is None or row.state != "ready" or not row.weights_present:
         raise AppError(409, "LOCAL_MODEL_NOT_READY", "Download and verify this local model first.")
     await check_runtime_validation(resources, spec, row)
     return model
@@ -369,6 +445,12 @@ async def transition_job(resources, job_id: UUID, action: str, request_id: UUID)
             raise AppError(
                 409, "MODEL_OPERATION_SUPERSEDED", "A newer model operation owns this installation."
             )
+        if job.model_operation == "verify" and action in {"pause", "resume"}:
+            raise AppError(
+                409,
+                "JOB_NOT_PAUSABLE",
+                "Model preparation is not a weight transfer and cannot be paused.",
+            )
         if action == "pause":
             if job.state not in {"queued", "processing", "paused"}:
                 raise AppError(
@@ -517,6 +599,15 @@ async def run_model_job(resources, job_id, generation, token):
                             resources.sessions, job_id, generation, token, weights_present=True
                         )
                     raise
+                if present is None and job.model_operation == "verify":
+                    await checkpoint(
+                        resources.sessions, job_id, generation, token, weights_present=False
+                    )
+                    raise AppError(
+                        409,
+                        "MODEL_WEIGHTS_MISSING",
+                        "The installed model weights are missing. Download them to use this model.",
+                    )
                 if present is None:
                     controlled = await control.supports_pause()
                     if not await checkpoint(

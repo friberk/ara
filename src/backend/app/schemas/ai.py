@@ -45,6 +45,7 @@ class ChatRename(BaseModel):
 
 
 class Installation(DTO):
+    operation: Literal["download", "verify", "delete"] | None = None
     state: Literal[
         "missing",
         "queued",

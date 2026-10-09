@@ -35,6 +35,7 @@ class JobStatus(BaseModel):
     available_at: datetime
     created_at: datetime
     updated_at: datetime
+    model_operation: Literal["download", "verify", "delete"] | None = None
     model_key: str | None = None
     completed_bytes: int | None = None
     total_bytes: int | None = None

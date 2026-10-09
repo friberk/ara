@@ -52,6 +52,14 @@ class BackgroundJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    @property
+    def model_operation(self) -> str | None:
+        if self.kind == "model_delete":
+            return "delete"
+        if self.kind == "model_download":
+            return "verify" if self.payload.get("verify_only") is True else "download"
+        return None
+
 
 class JobOutbox(Base):
     __tablename__ = "job_outbox"
