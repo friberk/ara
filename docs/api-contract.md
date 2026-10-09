@@ -28,7 +28,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /chats/{id}/messages → `{items:Message[]}`.
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
 - GET /models → `{items:Model[]}`; GET/PUT /settings → Settings.
-  - The defaults gain `memory_model` (default `gpt-5.6-luna`), a hosted chat-model key. Hosted chats plan follow-up searches and summarize earlier messages with it at its quietest effort; local chats use their own model. A PUT without it keeps the saved value; a local, embedding, unknown or empty key returns 422 `INVALID_MEMORY_MODEL`. A saved key that leaves the catalog falls back to the default (ARA-077).
+  - The defaults are `{default_model, reasoning_effort}`. A stored row or PUT body that still carries `memory_model` (ARA-077) is accepted and the field ignored; it is never returned. Follow-up planning and conversation summaries use the chat's own model at its quietest verified effort (ARA-083).
 - GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
 ## PDF retrieval and access information (ARA-019)
