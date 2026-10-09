@@ -21,7 +21,7 @@ from app.models.research import DocumentChunk
 from app.models.retrieval import RetrievalIndex
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.indexing import ready_index
-from app.rag.packing import Passage, pack_evidence, render_evidence
+from app.rag.packing import SEPARATOR, Passage, node_passage, pack_evidence, render_evidence
 from app.rag.rerank import rerank_candidates
 from app.rag.retrievers import PgLexicalRetriever, PgVectorRetriever, chunk_node
 from app.schemas.ai import RetrievalSummary
@@ -99,6 +99,20 @@ def scoped(document_id: UUID, chunk_set: str):
         DocumentChunk.document_id == document_id,
         DocumentChunk.chunk_set == chunk_set,
         DocumentChunk.kind != "references",
+    )
+
+
+async def evidence_ceiling(session, document_id: UUID, chunk_set: str, counter) -> int:
+    """The most evidence packing can choose: the costliest passages, at most MAX_PASSAGES."""
+    chunks = await session.scalars(
+        scoped(document_id, chunk_set)
+        .order_by(DocumentChunk.token_count.desc(), DocumentChunk.ordinal)
+        .limit(MAX_PASSAGES)
+    )
+    widest = f"S{MAX_PASSAGES}"
+    return sum(
+        counter.count(node_passage(chunk_node(chunk), widest).render()) + counter.count(SEPARATOR)
+        for chunk in chunks
     )
 
 

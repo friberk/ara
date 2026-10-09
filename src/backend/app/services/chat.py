@@ -42,11 +42,17 @@ from app.rag.citations import (
     passage_citations,
 )
 from app.rag.indexing import effective_profile
-from app.rag.pipeline import retrieve_evidence
+from app.rag.pipeline import evidence_ceiling, retrieve_evidence
 from app.repositories.jobs import now
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
-from app.services.context import INSTRUCTIONS_VERSION, PaperHeader, assemble_answer_prompt
+from app.services.context import (
+    INSTRUCTIONS_VERSION,
+    RECALL_SHARE,
+    SUMMARY_SHARE,
+    PaperHeader,
+    assemble_answer_prompt,
+)
 
 LEASE = timedelta(seconds=60)
 
@@ -196,7 +202,8 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             question=body.content,
             retrieved_for=None,
         )
-        await reserve(resources, body.model, limits.input_budget)
+        ceiling = await evidence_ceiling(session, document.id, document.chunk_set, limits.counter)
+        await reserve(resources, body.model, prompt_bound(limits, sizing, ceiling, body.content))
         user = ChatMessage(
             id=uuid4(),
             session_id=chat_id,
@@ -242,6 +249,20 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             limits=limits,
             evidence_budget=sizing.allocation.evidence,
         )
+
+
+def prompt_bound(limits: ContextProfile, sizing, evidence_ceiling: int, question: str) -> int:
+    """Input tokens this answer can actually send, for the daily ledger.
+
+    The prompt sized without evidence, plus the summary and recall shares that memory may still
+    fill, the evidence packing can choose, and a label for a rewritten question of similar length.
+    """
+    shares = sizing.allocation
+    available = shares.evidence + shares.summary + shares.recent + shares.recall
+    memory = available * (SUMMARY_SHARE + RECALL_SHARE) // 100
+    rewritten = limits.counter.count(f' (retrieved for: "{question}")')
+    bound = sizing.usage.input_tokens + memory + min(shares.evidence, evidence_ceiling) + rewritten
+    return min(bound, limits.input_budget)
 
 
 @dataclass(frozen=True)
