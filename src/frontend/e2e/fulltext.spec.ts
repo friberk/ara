@@ -8,13 +8,20 @@ async function saved(request: APIRequestContext, id: string) {
   return (await response.json()).id as string
 }
 
-test('Given OpenAlex and Semantic Scholar copies, When retrieved, Then real PDF pages open', async ({ page, request }) => {
+// ARA-084: saving a paper that lists a PDF or has a DOI retrieves it without a click.
+const manualRetrieval = /^(Get|Find) PDF$/
+
+test('Given OpenAlex and Semantic Scholar copies, When saved, Then real PDF pages open and a summary follows without a click', async ({ page, request }) => {
   for (const id of ['W19001', 's2-fulltext-doi', 's2-fulltext-semantic']) {
     const paperId = await saved(request, id)
     await page.goto(`/papers/${paperId}`)
     await page.getByRole('tab', { name: 'PDF', exact: true }).click()
-    await page.getByRole('button', { name: /^(Get|Find) PDF$/ }).click()
+    await expect(page.getByRole('button', { name: manualRetrieval })).toHaveCount(0)
     await expect(page.getByRole('group', { name: 'Page 1', exact: true }).locator('canvas')).toBeVisible({ timeout: 45_000 })
+    if (id === 'W19001') {
+      const summary = page.getByRole('article', { name: 'Paper summary' })
+      await expect(summary.getByRole('button', { name: 'Version 1 of 1', exact: true })).toBeVisible({ timeout: 45_000 })
+    }
     await page.reload()
     await page.getByRole('tab', { name: 'PDF', exact: true }).click()
     await expect(page.getByRole('group', { name: 'Page 1', exact: true }).locator('canvas')).toBeVisible()
@@ -27,15 +34,15 @@ test('Given blocked access, When it changes, Then a fresh retry succeeds after r
   const paperId = await saved(request, 'W19003')
   await page.goto(`/papers/${paperId}`)
   await page.getByRole('tab', { name: 'PDF', exact: true }).click()
-  await page.getByRole('button', { name: /^(Get|Find) PDF$/ }).click()
-  await expect(page.getByRole('tabpanel', { name: 'PDF', exact: true }).getByText(/This site blocked the download/)).toBeVisible()
+  await expect(page.getByRole('tabpanel', { name: 'PDF', exact: true }).getByText('The source blocked the download')).toBeVisible({ timeout: 45_000 })
   await expect(page.getByRole('link', { name: 'Open publisher', exact: true })).toBeVisible()
   await page.reload()
   await page.getByRole('tab', { name: 'PDF', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Retry download', exact: true })).toBeVisible()
+  // A failed automatic attempt is never restarted by itself; trying again is a deliberate click.
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible()
   const grant = await request.post(`${api}/__fixtures/fulltext/fulltext-denied/grant`)
   expect(grant.ok()).toBeTruthy()
-  await page.getByRole('button', { name: 'Retry download', exact: true }).click()
+  await page.getByRole('button', { name: 'Try again', exact: true }).click()
   await expect(page.getByRole('group', { name: 'Page 1', exact: true }).locator('canvas')).toBeVisible({ timeout: 45_000 })
 })
 
@@ -43,19 +50,19 @@ test('Given HTML instead of PDF, Then browser and upload fallback stay available
   const paperId = await saved(request, 'W19004')
   await page.goto(`/papers/${paperId}`)
   await page.getByRole('tab', { name: 'PDF', exact: true }).click()
-  await page.getByRole('button', { name: /^(Get|Find) PDF$/ }).click()
-  await expect(page.getByRole('tabpanel', { name: 'PDF', exact: true }).getByText(/web page instead of a PDF/)).toBeVisible()
+  await expect(page.getByRole('tabpanel', { name: 'PDF', exact: true }).getByText(/return a usable PDF/)).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByRole('link', { name: 'Open PDF in browser', exact: true })).toHaveAttribute('target', '_blank')
   await expect(page.getByRole('button', { name: 'Upload PDF', exact: true })).toBeVisible()
   await expect(page.getByText(/paywall/i)).toHaveCount(0)
 })
 
-test('Given a paper without PDF links at 390px, Then discovery, retry and keyboard upload remain usable', async ({ page, request }) => {
+test('Given a paper without PDF links at 390px, Then discovery runs by itself and keyboard upload remains usable', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const paperId = await saved(request, 'W19007')
   await page.goto(`/papers/${paperId}?view=pdf`)
-  await page.getByRole('button', { name: /^(Find PDF|Retry download)$/ }).click()
-  await expect(page.getByRole('tabpanel', { name: 'PDF', exact: true }).getByText(/No direct PDF link was found/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Retry download', exact: true })).toBeEnabled()
+  await expect(page.getByRole('tabpanel', { name: 'PDF', exact: true }).getByText('No open PDF was found')).toBeVisible({ timeout: 45_000 })
+  // Both providers answered, so trying again could not find more; upload is the way forward.
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0)
   const upload = page.getByRole('button', { name: 'Upload PDF', exact: true })
   await upload.focus()
   const picker = page.waitForEvent('filechooser')

@@ -1,7 +1,7 @@
 """Exact-identity full-text discovery, independent of PDF downloading."""
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
@@ -14,11 +14,15 @@ from app.repositories.papers import save_canonical
 from app.schemas.fulltext import FullTextCandidate
 from app.schemas.research import FullTextLocation, SearchResult
 
+LABELS = {"openalex": "OpenAlex", "semantic_scholar": "Semantic Scholar"}
+
 
 @dataclass
 class DiscoveryResult:
     candidates: list[FullTextCandidate]
     warnings: list[str]
+    # Providers whose lookup was rate limited, with the wait each reported in seconds.
+    rate_limited: dict[str, int] = field(default_factory=dict)
 
 
 def candidates_from_sources(sources: list[SearchResult]) -> list[FullTextCandidate]:
@@ -38,9 +42,7 @@ def candidates_from_sources(sources: list[SearchResult]) -> list[FullTextCandida
                 FullTextCandidate(
                     provider=source.provider,
                     external_id=source.external_id,
-                    source_label="OpenAlex"
-                    if source.provider == "openalex"
-                    else "Semantic Scholar",
+                    source_label=LABELS[source.provider],
                     url=url,
                     location=location,
                 )
@@ -75,7 +77,7 @@ async def discover_fulltext(resources, paper_id: UUID) -> DiscoveryResult:
             (item.provider, item.external_id): SearchResult.model_validate(item.metadata_snapshot)
             for item in stored
         }
-    warnings = []
+    warnings, rate_limited = [], {}
     adapter = AcademicSearch(resources.http, resources.settings)
 
     async def retain(result, *, identity=None):
@@ -110,10 +112,14 @@ async def discover_fulltext(resources, paper_id: UUID) -> DiscoveryResult:
                         )
                     elif doi:
                         await retain(await adapter.by_doi(provider, doi))
-                except (AppError, ValueError, TypeError, KeyError):
+                except (AppError, ValueError, TypeError, KeyError) as error:
+                    if getattr(error, "code", None) == "PROVIDER_RATE_LIMITED":
+                        rate_limited[provider] = error.retry_after or 30
                     warnings.append(
                         f"{provider} metadata could not be refreshed; stored links were retained."
                     )
     except TimeoutError:
         warnings.append("Provider discovery timed out; stored links were retained.")
-    return DiscoveryResult(candidates_from_sources(list(snapshots.values())), warnings)
+    return DiscoveryResult(
+        candidates_from_sources(list(snapshots.values())), warnings, rate_limited
+    )

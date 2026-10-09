@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { api, ApiError, json } from '@/api/client'
-import type { FullTextAccepted, FullTextInput, FullTextStatus } from '@/api/types'
+import type { AutomaticFullText, FullTextAccepted, FullTextInput, FullTextStatus } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { useJob } from './jobs'
 
@@ -35,5 +35,19 @@ export function useRetrieveFullText(paperId: string) {
     retry: (count, error) => count < 2 && error instanceof ApiError && [0, 502, 503, 504].includes(error.status),
     retryDelay: 500,
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.fulltext(paperId) }); void client.invalidateQueries({ queryKey: queryKeys.jobs.all }) },
+  })
+}
+
+export const automaticFullTextKey = (paperId: string) => ['fulltext', paperId, 'automatic'] as const
+
+/** Starts retrieval for a paper saved before automatic retrieval. The server answers every repeat with the same job, or none. */
+export function useAutomaticFullText(paperId: string) {
+  const client = useQueryClient()
+  return useMutation<AutomaticFullText, Error, void>({
+    mutationKey: automaticFullTextKey(paperId),
+    mutationFn: () => api(`/papers/${paperId}/retrieve-fulltext/automatic`, { method: 'POST' }),
+    retry: (count, error) => count < 2 && error instanceof ApiError && [0, 502, 503, 504].includes(error.status),
+    retryDelay: 500,
+    onSuccess: (result) => { if (result.job_id) { void client.invalidateQueries({ queryKey: queryKeys.fulltext(paperId) }); void client.invalidateQueries({ queryKey: queryKeys.jobs.all }) } },
   })
 }

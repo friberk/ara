@@ -54,6 +54,12 @@ class FullTextAccepted(BaseModel):
     job_id: UUID
 
 
+class AutomaticFullText(BaseModel):
+    paper_id: UUID
+    # The paper's automatic retrieval job, or null when the paper does not qualify.
+    job_id: UUID | None = None
+
+
 class FullTextAttemptView(BaseModel):
     provider: Provider
     source_label: str
@@ -71,6 +77,8 @@ class FullTextStatus(BaseModel):
     availability: Literal["open_copy_reported", "publisher_link_only", "unknown"]
     locations: list[FullTextLocation] = Field(default_factory=list)
     retrieval_job: JobStatus | None = None
+    # Host of the copy the latest retrieval tried, so progress can name its source.
+    source_host: str | None = None
     document_id: UUID | None = None
     ingest_job_id: UUID | None = None
     last_checked_at: datetime | None = None

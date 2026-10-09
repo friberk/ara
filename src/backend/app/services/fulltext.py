@@ -1,6 +1,7 @@
 """Full-text request orchestration; worker downloading is added independently."""
 
 import asyncio
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from minio.error import S3Error
@@ -12,7 +13,7 @@ from app.models.research import Document, DocumentUploadRequest, Paper
 from app.repositories.fulltext import enqueue_request, record_attempt
 from app.repositories.jobs import fence, now
 from app.schemas.fulltext import DownloadResult, FullTextAccepted
-from app.services.fulltext_discovery import discover_fulltext
+from app.services.fulltext_discovery import LABELS, discover_fulltext
 from app.services.uploads import (
     AttachmentGuard,
     AttachmentLeaseLost,
@@ -90,6 +91,24 @@ async def checkpoint(resources, job_id, generation, token, payload, stage, progr
             )
             is not None
         )
+
+
+def unchecked(discovery) -> DownloadResult:
+    """Why discovery found no candidate: a provider's reported wait outranks an outage."""
+    if discovery.rate_limited:
+        names = [LABELS[provider] for provider in discovery.rate_limited]
+        verb = "are" if len(names) > 1 else "is"
+        return DownloadResult(
+            "rate_limited",
+            reason=f"{' and '.join(names)} {verb} limiting lookups; some copies went unchecked.",
+            retry_after=min(300, max(discovery.rate_limited.values())),
+        )
+    if discovery.warnings:
+        return DownloadResult("unavailable", reason="Paper lookup is temporarily unavailable.")
+    return DownloadResult(
+        "no_pdf_link",
+        reason="No direct PDF link was found. Open the paper in your browser or upload a PDF.",
+    )
 
 
 async def run_fulltext_job(
@@ -183,8 +202,13 @@ async def run_fulltext_job(
                 return
             discovery = await discover_fulltext(resources, paper_id)
             payload["discovery_warnings"] = discovery.warnings[:4]
+            if not await checkpoint(
+                resources, job_id, generation, lease_token, payload, "discovering_fulltext", 30
+            ):
+                return
             failures = []
             for ordinal, candidate in enumerate(discovery.candidates):
+                payload["source_host"] = urlsplit(candidate.url).hostname
                 if not await checkpoint(
                     resources, job_id, generation, lease_token, payload, "fetching_pdf", 40
                 ):
@@ -252,13 +276,7 @@ async def run_fulltext_job(
             failure = (
                 min(failures, key=lambda item: priority.index(item.outcome))
                 if failures
-                else DownloadResult(
-                    "unavailable" if discovery.warnings else "no_pdf_link",
-                    reason="Provider discovery is temporarily unavailable."
-                    if discovery.warnings
-                    else "No direct PDF link was found. "
-                    "Open the paper in your browser or upload a PDF.",
-                )
+                else unchecked(discovery)
             )
             await finish(
                 resources,

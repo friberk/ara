@@ -22,18 +22,42 @@
     "Frontend: FullTextAccess and SummaryCard states for automatic retrieval, automatic summary, failure and wait.",
     "Browser regression for the provider PDF journey, run at integration."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
+    "src/backend/app/repositories/fulltext.py",
+    "src/backend/app/routes/fulltext.py",
+    "src/backend/app/routes/research.py",
+    "src/backend/app/schemas/fulltext.py",
     "src/backend/app/services/fulltext.py",
     "src/backend/app/services/fulltext_discovery.py",
     "src/backend/app/services/summarization.py",
     "src/backend/app/services/ingestion.py",
-    "src/backend/app/routes/research.py",
+    "src/backend/app/routes/ai.py",
+    "src/backend/app/schemas/ai.py",
+    "src/backend/tests/test_automatic_fulltext_integration.py",
+    "src/backend/tests/test_automatic_summary_integration.py",
+    "src/backend/tests/test_fulltext_jobs.py",
     "src/frontend/src/features/workspace/FullTextAccess.tsx",
-    "src/frontend/src/features/summary/SummaryCard.tsx"
+    "src/frontend/src/features/workspace/fulltext-copy.ts",
+    "src/frontend/src/hooks/queries/fulltext.ts",
+    "src/frontend/src/hooks/queries/summaries.ts",
+    "src/frontend/src/features/summary/SummaryCard.tsx",
+    "src/frontend/src/api/generated.ts",
+    "src/frontend/src/api/types.ts",
+    "src/frontend/e2e/fulltext.spec.ts",
+    "docs/api-contract.md",
+    "README.md",
+    "docs/agent-development-log.md"
   ],
-  "commits": [],
+  "commits": [
+    "5e1deeaf4ad424795d60ffa5826f99c18f8acf24",
+    "ef7cf4dc9c3d21e9776f7ec3fdd0812f8c61c4ed",
+    "84fdc53cc15ae44ac5e749b2eacb1ed14ff7b471",
+    "975be77f59f951666aa2c55f21b6f8a8a06b4c63",
+    "06a50b8acbaca633702e1ac1d5bd26d1cf0cda09",
+    "ef8ccfdb8396674effa3d206c485217959367f59"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09 from user feedback. Branch feat/ara-084-auto-pdf.",
+  "verification": "Implemented on feat/ara-084-auto-pdf from 1d789dc. Isolated backend (ara-autopdf-test): Ruff passed; 922 passed in 150.85s (baseline 905 passed in 147.36s). Frontend: strict tsc, ESLint and 489 Vitest tests passed (65 files, 19.57s); production build passed (existing chunk-size warning). OpenAPI contract regenerated with openapi-typescript. Each behaviour change was observed red first (assertions recorded in the journal). Read-only dev-stack evidence: four retrieval jobs, Semantic Scholar 429 on every lookup, two identical unsupported_source retries and one 'unavailable' result for a paper with no listed PDF. A canned-API visual check covered progress, failure, rate-limit (dark), mobile and summary states. The provider PDF Playwright spec was updated for automatic retrieval but not run here (shared fixed ports); browser regression runs at integration. No migration, merge or push. Not yet complete: after a download hands off to ReaderGate (ARA-086's file, left unchanged), its processing heading still reads 'PDF uploaded. Processing continues in the background.', which the fifth criterion excludes; the lead was notified to settle it with ARA-086 at integration.",
   "updated_at": "2026-10-09"
 }

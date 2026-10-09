@@ -7,21 +7,26 @@ resumed job derives the same handles again from the document's chunks (ARA-073).
 
 from collections.abc import Mapping
 from dataclasses import replace
+from decimal import Decimal
 from itertools import groupby
 from types import SimpleNamespace
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import select, update
+from sqlalchemy import exists, func, select, update
 
 from app.integrations.context_registry import context_profile
 from app.integrations.llm import (
     LLMError,
     create_llm,
+    default_selection,
+    ensure_configured,
     generation_configuration,
     generation_slots,
+    reservation_amount,
     reserve,
     thinking_controls,
     validate_model_available,
+    validate_selection,
 )
 from app.integrations.tokens import TokenCounter, count_prompt, keep_head
 from app.models.jobs import BackgroundJob
@@ -34,7 +39,8 @@ from app.rag.citations import (
 )
 from app.rag.packing import SEPARATOR, node_passage, render_evidence
 from app.rag.retrievers import chunk_node
-from app.repositories.jobs import fence, now
+from app.repositories.jobs import enqueue, fence, now
+from app.schemas.ai import SummaryBlock
 
 INSTRUCTIONS = (
     "You summarize a research paper. Use only the supplied passages and section summaries as "
@@ -481,3 +487,149 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
     finally:
         if client is not None:
             await client.close()
+
+
+# One automatic request identity per document: the ready transition queues it at most once.
+AUTOMATIC_SUMMARIES = UUID("0b9f4c3e-6a51-4c8e-b2d7-7e1a9f05c3d2")
+
+
+def automatic_summary_request(document_id: UUID) -> UUID:
+    return uuid5(AUTOMATIC_SUMMARIES, str(document_id))
+
+
+async def summary_blocker(session, resources, model, effort, *, input_tokens=0):
+    """Why a summary with exactly this model cannot start now, or None. Never picks another.
+
+    Reads only settings and the database, so the ingestion transaction can call it.
+    """
+    from app.integrations.model_catalog import local_spec
+    from app.models.local_models import ModelInstallation
+    from app.models.research import GenerationReservation
+    from app.services.local_models import model_dto
+
+    try:
+        selection = validate_selection(model, effort)
+        spec = local_spec(model)
+        if spec is None:
+            ensure_configured(resources.settings)
+    except LLMError as exc:
+        return exc
+    if spec:
+        selection = model_dto(
+            spec,
+            await session.get(ModelInstallation, spec.key),
+            context_window=resources.settings.ollama_context_window,
+        )
+        if selection.status != "available":
+            return LLMError(
+                selection.unavailable_code or "LOCAL_MODEL_NOT_READY",
+                selection.unavailable_reason or "Download and verify this local model first.",
+                409,
+            )
+        if effort not in selection.reasoning_efforts:
+            return LLMError(
+                "INVALID_REASONING", "This local model does not support that reasoning effort.", 422
+            )
+    else:
+        spent = await session.scalar(
+            select(func.coalesce(func.sum(GenerationReservation.amount), 0)).where(
+                GenerationReservation.created_at >= func.date_trunc("day", func.now())
+            )
+        )
+        # The first call's reservation: one hosted batch of passages and a full answer.
+        needed = reservation_amount(model, min(input_tokens, 24000))
+        if spent + needed > Decimal(str(resources.settings.llm_daily_budget_usd)):
+            return LLMError(
+                "DAILY_BUDGET_EXCEEDED", "Today's AI budget can't cover this summary.", 429
+            )
+    if not selection.supports_structured_output:
+        return LLMError("MODEL_CAPABILITY_UNSUPPORTED", "This model can't write summaries.", 409)
+    return None
+
+
+async def passage_tokens(session, document) -> int:
+    from app.models.research import DocumentChunk
+
+    return await session.scalar(
+        select(func.coalesce(func.sum(DocumentChunk.token_count), 0)).where(
+            DocumentChunk.document_id == document.id,
+            DocumentChunk.chunk_set == document.chunk_set,
+        )
+    )
+
+
+async def queue_automatic_summary(session, resources, document) -> BackgroundJob | None:
+    """Summarize a PDF that has just become ready, once, with the saved default model.
+
+    Called in the ingestion transaction that marks it ready, so the job commits with that
+    transition. Re-ingesting a ready document never calls it. Without an available default,
+    nothing starts: there is no fallback to another, possibly paid, model.
+    """
+    from app.models.research import Paper, PaperSummary
+
+    paper = await session.get(Paper, document.paper_id)
+    if paper is None or paper.active_document_id != document.id:
+        return None
+    summarized = await session.scalar(
+        select(
+            exists().where(PaperSummary.document_id == document.id)
+            | exists().where(
+                BackgroundJob.kind == "summary",
+                BackgroundJob.payload["document_id"].astext == str(document.id),
+            )
+        )
+    )
+    tokens = await passage_tokens(session, document)
+    if summarized or not tokens:
+        return None
+    model, effort = await default_selection(resources)
+    if await summary_blocker(session, resources, model, effort, input_tokens=tokens):
+        return None
+    return await enqueue(
+        session,
+        kind="summary",
+        payload={
+            "model": model,
+            "reasoning_effort": effort,
+            "request_id": str(automatic_summary_request(document.id)),
+            "paper_id": str(paper.id),
+            "document_id": str(document.id),
+            "automatic": True,
+        },
+    )
+
+
+async def summary_block(session, resources, paper) -> SummaryBlock | None:
+    """Why the saved default cannot summarize the active PDF now, while it has no summary.
+
+    This is also why an automatic summary did not or will not start, including for a paper
+    still waiting for its PDF. A read never starts one.
+    """
+    from app.models.research import Document, PaperSummary
+
+    document = (
+        await session.get(Document, paper.active_document_id) if paper.active_document_id else None
+    )
+    if document is not None and document.status == "failed":
+        return None
+    settled = document is not None and await session.scalar(
+        select(
+            exists().where(PaperSummary.document_id == document.id)
+            | exists().where(
+                BackgroundJob.kind == "summary",
+                BackgroundJob.state.in_(["queued", "processing"]),
+                BackgroundJob.payload["document_id"].astext == str(document.id),
+            )
+        )
+    )
+    if settled:
+        return None
+    model, effort = await default_selection(resources)
+    ready = document is not None and document.status == "ready"
+    tokens = await passage_tokens(session, document) if ready else 0
+    error = await summary_blocker(session, resources, model, effort, input_tokens=tokens)
+    if error is None:
+        return None
+    return SummaryBlock(
+        code=error.code, message=error.message, model=model, reasoning_effort=effort
+    )

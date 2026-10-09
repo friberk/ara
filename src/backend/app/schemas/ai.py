@@ -139,8 +139,18 @@ class Summary(DTO):
     created_at: datetime
 
 
+class SummaryBlock(BaseModel):
+    code: str
+    message: str
+    model: str
+    reasoning_effort: str
+
+
 class SummaryPage(BaseModel):
     items: list[Summary]
+    # Why the saved default model cannot summarize the active PDF now, while it has no summary
+    # or running summary job; an automatic summary of a newly ready PDF skips for this reason.
+    blocked: SummaryBlock | None = None
 
 
 class SummaryAccepted(BaseModel):

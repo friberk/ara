@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.integrations.academic import AcademicSearch
 from app.models.research import Paper
+from app.repositories.fulltext import enqueue_automatic
 from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
 from app.schemas.research import PaperDetail, PaperPage, PaperPatch, Provider, SavePaper, SearchPage
 
@@ -36,6 +37,8 @@ async def save(body: SavePaper, request: Request, response: Response):
     )
     async with resources.sessions() as session, session.begin():
         paper, created = await save_canonical(session, canonical)
+        # The job commits with the paper: a listed PDF or a DOI is fetched without a click.
+        await enqueue_automatic(session, paper.id)
         response.status_code = 201 if created else 200
         return await paper_detail(session, paper.id)
 
