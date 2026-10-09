@@ -246,3 +246,36 @@ async def test_given_control_characters_in_a_formula_then_parsed_strings_are_sto
     formula = next(b for b in page["boxes"] if b["class"] == "formula")
     assert "softmax\ufffd" in page["markdown"][formula["start"] : formula["end"]]
     assert_boxes_tile(page)
+
+
+async def test_given_layout_timeout_when_parsed_then_legacy_runs_within_the_deadline(monkeypatch):
+    from app.services import ingestion
+
+    calls = []
+
+    async def parser(source, output, deadline_seconds, legacy):
+        calls.append((legacy, deadline_seconds))
+        if legacy:
+            return {"parser": "pymupdf4llm-legacy"}
+        await asyncio.sleep(deadline_seconds)  # the layout child runs out of time
+        return {"error": {"code": "PDF_PARSE_TIMEOUT", "message": "Too slow."}}
+
+    monkeypatch.setattr(ingestion, "run_parser", parser)
+    parsed = await ingestion.parse_in_child(b"%PDF-fixture", deadline_seconds=0.4)
+    assert parsed == {"parser": "pymupdf4llm-legacy"}
+    (layout, layout_deadline), (legacy, legacy_deadline) = calls
+    assert (layout, legacy) == (False, True)
+    # The layout pass leaves part of the overall deadline to the legacy parser.
+    assert 0 < layout_deadline < 0.4 and 0 < legacy_deadline
+    assert layout_deadline + legacy_deadline <= 0.4
+
+
+async def test_given_both_parsers_time_out_then_the_timeout_is_reported(monkeypatch):
+    from app.services import ingestion
+
+    async def parser(source, output, deadline_seconds, legacy):
+        return {"error": {"code": "PDF_PARSE_TIMEOUT", "message": "Too slow."}}
+
+    monkeypatch.setattr(ingestion, "run_parser", parser)
+    parsed = await ingestion.parse_in_child(b"%PDF-fixture", deadline_seconds=0.4)
+    assert parsed["error"]["code"] == "PDF_PARSE_TIMEOUT"

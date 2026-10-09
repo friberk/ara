@@ -8,13 +8,17 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
-from app.integrations.llm import configured
-from app.integrations.model_catalog import local_spec
 from app.integrations.reranker_catalog import RERANKERS, reranker_profile
-from app.models.local_models import ModelInstallation
 from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
 from app.models.retrieval import DocumentSection, RetrievalIndex
-from app.rag.indexing import REBUILD, default_profile, effective_profile, ensure_index
+from app.rag.indexing import (
+    REBUILD,
+    default_profile,
+    effective_profile,
+    ensure_index,
+    profile_status,
+    reconcile_indexes,
+)
 from app.schemas.jobs import JobError
 from app.schemas.retrieval import (
     ChatMemoryState,
@@ -27,28 +31,8 @@ from app.schemas.retrieval import (
     RetrievalIndexOut,
     RetrievalSettings,
 )
-from app.services.local_models import model_dto
 
 router = APIRouter(prefix="/api/v1", tags=["retrieval"])
-
-
-async def profile_status(session, settings, profile) -> tuple[str, str | None]:
-    """Embedding and reranker profiles: a hosted key, or a ready, verified local install."""
-    if profile.provider == "openai":
-        if configured(settings):
-            return "available", None
-        return "unavailable", "Add an OpenAI API key on the server."
-    spec = local_spec(profile.local_model_key)
-    if spec is None:
-        return "unavailable", f"Download {profile.display_name} in Settings."
-    download = f"Download {spec.display_name} in Settings."
-    row = await session.get(ModelInstallation, spec.key)
-    model = model_dto(spec, row, context_window=settings.ollama_context_window)
-    if model.status == "available":
-        return "available", None
-    if row is None or row.state == "missing":
-        return "unavailable", download
-    return "unavailable", model.unavailable_reason
 
 
 @router.get("/retrieval/profiles", response_model=EmbeddingProfilePage)
@@ -103,12 +87,17 @@ async def update_retrieval_settings(body: RetrievalSettings, request: Request):
     embedding_profile(body.embedding_profile)
     if body.reranker is not None:
         reranker_profile(body.reranker)
-    async with request.app.state.resources.sessions() as session, session.begin():
+    resources = request.app.state.resources
+    async with resources.sessions() as session, session.begin():
+        previous = await default_profile(session)
         await session.execute(
             insert(ModelConfiguration)
             .values(key="retrieval", value=body.model_dump())
             .on_conflict_do_update(index_elements=["key"], set_={"value": body.model_dump()})
         )
+    if body.embedding_profile != previous:
+        # Papers that follow the default move to the new profile once it can embed.
+        await reconcile_indexes(resources)
     return body
 
 
@@ -163,6 +152,9 @@ async def paper_retrieval(session, paper_id: UUID) -> PaperRetrieval:
         result.mode_note = "The PDF is still being processed."
     elif document is not None and document.status == "failed":
         result.mode_note = "The PDF could not be processed, so it cannot be searched."
+    elif document is not None and document.chunk_set is None:
+        # Ready before migration 0006: the startup re-ingest rebuilds its passages.
+        result.mode_note = "This paper is being prepared for the new search."
     if document is None or document.status != "ready" or document.chunk_set is None:
         return result
     chunk_set = document.chunk_set

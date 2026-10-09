@@ -1,16 +1,23 @@
 """Re-ingest ready documents whose chunks predate the current chunk set (ARA-071).
 
-Run with `docker compose exec api python -m app.services.reindex`. Documents keep serving
-their previous chunks until the new ingest job replaces them in one transaction.
+The API queues this at startup; `docker compose exec api python -m app.services.reindex` does
+the same by hand. A document with older chunks serves them until its ingest job replaces them
+in one transaction. A document from before migration 0006 has no chunks (`chunk_set` is NULL),
+so questions about it are refused until its re-ingest finishes.
 """
+
+import asyncio
+import logging
 
 from sqlalchemy import or_, select
 
 from app.models.jobs import BackgroundJob
 from app.models.research import Document
 from app.rag.chunking import CHUNK_SET
+from app.rag.indexing import reconcile_indexes
 from app.repositories.jobs import enqueue
 
+logger = logging.getLogger(__name__)
 # Reuse the original job's metadata inference so re-ingestion never repeats a paid call.
 CARRIED_PAYLOAD = ("metadata_attempted", "metadata_result")
 
@@ -56,6 +63,21 @@ async def enqueue_reindex(resources) -> int:
             document.ingest_job_id = job.id
             queued += 1
         return queued
+
+
+async def prepare_search(resources) -> None:
+    """API startup: re-ingest outdated documents, then queue missing or unavailable indexes.
+
+    Retries until the database answers; every step is idempotent under concurrent runs.
+    """
+    while True:
+        try:
+            await enqueue_reindex(resources)
+            await reconcile_indexes(resources)
+            return
+        except Exception:
+            logger.warning("Search preparation unavailable; retrying later")
+            await asyncio.sleep(resources.settings.recovery_interval_seconds)
 
 
 async def main() -> None:
