@@ -318,8 +318,21 @@ async def local_generation_provenance(resources, key: str, effort: str = "defaul
 
 @asynccontextmanager
 async def local_inference_slot(resources, key: str):
+    async with admitted_use(resources, key, slot="inference", lease_seconds=60):
+        yield
+
+
+@asynccontextmanager
+async def retrieval_inference_slot(resources, key: str):
+    """Short-lease embedding/reranking admission that may overlap one generation."""
+    async with admitted_use(resources, key, slot="retrieval", lease_seconds=30):
+        yield
+
+
+@asynccontextmanager
+async def admitted_use(resources, key: str, *, slot: str, lease_seconds: int):
     await ensure_local_available(resources, key)
-    token = await acquire_use(resources.sessions, key)
+    token = await acquire_use(resources.sessions, key, slot=slot, lease_seconds=lease_seconds)
     owner = asyncio.current_task()
     lost = False
 
@@ -328,7 +341,7 @@ async def local_inference_slot(resources, key: str):
         while True:
             await asyncio.sleep(10)
             try:
-                live = await heartbeat_use(resources.sessions, token)
+                live = await heartbeat_use(resources.sessions, token, lease_seconds)
             except Exception:
                 live = False
             if not live:

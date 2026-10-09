@@ -25,6 +25,12 @@ def recovery_operations(payload: dict) -> list[str]:
     return list(dict.fromkeys(identifier for identifier in identifiers if identifier))
 
 
+BUSY_SLOT = {
+    "inference": "A local generation is already running.",
+    "retrieval": "A local search request is already running.",
+}
+
+
 async def pending_owner(session):
     return await session.scalar(
         select(BackgroundJob.id)
@@ -199,7 +205,10 @@ async def claim_model_job(sessions, job_id: UUID, generation: int) -> UUID | Non
         return token
 
 
-async def acquire_use(sessions, key: str) -> UUID:
+async def acquire_use(
+    sessions, key: str, *, slot: str = "inference", lease_seconds: int = 60
+) -> UUID:
+    """Admit one holder per slot; generation and retrieval slots run side by side."""
     async with sessions() as session, session.begin():
         await lock_models(session)
         installation = await session.get(ModelInstallation, key)
@@ -225,35 +234,25 @@ async def acquire_use(sessions, key: str) -> UUID:
             raise AppError(
                 409, "LOCAL_MODEL_BUSY", "The local runtime is performing model maintenance."
             )
-        lease = await session.get(ModelUse, "inference", with_for_update=True)
+        lease = await session.get(ModelUse, slot, with_for_update=True)
         if lease and lease.expires_at > now():
-            raise AppError(409, "LOCAL_MODEL_BUSY", "A local generation is already running.")
+            raise AppError(409, "LOCAL_MODEL_BUSY", BUSY_SLOT[slot])
         token = uuid4()
+        expires_at = now() + timedelta(seconds=lease_seconds)
         if lease:
-            lease.model_key, lease.token, lease.expires_at = (
-                key,
-                token,
-                now() + timedelta(seconds=60),
-            )
+            lease.model_key, lease.token, lease.expires_at = key, token, expires_at
         else:
-            session.add(
-                ModelUse(
-                    slot="inference",
-                    model_key=key,
-                    token=token,
-                    expires_at=now() + timedelta(seconds=60),
-                )
-            )
+            session.add(ModelUse(slot=slot, model_key=key, token=token, expires_at=expires_at))
         return token
 
 
-async def heartbeat_use(sessions, token: UUID) -> bool:
+async def heartbeat_use(sessions, token: UUID, lease_seconds: int = 60) -> bool:
     async with sessions() as session, session.begin():
         return (
             await session.scalar(
                 update(ModelUse)
                 .where(ModelUse.token == token, ModelUse.expires_at > func.now())
-                .values(expires_at=now() + timedelta(seconds=60))
+                .values(expires_at=now() + timedelta(seconds=lease_seconds))
                 .returning(ModelUse.token)
             )
             is not None
