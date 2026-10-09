@@ -615,3 +615,10 @@ A read-only reviewer read `6b53fd1..947a0e9` in seven passes. It found no Critic
 **Lead process errors:** the misread job row and wrong boundary theory above, the silent-loss rule, and a polling loop that compared against a variable it never set (noticed before its result was used).
 
 **Totals at `671bb9d`:** backend 802 passed with Ruff clean; frontend check (454 tests) and build pass; browser 12/12 on a freshly reset stack.
+
+**Shared image tags:**
+- `compose.yaml` fixes the image names `ara-backend:development` and `ara-frontend:development`, so every `--build` from any branch or worktree retags them.
+- This session's isolated test, live and browser stacks, and the fix agents' test runs, moved both tags to `feat/rag-context` builds. The fix-memory agent reported it.
+- The user's running `ara` and `ara-feature` containers kept their own images (backend `531b8ddc2327` and `57d21f50fc1f`), and the two stacks already ran different images under one tag before this session.
+- A recreate without `--build` would pick up the moved tags. The documented `docker compose up --build` rebuilds from the stack's own checkout.
+- The user chose to leave the tags as they are, without a ticket.
