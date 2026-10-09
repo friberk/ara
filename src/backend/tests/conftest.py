@@ -29,6 +29,7 @@ async def resources():
     )
     resources = Resources(settings)
     from app.models.jobs import BackgroundJob
+    from app.models.local_models import ModelInstallation, ModelRequest, ModelUse
     from app.models.research import (
         GenerationReservation,
         ModelConfiguration,
@@ -37,6 +38,9 @@ async def resources():
     )
 
     async with resources.sessions() as session, session.begin():
+        await session.execute(delete(ModelUse))
+        await session.execute(delete(ModelRequest))
+        await session.execute(delete(ModelInstallation))
         await session.execute(delete(Paper))
         await session.execute(delete(ModelConfiguration))
         await session.execute(delete(GenerationReservation))
@@ -55,6 +59,9 @@ async def resources():
             )
         await resources.storage_call(resources.storage.remove_bucket, settings.minio_bucket)
         async with resources.sessions() as session, session.begin():
+            await session.execute(delete(ModelUse))
+            await session.execute(delete(ModelRequest))
+            await session.execute(delete(ModelInstallation))
             await session.execute(delete(Paper))
             await session.execute(delete(ModelConfiguration))
             await session.execute(delete(GenerationReservation))

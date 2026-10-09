@@ -25,6 +25,16 @@ class Resources:
         )
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.http = httpx.AsyncClient(timeout=httpx.Timeout(20, connect=5), follow_redirects=False)
+        self.ollama_http = httpx.AsyncClient(
+            base_url=settings.ollama_base_url,
+            timeout=httpx.Timeout(20, connect=5, pool=5),
+            follow_redirects=False,
+        )
+        self.ollama_generation_http = httpx.AsyncClient(
+            base_url=settings.ollama_base_url,
+            timeout=httpx.Timeout(settings.ollama_request_timeout_seconds, connect=5, pool=5),
+            follow_redirects=False,
+        )
         self.redis = redis.from_url(
             settings.redis_url.get_secret_value(),
             socket_timeout=5,
@@ -51,6 +61,8 @@ class Resources:
 
     async def close(self) -> None:
         await self.http.aclose()
+        await self.ollama_http.aclose()
+        await self.ollama_generation_http.aclose()
         await self.redis.aclose()
         await self.engine.dispose()
         self.storage_pool.clear()

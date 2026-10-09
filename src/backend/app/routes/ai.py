@@ -25,6 +25,8 @@ from app.schemas.ai import (
     SummaryPage,
 )
 
+from app.services.local_models import list_local_models
+
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
 
 
@@ -34,6 +36,7 @@ async def models(request: Request):
     items = [validate_selection(key, EFFORTS[0]) for key in PRICES]
     for item in items:
         item.status = "configured" if configured(settings) else "unavailable"
+    items.extend(await list_local_models(request.app.state.resources))
     return ModelPage(items=items)
 
 

@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from app.schemas.jobs import JobError
+
 
 class DTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -42,7 +44,33 @@ class ChatRename(BaseModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
+class Installation(DTO):
+    state: Literal[
+        "missing",
+        "queued",
+        "downloading",
+        "pausing",
+        "paused",
+        "verifying",
+        "ready",
+        "deleting",
+        "failed",
+    ]
+    weights_present: bool
+    quantization: str
+    download_bytes: int
+    completed_bytes: int = 0
+    total_bytes: int | None = None
+    job_id: UUID | None = None
+    digest: str | None = None
+    updated_at: datetime | None = None
+    error: JobError | None = None
+
+
 class Model(DTO):
+    unavailable_reason: str | None = None
+    unavailable_code: str | None = None
+    installation: Installation | None = None
     key: str
     provider: str = "openai"
     model_id: str
