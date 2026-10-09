@@ -10,16 +10,17 @@ import anyio
 from fastapi import HTTPException
 from sqlalchemy import func, select, update
 
+from app.integrations.context_registry import context_profile
 from app.integrations.llm import (
     LLMError,
     create_llm,
-    estimate_tokens,
     generation_configuration,
     generation_slots,
-    model_limits,
     reserve,
+    thinking_controls,
     validate_model_available,
 )
+from app.integrations.tokens import PromptMessage, count_messages
 from app.models.research import ChatMessage, ChatSession, Document
 from app.repositories.jobs import now
 from app.schemas.ai import Message
@@ -34,6 +35,13 @@ from app.services.retrieval import (
 
 # Clause punctuation only: closing brackets, quotes and percent signs carry meaning.
 TITLE_TRAILING = " .,;:!?…-–—。，；：！？、"
+
+
+def answer_tokens(counter, prompt: str) -> int:
+    """Tokens of the [instructions, prompt] message list the providers send."""
+    return count_messages(
+        counter, [PromptMessage("system", INSTRUCTIONS), PromptMessage("user", prompt)]
+    )
 
 
 def event(name: str, data: dict) -> str:
@@ -105,7 +113,7 @@ async def prepare(resources, chat_id: UUID, body):
             )
         ):
             raise HTTPException(409, "Another answer is already processing in this chat")
-        await validate_model_available(resources, body.model, body.reasoning_effort)
+        selection = await validate_model_available(resources, body.model, body.reasoning_effort)
         document = await session.get(Document, chat.document_id)
         if document is None or document.status != "ready":
             raise HTTPException(409, "The selected document is not ready")
@@ -118,31 +126,37 @@ async def prepare(resources, chat_id: UUID, body):
                 )
             ).all()
         )
-        input_limit, _ = model_limits(resources, body.model)
+        profile = context_profile(
+            resources, body.model, body.reasoning_effort, thinking=thinking_controls(selection)
+        )
+        counter = profile.counter
         question = "\nCurrent question:\n" + body.content
         history_budget = 4000
-        if input_limit < 32000:
+        if profile.provider == "ollama":
             history_budget = min(
-                4000, max(0, (input_limit - estimate_tokens(INSTRUCTIONS + question) - 64) // 3)
+                4000, max(0, (profile.input_budget - answer_tokens(counter, question) - 64) // 3)
             )
-        history = history_context(messages, budget=history_budget)
+        history = history_context(messages, budget=history_budget, counter=counter)
         base = "Conversation (context only):\n" + history + "\nPaper evidence:\n"
-        safety = 512 if input_limit == 32000 else 0
-        budget = input_limit - estimate_tokens(INSTRUCTIONS + base + question) - safety
+        budget = profile.input_budget - answer_tokens(counter, base + question)
         if budget < 0:
             raise LLMError("CONTEXT_LIMIT", "The question exceeds the context budget.", 413)
         chunks = await retrieve(
-            session, chat.document_id, body.content, messages, budget=min(12000, budget)
+            session,
+            chat.document_id,
+            body.content,
+            messages,
+            budget=min(12000, budget),
+            counter=counter,
         )
         # passage() already terminates each source with a newline counted by retrieval.
         prompt = base + "".join(passage(c) for c in chunks) + question
-        if estimate_tokens(INSTRUCTIONS + prompt) > input_limit:
+        input_tokens = answer_tokens(counter, prompt)
+        if input_tokens > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "The assembled question exceeds the context budget.", 413
             )
-        await reserve(
-            resources, body.model, estimate_tokens(prompt) + estimate_tokens(INSTRUCTIONS)
-        )
+        await reserve(resources, body.model, input_tokens)
         user = ChatMessage(
             id=uuid4(),
             session_id=chat_id,

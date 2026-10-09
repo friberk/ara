@@ -14,7 +14,7 @@ from app.integrations.context_registry import (
     context_profile,
     hosted_profile,
 )
-from app.integrations.tokens import PromptMessage, count_messages
+from app.integrations.tokens import PromptMessage, count_messages, keep_head
 from app.schemas.ai import Model
 
 OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
@@ -356,16 +356,17 @@ async def extract_metadata(resources, evidence: str) -> dict:
         "Use null for absent fields. Do not infer publication year from PDF creation dates. "
         "Copy title, author names, abstract, and DOI from the evidence."
     )
-    input_limit, _ = model_limits(resources, model)
-    available_bytes = min(18000, input_limit - estimate_tokens(instructions))
-    evidence = evidence.encode("utf-8")[:available_bytes].decode("utf-8", errors="ignore")
+    profile = context_profile(resources, model, effort, thinking=thinking_controls(selection))
+
+    def input_tokens(evidence: str) -> int:
+        messages = [PromptMessage("system", instructions), PromptMessage("user", evidence)]
+        return count_messages(profile.counter, messages)
+
+    available = min(18000, profile.input_budget - input_tokens(""))
+    evidence = keep_head(profile.counter, evidence, available)
     schema = Metadata.model_json_schema()
     schema["additionalProperties"] = False
-    await reserve(
-        resources,
-        model,
-        estimate_tokens(evidence) + estimate_tokens(instructions),
-    )
+    await reserve(resources, model, input_tokens(evidence))
     client = create_llm(resources, model, selection=selection)
     try:
         async with generation_slots(resources, model):

@@ -504,41 +504,150 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
     assert any("Section 1:" in call["messages"][-1]["content"] for call in calls)
 
 
-async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assembled_prompt_fits(
-    resources,
-):
-    from uuid import UUID
+PROSE = (
+    "Retrieval-augmented generation grounds each answer in passages selected from the paper. "
+    "The retriever ranks passages by relevance, and the generator cites them while writing. "
+) * 6
 
-    from app.integrations.llm import create_llm, estimate_tokens, validate_selection
-    from app.schemas.ai import ChatInput
-    from app.services import chat
+
+def answer_tokens(counter, prompt):
+    from app.integrations.tokens import PromptMessage, count_messages
     from app.services.retrieval import INSTRUCTIONS
 
-    spec, _ = await local_fixture(resources)
-    _, document_id, chat_id = await paper_fixture(resources)
+    return count_messages(
+        counter, [PromptMessage("system", INSTRUCTIONS), PromptMessage("user", prompt)]
+    )
+
+
+async def replace_chunks(resources, document_id, texts):
+    from uuid import UUID
+
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
-        for index, size in enumerate((2474, 2475)):
+        for index, text in enumerate(texts):
             session.add(
                 DocumentChunk(
                     id=UUID(int=index + 1),
                     document_id=document_id,
                     ordinal=index,
                     page=index + 1,
-                    text="x" * size,
+                    text=text,
                     chunk_set="test",
                     page_end=index + 1,
-                    context_text="x" * size,
-                    token_count=size,
+                    context_text=text,
+                    token_count=len(text),
                 )
             )
+
+
+async def test_given_prose_evidence_when_preparing_local_chat_then_tokens_fit_more_than_bytes(
+    resources,
+):
+    from app.integrations.context_registry import context_profile
+    from app.schemas.ai import ChatInput
+    from app.services import chat
+    from app.services.retrieval import passage
+
+    spec, _ = await local_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
+    await replace_chunks(resources, document_id, [f"Passage {i}: {PROSE}" for i in range(10)])
+    body = ChatInput(
+        model=spec.key,
+        reasoning_effort="default",
+        content="How does retrieval ground answers?",
+        request_id=uuid4(),
+    )
+    _, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
+    profile = context_profile(resources, spec.key, "default")
+    assert len(chunks) == 10
+    # Byte counting could never fit these passages in the 5,632-token local budget.
+    assert sum(len(passage(chunk).encode()) for chunk in chunks) > profile.input_budget
+    assert answer_tokens(profile.counter, prompt) <= profile.input_budget
+
+
+async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assembled_prompt_fits(
+    resources,
+):
+    from uuid import UUID
+
+    from app.integrations.context_registry import context_profile
+    from app.integrations.llm import create_llm, validate_selection
+    from app.schemas.ai import ChatInput
+    from app.services import chat
+    from app.services.retrieval import INSTRUCTIONS, passage
+
+    spec, _ = await local_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
+    profile = context_profile(resources, spec.key, "default")
+    counter = profile.counter
+    question = "\nCurrent question:\n?"
+    base = "Conversation (context only):\n\nPaper evidence:\n"
+    evidence = profile.input_budget - answer_tokens(counter, base + question)
+
+    def cost(index, words):
+        chunk = type("Chunk", (), {"id": UUID(int=index + 1), "page": index + 1})()
+        chunk.text = " word" * words
+        return counter.count(passage(chunk))
+
+    # Two passages whose real token counts exactly fill the evidence budget.
+    sizes = next(
+        (first, second)
+        for first in range(evidence // 3, evidence // 2)
+        for second in range(
+            int((evidence - cost(0, first)) / counter.factor) - 40,
+            int((evidence - cost(0, first)) / counter.factor) + 1,
+        )
+        if cost(0, first) + cost(1, second) == evidence
+    )
+    await replace_chunks(resources, document_id, [" word" * size for size in sizes])
     body = ChatInput(model=spec.key, reasoning_effort="default", content="?", request_id=uuid4())
     _, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
     assert len(chunks) == 2
-    assert estimate_tokens(INSTRUCTIONS + prompt) == 5632
+    assert profile.input_budget - 8 <= answer_tokens(counter, prompt) <= profile.input_budget
     create_llm(resources, spec.key, selection=validate_selection(spec.key, "default")).parameters(
         spec.key, "default", INSTRUCTIONS, prompt
     )
+
+
+@pytest.mark.parametrize(("words", "whole"), [(4000, True), (12000, False)])
+async def test_given_local_metadata_evidence_when_extracting_then_real_tokens_bound_it(
+    resources, words, whole
+):
+    import json
+
+    from app.integrations.context_registry import context_profile
+    from app.integrations.llm import extract_metadata
+    from app.integrations.tokens import PromptMessage, count_messages
+    from app.models.research import ModelConfiguration
+
+    spec, _ = await local_fixture(resources)
+    async with resources.sessions() as session, session.begin():
+        session.add(
+            ModelConfiguration(
+                key="defaults", value={"default_model": spec.key, "reasoning_effort": "default"}
+            )
+        )
+    requests = []
+
+    def provider(request):
+        requests.append(json.loads(request.content))
+        result = {"title": None, "authors": None, "year": None, "abstract": None, "doi": None}
+        return httpx.Response(
+            200,
+            json={"message": {"content": json.dumps(result)}, "done": True, "done_reason": "stop"},
+        )
+
+    await resources.ollama_generation_http.aclose()
+    resources.ollama_generation_http = httpx.AsyncClient(transport=httpx.MockTransport(provider))
+    evidence = "Traceable Research\nAda Example\n2024\n" + " word" * words
+    await extract_metadata(resources, evidence)
+    sent = requests[0]["messages"]
+    # 4,000 words are about 20 KB: byte counting cut them near 5 KB.
+    assert (sent[-1]["content"] == evidence) is whole
+    assert evidence.startswith(sent[-1]["content"])
+    profile = context_profile(resources, spec.key, "default")
+    messages = [PromptMessage(m["role"], m["content"]) for m in sent]
+    assert count_messages(profile.counter, messages) <= profile.input_budget
 
 
 async def paper_fixture(resources):
