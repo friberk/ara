@@ -20,7 +20,7 @@ from app.integrations.llm import (
     thinking_controls,
     validate_model_available,
 )
-from app.integrations.tokens import PromptMessage, count_messages
+from app.integrations.tokens import count_prompt
 from app.models.research import ChatMessage, ChatSession, Document
 from app.repositories.jobs import now
 from app.schemas.ai import Message
@@ -35,13 +35,6 @@ from app.services.retrieval import (
 
 # Clause punctuation only: closing brackets, quotes and percent signs carry meaning.
 TITLE_TRAILING = " .,;:!?…-–—。，；：！？、"
-
-
-def answer_tokens(counter, prompt: str) -> int:
-    """Tokens of the [instructions, prompt] message list the providers send."""
-    return count_messages(
-        counter, [PromptMessage("system", INSTRUCTIONS), PromptMessage("user", prompt)]
-    )
 
 
 def event(name: str, data: dict) -> str:
@@ -133,12 +126,11 @@ async def prepare(resources, chat_id: UUID, body):
         question = "\nCurrent question:\n" + body.content
         history_budget = 4000
         if profile.provider == "ollama":
-            history_budget = min(
-                4000, max(0, (profile.input_budget - answer_tokens(counter, question) - 64) // 3)
-            )
+            fixed = count_prompt(counter, INSTRUCTIONS, question)
+            history_budget = min(4000, max(0, (profile.input_budget - fixed - 64) // 3))
         history = history_context(messages, budget=history_budget, counter=counter)
         base = "Conversation (context only):\n" + history + "\nPaper evidence:\n"
-        budget = profile.input_budget - answer_tokens(counter, base + question)
+        budget = profile.input_budget - count_prompt(counter, INSTRUCTIONS, base + question)
         if budget < 0:
             raise LLMError("CONTEXT_LIMIT", "The question exceeds the context budget.", 413)
         chunks = await retrieve(
@@ -151,7 +143,7 @@ async def prepare(resources, chat_id: UUID, body):
         )
         # passage() already terminates each source with a newline counted by retrieval.
         prompt = base + "".join(passage(c) for c in chunks) + question
-        input_tokens = answer_tokens(counter, prompt)
+        input_tokens = count_prompt(counter, INSTRUCTIONS, prompt)
         if input_tokens > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "The assembled question exceeds the context budget.", 413

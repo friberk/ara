@@ -8,7 +8,7 @@ import httpx
 
 from app.integrations.context_registry import local_profile
 from app.integrations.llm import LOCAL_TEMPERATURE, Completion, LLMError
-from app.integrations.tokens import PromptMessage, count_messages
+from app.integrations.tokens import count_prompt
 
 
 class OllamaLLM:
@@ -65,8 +65,7 @@ class OllamaLLM:
                     "CONTEXT_LIMIT", "Intermediate output exceeds the configured allocation.", 413
                 )
             output_limit = max_output_tokens
-        messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
-        if count_messages(profile.counter, messages) > profile.input_budget:
+        if count_prompt(profile.counter, instructions, prompt) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413
             )

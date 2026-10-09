@@ -169,11 +169,8 @@ async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_
         prefix = "Supported result " + " ".join(
             f"【source:{identifier}】" for identifier in identifiers
         )
-        return (
-            prefix + "x" * max(0, map_size - len(prefix))
-            if prompt.startswith("Summarize")
-            else prefix
-        )
+        # Real tokens: 3,000-word sections exceed the reduction share and need compression.
+        return prefix + " word" * map_size if prompt.startswith("Summarize") else prefix
 
     requests = await generation_fixture(resources, output)
     await summarization.run_summary_job(resources, identifier, 1, token, payload)

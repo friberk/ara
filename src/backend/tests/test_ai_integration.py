@@ -95,6 +95,20 @@ async def local_fixture(resources):
     return spec, requests
 
 
+def within_local_budget(resources, spec, requests):
+    from app.integrations.context_registry import context_profile
+    from app.integrations.tokens import PromptMessage, count_messages
+
+    profile = context_profile(resources, spec.key, "default")
+    return all(
+        count_messages(
+            profile.counter, [PromptMessage(m["role"], m["content"]) for m in body["messages"]]
+        )
+        <= profile.input_budget
+        for body in requests
+    )
+
+
 async def test_given_local_chat_when_answering_then_provenance_citations_and_uuid_replay(
     resources,
 ):
@@ -156,7 +170,6 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
 async def test_given_local_full_paper_when_summarizing_then_every_section_is_reduced_under_context(
     resources,
 ):
-    from app.integrations.llm import estimate_tokens
     from app.models.jobs import BackgroundJob
     from app.services import summarization
 
@@ -165,7 +178,8 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(12):
-            text = f"Section {index}: " + "evidence " * 240
+            # About 1,000 tokens each: real tokens, not bytes, decide the map batches.
+            text = f"Section {index}: " + "evidence " * 1000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
@@ -200,7 +214,7 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     assert len(requests) > 2 and any(
         "Section 11:" in x["messages"][-1]["content"] for x in requests
     )
-    assert all(sum(estimate_tokens(m["content"]) for m in x["messages"]) <= 5632 for x in requests)
+    assert within_local_budget(resources, spec, requests)
 
 
 async def test_given_busy_local_summary_when_worker_runs_then_job_does_not_fail_or_spend_attempt(
@@ -353,7 +367,7 @@ async def summary_job_fixture(resources, spec, count):
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(count):
-            text = f"Section {index}: " + "x" * 4000
+            text = f"Section {index}: " + " word" * 3000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
@@ -416,7 +430,7 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
         if busy_kind == "http" and len(prompts) == 6:
             return httpx.Response(503, json={"error": "busy"})
         markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        content = markers + " " + "z" * (1999 - len(markers))
+        content = markers + " word" * 2000
         return httpx.Response(
             200,
             json={
@@ -454,7 +468,6 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
     import json
     import re
 
-    from app.integrations.llm import estimate_tokens
     from app.models.jobs import BackgroundJob
     from app.services import summarization
 
@@ -467,8 +480,8 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         calls.append(body)
         prompt = body["messages"][-1]["content"]
         markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        size = 1000 if prompt.startswith("Compress") and compression == "short" else 3000
-        content = markers + " " + "z" * (size - len(markers) - 1)
+        words = 1000 if prompt.startswith("Compress") and compression == "short" else 3000
+        content = markers + " word" * words
         return httpx.Response(
             200,
             json={
@@ -496,10 +509,7 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         else:
             assert job.state == "failed" and job.error_code == "SUMMARY_COMPRESSION_FAILED"
             assert len(calls) == 5 and job.payload["paid_call_inflight"] is False
-    assert all(
-        sum(estimate_tokens(message["content"]) for message in call["messages"]) <= 5632
-        for call in calls
-    )
+    assert within_local_budget(resources, spec, calls)
     assert any("Section 0:" in call["messages"][-1]["content"] for call in calls)
     assert any("Section 1:" in call["messages"][-1]["content"] for call in calls)
 
@@ -1051,7 +1061,7 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     resources.settings.openai_api_key = SecretStr("fixture")
     async with resources.sessions() as session, session.begin():
         for index in range(3, 15):
-            source = f"Section {index}: full-coverage evidence. " * 200
+            source = f"Section {index}: full-coverage evidence. " * 800
             session.add(
                 DocumentChunk(
                     document_id=document_id,

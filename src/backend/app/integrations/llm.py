@@ -14,7 +14,7 @@ from app.integrations.context_registry import (
     context_profile,
     hosted_profile,
 )
-from app.integrations.tokens import PromptMessage, count_messages, keep_head
+from app.integrations.tokens import count_prompt, keep_head
 from app.schemas.ai import Model
 
 OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
@@ -37,11 +37,6 @@ class LLMError(Exception):
     def __init__(self, code: str, message: str, status: int = 502):
         super().__init__(message)
         self.code, self.message, self.status = code, message, status
-
-
-def estimate_tokens(value: str) -> int:
-    # One token per UTF-8 byte is deliberately conservative without a known tokenizer.
-    return len(value.encode("utf-8"))
 
 
 def validate_selection(model: str, effort: str) -> Model:
@@ -239,8 +234,7 @@ class HostedLLM:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
         profile = hosted_profile(self.settings, model)
-        messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
-        if count_messages(profile.counter, messages) > profile.input_budget:
+        if count_prompt(profile.counter, instructions, prompt) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413
             )
@@ -357,16 +351,11 @@ async def extract_metadata(resources, evidence: str) -> dict:
         "Copy title, author names, abstract, and DOI from the evidence."
     )
     profile = context_profile(resources, model, effort, thinking=thinking_controls(selection))
-
-    def input_tokens(evidence: str) -> int:
-        messages = [PromptMessage("system", instructions), PromptMessage("user", evidence)]
-        return count_messages(profile.counter, messages)
-
-    available = min(18000, profile.input_budget - input_tokens(""))
+    available = min(18000, profile.input_budget - count_prompt(profile.counter, instructions, ""))
     evidence = keep_head(profile.counter, evidence, available)
     schema = Metadata.model_json_schema()
     schema["additionalProperties"] = False
-    await reserve(resources, model, input_tokens(evidence))
+    await reserve(resources, model, count_prompt(profile.counter, instructions, evidence))
     client = create_llm(resources, model, selection=selection)
     try:
         async with generation_slots(resources, model):

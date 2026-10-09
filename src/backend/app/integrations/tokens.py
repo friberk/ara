@@ -38,6 +38,12 @@ def count_messages(counter: TokenCounter, messages: Sequence[PromptMessage]) -> 
     return sum(counter.count(m.content) + MESSAGE_OVERHEAD for m in messages) + REPLY_PRIMING
 
 
+def count_prompt(counter: TokenCounter, instructions: str, prompt: str) -> int:
+    """Tokens of the [system instructions, user prompt] pair the providers send."""
+    messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
+    return count_messages(counter, messages)
+
+
 def keep_head(counter: TokenCounter, text: str, limit: int) -> str:
     """Longest prefix within `limit` tokens; slicing by code point keeps characters whole."""
     if counter.count(text) <= limit:

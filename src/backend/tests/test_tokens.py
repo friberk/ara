@@ -67,3 +67,16 @@ def test_given_multibyte_text_when_trimming_then_result_is_valid_and_within_limi
     head, tail = keep_head(counter, text, 333), keep_tail(counter, text, 333)
     assert text.startswith(head) and text.endswith(tail)
     assert 0 < counter.count(head) <= 333 and 0 < counter.count(tail) <= 333
+
+
+def test_given_instructions_and_prompt_when_counting_then_the_sent_pair_is_counted():
+    from app.integrations.tokens import (
+        PromptMessage,
+        TiktokenCounter,
+        count_messages,
+        count_prompt,
+    )
+
+    counter = TiktokenCounter("o200k_base", factor=1.05)
+    pair = [PromptMessage("system", "Ground it."), PromptMessage("user", " word" * 100)]
+    assert count_prompt(counter, "Ground it.", " word" * 100) == count_messages(counter, pair)
