@@ -1,6 +1,7 @@
 """Explicit synthetic paper/access cases, confined to the deterministic HTTP fixture."""
 
 import os
+import time
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -14,10 +15,13 @@ class FullTextFixture:
         "fulltext-rate",
         "fulltext-unsafe",
         "fulltext-nolink",
+        "fulltext-recovery",
+        "fulltext-semantic",
     )
 
     def __init__(self):
         self.granted = set()
+        self.held = set()
         self.pdf_path = Path(
             os.environ.get("FULLTEXT_FIXTURE_PDF", "/fulltext-fixtures/research.pdf")
         )
@@ -46,6 +50,12 @@ class FullTextFixture:
             case = path.rsplit("/", 1)[-1]
             if case not in self.cases:
                 return False
+            deadline = time.monotonic() + 20
+            while case in self.held and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if case in self.held:
+                handler.send_json({"error": "Synthetic held download timed out"}, 503)
+                return True
             if case == "fulltext-denied" and case not in self.granted:
                 handler.send_json({"error": "Synthetic access denial"}, 403)
             elif case == "fulltext-rate":
@@ -77,6 +87,9 @@ class FullTextFixture:
         if case not in self.cases:
             return False
         semantic = path.startswith("/graph/")
+        if case == "fulltext-semantic" and not semantic:
+            handler.send_json({"results": [], "meta": {"count": 0}})
+            return True
         row = self.paper(case, semantic)
         if path == "/works":
             handler.send_json({"results": [row], "meta": {"count": 1, "next_cursor": None}})
@@ -88,18 +101,23 @@ class FullTextFixture:
 
     def post(self, handler, path):
         prefix = "/__fulltext_fixture/"
-        if not path.startswith(prefix) or not path.endswith("/grant"):
+        if not path.startswith(prefix):
             return False
-        case = path[len(prefix) : -len("/grant")]
-        if case not in self.cases:
+        case, _, action = path[len(prefix) :].rpartition("/")
+        if case not in self.cases or action not in {"grant", "hold", "release"}:
             return False
         length = int(handler.headers.get("Content-Length", "0"))
         if length > 1024:
             handler.send_json({"error": "Too large"}, 413)
             return True
         handler.rfile.read(length)
-        self.granted.add(case)
-        handler.send_json({"granted": True})
+        if action == "grant":
+            self.granted.add(case)
+        elif action == "hold":
+            self.held.add(case)
+        else:
+            self.held.discard(case)
+        handler.send_json({"granted": case in self.granted, "held": case in self.held})
         return True
 
     def paper(self, case, semantic):

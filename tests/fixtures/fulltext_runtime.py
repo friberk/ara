@@ -12,7 +12,7 @@ if sys.argv[1] == "api":
 
     app = create_app(Settings(), resource_factory=fixture_resources)
 
-    @app.post("/__fixtures/fulltext/{case}/grant", include_in_schema=False)
+    @app.post("/api/v1/__fixtures/fulltext/{case}/grant", include_in_schema=False)
     async def grant(case: str):
         from fulltext_fixture import FullTextFixture
 

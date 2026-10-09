@@ -76,6 +76,57 @@ class FullTextFixtureTests(unittest.TestCase):
             urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-rate")
         self.assertEqual(error.exception.code, 429)
 
+    def test_recovery_case_has_distinct_identity(self):
+        with urllib.request.urlopen(self.base + "/works?search=fulltext-recovery") as response:
+            row = json.load(response)["results"][0]
+        self.assertEqual(row["doi"], "https://doi.org/10.5555/fulltext-recovery")
+
+    def test_direct_semantic_copy_has_no_openalex_alternative(self):
+        with urllib.request.urlopen(self.base + "/graph/v1/paper/s2-fulltext-semantic") as response:
+            row = json.load(response)
+        self.assertIsNotNone(row["openAccessPdf"])
+        self.assertTrue(row["openAccessPdf"]["url"].endswith("fulltext-semantic"))
+        with urllib.request.urlopen(
+            self.base + "/works?filter=doi:https://doi.org/10.5555/fulltext-semantic"
+        ) as response:
+            alternate = json.load(response)
+        self.assertEqual(alternate["results"], [])
+
+    def test_fixture_can_hold_and_release_a_download(self):
+        request = urllib.request.Request(
+            self.base + "/__fulltext_fixture/fulltext-open/hold", data=b"{}"
+        )
+        try:
+            response = urllib.request.urlopen(request)
+        except urllib.error.HTTPError as error:
+            response = error
+        self.assertEqual(response.status, 200)
+        response.close()
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "fixture.pdf"
+            source.write_bytes(b"%PDF-1.7\nfixture")
+            self.module.FULLTEXT.pdf_path = source
+            finished = threading.Event()
+            result = []
+
+            def fetch():
+                with urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-open") as pdf:
+                    result.append(pdf.read())
+                finished.set()
+
+            thread = threading.Thread(target=fetch, daemon=True)
+            thread.start()
+            try:
+                self.assertFalse(finished.wait(0.2))
+            finally:
+                release = urllib.request.Request(
+                    self.base + "/__fulltext_fixture/fulltext-open/release", data=b"{}"
+                )
+                urllib.request.urlopen(release).close()
+                thread.join(3)
+            self.assertTrue(finished.is_set())
+            self.assertEqual(result, [b"%PDF-1.7\nfixture\n% fulltext-open\n"])
+
     def test_unsafe_redirect_is_a_fixture_not_a_live_request(self):
         opener = urllib.request.build_opener(NoRedirect())
         with self.assertRaises(urllib.error.HTTPError) as error:
