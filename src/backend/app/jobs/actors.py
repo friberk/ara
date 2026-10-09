@@ -90,6 +90,10 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.rag.indexing import run_embed_job
 
             await run_embed_job(resources, identifier, generation, token, payload)
+        elif kind == "compact_chat":
+            from app.services.memory import run_compact_job
+
+            await run_compact_job(resources, identifier, generation, token, payload)
         elif kind == "canary":
             await complete(
                 resources.sessions,

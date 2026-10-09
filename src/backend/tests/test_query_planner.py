@@ -6,11 +6,16 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from pydantic import SecretStr
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.core.config import Settings
 from app.models.research import ChatMessage, GenerationReservation
+from tests.support.models import (
+    hosted_responses,
+    install_thinking_model,
+    local_runtime,
+    ollama_reply,
+)
 
 FOLLOW_UP = "How did it compare to the baselines?"
 
@@ -43,31 +48,6 @@ def plan_output(**fields) -> str:
         "needs_paper_evidence": True,
     }
     return json.dumps({**plan, **fields})
-
-
-def hosted_fixture(monkeypatch, resources, output):
-    """Responses fixture whose answer names the subject only when the history reached it."""
-    from app.integrations.llm import HostedLLM
-    from app.services import memory
-    from tests.test_ai import response_payload
-
-    resources.settings.openai_api_key = SecretStr("fixture")
-    requests = []
-
-    def provider(request):
-        body = json.loads(request.content)
-        requests.append(body)
-        return httpx.Response(200, json=response_payload(output(body)))
-
-    monkeypatch.setattr(
-        memory,
-        "create_llm",
-        lambda resources, model, **kwargs: HostedLLM(
-            resources.settings,
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(provider)),
-        ),
-    )
-    return requests
 
 
 async def test_given_first_turn_when_planning_then_question_is_the_query_without_a_call(
@@ -129,7 +109,7 @@ async def test_given_follow_up_on_hosted_chat_when_planning_then_luna_names_the_
             search_queries=[f"{subject} baselines comparison", f"{subject} results"],
         )
 
-    requests = hosted_fixture(monkeypatch, resources, output)
+    requests = hosted_responses(monkeypatch, resources, output)
     plan = await memory.plan_query(
         resources,
         model="gpt-5.6-sol",
@@ -177,7 +157,7 @@ async def test_given_invalid_planner_output_when_planning_then_heuristic_fallbac
     from app.services import memory
     from app.services.retrieval import retrieval_query
 
-    requests = hosted_fixture(monkeypatch, resources, lambda body: output)
+    requests = hosted_responses(monkeypatch, resources, lambda body: output)
     history = rag_history()
     plan = await memory.plan_query(
         resources,
@@ -202,7 +182,7 @@ async def test_given_exhausted_budget_when_planning_then_fallback_without_a_call
 ):
     from app.services import memory
 
-    requests = hosted_fixture(monkeypatch, resources, lambda body: plan_output())
+    requests = hosted_responses(monkeypatch, resources, lambda body: plan_output())
     resources.settings.llm_daily_budget_usd = 1e-9
     plan = await memory.plan_query(
         resources,
@@ -215,68 +195,6 @@ async def test_given_exhausted_budget_when_planning_then_fallback_without_a_call
     assert plan.source == "fallback" and requests == []
 
 
-async def install_thinking_model(resources, spec):
-    """A ready local model whose verified controls can switch thinking off."""
-    from app.models.local_models import ModelInstallation, ModelUse
-
-    async with resources.sessions() as session, session.begin():
-        await session.execute(delete(ModelUse))
-        await session.execute(delete(ModelInstallation))
-        session.add(
-            ModelInstallation(
-                model_key=spec.key,
-                state="ready",
-                weights_present=True,
-                digest=spec.expected_digest,
-                validation={
-                    "digest": spec.expected_digest,
-                    "context_window": 8192,
-                    "runtime_version": "0.40.1-ara.fixture",
-                    "reasoning_efforts": ["default", "on", "none"],
-                    "thinking_schema": 1,
-                    "thinking": {"values": [True, False], "default": True},
-                    "think_mapping": {"on": True, "none": False},
-                    "supports_streaming": True,
-                    "supports_structured_output": True,
-                },
-            )
-        )
-
-
-def local_fixtures(monkeypatch, resources, reply):
-    """Route the local model to an Ollama fixture and trap any hosted client."""
-    from app.integrations import llm
-
-    resources.settings.openai_api_key = SecretStr("a hosted key exists but must stay unused")
-    local, hosted = [], []
-
-    def ollama(request):
-        body = json.loads(request.content)
-        local.append(body)
-        return reply(body)
-
-    def trap(*args, **kwargs):
-        hosted.append(args)
-        raise AssertionError("a local chat must never call a hosted model")
-
-    resources.ollama_generation_http = httpx.AsyncClient(transport=httpx.MockTransport(ollama))
-    monkeypatch.setattr(llm, "HostedLLM", trap)
-    return local, hosted
-
-
-def ollama_reply(content: str) -> httpx.Response:
-    return httpx.Response(
-        200,
-        json={
-            "message": {"role": "assistant", "content": content},
-            "done": True,
-            "done_reason": "stop",
-            "prompt_eval_count": 90,
-            "eval_count": 30,
-        },
-    )
-
-
 @pytest.mark.integration
 async def test_given_local_chat_when_planning_then_same_model_without_thinking_and_no_hosted(
     resources, monkeypatch
@@ -286,7 +204,9 @@ async def test_given_local_chat_when_planning_then_same_model_without_thinking_a
 
     spec = local_spec("ifm-k2-horizon-7b")
     await install_thinking_model(resources, spec)
-    local, hosted = local_fixtures(monkeypatch, resources, lambda body: ollama_reply(plan_output()))
+    local, hosted = await local_runtime(
+        monkeypatch, resources, spec, lambda body: ollama_reply(plan_output())
+    )
     plan = await memory.plan_query(
         resources,
         model=spec.key,
@@ -314,8 +234,8 @@ async def test_given_local_planner_failure_when_planning_then_fallback_and_no_ho
 
     spec = local_spec("ifm-k2-horizon-7b")
     await install_thinking_model(resources, spec)
-    local, hosted = local_fixtures(
-        monkeypatch, resources, lambda body: httpx.Response(500, json={"error": "boom"})
+    local, hosted = await local_runtime(
+        monkeypatch, resources, spec, lambda body: httpx.Response(500, json={"error": "boom"})
     )
     plan = await memory.plan_query(
         resources,
