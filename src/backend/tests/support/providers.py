@@ -6,7 +6,7 @@ import struct
 
 import httpx
 
-from tests.support.vectors import fixture_vector
+from tests.support.vectors import STOP, WORD, fixture_vector
 
 
 def openai_fixture(requests, *, status=200):
@@ -48,3 +48,10 @@ def ollama_fixture(requests):
         )
 
     return httpx.MockTransport(handler)
+
+
+def overlap_relevance(query: str, document: str) -> float:
+    """Mirrors the fixtures' reranker relevance: the share of query words in the passage."""
+    terms = {w for w in WORD.findall(query.lower()) if w not in STOP}
+    words = {w for w in WORD.findall(document.lower()) if w not in STOP}
+    return 0.02 + 0.96 * len(terms & words) / max(1, len(terms))
