@@ -24,6 +24,8 @@ from app.services.uploads import MAX_UPLOAD_BYTES
 
 # One parse child per event loop: the 2 GiB worker cannot hold two layout models.
 _parse_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# The layout pass gets this share of the deadline; the legacy fallback gets the rest.
+LAYOUT_SHARE = 0.75
 
 
 def parser_environment() -> dict[str, str]:
@@ -84,10 +86,16 @@ async def parse_in_child(data: bytes, deadline_seconds: float = 120) -> dict:
             directory = Path(temporary)
             source = directory / "original.pdf"
             await asyncio.to_thread(source.write_bytes, data)
-            parsed = await run_parser(source, directory / "layout.json", deadline_seconds, False)
-            if parsed is None:
-                # A crashed layout pass gets one fresh child without the layout model.
-                parsed = await run_parser(source, directory / "legacy.json", deadline_seconds, True)
+            clock = asyncio.get_running_loop()
+            started = clock.time()
+            parsed = await run_parser(
+                source, directory / "layout.json", deadline_seconds * LAYOUT_SHARE, False
+            )
+            if parsed is None or (parsed.get("error") or {}).get("code") == "PDF_PARSE_TIMEOUT":
+                # A crashed or overlong layout pass gets one fresh child without the layout
+                # model, within what remains of the deadline. Both parses share one chunk set.
+                remaining = deadline_seconds - (clock.time() - started)
+                parsed = await run_parser(source, directory / "legacy.json", remaining, True)
             if parsed is None:
                 return {
                     "error": {
