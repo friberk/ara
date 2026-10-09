@@ -266,6 +266,8 @@ class OllamaRuntime:
             or not isinstance(model_info, dict)
         ):
             raise protocol_error()
+        if spec.kind == "embedding":
+            return await self.verify_embedding(spec, capabilities, context_window=context_window)
         if not template or "completion" not in capabilities:
             raise AppError(
                 409,
@@ -439,6 +441,57 @@ class OllamaRuntime:
             "think_mapping": verified_mapping,
             "supports_streaming": True,
             "supports_structured_output": structured,
+        }
+
+    async def runtime_version(self) -> str:
+        version = (await self.request("GET", "/api/version")).get("version")
+        if not isinstance(version, str) or not version.strip():
+            raise protocol_error()
+        return version
+
+    async def verify_embedding(self, spec, capabilities, *, context_window: int) -> dict:
+        """Embedders need the embedding capability and must return their native dimensions."""
+        from app.integrations.embeddings import OLLAMA_EMBED_CONTEXT
+
+        if "embedding" not in capabilities:
+            raise AppError(
+                409, "MODEL_VALIDATION_FAILED", "The local model does not provide embeddings."
+            )
+        runtime_version = await self.runtime_version()
+        probe = await self.request(
+            "POST",
+            "/api/embed",
+            timeout=self.probe_timeout,
+            json={
+                "model": spec.model_id,
+                "input": "probe",
+                "keep_alive": 0,
+                "options": {"num_ctx": OLLAMA_EMBED_CONTEXT, "num_thread": self.probe_threads},
+            },
+        )
+        vectors = probe.get("embeddings")
+        if (
+            not isinstance(vectors, list)
+            or len(vectors) != 1
+            or not isinstance(vectors[0], list)
+            or len(vectors[0]) != spec.embedding_dimensions
+        ):
+            raise AppError(
+                409,
+                "MODEL_VALIDATION_FAILED",
+                "The local embedding model returned unexpected dimensions.",
+            )
+        # thinking_schema and context_window keep the shared freshness check meaningful.
+        return {
+            "kind": "embedding",
+            "digest": spec.expected_digest,
+            "runtime_version": runtime_version,
+            "context_window": context_window,
+            "thinking_schema": 1,
+            "embedding_dimensions": spec.embedding_dimensions,
+            "reasoning_efforts": ["default"],
+            "supports_streaming": False,
+            "supports_structured_output": False,
         }
 
     async def delete(self, spec: LocalModelSpec) -> None:

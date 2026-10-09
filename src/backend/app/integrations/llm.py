@@ -43,6 +43,8 @@ def validate_selection(model: str, effort: str) -> Model:
     from app.integrations.model_catalog import local_spec
 
     spec = local_spec(model)
+    if spec and spec.kind != "chat":
+        raise LLMError("INVALID_MODEL", "This local model cannot generate text.", 422)
     if spec:
         if not isinstance(effort, str) or not 1 <= len(effort) <= 20:
             raise LLMError("INVALID_REASONING", "The reasoning effort is not supported.", 422)

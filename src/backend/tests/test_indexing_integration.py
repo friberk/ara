@@ -272,7 +272,10 @@ async def test_given_uninstalled_local_model_when_embedding_then_index_is_unavai
     await run_job(resources, job_id)
     index = await load(resources, RetrievalIndex, index_id)
     assert index.state == "unavailable"
-    assert index.error_code in {"LOCAL_MODEL_NOT_FOUND", "LOCAL_MODEL_NOT_READY"}
+    assert (index.error_code, index.error_message) == (
+        "LOCAL_MODEL_NOT_READY",
+        "Download and verify this local model first.",
+    )
     assert (await load(resources, BackgroundJob, job_id)).state == "completed"
 
 

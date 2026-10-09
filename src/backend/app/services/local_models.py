@@ -145,6 +145,7 @@ def model_dto(spec, row: ModelInstallation | None, *, context_window=8192, opera
         reason = error.message
     return Model(
         key=spec.key,
+        kind=spec.kind,
         provider="ollama",
         model_id=spec.model_id,
         display_name=spec.display_name,
