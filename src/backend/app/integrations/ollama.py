@@ -266,7 +266,19 @@ class OllamaRuntime:
             or not isinstance(model_info, dict)
         ):
             raise protocol_error()
+        lengths = [v for k, v in model_info.items() if k.endswith(".context_length")]
+        if any(type(value) is not int or value <= 0 for value in lengths):
+            raise protocol_error()
         if spec.kind == "embedding":
+            from app.integrations.embeddings import OLLAMA_EMBED_CONTEXT
+
+            # Embedders run at their own fixed num_ctx, not the chat context window.
+            if lengths and min(lengths) < OLLAMA_EMBED_CONTEXT:
+                raise AppError(
+                    409,
+                    "MODEL_CONTEXT_UNSUPPORTED",
+                    "The local embedding model cannot support the embedding context.",
+                )
             return await self.verify_embedding(spec, capabilities, context_window=context_window)
         if not template or "completion" not in capabilities:
             raise AppError(
@@ -274,9 +286,6 @@ class OllamaRuntime:
                 "MODEL_VALIDATION_FAILED",
                 "The local model does not provide a usable chat template.",
             )
-        lengths = [v for k, v in model_info.items() if k.endswith(".context_length")]
-        if any(type(value) is not int or value <= 0 for value in lengths):
-            raise protocol_error()
         if lengths and min(lengths) < context_window:
             raise AppError(
                 409,

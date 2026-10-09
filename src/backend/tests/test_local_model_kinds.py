@@ -48,7 +48,9 @@ def test_given_embedding_model_when_selecting_for_generation_then_it_is_rejected
     assert (error.value.code, error.value.status) == ("INVALID_MODEL", 422)
 
 
-def embedding_runtime(spec, requests, *, capabilities=("tools", "embedding"), dims=None):
+def embedding_runtime(
+    spec, requests, *, capabilities=("tools", "embedding"), dims=None, context_length=40960
+):
     def handler(request):
         requests.append(request.url.path)
         if request.url.path == "/api/tags":
@@ -61,7 +63,10 @@ def embedding_runtime(spec, requests, *, capabilities=("tools", "embedding"), di
                 json={
                     "template": "",
                     "capabilities": list(capabilities),
-                    "model_info": {"qwen3.context_length": 40960},
+                    "model_info": {
+                        "qwen3.context_length": context_length,
+                        "qwen3.embedding_length": spec.embedding_dimensions,
+                    },
                 },
             )
         if request.url.path == "/api/version":
@@ -115,6 +120,30 @@ async def test_given_wrong_embedding_runtime_when_verifying_then_validation_fail
         with pytest.raises(AppError) as error:
             await OllamaRuntime(client, "http://runtime").verify(spec, context_window=8192)
     assert error.value.code == "MODEL_VALIDATION_FAILED"
+
+
+@pytest.mark.parametrize(
+    ("context_length", "code"), [(2048, None), (1024, "MODEL_CONTEXT_UNSUPPORTED"), ("x", None)]
+)
+async def test_given_embedder_context_when_verifying_then_only_the_embedding_window_counts(
+    context_length, code
+):
+    """Embedders need 2,048 tokens, not the chat OLLAMA_CONTEXT_WINDOW."""
+    from app.integrations.ollama import OllamaRuntime
+
+    spec = local_spec(EMBED_4B)
+    transport = embedding_runtime(
+        spec, [], capabilities=("embedding",), context_length=context_length
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        runtime = OllamaRuntime(client, "http://runtime")
+        if context_length == 2048:
+            validation = await runtime.verify(spec, context_window=8192)
+            assert validation["embedding_dimensions"] == 2560
+            return
+        with pytest.raises(AppError) as error:
+            await runtime.verify(spec, context_window=8192)
+    assert error.value.code == (code or "MODEL_PROTOCOL_ERROR")
 
 
 def test_given_verified_embedding_installation_then_model_reports_its_kind():
