@@ -358,13 +358,13 @@ def provider_error(exc: Exception) -> LLMError:
     return LLMError("MODEL_REQUEST_FAILED", "The model request failed. It was not retried.")
 
 
-async def default_selection(resources) -> tuple[str, str]:
+async def saved_defaults(resources):
     from app.models.research import ModelConfiguration
     from app.schemas.ai import Defaults
 
     async with resources.sessions() as session:
         row = await session.get(ModelConfiguration, "defaults")
-    defaults = (
+    return (
         Defaults.model_validate(row.value)
         if row
         else Defaults(
@@ -372,6 +372,10 @@ async def default_selection(resources) -> tuple[str, str]:
             reasoning_effort=resources.settings.default_reasoning_effort,
         )
     )
+
+
+async def default_selection(resources) -> tuple[str, str]:
+    defaults = await saved_defaults(resources)
     return defaults.default_model, defaults.reasoning_effort
 
 

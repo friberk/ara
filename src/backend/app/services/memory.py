@@ -1,6 +1,7 @@
 """Conversation memory: follow-up planning, running summaries and turn recall (ARA-077).
 
-Local chats only ever use their own local model; hosted chats plan and compact with Luna.
+Local chats only ever use their own local model; hosted chats plan and compact with the
+saved memory model (`Defaults.memory_model`).
 Summaries are versioned rows anchored to a message; original messages are never altered.
 """
 
@@ -22,11 +23,13 @@ from app.integrations.context_registry import context_profile, hosted_profile, l
 from app.integrations.embedding_catalog import embedding_profile
 from app.integrations.embeddings import create_embedder
 from app.integrations.llm import (
+    HOSTED_REASONING_EFFORTS,
     LLMError,
     create_llm,
     generation_slots,
     reservation_amount,
     reserve_amount,
+    saved_defaults,
     thinking_controls,
 )
 from app.integrations.model_catalog import local_spec
@@ -44,6 +47,7 @@ from app.models.memory import ChatMemory, ChatTurnEmbedding
 from app.models.research import ChatMessage, ChatSession, Paper
 from app.rag.indexing import UNAVAILABLE, effective_profile
 from app.repositories.jobs import continue_locked, enqueue, fence, now
+from app.schemas.ai import Defaults
 from app.schemas.retrieval import ChatMemoryOut, ChatMemoryState
 from app.services.context import (
     ELLIPSIS,
@@ -57,7 +61,6 @@ from app.services.context import (
 
 logger = logging.getLogger(__name__)
 
-HOSTED_MEMORY_MODEL = "gpt-5.6-luna"
 COMPACTION_PROMPT_VERSION = "1"
 SUMMARY_SECTIONS = (
     "User goals",
@@ -146,11 +149,15 @@ def quiet_effort(efforts: list[str]) -> str:
 
 
 async def memory_model(resources, chat_model: str):
-    """The model that plans and compacts for a chat: its own local model, or hosted Luna."""
+    """The model that plans and compacts for a chat: its own local model, or the saved hosted
+    memory model. A saved key no longer in the hosted catalog falls back to the default."""
     if local_spec(chat_model):
         selection = await local_selection(resources, chat_model)
         return chat_model, quiet_effort(selection.reasoning_efforts), selection
-    return HOSTED_MEMORY_MODEL, "none", None
+    model = (await saved_defaults(resources)).memory_model
+    if model not in HOSTED_REASONING_EFFORTS:
+        model = Defaults().memory_model
+    return model, quiet_effort(list(HOSTED_REASONING_EFFORTS[model])), None
 
 
 def planner_turns(counter, turns, room: int | None) -> str:

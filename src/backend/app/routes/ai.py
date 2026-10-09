@@ -10,6 +10,7 @@ from app.integrations.llm import (
     PRICES,
     LLMError,
     configured,
+    saved_defaults,
     validate_model_available,
     validate_selection,
 )
@@ -41,17 +42,7 @@ async def models(request: Request):
 
 @router.get("/settings", response_model=Defaults)
 async def settings(request: Request):
-    resources = request.app.state.resources
-    async with resources.sessions() as session:
-        config = await session.get(ModelConfiguration, "defaults")
-        return (
-            Defaults.model_validate(config.value)
-            if config
-            else Defaults(
-                default_model=resources.settings.default_model,
-                reasoning_effort=resources.settings.default_reasoning_effort,
-            )
-        )
+    return await saved_defaults(request.app.state.resources)
 
 
 @router.put("/settings", response_model=Defaults)
@@ -59,6 +50,17 @@ async def update_settings(body: Defaults, request: Request):
     resources = request.app.state.resources
     try:
         validate_selection(body.default_model, body.reasoning_effort)
+        if "memory_model" not in body.model_fields_set:
+            # Saving only the chat defaults, as the composer does, keeps the memory model.
+            stored = (await saved_defaults(resources)).memory_model
+            if stored in HOSTED_REASONING_EFFORTS:
+                body.memory_model = stored
+        if body.memory_model not in HOSTED_REASONING_EFFORTS:
+            raise LLMError(
+                "INVALID_MEMORY_MODEL",
+                "Choose a hosted chat model for summaries and follow-up questions.",
+                422,
+            )
         from app.integrations.model_catalog import local_spec
         from app.models.local_models import ModelInstallation
 
@@ -67,8 +69,12 @@ async def update_settings(body: Defaults, request: Request):
             async with resources.sessions() as session:
                 row = await session.get(ModelInstallation, spec.key)
                 saved = await session.get(ModelConfiguration, "defaults")
+                previous = Defaults.model_validate(saved.value) if saved else None
                 preserved = (
-                    saved and saved.value == body.model_dump() and not (row and row.validation)
+                    previous
+                    and previous.default_model == body.default_model
+                    and previous.reasoning_effort == body.reasoning_effort
+                    and not (row and row.validation)
                 )
                 if (
                     not preserved
