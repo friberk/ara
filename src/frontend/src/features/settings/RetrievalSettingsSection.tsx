@@ -1,13 +1,14 @@
 import { useId, useState } from 'react'
-import type { EmbeddingProfile, RetrievalSettings } from '@/api/types'
+import type { EmbeddingProfile, Reranker, RetrievalSettings } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ProfileOptions } from '@/components/retrieval/ProfileOptions'
+import { RerankerOptions } from '@/components/retrieval/RerankerOptions'
 import { useEmbeddingProfiles, useRetrievalSettings, useSaveRetrievalSettings } from '@/hooks/queries/retrieval'
 
-function SearchSettingsForm({ profiles, saved }: { profiles: EmbeddingProfile[]; saved: RetrievalSettings }) {
+function SearchSettingsForm({ profiles, rerankers, saved }: { profiles: EmbeddingProfile[]; rerankers: Reranker[]; saved: RetrievalSettings }) {
   const save = useSaveRetrievalSettings()
   const [choice, setChoice] = useState<Partial<RetrievalSettings>>({})
   const draft = { ...saved, ...choice }
@@ -16,6 +17,7 @@ function SearchSettingsForm({ profiles, saved }: { profiles: EmbeddingProfile[];
   return (
     <form className="grid gap-6" onSubmit={(event) => { event.preventDefault(); if (dirty) save.mutate(draft) }}>
       <ProfileOptions profiles={profiles} value={draft.embedding_profile} onChange={(key) => { if (key) change({ embedding_profile: key }) }} label="Default search model" />
+      <RerankerOptions rerankers={rerankers} value={draft.reranker} onChange={(key) => change({ reranker: key })} label="Rerank results" />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button type="submit" disabled={!dirty || save.isPending}>{save.isPending ? 'Saving…' : 'Save search settings'}</Button>
         <p role="status" className="text-sm text-muted-foreground">{save.isSuccess && !dirty ? 'Search settings saved.' : ''}</p>
@@ -25,7 +27,7 @@ function SearchSettingsForm({ profiles, saved }: { profiles: EmbeddingProfile[];
   )
 }
 
-/** The default search model. Saving keeps the reranker choice as the server holds it. */
+/** The default search model and how results are reranked, saved together. */
 export function RetrievalSettingsSection() {
   const profiles = useEmbeddingProfiles()
   const saved = useRetrievalSettings()
@@ -42,7 +44,7 @@ export function RetrievalSettingsSection() {
       )}
       <ErrorNotice error={error} retry={() => { void profiles.refetch(); void saved.refetch() }} />
       {profiles.data && saved.data && (profiles.data.items.length ? (
-        <SearchSettingsForm profiles={profiles.data.items} saved={saved.data} />
+        <SearchSettingsForm profiles={profiles.data.items} rerankers={profiles.data.rerankers ?? []} saved={saved.data} />
       ) : (
         <EmptyState title="No search models configured">Configure search models on the server, then reload this page.</EmptyState>
       ))}
