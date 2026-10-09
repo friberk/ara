@@ -41,6 +41,8 @@ class EvidenceResult:
     ranked: list[NodeWithScore] = field(default_factory=list)
     neighbours: dict[str, list[TextNode]] = field(default_factory=dict)
     counter: TokenCounter | None = None
+    # One vector per query, in `summary.profile`; None when searching by keywords only.
+    vectors: list[list[float]] | None = None
 
     def pack(self, budget: int) -> list[Passage]:
         self.passages = pack_evidence(
@@ -195,7 +197,7 @@ async def retrieve_evidence(
         "reranked": [],
         "timings_ms": timings,
     }
-    result = EvidenceResult([], summary, trace, ranked, neighbours, counter)
+    result = EvidenceResult([], summary, trace, ranked, neighbours, counter, vectors)
     result.pack(budget)
     timings["total"] = elapsed(started)
     return result

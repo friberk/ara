@@ -2,7 +2,8 @@
 
 `prepare()` admits a question in short transactions with no network call under the chat lock.
 `stream_answer()` then plans, retrieves and generates, persisting the retrieval trace before the
-provider call (ARA-073).
+provider call (ARA-073). Answers carry the running summary, recalled turns and the unsummarized
+recent turns, and a completed turn queues memory upkeep (ARA-077).
 """
 
 import asyncio
@@ -10,7 +11,6 @@ import json
 from contextlib import nullcontext, suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Literal
 from uuid import UUID, uuid4
 
 import anyio
@@ -38,7 +38,9 @@ from app.rag.indexing import effective_profile
 from app.rag.pipeline import retrieve_evidence
 from app.repositories.jobs import now
 from app.schemas.ai import Message
+from app.services import memory
 from app.services.context import INSTRUCTIONS_VERSION, PaperHeader, assemble_answer_prompt
+from app.services.memory import AnswerMemory, QueryPlan
 
 LEASE = timedelta(seconds=60)
 
@@ -232,21 +234,38 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
         )
 
 
-@dataclass(frozen=True)
-class QueryPlan:
-    standalone_question: str
-    search_queries: list[str]
-    needs_paper_evidence: bool
-    source: Literal["model", "fallback", "first_turn"]
+async def plan_for_answer(resources, prepared: Prepared, remembered: AnswerMemory) -> QueryPlan:
+    """Standalone search queries for a follow-up; a local chat plans under its own admission."""
+    return await memory.plan_query(
+        resources,
+        model=prepared.assistant.model,
+        effort=prepared.assistant.reasoning_effort,
+        history=remembered.history,
+        memory_summary=remembered.summary[1] if remembered.summary else None,
+        question=prepared.question,
+    )
 
 
-async def plan_for_answer(resources, prepared: Prepared) -> QueryPlan:
-    """The query planner seam (ARA-077 replaces it): search with the question as asked."""
-    return QueryPlan(
-        standalone_question=prepared.question,
-        search_queries=[prepared.question],
-        needs_paper_evidence=True,
-        source="fallback",
+async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory, plan, evidence):
+    """Earlier turns similar to the first search query, outside the recent window."""
+    if not evidence.vectors:
+        return []
+    window = assemble_answer_prompt(
+        profile=prepared.limits,
+        paper=prepared.paper,
+        history=remembered.history,
+        memory_summary=remembered.summary,
+        recalled=[],
+        evidence_block=lambda budget: "",
+        question=prepared.question,
+        retrieved_for=plan.standalone_question,
+    )
+    return await memory.recall_turns(
+        resources,
+        chat_id=prepared.assistant.session_id,
+        profile=evidence.summary.profile,
+        query_vector=evidence.vectors[0],
+        exclude_ids=memory.recent_answer_ids(remembered.history, window.usage.recent_turns),
     )
 
 
@@ -341,7 +360,10 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
         nonlocal client, evidence
         try:
             await queue.put(("status", "planning"))
-            plan = await plan_for_answer(resources, prepared)
+            remembered = await memory.answer_memory(
+                resources, assistant.session_id, prepared.history
+            )
+            plan = await plan_for_answer(resources, prepared, remembered)
             await queue.put(("status", "retrieving"))
             evidence = await retrieve_evidence(
                 resources,
@@ -357,9 +379,9 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
             assembled = assemble_answer_prompt(
                 profile=prepared.limits,
                 paper=prepared.paper,
-                history=prepared.history,
-                memory_summary=None,
-                recalled=[],
+                history=remembered.history,
+                memory_summary=remembered.summary,
+                recalled=await recalled_turns(resources, prepared, remembered, plan, evidence),
                 evidence_block=evidence.block,
                 question=prepared.question,
                 retrieved_for=plan.standalone_question,
@@ -430,6 +452,7 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
             grounding=grounding,
         )
         completed = True
+        await memory.remember_turn(resources, assistant.session_id, assistant.id, assistant.model)
         yield event("message.completed", final)
     except Exception as exc:
         safe = (

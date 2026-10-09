@@ -94,14 +94,14 @@ def named(events, name: str) -> list[dict]:
 
 
 def offline_answer(monkeypatch, resources, model: str, effort: str):
-    """A prepared question whose evidence needs no database, for provider-level tests."""
+    """A prepared question whose evidence and memory need no database, for provider tests."""
     from llama_index.core.schema import NodeWithScore, TextNode
 
     from app.integrations.context_registry import context_profile
     from app.models.research import ChatMessage
     from app.rag.pipeline import EvidenceResult
     from app.schemas.ai import RetrievalSummary
-    from app.services import chat
+    from app.services import chat, memory
     from app.services.context import PaperHeader
 
     document_id = uuid4()
@@ -126,8 +126,13 @@ def offline_answer(monkeypatch, resources, model: str, effort: str):
     async def record(*args):
         return None
 
+    async def remembered(resources, chat_id, history):
+        return memory.AnswerMemory(None, history)
+
     monkeypatch.setattr(chat, "retrieve_evidence", retrieve)
     monkeypatch.setattr(chat, "record_evidence", record)
+    monkeypatch.setattr(memory, "answer_memory", remembered)
+    monkeypatch.setattr(memory, "remember_turn", record)
     assistant = ChatMessage(id=uuid4(), model=model, reasoning_effort=effort)
     return chat.Prepared(
         assistant,
