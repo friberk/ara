@@ -75,7 +75,6 @@ test('Given a manually replaced PDF, Then old acquisition details are refreshed 
   const { user } = renderWithProviders(<><FullTextAccess paper={{ ...paper, document_status: 'ready', active_document_id: 'd1' }} /><UploadDropzone paperId="p1" /></>)
   expect(await screen.findByText(/Retrieved via OpenAlex/)).toBeVisible()
   await user.upload(screen.getByLabelText('PDF file'), new File(['%PDF-1.4'], 'replacement.pdf', { type: 'application/pdf' }))
-  await user.click(screen.getByRole('button', { name: 'Upload PDF' }))
   await waitFor(() => expect(screen.queryByText(/Retrieved via OpenAlex/)).not.toBeInTheDocument())
 })
 

@@ -22,7 +22,7 @@ function doiUrl(doi: string | null) { return doi ? safeUrl(`https://doi.org/${do
 export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: () => void }) {
   const id = useId()
   const [editing, setEditing] = useState(false)
-  // A replacement uploaded here keeps its progress on screen while the paper reports processing.
+  // A replacement uploaded here keeps its steps on screen while the paper reports processing.
   const [replacing, setReplacing] = useState(false)
   const doi = doiUrl(paper.doi)
   const records = paper.sources.flatMap((source) => {
@@ -44,6 +44,12 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
             <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
               <dt className="text-muted-foreground">Year</dt>
               <dd className="tabular">{paper.year ?? <span className="text-muted-foreground">Not available</span>}</dd>
+              {paper.venue && (
+                <>
+                  <dt className="text-muted-foreground">Venue</dt>
+                  <dd>{paper.venue}</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">DOI</dt>
               <dd>{doi ? <a href={doi} target="_blank" rel="noreferrer" className="font-mono text-[0.8125rem] break-all underline decoration-foreground/25 hover:decoration-foreground">{paper.doi}</a> : <span className="text-muted-foreground">Not available</span>}</dd>
               {records.length > 0 && (

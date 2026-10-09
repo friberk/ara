@@ -558,6 +558,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/metadata/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Settings */
+        get: operations["read_settings_api_v1_metadata_settings_get"];
+        /** Update Settings */
+        put: operations["update_settings_api_v1_metadata_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1062,6 +1080,18 @@ export interface components {
             /** Items */
             items: components["schemas"]["Message"][];
         };
+        /**
+         * MetadataSettings
+         * @description Which catalog uploaded PDFs are looked up in first (ARA-086).
+         */
+        MetadataSettings: {
+            /**
+             * Source
+             * @default openalex
+             * @enum {string}
+             */
+            source: "openalex" | "semantic_scholar";
+        };
         /** Model */
         Model: {
             /** Reasoning Aliases */
@@ -1144,6 +1174,8 @@ export interface components {
             abstract: string | null;
             /** Doi */
             doi: string | null;
+            /** Venue */
+            venue?: string | null;
             /** Sources */
             sources: components["schemas"]["SearchResult"][];
             /**
@@ -1403,6 +1435,8 @@ export interface components {
             is_open_access?: boolean | null;
             /** Locations */
             locations?: components["schemas"]["FullTextLocation"][];
+            /** Venue */
+            venue?: string | null;
             /** Saved Paper Id */
             saved_paper_id?: string | null;
         };
@@ -1447,6 +1481,8 @@ export interface components {
             is_open_access?: boolean | null;
             /** Locations */
             locations?: components["schemas"]["FullTextLocation"][];
+            /** Venue */
+            venue?: string | null;
         };
         /** Summary */
         Summary: {
@@ -1518,6 +1554,11 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+            /**
+             * Duplicate
+             * @default false
+             */
+            duplicate: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -1636,7 +1677,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 paper_id?: string | null;
-                kind?: ("ingest" | "summary" | "fulltext" | "model_download" | "model_delete") | null;
+                kind?: ("ingest" | "summary" | "fulltext" | "metadata" | "model_download" | "model_delete") | null;
                 active?: boolean | null;
             };
             header?: never;
@@ -2866,6 +2907,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatMemoryState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_metadata_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataSettings"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_metadata_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataSettings"];
                 };
             };
             /** @description Validation Error */

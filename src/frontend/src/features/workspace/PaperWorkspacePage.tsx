@@ -9,7 +9,6 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DocumentStatusBadge } from '@/components/feedback/DocumentStatusBadge'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ShellHeader } from '@/components/shell/shell-header'
@@ -17,6 +16,7 @@ import { ConversationPane } from '@/features/chat'
 import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { DetailsPanel } from './DetailsPanel'
+import { PaperStatusBadge } from './PaperStatusBadge'
 import { MobilePdfView, ReaderPanel } from './ReaderPanel'
 import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type WorkspaceContextValue, type WorkspaceView } from './workspace-context'
 
@@ -27,7 +27,7 @@ function PaperTitle({ paper }: { paper: Paper }) {
   return (
     <>
       <h1 className="min-w-0 truncate text-sm font-medium md:text-base">{paper.title || 'Untitled paper'}</h1>
-      <DocumentStatusBadge state={paper.document_status} className="shrink-0" />
+      <PaperStatusBadge paper={paper} className="shrink-0" />
     </>
   )
 }

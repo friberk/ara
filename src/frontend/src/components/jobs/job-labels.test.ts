@@ -32,3 +32,8 @@ test('Given model transfer stages, Then Activity uses readable labels and paused
   expect(jobStageLabel({ state: 'paused', stage: 'paused' })).toBe('Paused')
   expect(isActiveJob({ state: 'paused' })).toBe(true)
 })
+
+test('Given a catalog lookup for an uploaded paper, Then Activity names it plainly', () => {
+  expect(jobKindLabel('metadata')).toBe('Paper details lookup')
+  expect(jobStageLabel({ state: 'processing', stage: 'finding_metadata' })).toBe('Finding paper details')
+})
