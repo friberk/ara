@@ -30,6 +30,9 @@ DECISIONS_TIMEOUT = 10
 DECISIONS_FRAMING_TOKENS = 200
 # Phase 0 S1: about 0.7 s per local call, plus a 1-3 s reload when the reranker was evicted.
 LOCAL_TIMEOUT = 30
+# The whole local pass, including the wait for the retrieval slot; on expiry the answer keeps
+# fusion order rather than waiting out one timeout per candidate.
+LOCAL_DEADLINE_SECONDS = 45
 LOCAL_KEEP_ALIVE = "10m"
 # The raw template takes about 105 tokens of num_ctx 2048; query and document share the rest.
 LOCAL_QUERY_TOKENS = 128
@@ -74,7 +77,10 @@ async def rerank_candidates(
         if profile.method == "openai-decisions":
             scores = await decisions_scores(resources, profile, query, head)
         else:
-            scores = await local_scores(resources, profile, query, head)
+            async with asyncio.timeout(LOCAL_DEADLINE_SECONDS):
+                scores = await local_scores(resources, profile, query, head)
+    except TimeoutError:
+        skipped = "RERANKER_TIMEOUT"
     except (Skipped, AppError) as error:
         skipped = error.code
     except Exception as error:
