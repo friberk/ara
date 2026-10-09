@@ -50,17 +50,6 @@ async def update_settings(body: Defaults, request: Request):
     resources = request.app.state.resources
     try:
         validate_selection(body.default_model, body.reasoning_effort)
-        if "memory_model" not in body.model_fields_set:
-            # Saving only the chat defaults, as the composer does, keeps the memory model.
-            stored = (await saved_defaults(resources)).memory_model
-            if stored in HOSTED_REASONING_EFFORTS:
-                body.memory_model = stored
-        if body.memory_model not in HOSTED_REASONING_EFFORTS:
-            raise LLMError(
-                "INVALID_MEMORY_MODEL",
-                "Choose a hosted chat model for summaries and follow-up questions.",
-                422,
-            )
         from app.integrations.model_catalog import local_spec
         from app.models.local_models import ModelInstallation
 

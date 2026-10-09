@@ -1,7 +1,7 @@
 """Conversation memory: follow-up planning, running summaries and turn recall (ARA-077).
 
-Local chats only ever use their own local model; hosted chats plan and compact with the
-saved memory model (`Defaults.memory_model`).
+Planning and compaction use the model of the chat itself, at its quietest verified effort
+(ARA-083); there is no separate memory model.
 Summaries are versioned rows anchored to a message; original messages are never altered.
 """
 
@@ -30,7 +30,6 @@ from app.integrations.llm import (
     generation_slots,
     reservation_amount,
     reserve_amount,
-    saved_defaults,
     thinking_controls,
 )
 from app.integrations.model_catalog import local_spec
@@ -48,7 +47,6 @@ from app.models.memory import ChatMemory, ChatTurnEmbedding
 from app.models.research import ChatMessage, ChatSession, Paper
 from app.rag.indexing import UNAVAILABLE, effective_profile
 from app.repositories.jobs import continue_locked, enqueue, fence, now
-from app.schemas.ai import Defaults
 from app.schemas.retrieval import ChatMemoryOut, ChatMemoryState
 from app.services.context import (
     ELLIPSIS,
@@ -155,15 +153,11 @@ def quiet_effort(efforts: list[str]) -> str:
 
 
 async def memory_model(resources, chat_model: str):
-    """The model that plans and compacts for a chat: its own local model, or the saved hosted
-    memory model. A saved key no longer in the hosted catalog falls back to the default."""
+    """The model that plans and compacts for a chat: the chat's own, at its quietest effort."""
     if local_spec(chat_model):
         selection = await local_selection(resources, chat_model)
         return chat_model, quiet_effort(selection.reasoning_efforts), selection
-    model = (await saved_defaults(resources)).memory_model
-    if model not in HOSTED_REASONING_EFFORTS:
-        model = Defaults().memory_model
-    return model, quiet_effort(list(HOSTED_REASONING_EFFORTS[model])), None
+    return chat_model, quiet_effort(list(HOSTED_REASONING_EFFORTS[chat_model])), None
 
 
 def planner_turns(counter, turns, room: int | None) -> str:
