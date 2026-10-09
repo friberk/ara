@@ -481,3 +481,201 @@ Impeccable review used a fresh-context substitute reviewer because the harness h
 ARA-019 final review correction checks: isolated backend pytest 510 passed in 58.12s; strict frontend container check 417 passed in 67.42s; fixture-server unittest discovery 11 passed in 37.725s; infrastructure unittest discovery 6 passed. Ruff initially retained an overlong SQL observation string in the concurrency test after formatter; split it, then all changed backend/fixture checks passed. The UI reviewer scored its accessible-error fix resolved against validated final desktop/mobile captures, with a ship verdict limited to that correction. A fresh documentation check preserves the existing design system. Final browser run now includes direct Semantic Scholar acquisition-provider assertions as well as exact DOI alternatives and the mobile picker.
 
 ARA-019 final completion evidence: fresh isolated Playwright suite reported 16 passed in 2.6m, including direct Semantic Scholar acquisition, OpenAlex and exact DOI fallback, denial/grant after refresh, mobile keyboard picker, uploads, summary/Q&A/citations and all managed-model journeys. Generated OpenAPI TypeScript compared byte-identically with the committed contract. Alembic reported one 0006_fulltext head; both Compose configs passed; production build passed with the pre-existing chunk warning. The latest committed managed-ollama tip remains 6b53fd1 and is an ancestor of this feature branch. Code reviewer scored all five listed fixes resolved; Impeccable correction verdict scored its accessible-error fix resolved; fresh documentation check confirmed no system changes are needed and left its existing files intact. The documenter noted pre-existing Activity error-tint drift without changing it. A rejected verification-document patch used a wrong heading; appended the evidence after inspecting the document. Final branch/worktree retention follows the user-approved no-push/no-main-merge scope; no integration menu or additional approval is needed.
+## 2026-10-08/09 — Retrieval and context overhaul planning (ARA-021, ARA-043)
+
+- **Prompt:** the user asked to overhaul retrieval and context management. They described the current PDF handling as naive: full pages and unstructured `[source]` tags, unlike Elicit, SciSpace, Scite or Undermind. They asked for state-of-the-art, enterprise-grade RAG with off-the-shelf chunking, embedding models served by Ollama (`qwen3-embedding:8b-q4_K_M`, `qwen3-embedding:4b-q4_K_M`) plus OpenAI's large embedding model, a per-paper option hidden from most users, and model-aware handling of long conversations.
+- **Mid-task instructions:**
+  - Build on `feat/managed-ollama` in a separate branch with git worktrees and orchestrated agents.
+  - Make OpenAI `text-embedding-3-large` the default.
+  - Use an Ollama reranker if feasible, otherwise defer it under a ticket.
+  - Run one Postgres instance for everything and use the existing Ollama, with no separate instance.
+  - Drop dataset evaluation.
+  - Stick to off-the-shelf workflows.
+  - Always work TDD-first.
+  - Allow query embedding through OpenAI for local chats without an explicit disclosure.
+- **Evidence gathering:** read-only exploration of `main` and `feat/managed-ollama` confirmed the following:
+  - 3,200-character per-page windows and `ts_rank` plus coverage chunks.
+  - Byte-based token estimates.
+  - Hosted 32k-byte and local 8,192 limits.
+  - No embeddings.
+  - The installed IFM 3.7B reports a native context length of 524,288; 8,192 is the project's global `OLLAMA_CONTEXT_WINDOW`.
+  - The OrbStack VM has about 16.8 GB, shared by four running stacks.
+  - Web research found no rerank endpoint in Ollama 0.40.1, but log probabilities are available for Qwen3-Reranker scoring.
+- **Design iterations driven by the user's questions:**
+  - The user was confused by multiple-choice questions on long context and memory, and asked why embeddings are needed if everything is sent to the model. The agent dropped the adaptive full-paper idea: retrieval always runs.
+  - The user asked for off-the-shelf memory and orchestration. LlamaIndex was chosen over LangChain as a component library, with our code retaining persistence, jobs, budgets and replay.
+  - The user asked whether Docling came from LlamaIndex (it does not; it is a separate IBM/LF project), why a separate Postgres was needed, and what PolyForm Noncommercial means.
+  - The user then reported research showing Docling is slow. GROBID, plain PyMuPDF and PyMuPDF4LLM were compared, and the user chose PyMuPDF4LLM with its layout model.
+  - The user pointed to PyMuPDF4LLM's LlamaIndex integration. Inspection found the released `LlamaMarkdownReader` (one document per page). `to_chunks().to_llama_nodes()` exists only on GitHub main, for unreleased PyMuPDF 2.0; it is recorded as the upgrade path.
+- **Corrections:**
+  - The agent first described `pymupdf_layout` as PolyForm Noncommercial, based on older package listings. Downloading the 1.28.2 wheel showed AGPL-3.0/commercial dual licensing in `COPYING`, and the claim was corrected.
+  - Once, the agent resubmitted the plan for approval instead of answering the user's question about Docling; the user had to ask again.
+  - The agent planned a separate Postgres image and a second Ollama daemon. The user rejected both, establishing the single-instance rule.
+- **Coordination:** another session committed ARA-055 on `feat/managed-ollama` during planning, and ARA-019 is active on `feat/fulltext-access`. This work therefore reserves ARA-070 to ARA-079 instead of the next free number.
+- **Approved plan:** spec `docs/superpowers/specs/2026-10-09-rag-context-design.md`; issues ARA-070 to ARA-079 under the ARA-021 and ARA-043 epics. Wave 0 measurement spikes (S1 for models and Ollama, S2 for parsing and pgvector) run as throwaway scratch work before Gate G0. No product code has changed at this entry.
+
+### Wave 0 measurements and Wave 1 foundation (ARA-070)
+
+The lead started Wave 0 after the user approved implementation. Two throwaway spike agents measured in isolated containers; their scripts and raw output stay in private scratch space.
+
+**S2 (parsing and pgvector), completed:**
+- The agent could not write its report file because the harness blocked subagent report files, so it sent the report as messages.
+- The documented `pymupdf4llm.LlamaMarkdownReader` runs the legacy heading heuristic and found only the title. Layout `to_markdown(page_chunks=True)` recovered 22/22 headings on Attention and 29/29 on RAG.
+  - The plan therefore uses `to_markdown` plus LlamaIndex node parsers instead of the reader. This contradicts an earlier assumption that the documented reader was the layout path.
+- Under the current 1 GiB child address-space limit, the default ONNX/BLAS thread settings hang during import.
+  - With `OPENBLAS_NUM_THREADS=1`, `MALLOC_ARENA_MAX=2` and two ONNX Runtime intra-op threads, a 200-page PDF fits in 1.5 GiB in 42–46 s. Papers parse at 167–300 ms per page.
+- Display formulas are dropped in layout mode, so the plan fills formula boxes with clipped PyMuPDF text.
+- `pgvector/pgvector:0.8.7-pg17-bookworm` (PostgreSQL 17.11) started on a copy of a 17.9 volume with identical data and no collation warnings.
+  - Per-document exact search took about 1 ms for 150 chunks and 4–8 ms for 2,000 chunks.
+  - 196 of 300 AND-style full-text queries matched nothing, which requires an OR fallback.
+
+**S1 (models and Ollama):** went idle once while waiting on its own background download and needed a prompt to continue polling. It was still measuring at this entry.
+
+**Wave 1 (lead, TDD):**
+- **Task 1, test-stack project names:** 3 failed and 1 passed before the change; afterwards all 7 infrastructure tests passed. (`175208e`)
+- **Task 6, fixtures:** the new fixture tests reported 3 failures, 6 errors and 1 skip; afterwards all 13 passed, and the structured-PDF test passed under PyMuPDF 1.28.2. (`5089d79`)
+- **Task 5, contracts:** 4 failed, then 4 passed. (`ff1008c`)
+- **Task 2, compose:** 2 failed, then all 9 infrastructure tests passed. (`ccbaae5`)
+- **Tasks 3 and 4, dependencies and schema:** dependency tests 2 failed and 1 passed on the host before the change.
+  - The first full isolated run reported 63 failed and 357 passed. Fifty-eight failures were test helpers still constructing the removed `char_start`/`token_estimate` fields. Three were our new schema tests inserting a document before its paper without an ORM relationship. Two were health checks pinned to migration `0005`.
+  - Corrections: migrate the helpers to the new chunk shape, keep ingestion on interim page windows until ARA-071, flush the parent row first, and advance `SCHEMA_REVISION`.
+  - Second run: 420 passed, Ruff clean. (`7f97323`, `6aab634`)
+- **Frontend contracts:**
+  - The first generation used `create_app()` with the default development settings and included the dev-only canary route. Regenerating with `APP_ENV=test` matched CI's source.
+  - Strict TypeScript then failed in 3 test fixtures, because `Model.kind` is required in output schemas. After adding `kind: 'chat'`, all 392 frontend tests passed and the build succeeded. (`d260efd`)
+- Another session committed ARA-055 on `feat/managed-ollama` during planning, so this work uses the reserved IDs ARA-070 to ARA-079.
+
+### Wave 2 integration and the reranker decision (ARA-071, ARA-072, ARA-074, ARA-075, ARA-076)
+
+Four agents worked in separate worktrees on ingest, index, context budgets and retrieval UI, each with its own isolated test stack.
+
+**Results:**
+- Agent full runs: ingest 454 passed, index 474, context 513. The UI frontend check passed.
+- No agent commit carries a Co-Authored-By trailer.
+- The ingest agent proposed an additive contract change (provenance fields on the chunk-source response) that keeps the existing OpenAPI keys; the lead approved it.
+- The index agent ran embed jobs on the default worker queue with 240 s continuations instead of a separate queue; the lead accepted the deviation.
+
+**Integration:**
+- The lead merged the branches with `--no-ff`; there were no conflicts.
+- Integration testing exposed a real chunking defect. tiktoken raised `ValueError: Encountered text corresponding to disallowed special token '<|endoftext|>'`, which an LLM paper quoting tokenizer markers would trigger. A failing test reproduced it; the chunker now uses the shared `TiktokenCounter` and treats special tokens as ordinary text.
+- The merged suite passed 601 tests with Ruff clean; the frontend passed 409 tests and built.
+- The lead added compose passthrough for the token budgets and the reranker-availability contract.
+
+**Reranker decision:**
+- The S1 spike found the 0.6B F16 reranker working but slow (54 s for 30 candidates). The lead deferred ARA-074.
+- The user asked why F16 rather than a 4-bit or 8-bit version, then asked whether two community Q8_0 uploads had been tried.
+  - `pdurugyan`: S1 had found it embedding-only, returning zero vectors.
+  - `fanyx`: not tried. The lead tested it in an isolated container. Its digest `fd021d86…` differs from the broken dengcao Q8_0. It ranked 12/12 probe pairs with the same score distribution as F16, and 30 candidates took 21.99 s against 51.37 s for F16 in the same session.
+- The user chose to ship it opt-in, off by default, reranking the top 12 passages (about 9 s per answer). ARA-074 was reopened.
+- Earlier in this exchange the user rejected one question tool call and asked the lead to stop and wait. The lead held all work until the user's next instruction.
+
+**Wave 3** started from `bd84d19`: retrieval and reranker (F), memory (G), and answer/context UI (H).
+
+### User corrections to the reranker design (ARA-074)
+
+The user challenged three reranker decisions during Wave 3. Each changed the implementation:
+
+1. **Precision of the local reranker.**
+   - The lead had measured only the F16 Qwen3 reranker (54 s for 30 candidates) and proposed deferral. The user asked: "Why we are using F16? Will Int4 or Q4 speed it up?"
+   - The lead explained that F16 was used only because the one community Q8_0 upload was broken. The user then pointed to two other uploads.
+   - `pdurugyan` had already failed as an embedding-only conversion. `fanyx/Qwen3-Reranker-0.6B-Q8_0` had not been tried. Tested on request, it ranked 12/12 probe pairs with scores matching F16, and 30 candidates took 21.99 s against 51.37 s for F16 in the same session.
+   - The user chose opt-in local reranking instead of deferral.
+2. **Hardcoded model.**
+   - The user asked for an OpenAI reranker as the default. The lead verified the Decisions API with `gpt-6-luna` and first wired the contract to an `openai`/`local`/`off` choice that implied Luna.
+   - The user corrected: "We shouldn't hardcode the reranking OpenAI model as luna. Currently we are supporting luna but it might change in the future. It should follow the extensibility of LLM / embedding selection."
+   - The lead replaced the uncommitted contract with a reranker catalog (`reranker_catalog.py`) keyed like embedding profiles, with key-based settings (`1d14f72`).
+3. **Candidate count.**
+   - The user asked: "Why we are using top-12 specifically? Is it the standard practice?"
+   - The lead had chosen 12 (local) and 20 (OpenAI) from latency budgets alone, without saying they were not standard. Published pipelines rerank a window several times larger than the passages finally used (25–150 candidates).
+   - A paper here has 45–94 chunks, and fusion yields about 40–60 candidates, so 20 left about half the fused list unreachable by the reranker.
+   - The user chose 40 for OpenAI (about 2–3 s and $0.004 per question, extrapolated from the measured 20-candidate run). The local profile stays at 12 for CPU latency (`6f81ffe`).
+
+Lesson recorded for future work: state when a parameter is a local latency or cost choice rather than an established practice, and keep model-backed choices in catalogs rather than in code.
+
+### Wave 3 merge, Wave 4 integration and live verification (ARA-071, ARA-073–ARA-078)
+
+Wave 3 agents built the retrieval pipeline with catalog reranking (F), conversation memory (G), and answer and context UI (H). The lead merged each branch with `--no-ff`. A `retrieval_query` import broke after F and G met; it moved into `memory.py` (`c92f3db`). The retrieval agent then added an autouse test guard that refuses any request to a real external host (`69cd092`). The default reranker and planner fall back quietly, so a test could otherwise reach `api.openai.com` and still pass.
+
+**Browser tests (Playwright, fresh `ara-rag-e2e` stack):**
+- The first run had 9 passing and 3 failing. All three could not highlight the cited passage: "Showing page 1. The cited passage could not be highlighted."
+- Cause: stored chunks are layout Markdown since ARA-071, so a short chunk such as `# Traceable Research Systems Ada Researcher` never matched the PDF text layer.
+- Fix (`422ebb5`): the reader converts the passage once with the GFM parser react-markdown already uses. The hover preview shows plain text, and the source dialog renders headings and tables. Red: `expected [] to deeply equal [0, 1, 2]`. A rerun failed E2E-02 only because the first run had saved the fixture paper. After the documented `down --volumes` reset of the test project, 12 of 12 passed.
+
+**Live verification (`ara-rag-live`: real OpenAI key, retained Phase 0 weights, the Attention and RAG papers):**
+- Upload, layout parsing and the OpenAI index worked. Attention gave 36 passages in 25 sections; RAG gave 61 passages in 35 sections.
+- A Luna question about the 1/√d_k scaling answered in 3.4 s (planning, retrieving, reranking, generating). It used 16 of 32 passages with Decisions reranking and cited §3.2.1 on page 4. In a browser, the reader highlighted the exact supporting sentence.
+- Switching Attention to Qwen3 Embedding 4B kept the OpenAI index serving, with the note "until Qwen3 Embedding 4B is ready (44%)". The local index took about 1.5 min per 16 passages. Afterwards a BLEU question cited §5.2 and the abstract correctly.
+- A 20-turn Luna conversation built summary versions 1–3 at turns 10, 15 and 19, recalled 2–3 turns per answer, and stayed at 16–20k input tokens under the 64k cap.
+- IFM 7B answered within 2,956–3,046 of its 3,072 input tokens. After the fourth local turn, `compact_chat` wrote summary v1 with the 7B itself.
+- A `down`/`up` restart without removing volumes left indexes, chats, summaries, citations and settings identical, and the original PDF still downloaded.
+
+**Defects found live and fixed test-first:**
+1. **NUL in a formula (`bfe1287`).** RAG ingest failed permanently with `JOB_EXECUTION_FAILED`. The safe log omitted the exception; reproducing in the worker showed `psycopg.DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`. TeX math-extension fonts encode big delimiters at code points 0 and 1, and formula filling copied the clipped text. Control characters now become U+FFFD, as layout Markdown already renders them, which keeps box offsets valid. The first red test put the characters in body text and failed for the wrong reason, because layout already replaced them there. The corrected test puts them inside a formula.
+2. **Misleading context total (`d9155cd`).** Answer details read "5,665 of 1,050,000 tokens" for a request capped at 64,000. `ContextUsage` gained an additive `input_budget`.
+3. **Planner lost the summary (`c869233`).** Turn 20 ("Remind me which number I said I care most about") was rewritten as "Which numbered section or contribution…", so retrieval missed page 4 and the answer was insufficient, although summary v3 held "21 million passages". The planner kept only the newest 1,500 tokens, which two long answers filled. The summary head now has its own share, and every recent question stays whole. A first fix kept the summary but dropped the newest question. In the live replay, the planner searched "RAG 21 million Wikipedia passages" and the answer cited pages 4 and 18–19.
+4. **Local answer without citations (`986e6a7`).** IFM 7B with reasoning None answered correctly but cited nothing, so it failed with `UNGROUNDED_OUTPUT`. At Medium it cited six passages. The rule is now restated right before the question. The same None question then cited four passages.
+
+**Observations not changed on this branch:**
+- The spike volume's IFM 3.7B and 7B failed `MODEL_DIGEST_MISMATCH`. The 7B manifest files in the spike and validation volumes have the same SHA-256 (`1de372ce…`), but Ollama lists them as `1de372ce1566` and `3a4c598f85cc` respectively. This belongs to managed-ollama identity checks. The local check used the preserved validation volume, mounted read-only.
+- Local planning adds 11–20 s, and local answers took 97–123 s at the 3,072-token budget, consistent with Phase 0 prefill rates.
+
+**Lead process errors:**
+- An unquoted variable holding compose flags was passed as one argument. Compose rejected the project name and changed nothing.
+- The lead pulled `alpine:latest` for a one-off file hash without asking and removed it afterwards.
+- The README fixture command the lead first wrote (`unittest tests/fixtures/…py`) errors on sibling imports. Running it caught this, and the README now uses `discover`.
+
+**Totals at `986e6a7`:**
+- Backend: 760 passed, Ruff clean.
+- Frontend: check (449 tests) and build pass.
+- Browser: 12/12 on a fresh stack.
+- Fixtures: the fixture suite passes with PyMuPDF 1.28.2.
+
+### Whole-branch review and fixes (ARA-071–ARA-081)
+
+A read-only reviewer read `6b53fd1..947a0e9` in seven passes. It found no Critical issues and 8 Important ones. Replay safety, job fencing, document isolation, blue/green swaps and token budgets held up.
+
+**Triage:**
+- Two findings were already handled after the reviewed snapshot: stale tracking and contract text (#8), and the misleading context total (a minor item, `d9155cd`).
+- The lead checked #2 against live data before acting. It was real but milder than stated: local compaction first fired after turn 4, not turn 2, and held the slot for 29 s.
+- On #6, the 7B with the Qwen3 8B embedder exceeding 12 GiB, the user chose: "Don't put a note in settings. In README we can explain the limit. Also create an issue ticket for future reference if we ever fix it." The README now gives the measured figures, and ARA-080 tracks memory-aware loading (`1dc6063`).
+
+**Fixes by three parallel agents** (TDD per fix; red and green outputs are in their commits):
+- **Retrieval** (`feat/rag-fixret`, 766 passed):
+  - the reranker judges passages against the standalone question (`a75f6b4`);
+  - searches wait up to 20 s for the local retrieval slot while background embedding yields in batches of 2 (4B) or 1 (8B) (`d29850e`);
+  - local reranking has a 45 s overall deadline (`1650758`).
+- **Index** (`feat/rag-fixidx`, 772 passed, frontend 451):
+  - indexes follow default changes, embedder verification and a newly added key (`18da544`);
+  - documents from before migration 0006 are re-ingested at API startup, and questions about them say the paper "is being prepared" (`4ac4d7d`);
+  - citation previews fall back to the saved excerpt (`a58db13`);
+  - a layout timeout now falls back to the legacy parser (`86632a8`).
+- **Memory** (`feat/rag-fixmem`, 778 passed, frontend 452):
+  - local compaction waits until the chat is idle (`3f04f5b`);
+  - questions wait up to 60 s for background local work, with a `waiting` stage, instead of 429 (`691dd9c`, `3404002`);
+  - the hosted memory model is a stored setting with a Settings choice (`e37dca9`, `4912672`);
+  - the summary and recall are sent as user context (`4bcb136`);
+  - an over-long summary keeps its head (`cbc08bf`);
+  - heading-only summaries fail (`4cad3d6`).
+
+**Integration:**
+- Merging retrieval and index gave 1 failed and 777 passed. The local rerank deadline test found a leftover `ModelUse` row, although it passed 3 of 3 when run alone.
+- The cause: a cancel that lands after a lease row commits, but before the token returns, loses the token. A deterministic test reproduced it. Admission attempts are now shielded, and late leases released (`7b29ae5`, 779 passed).
+- The memory merge conflicted in `repositories/local_models.py`, where both branches had added a function at the same spot; the lead kept both (797 passed).
+
+**Live local-memory checks (`ara-rag-live`, IFM 7B):**
+- The idle deferral worked. A question sent right after an answer got no 429 and pushed the queued summary back.
+- The deferred summary then failed with `MODEL_INCOMPLETE`. The lead first doubled the allowance and phrased the target in words (`f13027b`); the live retry failed again. Replaying the exact request showed the model ignores length requests: asked for 217 words, it wrote 314 and stopped at 580 tokens. Local compaction now keeps a cut summary's complete lines.
+- The lead's next live check was misread. Its "failed" row was the old job: the new question had queued nothing. A diagnostic in the API container showed the boundary pinned at the first unsummarized turn, and the failed job counting as covering that range. The lead's first explanation (that the boundary moves every second turn) was wrong. A failed range is now retried, at most 3 times, and never after an unknown paid outcome.
+- The retry stored v2 byte-identical to v1 (same MD5): the 7B had copied v1 and was cut inside its first new bullet. The whole-line rule the lead had just added caused this silent loss. A cut summary must now add a line, or it fails with `COMPACTION_TRUNCATED` (`671bb9d`).
+- The user chose to ticket better local summaries (ARA-081). Hosted memory is unaffected.
+
+**Lead process errors:** the misread job row and wrong boundary theory above, the silent-loss rule, and a polling loop that compared against a variable it never set (noticed before its result was used).
+
+**Totals at `671bb9d`:** backend 802 passed with Ruff clean; frontend check (454 tests) and build pass; browser 12/12 on a freshly reset stack.
+
+**Shared image tags:**
+- `compose.yaml` fixes the image names `ara-backend:development` and `ara-frontend:development`, so every `--build` from any branch or worktree retags them.
+- This session's isolated test, live and browser stacks, and the fix agents' test runs, moved both tags to `feat/rag-context` builds. The fix-memory agent reported it.
+- The user's running `ara` and `ara-feature` containers kept their own images (backend `531b8ddc2327` and `57d21f50fc1f`), and the two stacks already ran different images under one tag before this session.
+- A recreate without `--build` would pick up the moved tags. The documented `docker compose up --build` rebuilds from the stack's own checkout.
+- The user chose to leave the tags as they are, without a ticket.

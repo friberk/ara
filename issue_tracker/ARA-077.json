@@ -1,0 +1,56 @@
+{
+  "id": "ARA-077",
+  "title": "Conversation memory: running summary, follow-up rewriting and recall",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Keep recent turns verbatim, fold older turns into a persisted, versioned, incrementally updated summary built by a background job, rewrite follow-up questions into standalone search queries, and recall relevant earlier turns by embedding. Local chats compact with their local model; hosted chats with Luna. Original messages are never altered.",
+  "dependencies": [
+    "ARA-072",
+    "ARA-076"
+  ],
+  "acceptance_criteria": [
+    "Given a 40-turn conversation, when asking about a fact from turn 2, then the answer uses the summary or recalled turn and stays within budget.",
+    "Given a completed turn over the threshold, when compaction runs twice for the same range, then exactly one summary version is produced.",
+    "Given a local chat, when compaction runs, then no hosted model is called.",
+    "Given a follow-up such as 'how did it compare to the baselines?', when retrieving, then the persisted standalone query names the subject and the retrieved evidence matches it.",
+    "Given the planner fails, when a question is asked, then the deterministic fallback query is used and the answer still completes."
+  ],
+  "test_cases": [
+    "Compaction job idempotency on real Postgres; planner structured-output fixtures; recall retrieval tests; long-conversation fixture."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/memory.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/jobs"
+  ],
+  "commits": [
+    "8f31410",
+    "78a2436",
+    "8728495",
+    "d25c928",
+    "0c48f5a",
+    "2bcc6b8",
+    "5f99cf4",
+    "ec98f52",
+    "0171246",
+    "46e9b4a",
+    "c92f3db",
+    "f6e12a9",
+    "c7e7c2d",
+    "bb81e9b",
+    "fb5bf0f",
+    "c869233",
+    "80a4a69",
+    "4cad3d6",
+    "e157613",
+    "e37dca9",
+    "3f04f5b",
+    "691dd9c",
+    "f13027b",
+    "671bb9d"
+  ],
+  "pull_requests": [],
+  "verification": "Agent G (feat/rag-memory) built the structured query planner, versioned running summaries (compact_chat) and turn recall, TDD per task.\nTests: test_query_planner.py (17 tests, including first turn without a call, fallback, local planning without hosted calls, and the summary head surviving long answers); test_compaction_integration.py (idempotent ranges, stale jobs skip without a call, local chats never use a hosted model).\nLive: a 20-turn Luna chat built summary versions 1-3 and recalled 2-3 turns per answer. The final question lost the user's goal because the planner kept only the newest 1,500 tokens; c869233 gives the summary head its own share and keeps every recent question (red: the prompt held only long-answer text). The replay cited pages 4 and 18-19. A local IFM 7B chat compacted with the 7B itself (summary v1, 6 of 8 messages).\nFinal: backend 760 passed with Ruff clean. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.\nReview and live checks: idle-time local compaction (3f04f5b); bounded wait for background local work (691dd9c); stored memory_model setting (e37dca9); heading-only summaries fail (4cad3d6); cut local summaries keep whole lines (f13027b); failed ranges retry at most three times and a cut summary that adds nothing fails COMPACTION_TRUNCATED (671bb9d). Live: deferral and waiting worked on IFM 7B; better local summaries are tracked in ARA-081. Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
+  "updated_at": "2026-10-09"
+}

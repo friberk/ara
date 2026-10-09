@@ -1,0 +1,44 @@
+{
+  "id": "ARA-076",
+  "title": "Model context registry, real token counting and budget allocation",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Replace byte-based estimates with real token counts (tiktoken for hosted models, calibrated runtime ratios for local models), give every model a context window, output and thinking allowance and working cap, and allocate budgets across instructions, evidence, summary, recent turns and recall. Send real multi-turn message lists through both providers, with a stable prefix that benefits prompt caching.",
+  "dependencies": [
+    "ARA-070"
+  ],
+  "acceptance_criteria": [
+    "Given an 8k local model and a hosted model, when a prompt is assembled, then its counted tokens never exceed the model's input budget.",
+    "Given the same question, when assembled under the new counter, then substantially more evidence fits than under byte counting.",
+    "Given a local model with thinking enabled, when generating, then thinking cannot consume the answer's allowance.",
+    "Given hosted and local providers, when a chat request is built, then both receive a role-separated message list with prior assistant citations rendered as page references."
+  ],
+  "test_cases": [
+    "TokenCounter accuracy against reference counts; allocator property tests; provider request-shape tests for Responses and Ollama chat."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/tokens.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/integrations/ollama_llm.py",
+    "src/backend/app/services/chat.py"
+  ],
+  "commits": [
+    "dc5ed01",
+    "8ed5a7f",
+    "cbcaeca",
+    "dd3f379",
+    "780a3ee",
+    "8f31410",
+    "779a749",
+    "b22b853",
+    "4583e78",
+    "7c34a9d",
+    "d9155cd",
+    "cbc08bf",
+    "4bcb136"
+  ],
+  "pull_requests": [],
+  "verification": "Agent C (feat/rag-context-budget), TDD per task.\n- Tokens: 6 failed before.\n- Registry: 16 failed / 1 passed before.\n- Chat and metadata in tokens: assert 4 == 10 before.\n- Summaries: 3 unit and 13 integration failures before.\n- Context assembly: 56 failed before.\n- Providers: 10 failed before.\n- 3,072 local cap: assert 5632 == 3072 before.\nByte-based tests were deliberately migrated to token semantics; the agent listed each one. Agent full run: 513 passed. The lead added compose passthrough for the budget settings.\nLive 2026-10-09: ContextUsage gained input_budget so answers report use against the cap that applied (d9155cd; red: AttributeError for input_budget).\nReview: the summary and recalled turns are user-role context, not instructions (4bcb136); an over-long summary keeps its head (cbc08bf). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
+  "updated_at": "2026-10-09"
+}

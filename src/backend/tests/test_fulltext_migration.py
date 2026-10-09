@@ -4,12 +4,16 @@ import asyncio
 import os
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-async def test_fulltext_migration_preserves_local_model_installation(resources):
+@pytest.mark.parametrize(
+    "starting_revision", ["0005_local_models", "0006_fulltext", "0006_retrieval_context"]
+)
+async def test_fulltext_migration_preserves_local_model_installation(resources, starting_revision):
     """Given the previous schema and a paused model, then upgrade preserves user intent."""
     name = f"ara019_migration_test_{uuid4().hex[:12]}"
     admin = create_async_engine(
@@ -41,7 +45,7 @@ async def test_fulltext_migration_preserves_local_model_installation(resources):
         assert process.returncode == 0, stderr.decode()
 
     try:
-        await migrate("0005_local_models")
+        await migrate(starting_revision)
         async with engine.begin() as connection:
             await connection.execute(
                 text(
@@ -58,6 +62,11 @@ async def test_fulltext_migration_preserves_local_model_installation(resources):
                 lambda conn: [item["name"] for item in inspect(conn).get_columns("documents")]
             )
             assert "acquisition" in columns
+            assert {"parser", "chunk_set"}.issubset(columns)
+            assert "retrieval_indexes" in tables
+            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+                "0007_feature_merge"
+            )
             retained = (
                 await connection.execute(
                     text(

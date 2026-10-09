@@ -1,0 +1,44 @@
+{
+  "id": "ARA-071",
+  "title": "Structure-aware PDF parsing and chunking with PyMuPDF4LLM and LlamaIndex",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Replace flat page text and fixed character windows with PyMuPDF4LLM (layout model on) through its documented LlamaIndex reader, LlamaMarkdownReader, run in the existing isolated child process. Chunk with LlamaIndex MarkdownNodeParser and SentenceSplitter (~512 tokens), carrying the section heading path across page boundaries, keeping page ranges, table and reference kinds, and a contextualized text for embedding and keyword search. Re-ingest existing documents; backward compatibility is not required.",
+  "dependencies": [
+    "ARA-070"
+  ],
+  "acceptance_criteria": [
+    "Given a structured fixture paper, when ingestion finishes, then sections, heading paths, page ranges and a table chunk are persisted and the references section is excluded from default retrieval.",
+    "Given a section that continues onto the next page, when chunks are built, then the continuation keeps the section's heading path.",
+    "Given the layout model fails on a document, when ingestion retries without layout, then the document still becomes ready with page-level provenance.",
+    "Given an encrypted, oversized or text-less PDF, when ingestion runs, then the existing safe error codes are returned."
+  ],
+  "test_cases": [
+    "Child-process parser unit tests with fixture PDFs; ingestion integration test; fenced job and duplicate-delivery regression; reindex command test."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/jobs/pdf_parser.py",
+    "src/backend/app/services/ingestion.py",
+    "src/backend/pyproject.toml",
+    "src/backend/tests"
+  ],
+  "commits": [
+    "4758972",
+    "6054ff8",
+    "f2123ce",
+    "b7cd44e",
+    "380f2fd",
+    "e7c3a24",
+    "0c599ea",
+    "ffe9421",
+    "422ebb5",
+    "bfe1287",
+    "80a4a69",
+    "4ac4d7d",
+    "86632a8"
+  ],
+  "pull_requests": [],
+  "verification": "Agent A (feat/rag-ingest), TDD per task.\n- Parsing uses layout to_markdown with tuned child threads, formula boxes and a legacy fallback.\n- One whole-paper LlamaIndex Document with MarkdownNodeParser and SentenceSplitter(512/64), plus page and box offset mapping.\n- Structured persistence and the hook call; reindex; chunk-source provenance contract (red from the old schema: missing fields).\nAgent full run: 454 passed. Lead integration: the chunker raised ValueError on '<|endoftext|>' in paper text (red reproduced), fixed by using the shared TiktokenCounter with disallowed_special=(). Chunking tests 15 passed; merged suite 601 passed.\nLive 2026-10-09: the RAG paper (arXiv 2005.11401) failed ingest because a display formula's clipped text carried NUL, which PostgreSQL text rejects. bfe1287 maps control characters to U+FFFD in page text, Markdown and metadata (red: psycopg.DataError in the ingest test); the paper then ingested with 61 passages in 35 sections.\nReview: documents from before migration 0006 are re-ingested at API startup and questions say the paper is being prepared (4ac4d7d); a layout timeout falls back to the legacy parser (86632a8). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
+  "updated_at": "2026-10-09"
+}

@@ -12,11 +12,13 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
-async def enqueue(session, *, kind: str, payload: dict) -> BackgroundJob:
-    job = BackgroundJob(kind=kind, payload=payload, state="queued", generation=1)
+async def enqueue(session, *, kind: str, payload: dict, delay_seconds: float = 0) -> BackgroundJob:
+    # Dispatch and claim both wait for `available_at`, which defaults to the database's now.
+    later = {"available_at": now() + timedelta(seconds=delay_seconds)} if delay_seconds else {}
+    job = BackgroundJob(kind=kind, payload=payload, state="queued", generation=1, **later)
     session.add(job)
     await session.flush()
-    session.add(JobOutbox(job_id=job.id, generation=job.generation))
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, **later))
     await session.flush()
     return job
 
@@ -125,6 +127,40 @@ def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> Non
     session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
 
 
+def continue_locked(
+    session, job: BackgroundJob, *, stage: str, progress: int, delay_seconds: float = 0
+) -> None:
+    """Yield a long job's lease to the next generation without spending a retry attempt."""
+    job.lease_token = job.lease_expires_at = None
+    job.state, job.stage, job.progress = "queued", stage, progress
+    job.attempts = 0
+    job.generation += 1
+    job.updated_at = now()
+    job.available_at = job.updated_at + timedelta(seconds=delay_seconds)
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
+
+
+async def mark_terminal_index(session, job: BackgroundJob) -> None:
+    """An embed job out of attempts leaves its index failed, keeping the provider's error."""
+    if job.kind != "embed" or job.state != "failed":
+        return
+    from app.models.retrieval import RetrievalIndex
+
+    index_id = payload_uuid(job.payload, "index_id")
+    if index_id is None:
+        return
+    await session.execute(
+        update(RetrievalIndex)
+        .where(RetrievalIndex.id == index_id, RetrievalIndex.job_id == job.id)
+        .values(
+            state="failed",
+            error_code=func.coalesce(RetrievalIndex.error_code, job.error_code),
+            error_message=func.coalesce(RetrievalIndex.error_message, job.error_message),
+            updated_at=func.now(),
+        )
+    )
+
+
 async def mark_terminal_document(session, job: BackgroundJob) -> None:
     if job.kind != "ingest" or job.state != "failed":
         return
@@ -158,6 +194,7 @@ async def fail(sessions, job_id, generation, token, *, permanent: bool = False) 
         else:
             retry_locked(session, job, code="JOB_EXECUTION_FAILED", message="Job execution failed.")
         await mark_terminal_document(session, job)
+        await mark_terminal_index(session, job)
         return True
 
 
@@ -190,6 +227,7 @@ async def recover(sessions) -> None:
                     )
                     installation.updated_at = now()
             await mark_terminal_document(session, job)
+            await mark_terminal_index(session, job)
         # Delivered events can be lost in Redis or remain unclaimed after a worker crash.
         # Redelivery preserves generation and attempts; an atomic claim defeats duplicates.
         await session.execute(
@@ -212,7 +250,7 @@ def payload_uuid(payload: dict, key: str) -> UUID | None:
 
 
 async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
-    """Link summary jobs through their payload paper and ingest jobs through their document."""
+    """Link summary and embed jobs through their payload paper, ingest jobs via their document."""
     from app.models.research import Document, Paper
 
     documents = {payload_uuid(job.payload, "document_id") for job in jobs if job.kind == "ingest"}
@@ -230,7 +268,7 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     )
 
     def linked_paper(job: BackgroundJob) -> UUID | None:
-        if job.kind in {"summary", "fulltext"}:
+        if job.kind in {"summary", "fulltext", "embed"}:
             return payload_uuid(job.payload, "paper_id")
         if job.kind == "ingest":
             return document_papers.get(payload_uuid(job.payload, "document_id"))

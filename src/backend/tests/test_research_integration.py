@@ -94,15 +94,18 @@ async def test_pdf_upload_child_extraction_original_download_and_paper_isolated_
             and downloaded.headers["content-type"] == "application/pdf"
         )
         async with resources.sessions() as session:
+            # Section-aware chunks may span pages: page is the first, page_end the last.
             chunk = await session.scalar(
                 select(DocumentChunk).where(
-                    DocumentChunk.document_id == references["document_id"], DocumentChunk.page == 2
+                    DocumentChunk.document_id == references["document_id"],
+                    DocumentChunk.text.contains("87 percent"),
                 )
             )
         citation = await client.get(
             f"/api/v1/documents/{references['document_id']}/chunks/{chunk.id}"
         )
-        assert citation.json()["page"] == 2 and "87 percent" in citation.json()["excerpt"]
+        assert citation.json()["page"] <= 2 and citation.json()["page_end"] == 2
+        assert "87 percent" in citation.json()["excerpt"]
         wrong_document = await client.get(f"/api/v1/documents/{uuid4()}/chunks/{chunk.id}")
         assert wrong_document.status_code == 404
         completed = (await client.get(f"/api/v1/jobs/{job_id}")).json()
@@ -583,9 +586,10 @@ async def test_citation_excerpt_preserves_late_evidence_and_denies_another_docum
             page=7,
             text=text,
             ordinal=0,
-            char_start=0,
-            char_end=len(text),
-            token_estimate=len(text),
+            chunk_set="test",
+            page_end=7,
+            context_text=text,
+            token_count=len(text),
         )
         session.add(chunk)
         await session.flush()

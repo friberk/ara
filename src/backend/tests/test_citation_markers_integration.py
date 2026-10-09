@@ -44,31 +44,35 @@ async def generation_fixture(resources, output):
     return requests
 
 
-async def chat_output(resources, assistant, prompt, chunks, replay=False):
+async def chat_output(resources, prepared):
     request = SimpleNamespace(is_disconnected=lambda: asyncio.sleep(0, result=False))
-    return "".join(
-        [
-            frame
-            async for frame in chat.stream_answer(
-                resources, request, assistant, prompt, chunks, replay
-            )
-        ]
-    )
+    return "".join([frame async for frame in chat.stream_answer(resources, request, prepared)])
+
+
+async def first_chunk(resources, document_id):
+    """The opening passage, which answers questions whose words match no passage as [S1]."""
+    async with resources.sessions() as session:
+        return await session.scalar(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .order_by(DocumentChunk.ordinal)
+        )
 
 
 async def test_given_unicode_cited_answer_when_streaming_then_completion_and_storage_are_canonical(
     resources,
 ):
     spec, _ = await local_fixture(resources)
-    _, _, chat_id = await paper_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
     body = ChatInput(
         model=spec.key, reasoning_effort="default", content="What dataset?", request_id=uuid4()
     )
-    assistant, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
-    raw = f"The dataset contains twelve examples 【source:{chunks[0].id}】."
-    canonical = f"The dataset contains twelve examples [source:{chunks[0].id}]."
+    prepared = await chat.prepare(resources, chat_id, body)
+    chunk = await first_chunk(resources, document_id)
+    raw = "The dataset contains twelve examples 【S1】."
+    canonical = f"The dataset contains twelve examples [source:{chunk.id}]."
     requests = await generation_fixture(resources, lambda body: raw)
-    frames = await chat_output(resources, assistant, prompt, chunks)
+    frames = await chat_output(resources, prepared)
     assert "message.failed" not in frames
     completed = next(
         frame for frame in frames.split("\n\n") if frame.startswith("event: message.completed")
@@ -79,12 +83,13 @@ async def test_given_unicode_cited_answer_when_streaming_then_completion_and_sto
         for frame in frames.split("\n\n")
         if frame.startswith("event: message.delta")
     ]
-    assert "".join(deltas) == raw
+    # Handles are mapped while streaming, so clients never see the short form.
+    assert "".join(deltas) == canonical
     async with resources.sessions() as session:
-        saved = await session.get(ChatMessage, assistant.id)
+        saved = await session.get(ChatMessage, prepared.assistant.id)
         assert saved.state == "completed" and saved.content == canonical
-        assert [item["chunk_id"] for item in saved.citations] == [str(chunks[0].id)]
-        assert saved.citations[0]["page"] == chunks[0].page
+        assert [item["chunk_id"] for item in saved.citations] == [str(chunk.id)]
+        assert saved.citations[0]["page"] == chunk.page
     assert len(requests) == 1
 
 
@@ -94,29 +99,26 @@ async def test_given_bad_unicode_marker_with_known_ascii_when_streaming_then_mes
     bad_kind,
 ):
     spec, _ = await local_fixture(resources)
-    _, _, chat_id = await paper_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
     _, foreign_document, _ = await paper_fixture(resources)
-    async with resources.sessions() as session:
-        foreign = await session.scalar(
-            select(DocumentChunk).where(DocumentChunk.document_id == foreign_document)
-        )
-        foreign_id = foreign.id
+    foreign_id = (await first_chunk(resources, foreign_document)).id
+    known = (await first_chunk(resources, document_id)).id
     body = ChatInput(
         model=spec.key, reasoning_effort="default", content="What dataset?", request_id=uuid4()
     )
-    assistant, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
+    prepared = await chat.prepare(resources, chat_id, body)
     bad = {
         "unknown": str(uuid4()),
         "foreign": str(foreign_id),
         "malformed": "not-a-uuid",
-        "embedded_ascii": f"{chunks[0].id}]extra",
+        "embedded_ascii": f"{known}]extra",
     }[bad_kind]
-    raw = f"Known [source:{chunks[0].id}] and unsupported 【source:{bad}】."
+    raw = f"Known [S1] and unsupported 【source:{bad}】."
     await generation_fixture(resources, lambda body: raw)
-    frames = await chat_output(resources, assistant, prompt, chunks)
+    frames = await chat_output(resources, prepared)
     assert "UNGROUNDED_OUTPUT" in frames and "message.completed" not in frames
     async with resources.sessions() as session:
-        saved = await session.get(ChatMessage, assistant.id)
+        saved = await session.get(ChatMessage, prepared.assistant.id)
         assert saved.state == "failed" and saved.citations == []
 
 
@@ -124,27 +126,34 @@ async def test_given_old_failed_unicode_answer_when_replayed_then_failure_is_not
     resources,
 ):
     spec, _ = await local_fixture(resources)
-    _, _, chat_id = await paper_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
     body = ChatInput(
         model=spec.key, reasoning_effort="default", content="What dataset?", request_id=uuid4()
     )
-    assistant, _, chunks, _ = await chat.prepare(resources, chat_id, body)
-    raw = f"Twelve examples 【source:{chunks[0].id}】."
-    await chat.save(resources, assistant.id, raw, state="failed")
+    prepared = await chat.prepare(resources, chat_id, body)
+    raw = f"Twelve examples 【source:{(await first_chunk(resources, document_id)).id}】."
+    await chat.save(resources, prepared.assistant.id, raw, state="failed")
     requests = await generation_fixture(
         resources, lambda body: pytest.fail("failed replay reached inference")
     )
-    replay, prompt, selected, reused = await chat.prepare(resources, chat_id, body)
-    assert reused and replay.id == assistant.id
-    frames = await chat_output(resources, replay, prompt, selected, reused)
+    replay = await chat.prepare(resources, chat_id, body)
+    assert replay.replay and replay.assistant.id == prepared.assistant.id
+    frames = await chat_output(resources, replay)
     assert "PREVIOUS_GENERATION_INTERRUPTED" in frames and "message.completed" not in frames
     async with resources.sessions() as session:
-        saved = await session.get(ChatMessage, assistant.id)
+        saved = await session.get(ChatMessage, prepared.assistant.id)
         assert saved.state == "failed" and saved.content == raw and saved.citations == []
     assert requests == []
 
 
-@pytest.mark.parametrize("map_size", [100, 3000])
+def cited(prompt, wrapper="[{}]"):
+    """Cite every handle a summary prompt shows, else every source marker it carries."""
+    handles = list(dict.fromkeys(re.findall(r"\[(S\d+)\]", prompt)))
+    sources = re.findall(r"\[(source:[0-9a-f-]{36})\]", prompt)
+    return " ".join(wrapper.format(marker) for marker in handles or dict.fromkeys(sources))
+
+
+@pytest.mark.parametrize("map_size", [100, 2000])
 async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_are_canonical(
     resources,
     monkeypatch,
@@ -164,16 +173,11 @@ async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_
 
     def output(body):
         prompt = body["messages"][-1]["content"]
-        identifiers = list(dict.fromkeys(re.findall(r"\[source:([0-9a-f-]{36})\]", prompt)))
-        assert identifiers
-        prefix = "Supported result " + " ".join(
-            f"【source:{identifier}】" for identifier in identifiers
-        )
-        return (
-            prefix + "x" * max(0, map_size - len(prefix))
-            if prompt.startswith("Summarize")
-            else prefix
-        )
+        markers = cited(prompt, "【{}】")
+        assert markers
+        prefix = "Supported result " + markers
+        # Real tokens: 2,000-word sections exceed the reduction share and need compression.
+        return prefix + " word" * map_size if prompt.startswith("Summarize") else prefix
 
     requests = await generation_fixture(resources, output)
     await summarization.run_summary_job(resources, identifier, 1, token, payload)
@@ -184,7 +188,7 @@ async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_
         assert "【source:" not in summary.content and "[source:" in summary.content
         assert len(summary.citations) == 2
     assert len(requests) >= 3
-    if map_size == 3000:
+    if map_size == 2000:
         assert any(body["messages"][-1]["content"].startswith("Compress") for body in requests)
     for snapshot in snapshots:
         contents = [
@@ -216,8 +220,7 @@ async def test_given_bad_unicode_summary_source_when_generating_then_no_bad_chec
 
     def output(body):
         prompt = body["messages"][-1]["content"]
-        ids = list(dict.fromkeys(re.findall(r"\[source:([0-9a-f-]{36})\]", prompt)))
-        valid = "Supported " + " ".join(f"[source:{id}]" for id in ids)
+        valid = "Supported " + cited(prompt)
         is_bad = prompt.startswith("Summarize") if phase == "map" else prompt.startswith("Combine")
         return valid + f" unsupported 【source:{bad}】" if is_bad else valid
 

@@ -36,7 +36,7 @@ def router(development: bool) -> APIRouter:
             statement = statement.where(
                 or_(
                     and_(
-                        BackgroundJob.kind.in_(["summary", "fulltext"]),
+                        BackgroundJob.kind.in_(["summary", "fulltext", "embed"]),
                         BackgroundJob.payload["paper_id"].astext == str(paper_id),
                     ),
                     and_(

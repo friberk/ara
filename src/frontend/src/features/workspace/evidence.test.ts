@@ -110,4 +110,24 @@ describe('findEvidence', () => {
   test('Given an excerpt that is not on the page, Then nothing is marked', () => {
     expect(findEvidence(page, 'The measured answer accuracy in this synthetic experiment is 86 percent.', 'Accuracy is 86 percent.')).toEqual({ strong: [], context: [] })
   })
+
+  // Stored chunks are layout Markdown since ARA-071; the text layer never prints its markup.
+  const fixturePage = lines('Traceable Research Systems', 'Ada Researcher', '2024', '', 'Abstract', 'A synthetic evaluation of a retrieval-first research assistant using the Orion-12 dataset.')
+
+  test('Given a short Markdown heading chunk, Then its printed lines are strong', () => {
+    expect(findEvidence(fixturePage, '# Traceable Research Systems Ada Researcher\n\n2024').strong.map((range) => range.item)).toEqual([0, 1, 2])
+  })
+
+  test('Given a Markdown chunk and a claim, Then the supporting sentence is strong and its heading is context', () => {
+    const markdown = '# **Abstract**\n\nA synthetic evaluation of a _retrieval-first_ research assistant using the Orion-12 dataset.'
+    expect(findEvidence(fixturePage, markdown, 'It evaluates a retrieval-first assistant on the Orion-12 dataset.')).toEqual({
+      strong: [whole(5, fixturePage)],
+      context: [4],
+    })
+  })
+
+  test('Given a Markdown table chunk, Then its cells are found without the pipes and separator row', () => {
+    const cells = lines('Model', 'Recall@10', 'BM25', '0.61')
+    expect(findEvidence(cells, '|Model|Recall@10|\n|---|---|\n|BM25|0.61|').strong.map((range) => range.item)).toEqual([0, 1, 2, 3])
+  })
 })

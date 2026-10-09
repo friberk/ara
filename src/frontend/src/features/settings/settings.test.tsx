@@ -4,7 +4,7 @@ import type { Model } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { queryKeys } from '@/lib/query-keys'
 
-const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
+const luna = { kind: 'chat' as const, key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const terra = { ...luna, key: 'gpt-5.6-terra', model_id: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', status: 'configured', reasoning_efforts: ['none', 'low', 'medium', 'high'], supports_structured_output: false }
 const unavailable = { ...luna, key: 'unavailable-exact', model_id: 'unavailable-exact', display_name: 'Unavailable model', status: 'unavailable', reasoning_efforts: [], supports_streaming: false, supports_structured_output: false }
 afterEach(() => vi.unstubAllGlobals())
@@ -130,4 +130,54 @@ test('Given hosted Max switches to native High, When the native preset changes, 
   await client.invalidateQueries({ queryKey: queryKeys.models })
   await screen.findByRole('radio', { name: 'Updated native model' })
   expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('aria-checked', 'true')
+})
+
+test('Given local chat, search and ranking models, Then Default model lists chat models only and Local models labels the other kinds', async () => {
+  const weights = { state: 'ready', operation: null, weights_present: true, quantization: 'Q4_K_M', download_bytes: 2500000000, completed_bytes: 2500000000, total_bytes: 2500000000, job_id: null, digest: null, updated_at: null, error: null }
+  const chat = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default'], installation: weights }
+  const search = { ...chat, kind: 'embedding', key: 'qwen3-embedding-4b', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B' }
+  const ranking = { ...chat, kind: 'reranker', key: 'qwen3-reranker', model_id: 'qwen3-reranker:0.6b', display_name: 'Qwen3 Reranker' }
+  mockApi({ 'GET /models': { items: [luna, search, chat, ranking] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  renderApp('/settings')
+  const models = await screen.findByRole('radiogroup', { name: 'Default model' })
+  await waitFor(() => expect(within(models).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([luna.key, chat.key]))
+  const local = screen.getByRole('region', { name: 'Local models' })
+  expect(within(within(local).getByRole('region', { name: 'Manage Qwen3 Embedding 4B' })).getByText('Search')).toBeVisible()
+  expect(within(within(local).getByRole('region', { name: 'Manage Qwen3 Reranker' })).getByText('Ranking')).toBeVisible()
+  const chatRow = within(local).getByRole('region', { name: 'Manage K2 Horizon 7B' })
+  expect(within(chatRow).queryByText('Search')).not.toBeInTheDocument()
+  expect(within(chatRow).queryByText('Ranking')).not.toBeInTheDocument()
+})
+
+const memoryLabel = 'Model for summaries and follow-up questions'
+
+test('Given hosted and local chat models, Then the summaries and follow-up model lists the hosted chat models with their availability', async () => {
+  const sol = { ...luna, key: 'gpt-5.6-sol', model_id: 'gpt-5.6-sol', display_name: 'GPT-5.6 Sol', status: 'unavailable', unavailable_reason: 'Not configured on the server' }
+  const local = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default'] }
+  const search = { ...local, kind: 'embedding', key: 'qwen3-embedding-4b', display_name: 'Qwen3 Embedding 4B' }
+  mockApi({ 'GET /models': { items: [luna, terra, sol, local, search] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default', memory_model: terra.key } })
+  renderApp('/settings')
+  const memory = await screen.findByRole('radiogroup', { name: memoryLabel })
+  await waitFor(() => expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Terra' })).toBeChecked())
+  // The server's catalog decides the choices; local chats keep their own model.
+  expect(within(memory).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([luna.key, terra.key, sol.key])
+  expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Sol' })).toBeDisabled()
+  expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Sol' })).toHaveAccessibleDescription(/Not configured on the server/)
+  expect(within(memory).getByText('Available')).toBeVisible()
+  expect(within(memory).getByText('Configured')).toBeVisible()
+  expect(screen.getByText(/Local chats use their own model/)).toBeVisible()
+})
+
+test('Given a saved summaries model, When another hosted model is chosen and saved, Then PUT sends it with the chat defaults', async () => {
+  const { calls } = mockApi({ 'GET /models': { items: [luna, terra] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low', memory_model: luna.key }, 'PUT /settings': { default_model: luna.key, reasoning_effort: 'low', memory_model: terra.key } })
+  const { user } = renderApp('/settings')
+  const save = await screen.findByRole('button', { name: 'Save defaults' })
+  const memory = await screen.findByRole('radiogroup', { name: memoryLabel })
+  await waitFor(() => expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked())
+  expect(save).toBeDisabled()
+  await user.click(within(memory).getByRole('radio', { name: 'GPT-5.6 Terra' }))
+  await user.click(save)
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: luna.key, reasoning_effort: 'low', memory_model: terra.key }))
+  expect(await screen.findByText('Model defaults saved.')).toBeVisible()
+  expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Terra' })).toBeChecked()
 })

@@ -8,6 +8,8 @@ from app.models.jobs import BackgroundJob, JobOutbox
 from app.repositories.jobs import now, recover
 
 logger = logging.getLogger(__name__)
+# Long CPU generation runs on its own lane, off the worker that ingests and embeds.
+LOCAL_GENERATION_KINDS = {"summary", "compact_chat"}
 
 
 async def dispatch_once(sessions, publish, *, model_publish=None, local_publish=None) -> None:
@@ -38,7 +40,9 @@ async def dispatch_once(sessions, publish, *, model_publish=None, local_publish=
                 if job.kind in {"model_download", "model_delete"} and model_publish:
                     publisher = model_publish
                 elif (
-                    job.kind == "summary" and local_spec(job.payload.get("model")) and local_publish
+                    job.kind in LOCAL_GENERATION_KINDS
+                    and local_spec(job.payload.get("model"))
+                    and local_publish
                 ):
                     publisher = local_publish
                 await asyncio.to_thread(publisher, str(event.job_id), event.generation)

@@ -4,7 +4,7 @@ import { json, mockApi } from '@/test/fetch-routes'
 import type { Model, ModelInstallation } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 
-const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
+const luna = { kind: 'chat' as const, key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const installation: ModelInstallation = { state: 'missing', weights_present: false, quantization: 'Q4_K_M', download_bytes: 5592218900, completed_bytes: 0, total_bytes: 5592218900, job_id: null, digest: null, updated_at: null, error: null }
 const local: Model = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'], context_window: 8192, unavailable_reason: 'Download weights in Settings to use this model.', unavailable_code: 'MODEL_WEIGHTS_MISSING', installation }
 const defaults = { default_model: luna.key, reasoning_effort: 'low' }

@@ -31,6 +31,7 @@ class Paper(Base):
     doi: Mapped[str | None] = mapped_column(String(300))
     normalized_doi: Mapped[str | None] = mapped_column(String(300), unique=True)
     active_document_id: Mapped[UUID | None]
+    retrieval_profile: Mapped[str | None] = mapped_column(String(40))
     metadata_provenance: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -75,6 +76,8 @@ class Document(Base):
     warnings: Mapped[list] = mapped_column(JSONB, default=list)
     extractor_version: Mapped[str | None] = mapped_column(String(80))
     acquisition: Mapped[dict | None] = mapped_column(JSONB)
+    parser: Mapped[str | None] = mapped_column(String(40))
+    chunk_set: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -91,20 +94,35 @@ class DocumentPage(Base):
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
     __table_args__ = (
-        UniqueConstraint("document_id", "ordinal", name="uq_document_chunk_ordinal"),
+        UniqueConstraint("document_id", "chunk_set", "ordinal", name="uq_document_chunk_ordinal"),
+        CheckConstraint("kind IN ('front_matter','text','table','references')", name="chunk_kind"),
         Index("ix_chunk_search", "search_vector", postgresql_using="gin"),
-        Index("ix_chunk_document", "document_id"),
+        Index("ix_chunk_document", "document_id", "chunk_set", "ordinal"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
-    page: Mapped[int]
-    text: Mapped[str] = mapped_column(Text)
+    chunk_set: Mapped[str] = mapped_column(String(80))
     ordinal: Mapped[int]
-    char_start: Mapped[int]
-    char_end: Mapped[int]
-    token_estimate: Mapped[int]
+    section_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("document_sections.id", ondelete="SET NULL")
+    )
+    section_path: Mapped[list] = mapped_column(JSONB, default=list)
+    heading: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(20), default="text")
+    page: Mapped[int]
+    page_end: Mapped[int]
+    text: Mapped[str] = mapped_column(Text)
+    context_text: Mapped[str] = mapped_column(Text)
+    bboxes: Mapped[list] = mapped_column(JSONB, default=list)
+    token_count: Mapped[int]
+    # Headings weigh more than body text in keyword search.
     search_vector: Mapped[str] = mapped_column(
-        TSVECTOR, Computed("to_tsvector('english', text)", persisted=True)
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('english', heading), 'A') || "
+            "setweight(to_tsvector('english', text), 'B')",
+            persisted=True,
+        ),
     )
 
 
@@ -144,6 +162,7 @@ class ChatMessage(Base):
         CheckConstraint(
             "state IN ('processing','completed','interrupted','failed')", name="message_state"
         ),
+        CheckConstraint("grounding IN ('supported','insufficient')", name="message_grounding"),
         Index(
             "uq_chat_request",
             "session_id",
@@ -171,6 +190,9 @@ class ChatMessage(Base):
     usage: Mapped[dict] = mapped_column(JSONB, default=dict)
     request_id: Mapped[UUID | None]
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retrieval: Mapped[dict] = mapped_column(JSONB, default=dict)
+    context: Mapped[dict] = mapped_column(JSONB, default=dict)
+    grounding: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -18,14 +18,8 @@ def test_given_requested_models_when_selecting_then_reasoning_none_is_explicit()
         assert validate_selection(model, "none").key == model
 
 
-def test_given_utf8_context_when_budgeting_then_bytes_are_conservative():
-    from app.integrations.llm import estimate_tokens
-
-    assert estimate_tokens("漢" * 100) >= 300
-
-
 def test_given_citations_when_model_invents_source_then_reject():
-    from app.services.retrieval import validate_citations
+    from support.citations import validate_citations
 
     chunk = SimpleNamespace(id=uuid4(), document_id=uuid4(), page=4, text="Supported text")
     with pytest.raises(ValueError, match="source"):
@@ -35,26 +29,93 @@ def test_given_citations_when_model_invents_source_then_reject():
     assert result[0].excerpt == "Supported text"
 
 
-def test_given_large_document_when_grouping_then_every_chunk_is_covered():
+def summary_passage(text, *, section="", page=1):
+    from app.rag.packing import Passage
+
+    return Passage(
+        handle="S1",
+        chunk_id=uuid4(),
+        document_id=uuid4(),
+        page=page,
+        page_end=page,
+        section=section,
+        kind="text",
+        text=text,
+    )
+
+
+def test_given_large_document_when_grouping_then_every_chunk_is_covered_in_real_tokens():
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.packing import render_evidence
     from app.services.summarization import batches
 
-    chunks = [SimpleNamespace(id=uuid4(), page=i + 1, text="x" * 7000) for i in range(12)]
-    groups = batches(chunks, budget=16000)
-    assert len(groups) > 1
-    assert [chunk.id for group in groups for chunk in group] == [chunk.id for chunk in chunks]
+    counter = TiktokenCounter("o200k_base")
+    # 35,000 bytes but about 7,000 tokens each: two share a 16,000-token batch.
+    passages = [summary_passage(" word" * 7000, page=i + 1) for i in range(12)]
+    groups = batches(passages, budget=16000, counter=counter)
+    assert [len(group) for group in groups] == [2] * 6
+    assert all(counter.count(render_evidence(group)) <= 16000 for group in groups)
+    assert [item.chunk_id for group in groups for item in group] == [
+        item.chunk_id for item in passages
+    ]
 
 
 def test_given_large_utf8_passage_when_local_batching_then_split_preserves_every_character():
-    from app.integrations.llm import estimate_tokens
-    from app.services.retrieval import passage
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.packing import render_evidence
     from app.services.summarization import batches
 
-    original = SimpleNamespace(id=uuid4(), document_id=uuid4(), page=7, text="漢字" * 1600)
-    groups = batches([original], budget=1000, split_oversize=True)
-    fragments = [chunk for group in groups for chunk in group]
-    assert "".join(chunk.text for chunk in fragments) == original.text
-    assert len(fragments) > 1 and all(chunk.id == original.id for chunk in fragments)
-    assert all(estimate_tokens(passage(chunk)) <= 1000 for chunk in fragments)
+    counter = TiktokenCounter("o200k_base", factor=1.05)
+    original = summary_passage("漢字" * 1600, page=7)
+    groups = batches([original], budget=1000, split_oversize=True, counter=counter)
+    fragments = [item for group in groups for item in group]
+    assert "".join(item.text for item in fragments) == original.text
+    assert all(item.chunk_id == original.chunk_id for item in fragments)
+    assert all(counter.count(render_evidence(group)) <= 1000 for group in groups)
+    # About 3,400 counted tokens fill four fragments; 9,600 bytes would need ten.
+    assert len(fragments) == 4
+
+
+def test_given_document_handles_when_batching_then_later_batches_keep_their_numbers():
+    from dataclasses import replace
+
+    from app.integrations.tokens import TiktokenCounter
+    from app.services.summarization import batches
+
+    counter = TiktokenCounter("o200k_base")
+    # About 1,000 tokens each: three fit a 3,500-token batch, four do not.
+    passages = [replace(summary_passage(" word" * 1000), handle=f"S{n}") for n in range(1, 6)]
+    groups = batches(passages, budget=3500, counter=counter)
+    assert [[item.handle for item in group] for group in groups] == [
+        ["S1", "S2", "S3"],
+        ["S4", "S5"],
+    ]
+
+
+def test_given_sections_when_batching_then_only_a_section_over_the_budget_is_split():
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.packing import render_evidence
+    from app.services.summarization import batches
+
+    counter = TiktokenCounter("o200k_base")
+    layout = [("Abstract", 2), ("Method", 3), ("Results", 6), ("Conclusion", 1)]
+    # About 1,000 tokens each: a 4,200-token batch holds four passages, not five.
+    passages = [
+        summary_passage(" word" * 1000, section=section)
+        for section, count in layout
+        for _ in range(count)
+    ]
+    groups = batches(passages, budget=4200, counter=counter)
+    assert [[item.section for item in group] for group in groups] == [
+        ["Abstract"] * 2,
+        ["Method"] * 3,
+        ["Results"] * 4,
+        ["Results"] * 2 + ["Conclusion"],
+    ]
+    assert [item.chunk_id for group in groups for item in group] == [
+        item.chunk_id for item in passages
+    ]
+    assert all(counter.count(render_evidence(group)) <= 4200 for group in groups)
 
 
 def test_given_sse_content_when_framing_then_newlines_are_json_escaped():
@@ -205,7 +266,8 @@ def test_given_over_budget_prompt_when_preparing_request_then_reject():
     adapter = HostedLLM(Settings(openai_api_key="fixture", _env_file=None))
     try:
         with pytest.raises(LLMError, match="context"):
-            adapter.parameters("gpt-5.6-luna", "low", "instructions", "x" * 32000)
+            # Real tokens, not bytes: 64,000 tokens exceed the hosted working cap.
+            adapter.parameters("gpt-5.6-luna", "low", "instructions", " word" * 64000)
     finally:
         asyncio.run(adapter.close())
 
@@ -227,6 +289,7 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     from fastapi.responses import StreamingResponse
 
     from app.services import chat
+    from tests.support.answers import offline_answer
 
     closed = []
     saved = []
@@ -235,7 +298,7 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     class Provider:
         usage = {}
 
-        async def stream(self, *args):
+        async def stream_messages(self, *args):
             yield "Visible partial answer"
             await asyncio.Event().wait()
 
@@ -255,9 +318,9 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
     resources = SimpleNamespace(
         settings=Settings(openai_api_key="fixture", _env_file=None), llm_slots=asyncio.Semaphore(2)
     )
-    assistant = SimpleNamespace(id=uuid4(), model="gpt-5.6-luna", reasoning_effort="low")
+    prepared = offline_answer(monkeypatch, resources, "gpt-5.6-luna", "low")
     request = SimpleNamespace(is_disconnected=lambda: asyncio.sleep(0, result=False))
-    response = StreamingResponse(chat.stream_answer(resources, request, assistant, "evidence", []))
+    response = StreamingResponse(chat.stream_answer(resources, request, prepared))
 
     async def receive():
         await delta_sent.wait()
@@ -271,7 +334,7 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
         response({"type": "http", "asgi": {"spec_version": "2.3"}}, receive, send), timeout=3
     )
     assert closed == [True]
-    assert saved[-1] == (assistant.id, "Visible partial answer", "interrupted")
+    assert saved[-1] == (prepared.assistant.id, "Visible partial answer", "interrupted")
 
 
 @pytest.mark.parametrize(

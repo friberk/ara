@@ -23,8 +23,9 @@ async function readyPaper(request: APIRequestContext): Promise<Paper> {
   return paper
 }
 
-// Citation chips from the content module (ARA-035), inline and in the Sources group, are named "Source, page N".
-const citationChip = /^Source, page \d+$/
+// Citation chips from the content module (ARA-035), inline and in the Sources group, are named "Source, page N",
+// "Source, pages N–M" for a passage that runs onto the next page, then the passage's heading when it has one (ARA-075).
+const citationChip = /^Source, pages? \d+/
 async function chipPage(chip: Locator) {
   const label = (await chip.getAttribute('aria-label')) ?? (await chip.innerText())
   return Number(label.match(/\d+/)?.[0])

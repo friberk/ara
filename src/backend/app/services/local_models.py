@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
@@ -12,11 +13,13 @@ from app.models.jobs import BackgroundJob
 from app.models.local_models import ModelInstallation, ModelRequest, ModelUse
 from app.repositories.jobs import enqueue, now
 from app.repositories.local_models import (
+    SlotBusy,
     acquire_use,
     enqueue_revalidation,
     heartbeat_use,
     installation_locked,
     lock_models,
+    mark_waiting,
     pending_owner,
     recovery_operations,
     release_use,
@@ -28,6 +31,9 @@ from app.schemas.jobs import JobError, JobStatus
 
 logger = logging.getLogger(__name__)
 PREPARATION_MESSAGE = "This installed model is being prepared automatically in the background."
+# A search waits about one background embedding batch for the retrieval slot (ARA-072).
+RETRIEVAL_WAIT_SECONDS = 20
+RETRIEVAL_POLL_SECONDS = 0.5
 
 
 def runtime(resources) -> OllamaRuntime:
@@ -145,6 +151,7 @@ def model_dto(spec, row: ModelInstallation | None, *, context_window=8192, opera
         reason = error.message
     return Model(
         key=spec.key,
+        kind=spec.kind,
         provider="ollama",
         model_id=spec.model_id,
         display_name=spec.display_name,
@@ -318,8 +325,95 @@ async def local_generation_provenance(resources, key: str, effort: str = "defaul
 
 @asynccontextmanager
 async def local_inference_slot(resources, key: str):
+    async with admitted_use(resources, key, slot="inference", lease_seconds=60):
+        yield
+
+
+@asynccontextmanager
+async def retrieval_inference_slot(resources, key: str, *, background: bool = False):
+    """Short-lease embedding/reranking admission that may overlap one generation.
+
+    A search waits up to RETRIEVAL_WAIT_SECONDS for another holder and keeps background
+    embedding off the slot meanwhile. Background work never waits: its job reschedules.
+    """
+    async with admitted_use(
+        resources,
+        key,
+        slot="retrieval",
+        lease_seconds=30,
+        wait_seconds=0 if background else RETRIEVAL_WAIT_SECONDS,
+        background=background,
+    ):
+        yield
+
+
+# Lease work that must finish even if its caller is cancelled; referenced here until done.
+DETACHED: set[asyncio.Task] = set()
+
+
+def detach(work) -> asyncio.Task:
+    task = asyncio.create_task(work)
+    DETACHED.add(task)
+    task.add_done_callback(DETACHED.discard)
+    return task
+
+
+async def acquire_once(sessions, key: str, **options) -> UUID:
+    """One admission whose lease is released if its caller is cancelled after it commits.
+
+    A rerank deadline or a closed browser can cancel between the commit and the return; the
+    lost lease would otherwise block the slot until it expires.
+    """
+    attempt = detach(acquire_use(sessions, key, **options))
+    try:
+        return await asyncio.shield(attempt)
+    except asyncio.CancelledError:
+
+        def orphaned(done: asyncio.Task) -> None:
+            if not done.cancelled() and done.exception() is None:
+                detach(release_use(sessions, done.result()))
+
+        attempt.add_done_callback(orphaned)
+        raise
+
+
+async def acquire_waiting(
+    sessions, key: str, *, slot: str, lease_seconds: int, wait_seconds: float, background: bool
+):
+    """Admit now, or poll while another holder finishes; maintenance never waits."""
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            return await acquire_once(
+                sessions, key, slot=slot, lease_seconds=lease_seconds, background=background
+            )
+        except SlotBusy:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+        await mark_waiting(sessions, key, slot=slot, seconds=4 * RETRIEVAL_POLL_SECONDS)
+        await asyncio.sleep(min(RETRIEVAL_POLL_SECONDS, remaining))
+
+
+@asynccontextmanager
+async def admitted_use(
+    resources,
+    key: str,
+    *,
+    slot: str,
+    lease_seconds: int,
+    wait_seconds: float = 0,
+    background: bool = False,
+):
     await ensure_local_available(resources, key)
-    token = await acquire_use(resources.sessions, key)
+    token = await acquire_waiting(
+        resources.sessions,
+        key,
+        slot=slot,
+        lease_seconds=lease_seconds,
+        wait_seconds=wait_seconds,
+        background=background,
+    )
     owner = asyncio.current_task()
     lost = False
 
@@ -328,7 +422,7 @@ async def local_inference_slot(resources, key: str):
         while True:
             await asyncio.sleep(10)
             try:
-                live = await heartbeat_use(resources.sessions, token)
+                live = await heartbeat_use(resources.sessions, token, lease_seconds)
             except Exception:
                 live = False
             if not live:
@@ -349,7 +443,8 @@ async def local_inference_slot(resources, key: str):
         heartbeat.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat
-        await release_use(resources.sessions, token)
+        # A second cancel must not interrupt the release either.
+        await asyncio.shield(detach(release_use(resources.sessions, token)))
 
 
 async def replay(session, request_id, key, action, *, job_id=None):
@@ -589,6 +684,7 @@ async def run_model_job(resources, job_id, generation, token):
         row = await session.get(ModelInstallation, job.model_key)
         desired_state = row.desired_state
     spec, control = checked_spec(job.model_key), runtime(resources)
+    finished = False
     try:
         async with asyncio.timeout(min(resources.settings.ollama_pull_timeout_seconds, 21_600)):
             if desired_state == "paused":
@@ -697,7 +793,7 @@ async def run_model_job(resources, job_id, generation, token):
                     resources.sessions, job_id, generation, token, validation=validation
                 ):
                     return
-            await finish_model_job(resources.sessions, job_id, generation, token)
+            finished = await finish_model_job(resources.sessions, job_id, generation, token)
     except TimeoutError:
         await settle_model_failure(
             resources,
@@ -710,6 +806,14 @@ async def run_model_job(resources, job_id, generation, token):
         )
     except AppError as error:
         await settle_model_failure(resources, job_id, generation, token, error)
+    if finished and spec.kind == "embedding" and job.kind == "model_download":
+        # Papers waiting for this embedder get their indexes; it is gated on availability.
+        from app.rag.indexing import reconcile_indexes
+
+        try:
+            await reconcile_indexes(resources)
+        except Exception:
+            logger.warning("Search indexes deferred to the next API start after verification")
 
 
 async def settle_model_failure(resources, job_id, generation, token, error):

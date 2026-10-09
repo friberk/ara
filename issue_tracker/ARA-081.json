@@ -1,0 +1,30 @@
+{
+  "id": "ARA-081",
+  "title": "Delta-style running summaries for small local models",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "On the CPU IFM K2 Horizon 7B, a running-summary update copies the previous summary verbatim before adding anything, ignores length requests (asked for 217 words, it wrote 314) and stops at its output limit. Since 671bb9d a cut summary that adds nothing fails with COMPACTION_TRUNCATED and its range is retried at most three times, so memory degrades safely to recent turns plus recall, but as a chat grows its local summaries mostly stop updating. Proposed: ask the local model only for new bullets from the newest turns (short output, about 15 s), merge them into the summary sections in code, and trim the oldest facts to the summary budget. Hosted chats are unaffected. On 2026-10-09 the user chose to track this for later.",
+  "dependencies": [
+    "ARA-077"
+  ],
+  "acceptance_criteria": [
+    "Given a local chat with summary v1, when later turns are compacted, then v2 contains facts from those turns and no duplicate of v1's lines.",
+    "Given a long local chat, when summaries update repeatedly, then each stays within the local summary budget and keeps the user's goals.",
+    "Given a delta that repeats known facts or is empty, when merging, then no new version is stored and the range is retried as today.",
+    "Given a hosted chat, when compacting, then behaviour is unchanged."
+  ],
+  "test_cases": [
+    "Merge and trim unit tests over section-structured summaries.",
+    "Compaction integration tests with an Ollama fixture returning deltas, repeats and length-limited output.",
+    "Opt-in live check: IFM 7B over at least eight local turns produces at least two updated summary versions."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/services/memory.py",
+    "src/backend/tests/test_compaction_integration.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09. Live evidence: chat c644855c on the ara-rag-live stack; v1 succeeded, later attempts failed MODEL_INCOMPLETE twice, and a retry stored v2 byte-identical to v1 before 671bb9d rejected such summaries.",
+  "updated_at": "2026-10-09"
+}

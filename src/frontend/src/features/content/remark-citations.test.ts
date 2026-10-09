@@ -5,14 +5,14 @@ const a = '11111111-1111-4111-8111-111111111111'
 const b = '22222222-2222-4222-8222-222222222222'
 const c = '33333333-3333-4333-8333-333333333333'
 const unknown = '99999999-9999-4999-8999-999999999999'
-const pages = new Map([[a, 3], [b, 7], [c, 7]])
+const known = new Set([a, b, c])
 
-function transformAll(paragraphs: PhrasingContent[][], allowed: ReadonlyMap<string, number> = pages) {
+function transformAll(paragraphs: PhrasingContent[][], allowed: ReadonlySet<string> = known) {
   const tree: Root = { type: 'root', children: paragraphs.map((children): Paragraph => ({ type: 'paragraph', children })) }
   remarkCitations({ allowed })(tree)
   return tree.children.map((paragraph) => (paragraph as Paragraph).children)
 }
-const transform = (children: PhrasingContent[], allowed?: ReadonlyMap<string, number>) => transformAll([children], allowed)[0]!
+const transform = (children: PhrasingContent[], allowed?: ReadonlySet<string>) => transformAll([children], allowed)[0]!
 const text = (value: string): PhrasingContent => ({ type: 'text', value })
 const chip = (chunkId: string, claim?: string) => ({ type: 'citationMarker', chunkId, data: { hName: 'cite', hProperties: claim === undefined ? { dataChunkId: chunkId } : { dataChunkId: chunkId, dataClaim: claim } } })
 const nowrap = (...children: unknown[]) => ({ type: 'citationGroup', children, data: { hName: 'span', hProperties: { className: ['whitespace-nowrap'] } } })
@@ -44,8 +44,8 @@ test('Given repeated markers in one run, Then each chunk appears once and order 
   ])
 })
 
-test('Given two passages from one page in a run, Then one chip stands for that page', () => {
-  expect(flat(transform([text(`Both [source:${b}] [source:${c}] [source:${a}].`)]))).toMatchObject([text('Both'), chip(b), chip(a), text('.')])
+test('Given two passages from one page in a run, Then each passage keeps its own chip (ARA-075)', () => {
+  expect(flat(transform([text(`Both [source:${b}] [source:${c}] [source:${a}].`)]))).toMatchObject([text('Both'), chip(b), chip(c), chip(a), text('.')])
 })
 
 test('Given the same chunk cited in separate sentences, Then each sentence keeps its chip', () => {

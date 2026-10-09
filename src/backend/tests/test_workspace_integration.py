@@ -28,6 +28,7 @@ async def ready_paper(resources, title):
             byte_size=100,
             request_id=uuid4(),
             page_count=1,
+            chunk_set="test",
         )
         session.add(document)
         await session.flush()
@@ -39,9 +40,10 @@ async def ready_paper(resources, title):
                 ordinal=0,
                 page=1,
                 text=evidence,
-                char_start=0,
-                char_end=len(evidence),
-                token_estimate=20,
+                chunk_set="test",
+                page_end=1,
+                context_text=evidence,
+                token_count=20,
             )
         )
         return paper.id, document.id
@@ -164,10 +166,12 @@ async def test_given_default_chat_when_questions_are_posted_then_only_first_ques
 
     async def ask(chat_id, content, request_id=None):
         body = ChatInput(content=content, request_id=request_id or uuid4())
-        assistant, _, _, replay = await prepare(resources, chat_id, body)
-        if not replay:
-            await save(resources, assistant.id, "Insufficient evidence.", state="completed")
-        return body, replay
+        prepared = await prepare(resources, chat_id, body)
+        if not prepared.replay:
+            await save(
+                resources, prepared.assistant.id, "Insufficient evidence.", state="completed"
+            )
+        return body, prepared.replay
 
     async def stored(chat_id):
         async with resources.sessions() as session:
@@ -249,7 +253,7 @@ async def test_given_processing_answer_when_deleting_chat_then_busy_until_lease_
     resources.settings.openai_api_key = SecretStr("fixture")
     async with client_for(resources) as client:
         chat_id = (await client.post(f"/api/v1/papers/{paper_id}/chats", json={})).json()["id"]
-        assistant, _, _, _ = await prepare(
+        prepared = await prepare(
             resources, chat_id, ChatInput(content="Still answering?", request_id=uuid4())
         )
         busy = await client.delete(f"/api/v1/chats/{chat_id}")
@@ -258,7 +262,7 @@ async def test_given_processing_answer_when_deleting_chat_then_busy_until_lease_
 
         # A stale lease is interrupted before the busy check, as in message preparation.
         async with resources.sessions() as session, session.begin():
-            message = await session.get(ChatMessage, assistant.id)
+            message = await session.get(ChatMessage, prepared.assistant.id)
             message.lease_expires_at = now() - timedelta(seconds=1)
         deleted = await client.delete(f"/api/v1/chats/{chat_id}")
         assert deleted.status_code == 204 and deleted.content == b""

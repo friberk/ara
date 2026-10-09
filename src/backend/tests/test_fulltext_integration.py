@@ -258,4 +258,9 @@ async def test_readiness_rejects_previous_schema(resources):
         assert (await readiness(resources))["database"] == "unavailable"
     finally:
         async with resources.sessions() as session, session.begin():
-            await session.execute(text("UPDATE alembic_version SET version_num='0006_fulltext'"))
+            from app.services.health import SCHEMA_REVISION
+
+            await session.execute(
+                text("UPDATE alembic_version SET version_num=:revision"),
+                {"revision": SCHEMA_REVISION},
+            )

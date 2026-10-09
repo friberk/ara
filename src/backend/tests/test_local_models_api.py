@@ -18,7 +18,9 @@ async def test_local_model_actions_have_public_idempotent_contract(resources):
     async with client_for(resources) as client:
         models = (await client.get("/api/v1/models")).json()["items"]
         local = [model for model in models if model["provider"] == "ollama"]
-        assert len(local) == 3
+        # Three chat models, the two retrieval embedders (ARA-072) and the reranker (ARA-074).
+        kinds = sorted(model["kind"] for model in local)
+        assert kinds == ["chat"] * 3 + ["embedding"] * 2 + ["reranker"]
         assert all(model["installation"]["state"] == "missing" for model in local)
         identity = str(uuid4())
         response = await client.post(

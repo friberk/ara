@@ -13,6 +13,8 @@ import { modelBytes } from '@/lib/format-bytes'
 
 const labels: Record<ModelInstallation['state'], string> = { missing: 'Weights not downloaded', queued: 'Queued', downloading: 'Downloading', pausing: 'Pausing', paused: 'Paused', verifying: 'Preparing model', ready: 'Installed', deleting: 'Deleting', failed: 'Failed' }
 const inProgress = new Set<ModelInstallation['state']>(['queued', 'downloading', 'pausing', 'verifying', 'deleting'])
+// Chat models need no label; the others serve search rather than answers.
+const kindLabels: Partial<Record<Model['kind'], string>> = { embedding: 'Search', reranker: 'Ranking' }
 
 function LocalModelRow({ model, isDefault }: { model: Model & { installation: ModelInstallation }; isDefault: boolean }) {
   const operation = useModelAction()
@@ -37,6 +39,7 @@ function LocalModelRow({ model, isDefault }: { model: Model & { installation: Mo
           <div className="grid min-w-0 flex-1 gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-medium">{model.display_name}</h3>
+              {kindLabels[model.kind] && <Badge variant="outline" className="font-normal text-muted-foreground">{kindLabels[model.kind]}</Badge>}
               <Badge variant="secondary" className="font-normal">{label}</Badge>
             </div>
             <p className="font-mono text-xs break-all text-muted-foreground">{model.model_id}</p>

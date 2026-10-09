@@ -28,6 +28,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /chats/{id}/messages → `{items:Message[]}`.
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
 - GET /models → `{items:Model[]}`; GET/PUT /settings → Settings.
+  - The defaults gain `memory_model` (default `gpt-5.6-luna`), a hosted chat-model key. Hosted chats plan follow-up searches and summarize earlier messages with it at its quietest effort; local chats use their own model. A PUT without it keeps the saved value; a local, embedding, unknown or empty key returns 422 `INVALID_MEMORY_MODEL`. A saved key that leaves the catalog falls back to the default (ARA-077).
 - GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
 ## PDF retrieval and access information (ARA-019)
@@ -131,6 +132,40 @@ Local `default` reasoning omits `think`; successfully verified `none` sends `thi
 ARA-055 adds derived `Model.reasoning_aliases` for presentation of equivalent verified controls. Complete pinned IFM verification returns `{"default":"high","on":"high"}` while retaining all six raw `reasoning_efforts`. Default aliases match the exact typed `thinking.default` to a verified control; Boolean enabled-to-High equivalence requires the pinned model declaration and verification of both controls. Returned alias targets resolve directly to supported controls. Binary-only models can alias default to `none` or `on`; unrelated models inherit no IFM equivalence. Missing or malformed proof produces no unverified alias. Hosted models return `{}`. No migration, capability-schema change or reverification is required by this derived field.
 
 Settings and the composer use declared aliases only for available native models. IFM displays None/Low/Medium/High, with legacy default/on preferences resolving to explicit High for future UI requests. Normalized default comparisons avoid automatic writes and false dirty state; unavailable preferences retain their identity and effort. Binary-only models get a Reasoning toggle. Raw default/on API requests remain supported with their original omission/Boolean behavior, and stored preferences, histories, provenance and UUID replay semantics remain unchanged. Historical labels are Runtime preset and Reasoning enabled; past records are not reinterpreted using current capabilities.
+
+## Retrieval and conversation context (ARA-070; ARA-021, ARA-043)
+
+Contract for the retrieval and context overhaul, implemented on `feat/rag-context`. Spec: `docs/superpowers/specs/2026-10-09-rag-context-design.md`.
+
+- `GET /api/v1/retrieval/profiles` returns `EmbeddingProfilePage {items: EmbeddingProfileOut[], default_profile}`.
+  - Each `EmbeddingProfileOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `dimensions`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, and `local_model_key` for local install links.
+  - Keys: `openai-3-large` (default), `qwen3-embed-4b`, `qwen3-embed-8b`.
+- `EmbeddingProfilePage.rerankers: RerankerOut[]` lists the reranker profiles (ARA-074). The default `openai-gpt-6-luna` uses the OpenAI Decisions API and scores the top 40 fused passages (about 2–3 s and $0.004 per answer); `qwen3-rerank-0.6b` runs locally through Ollama (about 9 s). `RerankerOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, `local_model_key` for the install link, and `candidates` (fused passages scored per question). Models are catalog data, not hardcoded. The local reranker's `model_id` is `fanyx/Qwen3-Reranker-0.6B-Q8_0:latest`, because Ollama lists an untagged pull as `:latest` and inventory matching is exact.
+- Reranking never fails an answer. When it cannot run, the passages keep their fused order, `retrieval.reranked` is `false`, and `retrieval.note` says reranking was unavailable. The server-side retrieval trace keeps the skip code: `MODEL_NOT_CONFIGURED` (no OpenAI key; no note, because Settings already says so), `DAILY_BUDGET_EXCEEDED`, `LOCAL_MODEL_NOT_READY`, `INVALID_RERANKER` (a stored key no longer in the catalog), `LOCAL_MODEL_BUSY` (the local retrieval slot stayed busy past its 20 s wait), `RERANKER_TIMEOUT` (the local pass exceeded its 45 s deadline) or `RERANKER_FAILED`. The trace also records `rerank.query`, the standalone question the reranker judged against. Turning reranking off (`null`) is a choice, not a skip.
+- `GET`/`PUT /api/v1/retrieval/settings` reads and writes `RetrievalSettings {embedding_profile="openai-3-large", reranker="openai-gpt-6-luna"}`. `reranker` is a reranker profile key from `app/integrations/reranker_catalog.py`, or `null` to turn reranking off. An unknown key returns 422 `INVALID_RERANKER`.
+  - These settings are separate from the model defaults in `/settings`.
+  - `PUT` validates the key but does not require the profile to be available.
+- `GET /api/v1/papers/{paper_id}/retrieval` returns `PaperRetrieval`:
+  - `effective_profile` and `source` (`default|paper`);
+  - `parser`, `chunk_count`, `section_count`;
+  - `mode` (`hybrid|keyword|unavailable`) and a plain-language `mode_note`;
+  - `indexes: RetrievalIndexOut[]`, each with `profile`, `state` (`queued|embedding|ready|failed|unavailable`), `embedded`, `total`, `updated_at`, `error`.
+- `PUT /api/v1/papers/{paper_id}/retrieval` takes `{profile: str|null, request_id}`. `null` follows the global default. Replaying the same request UUID returns the same body.
+- `POST /api/v1/papers/{paper_id}/retrieval/rebuild` takes `{request_id}` and returns 202 with `PaperRetrieval`. The rebuild is blue/green: the previous ready index keeps serving until the new one is ready.
+- `GET /api/v1/chats/{chat_id}/memory` returns `ChatMemoryState {memory: {version, summary, summarized_messages, model, created_at} | null, total_messages}`. The original messages are never altered.
+- `Message` gains three fields:
+  - `retrieval: RetrievalSummary | null`, with `mode`, `profile`, `reranked`, `standalone_query`, `search_queries`, `passages_found`, `passages_used`, `limited_by_context` and `note`;
+  - `context: ContextUsage | null`, with `window`, `input_budget` (the input cap that applied: the window less output and thinking, or the hosted working cap; `null` on answers saved before it existed), `input_tokens`, `output_reserved`, `summary_version`, `recent_turns`, `recalled_turns` and `truncated`;
+  - `grounding: "supported" | "insufficient" | null`.
+- Messages persisted before this change report `retrieval`/`context` as `null`.
+- `Citation` gains `page_end`, `section` (heading path), `kind` (`front_matter|text|table|references`) and `bboxes` (`[[page,x0,y0,x1,y1]]`). Persisted answers keep canonical `[source:<chunk-uuid>]` markers; the model's short `[S#]` handles never reach clients.
+- `GET /documents/{id}/chunks/{chunk_id}` returns the same provenance fields. A section-aware chunk can span pages: `page` is its first physical page and `page_end` its last.
+- `Model` gains `kind` (`chat|embedding|reranker`). The composer lists only `chat` models; Settings shows every kind.
+- New SSE event `message.status`: `{message_id, stage}`, where `stage` is `waiting|planning|retrieving|reranking|generating`. It is emitted between `message.started` and the first `message.delta`. Clients ignore unknown stages.
+  - `waiting` comes first, and only when a local question finds the local model busy with background work (such as a conversation summary). The stream waits up to 60 s; if the work outlasts it, the stream ends with `message.failed {code: "LOCAL_MODEL_BUSY"}` and the answer is saved as failed. Another local answer in progress still returns 429 before the stream.
+  - A producer cancelled by a lost runtime lease ends with `message.failed {code: "LOCAL_MODEL_LEASE_LOST"}`.
+- Local `compact_chat` jobs run only once the chat is idle: they become available 60 s after being queued, and each new question or completed turn pushes that back. A compaction that returns an empty or headings-only summary fails with `COMPACTION_EMPTY` and stores no version. A local summary cut at its length limit keeps its complete lines, and its job result records `truncated: true`; if those lines add nothing to the previous summary, the job fails with `COMPACTION_TRUNCATED`. A failed range is retried with the next completed turn, at most three times; a paid summary whose outcome is unknown (`GENERATION_OUTCOME_UNKNOWN`) is never repeated. Recall still covers turns that no summary holds (ARA-081 tracks better local summaries).
+- At API startup, documents from an older chunk set (including every document from before migration 0006) are re-ingested automatically, and missing or `unavailable` indexes are queued once their profile can embed. The same reconciliation runs after the default embedding profile changes and after a local embedding model verifies. Until a document's re-ingest finishes, a question about it returns 409 "This paper is being prepared for the new search. Try again in a minute."
 
 ## SSE
 

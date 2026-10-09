@@ -14,6 +14,13 @@ from app.schemas.fulltext import FullTextCandidate
 from app.schemas.research import FullTextLocation
 
 
+class LoopbackTLSTransport(httpx.AsyncHTTPTransport):
+    # Capture the real transport before the external-network guard is installed.
+    # This test's LocalBackend always connects to its loopback server, even though
+    # the downloader's request retains a synthetic public IP and TLS identity.
+    handle_async_request = httpx.AsyncHTTPTransport.handle_async_request
+
+
 async def test_real_tls_validates_original_hostname_and_separates_shared_ip_hosts(tmp_path):
     cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
     await asyncio.to_thread(
@@ -79,7 +86,7 @@ async def test_real_tls_validates_original_hostname_and_separates_shared_ip_host
             return await super().connect_tcp("127.0.0.1", server.server_port, timeout=timeout)
 
     def factory():
-        transport = httpx.AsyncHTTPTransport(
+        transport = LoopbackTLSTransport(
             verify=ssl.create_default_context(cafile=str(cert)),
             limits=httpx.Limits(max_keepalive_connections=0),
         )

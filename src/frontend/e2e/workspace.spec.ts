@@ -38,14 +38,15 @@ async function citedSummary(request: APIRequestContext, paper: Paper) {
 }
 /**
  * A citation chip of the stored summary and the physical page it cites. A collapsed summary is inert, so it is
- * opened first; chips are named "Source, page N" by the content module (ARA-035).
+ * opened first; chips are named "Source, page N" (or "pages N–M", then the passage's heading) by the content module
+ * (ARA-035, ARA-075). The first number is the page the passage starts on.
  */
 async function firstCitation(page: Page): Promise<{ chip: Locator; cited: number }> {
   const summary = page.getByRole('article', { name: 'Paper summary' })
   const toggle = summary.getByRole('button', { name: /^(Show full|Collapse) summary$/ })
   await expect(toggle).toBeVisible({ timeout: 20_000 })
   if ((await toggle.innerText()).startsWith('Show full')) await toggle.click()
-  const chip = summary.getByRole('button', { name: /^Source, page \d+$/ }).first()
+  const chip = summary.getByRole('button', { name: /^Source, pages? \d+/ }).first()
   await expect(chip).toBeVisible()
   const name = (await chip.getAttribute('aria-label')) ?? ''
   return { chip, cited: Number(/\d+/.exec(name)?.[0]) }

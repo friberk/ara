@@ -45,12 +45,14 @@ async def test_given_native_controls_when_saving_then_validate_known_names_and_p
     app = create_app(resources.settings)
     app.state.resources = resources
     body = {"default_model": spec.key, "reasoning_effort": "deliberate"}
+    # Saving only the chat defaults keeps the default memory model (ARA-077).
+    saved = {**body, "memory_model": "gpt-5.6-luna"}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.put("/api/v1/settings", json=body)
         assert response.status_code == 200, response.text
-        assert response.json() == body
+        assert response.json() == saved
         unknown = await client.put(
             "/api/v1/settings", json={**body, "reasoning_effort": "invented"}
         )
@@ -70,14 +72,14 @@ async def test_given_native_controls_when_saving_then_validate_known_names_and_p
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=restarted), base_url="http://test"
     ) as client:
-        assert (await client.get("/api/v1/settings")).json() == body
+        assert (await client.get("/api/v1/settings")).json() == saved
         assert (await client.put("/api/v1/settings", json=body)).status_code == 200
         unknown = await client.put(
             "/api/v1/settings", json={**body, "reasoning_effort": "invented"}
         )
         assert unknown.status_code == 422
     async with resources.sessions() as session:
-        assert (await session.get(ModelConfiguration, "defaults")).value == body
+        assert (await session.get(ModelConfiguration, "defaults")).value == saved
 
 
 @pytest.mark.parametrize(
@@ -92,21 +94,14 @@ async def test_given_native_choice_when_streaming_then_snapshot_effective_value_
     body = ChatInput(
         model=spec.key, reasoning_effort=effort, content="What accuracy?", request_id=uuid4()
     )
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
+    prepared = await chat.prepare(resources, chat_id, body)
     request = type(
         "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
     )()
-    output = "".join(
-        [
-            item
-            async for item in chat.stream_answer(
-                resources, request, assistant, prompt, chunks, replay
-            )
-        ]
-    )
+    output = "".join([item async for item in chat.stream_answer(resources, request, prepared)])
     assert "message.completed" in output
     async with resources.sessions() as session:
-        saved = await session.get(ChatMessage, assistant.id)
+        saved = await session.get(ChatMessage, prepared.assistant.id)
         assert saved.state == "completed"
         assert saved.configuration["reasoning_effort"] == effort
         assert saved.configuration["effective_think"] == effective
@@ -191,7 +186,10 @@ async def test_given_saved_native_name_when_verified_controls_change_then_saving
         assert response.status_code == 422
         assert response.json()["code"] == "INVALID_REASONING"
         # The old preference remains readable until the user chooses its replacement.
-        assert (await client.get("/api/v1/settings")).json() == body
+        assert (await client.get("/api/v1/settings")).json() == {
+            **body,
+            "memory_model": "gpt-5.6-luna",
+        }
 
 
 @pytest.mark.parametrize(

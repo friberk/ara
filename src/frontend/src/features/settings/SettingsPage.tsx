@@ -12,10 +12,11 @@ import { normaliseSettings, reasoningControls } from '@/components/composer/reas
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useTheme } from '@/components/theme/theme-context'
-import { unavailableReason, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
+import { isChatModel, unavailableReason, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
 import { LocalModels } from './LocalModels'
+import { RetrievalSettingsSection } from './RetrievalSettingsSection'
 
 const statusBadges: Record<Model['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -57,17 +58,21 @@ function ModelOption({ model, name, checked, onSelect }: { model: Model; name: s
 
 function ModelDefaults({ models, saved, labelledBy }: { models: Model[]; saved: Settings; labelledBy: string }) {
   const effortId = useId()
+  const memoryId = useId()
   const save = useSaveDefaults()
   const [preference, setPreference] = useState<GenerationSettings>(() => ({ model: saved.default_model, reasoning_effort: saved.reasoning_effort }))
+  const [memory, setMemory] = useState(saved.memory_model)
   const draft = normaliseSettings(models, preference)
   const savedDefault = normaliseSettings(models, { model: saved.default_model, reasoning_effort: saved.reasoning_effort })
   const selected = models.find((model) => model.key === draft.model)
   const controls = reasoningControls(selected)
+  // The server accepts any hosted chat model from its catalog; local chats always use their own model.
+  const hosted = models.filter((model) => model.provider !== 'ollama')
   const valid = !!selected && selected.status !== 'unavailable' && selected.reasoning_efforts.includes(draft.reasoning_effort)
-  const dirty = draft.model !== savedDefault.model || draft.reasoning_effort !== savedDefault.reasoning_effort
+  const dirty = draft.model !== savedDefault.model || draft.reasoning_effort !== savedDefault.reasoning_effort || memory !== saved.memory_model
   const change = (next: GenerationSettings) => { save.reset(); setPreference(normaliseSettings(models, next)) }
   return (
-    <form className="grid gap-8" onSubmit={(event) => { event.preventDefault(); if (valid && dirty) save.mutate(draft) }}>
+    <form className="grid gap-8" onSubmit={(event) => { event.preventDefault(); if (valid && dirty) save.mutate({ ...draft, memory_model: memory }) }}>
       <div role="radiogroup" aria-labelledby={labelledBy} className="divide-y overflow-hidden rounded-xl border">
         {models.map((model) => <ModelOption key={model.key} model={model} name={labelledBy} checked={draft.model === model.key} onSelect={() => change({ model: model.key, reasoning_effort: draft.reasoning_effort })} />)}
       </div>
@@ -86,6 +91,17 @@ function ModelDefaults({ models, saved, labelledBy }: { models: Model[]; saved: 
           <p className="text-sm text-muted-foreground">{selected?.status === 'unavailable' ? unavailableReason(selected) : selected ? 'Reasoning is controlled by this model.' : 'Choose a model to see its reasoning options.'}</p>
         )}
       </div>
+      {hosted.length > 0 && (
+        <div className="grid gap-3">
+          <div className="grid gap-1">
+            <h3 id={memoryId} className="text-sm font-medium">Model for summaries and follow-up questions</h3>
+            <p className="text-sm text-pretty text-muted-foreground">Hosted chats use it, at its lowest reasoning effort, to summarize earlier messages and to turn follow-up questions into searches. Local chats use their own model.</p>
+          </div>
+          <div role="radiogroup" aria-labelledby={memoryId} className="divide-y overflow-hidden rounded-xl border">
+            {hosted.map((model) => <ModelOption key={model.key} model={model} name={memoryId} checked={memory === model.key} onSelect={() => { save.reset(); setMemory(model.key) }} />)}
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button type="submit" disabled={!valid || !dirty || save.isPending}>{save.isPending ? 'Saving…' : 'Save defaults'}</Button>
         <p role="status" className="text-sm text-muted-foreground">{save.isSuccess && !dirty ? 'Model defaults saved.' : ''}</p>
@@ -116,6 +132,7 @@ export default function SettingsPage() {
   const models = useModels()
   const saved = useSavedSettings()
   const headingId = useId()
+  const chatModels = models.data?.items.filter(isChatModel)
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
@@ -129,12 +146,14 @@ export default function SettingsPage() {
             <div role="status" className="grid gap-3"><span className="sr-only">Loading models…</span><Skeleton className="h-16 w-full rounded-xl" /><Skeleton className="h-16 w-full rounded-xl" /></div>
           )}
           <ErrorNotice error={models.error ?? saved.error} retry={() => { void models.refetch(); void saved.refetch() }} />
-          {models.data && saved.data && (models.data.items.length ? (
-            <ModelDefaults models={models.data.items} saved={saved.data} labelledBy={headingId} />
+          {chatModels && saved.data && (chatModels.length ? (
+            <ModelDefaults models={chatModels} saved={saved.data} labelledBy={headingId} />
           ) : (
             <EmptyState title="No models configured">Configure model access on the server, then reload this page.</EmptyState>
           ))}
         </section>
+        <Separator />
+        <RetrievalSettingsSection />
         <Separator />
         {models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
         <Appearance />

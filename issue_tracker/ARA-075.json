@@ -1,0 +1,41 @@
+{
+  "id": "ARA-075",
+  "title": "Retrieval controls and chunk-level citations in the interface",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Add a Retrieval section to Settings (default embedding model, reranker toggle), a collapsible Search index panel under the paper's Details tab for power users (profile, state, progress, change model, rebuild), chunk-level citation chips with section headings, and a 'How this answer was found' popover on answers. Keep the composer and thread uncluttered per DESIGN.md.",
+  "dependencies": [
+    "ARA-072",
+    "ARA-073"
+  ],
+  "acceptance_criteria": [
+    "Given Settings, when choosing a default embedding model, then new papers index with it and local models show install status.",
+    "Given a paper's Details tab, when a power user changes the index model, then indexing progress is shown and answers keep working meanwhile.",
+    "Given an answer citing two chunks on the same page, when rendered, then both citations are distinguishable and jump to the cited sentence.",
+    "Given an answer, when opening 'How this answer was found', then the query, retrieval mode, reranking and passages used are shown."
+  ],
+  "test_cases": [
+    "Vitest/RTL component tests; generated OpenAPI types; Playwright updates for citation selectors, the Advanced panel and indexing progress."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/features/settings",
+    "src/frontend/src/features/workspace/DetailsPanel.tsx",
+    "src/frontend/src/features/content",
+    "src/frontend/src/features/chat",
+    "src/frontend/src/api/generated.ts"
+  ],
+  "commits": [
+    "4a2598c",
+    "bd97837",
+    "689f6a7",
+    "003c3ef",
+    "d1432c9",
+    "422ebb5",
+    "80a4a69",
+    "a58db13"
+  ],
+  "pull_requests": [],
+  "verification": "Part 1 (agent E): Settings default search model, paper Search index panel, chat pickers limited to chat models. Part 2 (agent H): answer details, chunk-level chips, reranker choice.\nTests: retrieval-settings.test.tsx; search-index.test.tsx; answer-details.test.tsx; remark-citations.test.ts ('Given the same chunk cited in separate sentences, Then each sentence keeps its chip'); CitationChip.test.tsx.\nBrowser tests first failed 3 of 12: Markdown chunks never matched the PDF text layer, so citations could not highlight. 422ebb5 converts passages with the GFM parser before matching and renders them in the source dialog (red: expected [] to deeply equal [0, 1, 2]); 12/12 passed afterwards.\nLive: switching Attention to Qwen3 4B showed progress (44%, 88%) while OpenAI kept serving; a citation click highlighted the exact supporting sentence on page 4; Details listed query, search, reranking and 16 of 32 passages.\nLive (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.\nReview: citation previews fall back to the saved excerpt when re-ingestion replaced the chunk (a58db13). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
+  "updated_at": "2026-10-09"
+}

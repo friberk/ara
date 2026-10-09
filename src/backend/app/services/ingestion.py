@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import weakref
 from pathlib import Path
 from uuid import UUID
 
@@ -11,55 +12,137 @@ from sqlalchemy import delete, select, update
 
 from app.integrations.academic import normalized_doi
 from app.integrations.storage import read_object
+from app.jobs.pdf_parser import THREAD_TUNING
 from app.models.jobs import BackgroundJob
 from app.models.research import Document, DocumentChunk, DocumentPage, Paper
+from app.models.retrieval import DocumentSection
+from app.rag import hooks
+from app.rag.chunking import ChunkPlan, build_chunk_plan
 from app.repositories.jobs import fence, now, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
 from app.services.uploads import MAX_UPLOAD_BYTES
 
+# One parse child per event loop: the 2 GiB worker cannot hold two layout models.
+_parse_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# The layout pass gets this share of the deadline; the legacy fallback gets the rest.
+LAYOUT_SHARE = 0.75
+
+
+def parser_environment() -> dict[str, str]:
+    # The parser gets no hosted keys or storage/database credentials.
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in {"PATH", "LANG", "LC_ALL", "PYTHONPATH"}
+    }
+    # MALLOC_ARENA_MAX only takes effect when set before the child starts.
+    environment.update(THREAD_TUNING)
+    if os.environ.get("APP_ENV") == "test" and "ARA_PARSER_FORCE_LAYOUT_ERROR" in os.environ:
+        environment["APP_ENV"] = "test"
+        environment["ARA_PARSER_FORCE_LAYOUT_ERROR"] = os.environ["ARA_PARSER_FORCE_LAYOUT_ERROR"]
+    return environment
+
+
+def read_parsed(output: Path) -> dict | None:
+    return json.loads(output.read_text(encoding="utf-8")) if output.exists() else None
+
+
+async def run_parser(source: Path, output: Path, deadline_seconds: float, legacy: bool):
+    """Return the child's JSON, a timeout error, or None when the child did not finish."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "app.jobs.pdf_parser",
+        str(source),
+        str(output),
+        *(["--legacy"] if legacy else []),
+        env=parser_environment(),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        await asyncio.wait_for(process.wait(), deadline_seconds)
+    except (TimeoutError, asyncio.CancelledError):
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        if asyncio.current_task().cancelling():
+            raise
+        return {
+            "error": {
+                "code": "PDF_PARSE_TIMEOUT",
+                "message": "PDF extraction exceeded the 120-second limit.",
+            }
+        }
+    if process.returncode != 0:
+        return None
+    return await asyncio.to_thread(read_parsed, output)
+
 
 async def parse_in_child(data: bytes, deadline_seconds: float = 120) -> dict:
-    with tempfile.TemporaryDirectory(prefix="ara-pdf-") as temporary:
-        source, output = Path(temporary) / "original.pdf", Path(temporary) / "parsed.json"
-        await asyncio.to_thread(source.write_bytes, data)
-        # The parser gets no hosted keys or storage/database credentials.
-        environment = {
-            key: value
-            for key, value in os.environ.items()
-            if key in {"PATH", "LANG", "LC_ALL", "PYTHONPATH"}
-        }
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "app.jobs.pdf_parser",
-            str(source),
-            str(output),
-            env=environment,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+    slot = _parse_slots.setdefault(asyncio.get_running_loop(), asyncio.Lock())
+    async with slot:
+        with tempfile.TemporaryDirectory(prefix="ara-pdf-") as temporary:
+            directory = Path(temporary)
+            source = directory / "original.pdf"
+            await asyncio.to_thread(source.write_bytes, data)
+            clock = asyncio.get_running_loop()
+            started = clock.time()
+            parsed = await run_parser(
+                source, directory / "layout.json", deadline_seconds * LAYOUT_SHARE, False
+            )
+            if parsed is None or (parsed.get("error") or {}).get("code") == "PDF_PARSE_TIMEOUT":
+                # A crashed or overlong layout pass gets one fresh child without the layout
+                # model, within what remains of the deadline. Both parses share one chunk set.
+                remaining = deadline_seconds - (clock.time() - started)
+                parsed = await run_parser(source, directory / "legacy.json", remaining, True)
+            if parsed is None:
+                return {
+                    "error": {
+                        "code": "PDF_PARSE_FAILED",
+                        "message": "The isolated PDF parser could not finish.",
+                    }
+                }
+            return parsed
+
+
+async def add_chunk_plan(session, document_id: UUID, plan: ChunkPlan) -> None:
+    sections = {
+        section.ordinal: DocumentSection(
+            document_id=document_id,
+            chunk_set=plan.chunk_set,
+            ordinal=section.ordinal,
+            title=section.title,
+            level=section.level,
+            path=section.path,
+            role=section.role,
+            page=section.page,
+            page_end=section.page_end,
         )
-        try:
-            await asyncio.wait_for(process.wait(), deadline_seconds)
-        except (TimeoutError, asyncio.CancelledError):
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            if asyncio.current_task().cancelling():
-                raise
-            return {
-                "error": {
-                    "code": "PDF_PARSE_TIMEOUT",
-                    "message": "PDF extraction exceeded the 120-second limit.",
-                }
-            }
-        if process.returncode != 0 or not output.exists():
-            return {
-                "error": {
-                    "code": "PDF_PARSE_FAILED",
-                    "message": "The isolated PDF parser could not finish.",
-                }
-            }
-        return json.loads(await asyncio.to_thread(output.read_text, encoding="utf-8"))
+        for section in plan.sections
+    }
+    session.add_all(sections.values())
+    await session.flush()
+    session.add_all(
+        DocumentChunk(
+            document_id=document_id,
+            chunk_set=plan.chunk_set,
+            ordinal=chunk.ordinal,
+            section_id=sections[chunk.section_ordinal].id
+            if chunk.section_ordinal is not None
+            else None,
+            section_path=chunk.section_path,
+            heading=chunk.heading,
+            kind=chunk.kind,
+            page=chunk.page,
+            page_end=chunk.page_end,
+            text=chunk.text,
+            context_text=chunk.context_text,
+            bboxes=chunk.bboxes,
+            token_count=chunk.token_count,
+        )
+        for chunk in plan.chunks
+    )
 
 
 async def finish_failure(
@@ -79,7 +162,8 @@ async def finish_failure(
             job.updated_at = now()
         else:
             retry_locked(session, job, code=code, message=message)
-        if document and job.state == "failed":
+        # A failed re-ingest leaves a ready document ready, with whatever chunks it had.
+        if document and job.state == "failed" and document.status != "ready":
             document.status = "failed"
             document.warnings = [message]
 
@@ -191,6 +275,16 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
             if value and not metadata.get(key):
                 metadata[key] = value
                 enriched_fields.add(key)
+    async with resources.sessions() as session:
+        known_title = await session.scalar(
+            select(Paper.title)
+            .join(Document, Document.paper_id == Paper.id)
+            .where(Document.id == document_id)
+        )
+    # LlamaIndex chunking is CPU-bound; keep it off the event loop and outside row locks.
+    plan = await asyncio.to_thread(
+        build_chunk_plan, parsed["pages"], title=known_title or metadata.get("title")
+    )
     async with resources.sessions() as session, session.begin():
         job = await session.scalar(
             select(BackgroundJob).where(*fence(job_id, generation, lease_token)).with_for_update()
@@ -244,33 +338,29 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         paper.metadata_provenance = provenance
         await session.execute(delete(DocumentPage).where(DocumentPage.document_id == document_id))
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
-        ordinal = 0
-        for page in parsed["pages"]:
-            session.add(DocumentPage(document_id=document_id, **page))
-            text = page["text"]
-            for start in range(0, len(text), 2720):
-                passage = text[start : start + 3200]
-                if not passage.strip():
-                    continue
-                session.add(
-                    DocumentChunk(
-                        document_id=document_id,
-                        page=page["page"],
-                        text=passage,
-                        ordinal=ordinal,
-                        char_start=start,
-                        char_end=start + len(passage),
-                        token_estimate=max(1, (len(passage.encode()) + 2) // 3),
-                    )
-                )
-                ordinal += 1
+        await session.execute(
+            delete(DocumentSection).where(DocumentSection.document_id == document_id)
+        )
+        session.add_all(
+            DocumentPage(
+                document_id=document_id,
+                page=page["page"],
+                text=page["text"],
+                printed_label=page["printed_label"],
+            )
+            for page in parsed["pages"]
+        )
+        await add_chunk_plan(session, document_id, plan)
         document.status, document.page_count = "ready", len(parsed["pages"])
         document.warnings, document.extractor_version = (
             parsed["warnings"],
             parsed["extractor_version"],
         )
+        document.parser, document.chunk_set = parsed["parser"], plan.chunk_set
         job.state, job.stage, job.progress = "completed", "completed", 100
         job.result = {"paper_id": str(paper.id), "document_id": str(document.id)}
         job.error_code, job.error_message = None, None
         job.lease_token, job.lease_expires_at = None, None
         job.updated_at = now()
+        await session.flush()
+        await hooks.after_chunks_persisted(session, document_id=document.id)

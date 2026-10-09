@@ -176,7 +176,8 @@ async def test_given_unsupported_effort_or_context_when_generating_then_no_http_
             await llm.complete("ifm-k2-horizon-7b", "low", "System", "Paper")
         assert failure.value.code == "INVALID_REASONING"
         with pytest.raises(LLMError) as failure:
-            await llm.complete("ifm-k2-horizon-7b", "default", "System", "x" * 5700)
+            # Real tokens, not bytes: 6,000 tokens exceed the 3,072-token local input budget.
+            await llm.complete("ifm-k2-horizon-7b", "default", "System", " word" * 6000)
         assert failure.value.code == "CONTEXT_LIMIT"
         assert requests == []
 
@@ -222,8 +223,8 @@ def test_given_local_model_when_budgeting_then_output_and_safety_are_reserved():
     from app.integrations.llm import model_limits, validate_selection
 
     resources = SimpleNamespace(settings=Settings(_env_file=None))
-    assert model_limits(resources, "ifm-k2-horizon-7b") == (5632, 2048)
-    assert model_limits(resources, "gpt-5.6-luna") == (32000, 4000)
+    assert model_limits(resources, "ifm-k2-horizon-7b") == (3072, 2048)
+    assert model_limits(resources, "gpt-5.6-luna") == (64000, 4000)
     assert validate_selection("ifm-k2-horizon-7b", "default").provider == "ollama"
 
 
@@ -397,10 +398,10 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
     monkeypatch,
 ):
     from contextlib import asynccontextmanager
-    from uuid import uuid4
 
     from app.integrations.llm import validate_selection
     from app.services import chat, local_models
+    from tests.support.answers import offline_answer
 
     @asynccontextmanager
     async def slot(resources, model):
@@ -420,7 +421,7 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
         for x in [
             {"message": {"thinking": "private", "content": ""}, "done": False},
             {
-                "message": {"content": "Evidence is insufficient."},
+                "message": {"content": "[insufficient-evidence] Evidence is insufficient."},
                 "done": True,
                 "done_reason": "stop",
             },
@@ -433,14 +434,36 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
             settings=Settings(openai_api_key=None, _env_file=None), ollama_generation_http=client
         )
         request = SimpleNamespace(is_disconnected=lambda: asyncio.sleep(0, result=False))
-        assistant = SimpleNamespace(
-            id=uuid4(), model="ifm-k2-horizon-7b", reasoning_effort="default"
-        )
+        prepared = offline_answer(monkeypatch, resources, "ifm-k2-horizon-7b", "default")
         output = "".join(
-            [
-                event
-                async for event in chat.stream_answer(resources, request, assistant, "paper", [])
-            ]
+            [event async for event in chat.stream_answer(resources, request, prepared)]
         )
     assert "event: message.completed" in output and "private" not in output
-    assert "Evidence is insufficient." in output
+    assert "Evidence is insufficient." in output and "insufficient-evidence" not in output
+
+
+async def test_given_length_limited_reply_then_only_an_opt_in_caller_accepts_it_as_truncated():
+    """Answers must finish; a running summary may keep the lines it completed (ARA-077)."""
+    from app.integrations.llm import LLMError
+    from app.integrations.tokens import PromptMessage
+
+    body = {
+        "message": {"role": "assistant", "content": "## User goals\n- Partial"},
+        "done": True,
+        "done_reason": "length",
+        "prompt_eval_count": 90,
+        "eval_count": 400,
+    }
+    messages = [PromptMessage("system", "Summarize."), PromptMessage("user", "Turns.")]
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))
+    ) as client:
+        local = adapter(client)
+        with pytest.raises(LLMError) as strict:
+            await local.complete_messages("ifm-k2-horizon-7b", "default", messages)
+        accepted = await local.complete_messages(
+            "ifm-k2-horizon-7b", "default", messages, accept_truncated=True
+        )
+    assert strict.value.code == "MODEL_INCOMPLETE"
+    assert (accepted.content, accepted.truncated) == ("## User goals\n- Partial", True)
+    assert accepted.usage["output_tokens"] == 400

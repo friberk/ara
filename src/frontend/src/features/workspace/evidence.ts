@@ -7,6 +7,7 @@
  * for little. Words are compared after folding case and ligatures, dropping stopwords and punctuation and stripping
  * common suffixes; two stems also match when one is a longer word's prefix.
  */
+import { markdownToText } from '@/lib/markdown-text'
 import { findExcerptItems, findExcerptRanges, normalizeText, type TextItem, type TextRange } from './text-highlight'
 
 const MAX_SENTENCES = 3
@@ -111,7 +112,10 @@ export type Evidence = { strong: TextRange[]; context: number[] }
  * be located in the text layer, the whole excerpt is strong as before. Both lists are empty when the passage is not
  * on this page.
  */
-export function findEvidence(items: TextItem[], excerpt: string, claim?: string): Evidence {
+export function findEvidence(items: TextItem[], markdown: string, claim?: string): Evidence {
+  // Stored chunks are layout Markdown; the text layer prints only their words. Converted once: plain text is not
+  // Markdown-safe (a line such as "2. Method" would lose its number).
+  const excerpt = markdownToText(markdown)
   const located = new Map<number, TextRange>()
   for (const sentence of claim ? selectEvidence(excerpt, claim) : []) {
     for (const range of findExcerptRanges(items, sentence)) {

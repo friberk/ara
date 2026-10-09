@@ -1,0 +1,35 @@
+{
+  "id": "ARA-078",
+  "title": "Conversation context visibility in the interface",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Show retrieval progress through message.status events, a composer footnote when earlier messages are summarized with a popover showing the summary, and context usage in the answer details.",
+  "dependencies": [
+    "ARA-075",
+    "ARA-077"
+  ],
+  "acceptance_criteria": [
+    "Given a streamed answer, when retrieval and generation progress, then the stage is shown and announced to assistive technology.",
+    "Given a summarized conversation, when viewing the composer, then the summary note appears and opens the current summary."
+  ],
+  "test_cases": [
+    "Vitest/RTL and Playwright coverage of status events and the summary popover."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/features/chat",
+    "src/frontend/src/api/sse.ts"
+  ],
+  "commits": [
+    "f75910c",
+    "c1748fa",
+    "597cb1b",
+    "d9155cd",
+    "80a4a69",
+    "3404002",
+    "4912672"
+  ],
+  "pull_requests": [],
+  "verification": "Agent H: SSE message.status stages shown and announced (ConversationPane.status.test.tsx); the memory footnote opens the current summary and names the model (memory-note.test.tsx).\nLive: answers streamed planning, retrieving, reranking and generating; Details showed 'Context: 5,665 of 1,050,000 tokens' for a request capped at 64,000, so d9155cd adds ContextUsage.input_budget and counts against it (red: AttributeError for input_budget; the Details test lacked 'Context: 2,900 of 3,072 tokens').\nFinal: frontend check 449 passed and build passed; browser 12/12. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.\nReview: 'Waiting for the local model…' stage (3404002) and the Settings choice of the model for summaries and follow-up questions (4912672). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
+  "updated_at": "2026-10-09"
+}

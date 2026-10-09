@@ -1,13 +1,16 @@
 import { useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { ExternalLinkIcon } from 'lucide-react'
-import { downloadUrl } from '@/api/client'
+import { ApiError, downloadUrl } from '@/api/client'
 import type { Citation } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCitationSource } from '@/hooks/queries/documents'
+import { markdownToText } from '@/lib/markdown-text'
 import { cn } from '@/lib/utils'
+import { Markdown } from './Markdown'
+import { pageLabel, pageSpan, sourceName, spansPages } from './pages'
 
 export type CitationChipProps = {
   citation: Citation
@@ -47,7 +50,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
   let chip: ReactElement = (
     <button
       type="button"
-      aria-label={`Source, page ${citation.page}`}
+      aria-label={sourceName(citation)}
       className={cn(
         'inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.5 text-xs leading-none font-medium whitespace-nowrap text-foreground/70 tabular transition-colors outline-none select-none',
         'hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] hover:text-foreground data-[state=open]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] data-[state=open]:text-foreground',
@@ -60,7 +63,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
         onSelect?.(citation, claim)
       }}
     >
-      p. {citation.page}
+      {pageLabel(citation)}
     </button>
   )
   if (!touchOnly) chip = <HoverCardTrigger asChild>{chip}</HoverCardTrigger>
@@ -70,8 +73,12 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
       <HoverCard openDelay={200} closeDelay={100} open={preview} onOpenChange={(open) => setPreview(open && performance.now() >= pausedUntil.current)}>
         {chip}
         <HoverCardContent side="top" collisionPadding={12} className="grid w-80 max-w-[calc(100vw-1.5rem)] gap-1.5 p-3">
-          <p className="text-xs font-medium text-muted-foreground tabular">Page {citation.page}</p>
-          <SourcePassage source={source} preview />
+          <p className="flex gap-1.5 text-xs font-medium text-muted-foreground tabular">
+            <span>{spansPages(citation) ? 'Pages' : 'Page'} {pageSpan(citation)}</span>
+            {citation.kind === 'table' && <><span aria-hidden="true">·</span><span>Table</span></>}
+          </p>
+          {citation.section && <p className="line-clamp-2 text-xs font-medium text-popover-foreground">{citation.section}</p>}
+          <SourcePassage citation={citation} source={source} preview />
         </HoverCardContent>
       </HoverCard>
     )
@@ -82,10 +89,10 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
       {chip}
       <DialogContent className="sm:max-w-lg" onCloseAutoFocus={pause}>
         <DialogHeader>
-          <DialogTitle>Source on page {citation.page}</DialogTitle>
+          <DialogTitle>Source on {spansPages(citation) ? 'pages' : 'page'} {pageSpan(citation)}</DialogTitle>
           <DialogDescription>Compare this passage with the claim it supports.</DialogDescription>
         </DialogHeader>
-        <SourcePassage source={source} />
+        <SourcePassage citation={citation} source={source} />
         <DialogFooter>
           <Button asChild variant="outline">
             <a href={downloadUrl(citation.document_id, citation.page)} target="_blank" rel="noreferrer">
@@ -99,8 +106,11 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
   )
 }
 
-function SourcePassage({ source, preview = false }: { source: ReturnType<typeof useCitationSource>; preview?: boolean }) {
-  if (source.isError) {
+function SourcePassage({ citation, source, preview = false }: { citation: Citation; source: ReturnType<typeof useCitationSource>; preview?: boolean }) {
+  // Re-indexing a paper replaces its passages; the excerpt saved with the answer is still what it cited.
+  const replaced = source.error instanceof ApiError && source.error.status === 404
+  const passage = replaced ? citation : source.data
+  if (source.isError && !replaced) {
     return (
       <div role="alert" className="grid justify-items-start gap-2 text-sm text-destructive">
         <p>{source.error.message}</p>
@@ -108,7 +118,7 @@ function SourcePassage({ source, preview = false }: { source: ReturnType<typeof 
       </div>
     )
   }
-  if (!source.data) {
+  if (!passage) {
     return (
       <div role="status" className="grid gap-2 py-1">
         <span className="sr-only">Loading the cited passage…</span>
@@ -118,10 +128,11 @@ function SourcePassage({ source, preview = false }: { source: ReturnType<typeof 
       </div>
     )
   }
-  if (preview) return <p className="line-clamp-8 text-[13px] leading-relaxed text-popover-foreground">{source.data.excerpt}</p>
+  // Passages are layout Markdown: the clamped preview reads as text, the dialog renders headings and tables.
+  if (preview) return <p className="line-clamp-8 text-[13px] leading-relaxed text-popover-foreground">{markdownToText(passage.excerpt)}</p>
   return (
-    <blockquote tabIndex={0} aria-label={`Passage on page ${source.data.page}`} className="max-h-[min(55vh,26rem)] overflow-y-auto rounded-lg bg-muted/60 px-3.5 py-3 text-sm leading-relaxed text-foreground">
-      {source.data.excerpt}
+    <blockquote tabIndex={0} aria-label={`Passage on page ${passage.page}`} className="max-h-[min(55vh,26rem)] overflow-y-auto rounded-lg bg-muted/60 px-3.5 py-3">
+      <Markdown content={passage.excerpt} className="text-sm leading-relaxed" />
     </blockquote>
   )
 }

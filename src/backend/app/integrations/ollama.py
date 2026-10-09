@@ -1,6 +1,7 @@
 """Bounded HTTP control of the managed Ollama runtime; no process-local job state."""
 
 import json
+import math
 from dataclasses import dataclass, field
 
 import httpx
@@ -96,6 +97,66 @@ def runtime_error(value: str) -> AppError:
     return AppError(
         502, "MODEL_RUNTIME_ERROR", "The local model runtime could not complete this operation."
     )
+
+
+# Qwen3-Reranker's own template, sent raw; Phase 0 S1 measured it on this runtime.
+RERANK_CONTEXT = 2048
+RERANK_PREFIX = (
+    "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query "
+    'and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n'
+    "<|im_start|>user\n"
+)
+RERANK_INSTRUCT = (
+    "Given a question about a scientific paper, retrieve passages of the paper that answer the "
+    "question"
+)
+RERANK_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+# A measured S1 pair: the Q8_0 artifact scored it 0.968 against 0.026.
+PROBE_QUERY = "Which datasets were used for evaluation?"
+PROBE_RELEVANT = (
+    "Evaluation benchmarks. We evaluate on four open-domain question answering datasets: "
+    "Natural Questions (NQ), TriviaQA, WebQuestions and CuratedTREC. For NQ and TriviaQA we "
+    "report exact match on the standard open-domain test splits of 3,610 and 11,313 questions "
+    "respectively. In addition, we use the BEIR benchmark to measure zero-shot retrieval on 13 "
+    "heterogeneous corpora including SciFact, TREC-COVID and FiQA, reporting nDCG@10."
+)
+PROBE_IRRELEVANT = (
+    "Limitations. Our approach assumes access to a reasonably clean document collection. "
+    "Corpora containing large numbers of near-duplicate or machine-generated pages may degrade "
+    "the quality of the learned index, and we did not study adversarial insertion of documents. "
+    "Furthermore, the retriever is trained only on English text, and its behaviour in "
+    "multilingual or code-switched settings remains an open question that we leave to future "
+    "work."
+)
+PROBE_MARGIN = 0.3
+
+
+def rerank_prompt(query: str, document: str) -> str:
+    return (
+        f"{RERANK_PREFIX}<Instruct>: {RERANK_INSTRUCT}\n<Query>: {query}\n"
+        f"<Document>: {document}{RERANK_SUFFIX}"
+    )
+
+
+def relevance_score(data: dict) -> float | None:
+    """P(yes) / (P(yes) + P(no)) over the first token's top log-probabilities."""
+    entries = data.get("logprobs")
+    if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
+        return None
+    top = entries[0].get("top_logprobs")
+    if not isinstance(top, list):
+        return None
+    mass = {"yes": 0.0, "no": 0.0}
+    for item in top:
+        if not isinstance(item, dict) or not isinstance(item.get("token"), str):
+            return None
+        token, logprob = item["token"].strip().lower(), item.get("logprob")
+        if token in mass:
+            if type(logprob) not in {int, float} or not math.isfinite(logprob):
+                return None
+            mass[token] += math.exp(logprob)
+    total = mass["yes"] + mass["no"]
+    return mass["yes"] / total if total > 0 else None
 
 
 def protocol_error() -> AppError:
@@ -266,15 +327,35 @@ class OllamaRuntime:
             or not isinstance(model_info, dict)
         ):
             raise protocol_error()
+        lengths = [v for k, v in model_info.items() if k.endswith(".context_length")]
+        if any(type(value) is not int or value <= 0 for value in lengths):
+            raise protocol_error()
+        if spec.kind == "embedding":
+            from app.integrations.embeddings import OLLAMA_EMBED_CONTEXT
+
+            # Embedders run at their own fixed num_ctx, not the chat context window.
+            if lengths and min(lengths) < OLLAMA_EMBED_CONTEXT:
+                raise AppError(
+                    409,
+                    "MODEL_CONTEXT_UNSUPPORTED",
+                    "The local embedding model cannot support the embedding context.",
+                )
+            return await self.verify_embedding(spec, capabilities, context_window=context_window)
+        if spec.kind == "reranker":
+            # Rerankers score at their own fixed num_ctx, not the chat context window.
+            if lengths and min(lengths) < RERANK_CONTEXT:
+                raise AppError(
+                    409,
+                    "MODEL_CONTEXT_UNSUPPORTED",
+                    "The local reranker cannot support the reranking context.",
+                )
+            return await self.verify_reranker(spec, capabilities, context_window=context_window)
         if not template or "completion" not in capabilities:
             raise AppError(
                 409,
                 "MODEL_VALIDATION_FAILED",
                 "The local model does not provide a usable chat template.",
             )
-        lengths = [v for k, v in model_info.items() if k.endswith(".context_length")]
-        if any(type(value) is not int or value <= 0 for value in lengths):
-            raise protocol_error()
         if lengths and min(lengths) < context_window:
             raise AppError(
                 409,
@@ -439,6 +520,117 @@ class OllamaRuntime:
             "think_mapping": verified_mapping,
             "supports_streaming": True,
             "supports_structured_output": structured,
+        }
+
+    async def runtime_version(self) -> str:
+        version = (await self.request("GET", "/api/version")).get("version")
+        if not isinstance(version, str) or not version.strip():
+            raise protocol_error()
+        return version
+
+    async def verify_embedding(self, spec, capabilities, *, context_window: int) -> dict:
+        """Embedders need the embedding capability and must return their native dimensions."""
+        from app.integrations.embeddings import OLLAMA_EMBED_CONTEXT
+
+        if "embedding" not in capabilities:
+            raise AppError(
+                409, "MODEL_VALIDATION_FAILED", "The local model does not provide embeddings."
+            )
+        runtime_version = await self.runtime_version()
+        probe = await self.request(
+            "POST",
+            "/api/embed",
+            timeout=self.probe_timeout,
+            json={
+                "model": spec.model_id,
+                "input": "probe",
+                "keep_alive": 0,
+                "options": {"num_ctx": OLLAMA_EMBED_CONTEXT, "num_thread": self.probe_threads},
+            },
+        )
+        vectors = probe.get("embeddings")
+        if (
+            not isinstance(vectors, list)
+            or len(vectors) != 1
+            or not isinstance(vectors[0], list)
+            or len(vectors[0]) != spec.embedding_dimensions
+        ):
+            raise AppError(
+                409,
+                "MODEL_VALIDATION_FAILED",
+                "The local embedding model returned unexpected dimensions.",
+            )
+        # thinking_schema and context_window keep the shared freshness check meaningful.
+        return {
+            "kind": "embedding",
+            "digest": spec.expected_digest,
+            "runtime_version": runtime_version,
+            "context_window": context_window,
+            "thinking_schema": 1,
+            "embedding_dimensions": spec.embedding_dimensions,
+            "reasoning_efforts": ["default"],
+            "supports_streaming": False,
+            "supports_structured_output": False,
+        }
+
+    async def relevance(
+        self,
+        model_id: str,
+        query: str,
+        document: str,
+        *,
+        keep_alive: int | str,
+        timeout_seconds: float | None = None,
+    ) -> float | None:
+        """One raw-template scoring call: the next token is "yes" or "no"."""
+        data = await self.request(
+            "POST",
+            "/api/generate",
+            timeout=timeout_seconds or self.probe_timeout,
+            json={
+                "model": model_id,
+                "prompt": rerank_prompt(query, document),
+                "raw": True,
+                "stream": False,
+                "logprobs": True,
+                "top_logprobs": 20,
+                "keep_alive": keep_alive,
+                "options": {
+                    "temperature": 0,
+                    "num_predict": 1,
+                    "num_ctx": RERANK_CONTEXT,
+                    "num_thread": self.probe_threads,
+                },
+            },
+        )
+        return relevance_score(data)
+
+    async def verify_reranker(self, spec, capabilities, *, context_window: int) -> dict:
+        """A broken artifact can emit uniform logits, so a known pair must order correctly."""
+        if "completion" not in capabilities:
+            raise AppError(
+                409, "MODEL_VALIDATION_FAILED", "The local model does not provide completions."
+            )
+        runtime_version = await self.runtime_version()
+        relevant, irrelevant = [
+            await self.relevance(spec.model_id, PROBE_QUERY, document, keep_alive=0)
+            for document in (PROBE_RELEVANT, PROBE_IRRELEVANT)
+        ]
+        if relevant is None or irrelevant is None or relevant - irrelevant < PROBE_MARGIN:
+            raise AppError(
+                409,
+                "MODEL_VALIDATION_FAILED",
+                "The local reranker did not separate a relevant passage from an irrelevant one.",
+            )
+        return {
+            "kind": "reranker",
+            "digest": spec.expected_digest,
+            "runtime_version": runtime_version,
+            "context_window": context_window,
+            "thinking_schema": 1,
+            "reasoning_efforts": ["default"],
+            "supports_streaming": False,
+            "supports_structured_output": False,
         }
 
     async def delete(self, spec: LocalModelSpec) -> None:

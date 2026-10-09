@@ -18,6 +18,7 @@ from app.models.research import (
     PaperSummary,
 )
 from app.repositories.jobs import claim, enqueue, now
+from tests.support.answers import CONNECTED
 
 pytestmark = pytest.mark.integration
 
@@ -53,7 +54,12 @@ async def local_fixture(resources):
             payload = json.loads(request.content)
             requests.append(payload)
             prompt = payload["messages"][-1]["content"]
-            markers = re.findall(r"\[source:[\w-]+\]", prompt)
+            # Cite the passages a prompt lists, else the handles a summary reduction carries.
+            markers = (
+                re.findall(r"^(\[S\d+\]) ", prompt, re.M)
+                or re.findall(r"\[S\d+\]", prompt)
+                or re.findall(r"\[source:[\w-]+\]", prompt)
+            )
             answer = "Supported sections: " + " ".join(dict.fromkeys(markers))
             result = {
                 "message": {"role": "assistant", "content": answer},
@@ -95,6 +101,20 @@ async def local_fixture(resources):
     return spec, requests
 
 
+def within_local_budget(resources, spec, requests):
+    from app.integrations.context_registry import context_profile
+    from app.integrations.tokens import PromptMessage, count_messages
+
+    profile = context_profile(resources, spec.key, "default")
+    return all(
+        count_messages(
+            profile.counter, [PromptMessage(m["role"], m["content"]) for m in body["messages"]]
+        )
+        <= profile.input_budget
+        for body in requests
+    )
+
+
 async def test_given_local_chat_when_answering_then_provenance_citations_and_uuid_replay(
     resources,
 ):
@@ -106,43 +126,46 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
     body = ChatInput(
         model=spec.key, reasoning_effort="default", content="What accuracy?", request_id=uuid4()
     )
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    request = type(
-        "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
-    )()
-    output = "".join(
-        [
-            item
-            async for item in chat.stream_answer(
-                resources, request, assistant, prompt, chunks, replay
-            )
-        ]
-    )
+    prepared = await chat.prepare(resources, chat_id, body)
+    output = "".join([item async for item in chat.stream_answer(resources, CONNECTED, prepared)])
     assert "message.completed" in output
+    assert within_local_budget(resources, spec, requests)
     async with resources.sessions() as session:
-        saved = await session.get(ChatMessage, assistant.id)
+        saved = await session.get(ChatMessage, prepared.assistant.id)
         assert (
             saved.configuration["provider"] == "ollama"
             and saved.configuration["artifact_digest"] == spec.expected_digest
         )
         assert saved.configuration["runtime_version"] == "0.40.1-ara.fixture"
         assert saved.configuration["temperature"] == 0.0
-        assert (
-            saved.configuration["input_limit"] == 5632
-            and saved.configuration["output_limit"] == 2048
-        )
+        assert {
+            key: saved.configuration[key]
+            for key in (
+                "window",
+                "max_output",
+                "thinking_allowance",
+                "input_budget",
+                "tokenizer",
+                "token_factor",
+            )
+        } == {
+            "window": 8192,
+            "max_output": 2048,
+            "thinking_allowance": 0,
+            "input_budget": 3072,
+            "tokenizer": "o200k_base",
+            "token_factor": 1.05,
+        }
         assert saved.citations and all(
             c["document_id"] == str(document_id) for c in saved.citations
         )
         assert await session.scalar(select(func.count()).select_from(GenerationReservation)) == 0
-    _, _, _, replay = await chat.prepare(resources, chat_id, body)
-    assert replay and len(requests) == 1
+    assert (await chat.prepare(resources, chat_id, body)).replay and len(requests) == 1
 
 
 async def test_given_local_full_paper_when_summarizing_then_every_section_is_reduced_under_context(
     resources,
 ):
-    from app.integrations.llm import estimate_tokens
     from app.models.jobs import BackgroundJob
     from app.services import summarization
 
@@ -151,16 +174,18 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(12):
-            text = f"Section {index}: " + "evidence " * 240
+            # About 1,000 tokens each: real tokens, not bytes, decide the map batches.
+            text = f"Section {index}: " + "evidence " * 1000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
                     ordinal=index,
                     page=index + 1,
                     text=text,
-                    char_start=0,
-                    char_end=len(text),
-                    token_estimate=len(text),
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=text,
+                    token_count=len(text),
                 )
             )
     payload = {
@@ -185,7 +210,7 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     assert len(requests) > 2 and any(
         "Section 11:" in x["messages"][-1]["content"] for x in requests
     )
-    assert all(sum(estimate_tokens(m["content"]) for m in x["messages"]) <= 5632 for x in requests)
+    assert within_local_budget(resources, spec, requests)
 
 
 async def test_given_busy_local_summary_when_worker_runs_then_job_does_not_fail_or_spend_attempt(
@@ -270,37 +295,6 @@ async def test_given_local_default_when_extracting_metadata_then_no_hosted_key_n
         assert await session.scalar(select(func.count()).select_from(GenerationReservation)) == 0
 
 
-async def test_given_busy_local_runtime_when_posting_chat_then_http_429_without_generation(
-    resources,
-):
-    from app.main import create_app
-    from app.repositories.local_models import acquire_use, release_use
-
-    spec, requests = await local_fixture(resources)
-    _, _, chat_id = await paper_fixture(resources)
-    token = await acquire_use(resources.sessions, spec.key)
-    app = create_app(resources.settings)
-    app.state.resources = resources
-    try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                f"/api/v1/chats/{chat_id}/messages/stream",
-                json={
-                    "model": spec.key,
-                    "reasoning_effort": "default",
-                    "content": "What accuracy?",
-                    "request_id": str(uuid4()),
-                },
-            )
-        assert response.status_code == 429, response.text
-        assert response.json()["code"] == "LOCAL_MODEL_BUSY"
-        assert requests == []
-    finally:
-        await release_use(resources.sessions, token)
-
-
 async def test_given_runtime_503_when_local_summary_starts_then_rejection_clears_inflight(
     resources,
 ):
@@ -338,16 +332,18 @@ async def summary_job_fixture(resources, spec, count):
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(count):
-            text = f"Section {index}: " + "x" * 4000
+            # About 2,100 tokens: each section needs its own map batch under the 3,072 budget.
+            text = f"Section {index}: " + " word" * 2000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
                     ordinal=index,
                     page=index + 1,
                     text=text,
-                    char_start=0,
-                    char_end=len(text),
-                    token_estimate=len(text),
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=text,
+                    token_count=len(text),
                 )
             )
         payload = {
@@ -363,6 +359,14 @@ async def summary_job_fixture(resources, spec, count):
     return identifier, token, payload
 
 
+def cited_markers(prompt: str) -> str:
+    """A fixture summary cites every handle it was shown, else the source markers."""
+    import re
+
+    handles = re.findall(r"\[S\d+\]", prompt)
+    return " ".join(dict.fromkeys(handles or re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
+
+
 @pytest.mark.parametrize("busy_kind", ["slot", "http"])
 async def test_given_completed_reduction_when_later_group_busy_then_resume_skips_completed_group(
     resources,
@@ -370,7 +374,6 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
     busy_kind,
 ):
     import json
-    import re
     from collections import Counter
     from contextlib import asynccontextmanager
 
@@ -399,8 +402,9 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
         prompts.append(prompt)
         if busy_kind == "http" and len(prompts) == 6:
             return httpx.Response(503, json={"error": "busy"})
-        markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        content = markers + " " + "z" * (1999 - len(markers))
+        markers = cited_markers(prompt)
+        # About 1,200 tokens: two outputs share a reduction batch, three do not.
+        content = markers + " word" * 1100
         return httpx.Response(
             200,
             json={
@@ -436,9 +440,7 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
     compression,
 ):
     import json
-    import re
 
-    from app.integrations.llm import estimate_tokens
     from app.models.jobs import BackgroundJob
     from app.services import summarization
 
@@ -450,9 +452,10 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         body = json.loads(request.content)
         calls.append(body)
         prompt = body["messages"][-1]["content"]
-        markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        size = 1000 if prompt.startswith("Compress") and compression == "short" else 3000
-        content = markers + " " + "z" * (size - len(markers) - 1)
+        markers = cited_markers(prompt)
+        # 2,000-word outputs cannot pair in a reduction; 500-word compressions can.
+        words = 500 if prompt.startswith("Compress") and compression == "short" else 2000
+        content = markers + " word" * words
         return httpx.Response(
             200,
             json={
@@ -480,48 +483,131 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         else:
             assert job.state == "failed" and job.error_code == "SUMMARY_COMPRESSION_FAILED"
             assert len(calls) == 5 and job.payload["paid_call_inflight"] is False
-    assert all(
-        sum(estimate_tokens(message["content"]) for message in call["messages"]) <= 5632
-        for call in calls
-    )
+    assert within_local_budget(resources, spec, calls)
     assert any("Section 0:" in call["messages"][-1]["content"] for call in calls)
     assert any("Section 1:" in call["messages"][-1]["content"] for call in calls)
 
 
-async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assembled_prompt_fits(
-    resources,
-):
+PROSE = (
+    "Retrieval-augmented generation grounds each answer in passages selected from the paper. "
+    "The retriever ranks passages by relevance, and the generator cites them while writing. "
+) * 6
+
+
+async def replace_chunks(resources, document_id, texts):
     from uuid import UUID
 
-    from app.integrations.llm import create_llm, estimate_tokens, validate_selection
-    from app.schemas.ai import ChatInput
-    from app.services import chat
-    from app.services.retrieval import INSTRUCTIONS
-
-    spec, _ = await local_fixture(resources)
-    _, document_id, chat_id = await paper_fixture(resources)
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
-        for index, size in enumerate((2474, 2475)):
+        for index, text in enumerate(texts):
             session.add(
                 DocumentChunk(
                     id=UUID(int=index + 1),
                     document_id=document_id,
                     ordinal=index,
                     page=index + 1,
-                    text="x" * size,
-                    char_start=0,
-                    char_end=size,
-                    token_estimate=size,
+                    text=text,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=text,
+                    token_count=len(text),
                 )
             )
-    body = ChatInput(model=spec.key, reasoning_effort="default", content="?", request_id=uuid4())
-    _, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
-    assert len(chunks) == 2
-    assert estimate_tokens(INSTRUCTIONS + prompt) == 5632
-    create_llm(resources, spec.key, selection=validate_selection(spec.key, "default")).parameters(
-        spec.key, "default", INSTRUCTIONS, prompt
+
+
+def sent_handles(request) -> list[str]:
+    import re
+
+    return re.findall(r"^\[(S\d+)\] ", request["messages"][-1]["content"], re.M)
+
+
+async def test_given_prose_evidence_when_answering_locally_then_tokens_fit_more_than_bytes(
+    resources,
+):
+    from app.integrations.context_registry import context_profile
+    from tests.support.answers import ask, named
+
+    spec, requests = await local_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
+    await replace_chunks(resources, document_id, [f"Passage {i}: {PROSE}" for i in range(10)])
+    _, events = await ask(
+        resources,
+        chat_id,
+        "How does retrieval ground answers?",
+        model=spec.key,
+        reasoning_effort="default",
     )
+    assert named(events, "message.completed")
+    profile = context_profile(resources, spec.key, "default")
+    assert len(sent_handles(requests[0])) == 10
+    # Byte counting could never fit these passages in the 3,072-token local budget.
+    assert len(requests[0]["messages"][-1]["content"].encode()) > profile.input_budget
+    assert within_local_budget(resources, spec, requests)
+
+
+async def test_given_more_evidence_than_local_budget_when_answering_then_request_still_fits(
+    resources,
+):
+    from tests.support.answers import ask, named
+
+    spec, requests = await local_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
+    await replace_chunks(resources, document_id, [f"Passage {i}: {PROSE}" for i in range(30)])
+    _, events = await ask(
+        resources,
+        chat_id,
+        "How does retrieval ground answers?",
+        model=spec.key,
+        reasoning_effort="default",
+    )
+    (completed,) = named(events, "message.completed")
+    retrieval = completed["retrieval"]
+    assert retrieval["limited_by_context"] is True
+    assert retrieval["passages_found"] == 30 > retrieval["passages_used"] >= 10
+    assert len(sent_handles(requests[0])) == retrieval["passages_used"]
+    assert within_local_budget(resources, spec, requests)
+    assert completed["context"]["input_tokens"] <= 3072
+
+
+@pytest.mark.parametrize(("words", "whole"), [(2000, True), (12000, False)])
+async def test_given_local_metadata_evidence_when_extracting_then_real_tokens_bound_it(
+    resources, words, whole
+):
+    import json
+
+    from app.integrations.context_registry import context_profile
+    from app.integrations.llm import extract_metadata
+    from app.integrations.tokens import PromptMessage, count_messages
+    from app.models.research import ModelConfiguration
+
+    spec, _ = await local_fixture(resources)
+    async with resources.sessions() as session, session.begin():
+        session.add(
+            ModelConfiguration(
+                key="defaults", value={"default_model": spec.key, "reasoning_effort": "default"}
+            )
+        )
+    requests = []
+
+    def provider(request):
+        requests.append(json.loads(request.content))
+        result = {"title": None, "authors": None, "year": None, "abstract": None, "doi": None}
+        return httpx.Response(
+            200,
+            json={"message": {"content": json.dumps(result)}, "done": True, "done_reason": "stop"},
+        )
+
+    await resources.ollama_generation_http.aclose()
+    resources.ollama_generation_http = httpx.AsyncClient(transport=httpx.MockTransport(provider))
+    evidence = "Traceable Research\nAda Example\n2024\n" + " word" * words
+    await extract_metadata(resources, evidence)
+    sent = requests[0]["messages"]
+    # 2,000 words are about 10 KB: byte counting cut them near 2.8 KB.
+    assert (sent[-1]["content"] == evidence) is whole
+    assert evidence.startswith(sent[-1]["content"])
+    profile = context_profile(resources, spec.key, "default")
+    messages = [PromptMessage(m["role"], m["content"]) for m in sent]
+    assert count_messages(profile.counter, messages) <= profile.input_budget
 
 
 async def paper_fixture(resources):
@@ -538,6 +624,7 @@ async def paper_fixture(resources):
             byte_size=100,
             request_id=uuid4(),
             page_count=3,
+            chunk_set="test",
         )
         session.add(document)
         await session.flush()
@@ -555,9 +642,10 @@ async def paper_fixture(resources):
                     ordinal=index,
                     page=index + 1,
                     text=source,
-                    char_start=0,
-                    char_end=len(source),
-                    token_estimate=20,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=source,
+                    token_count=20,
                 )
             )
         chat = ChatSession(paper_id=paper.id, document_id=document.id, title="Discussion")
@@ -567,17 +655,31 @@ async def paper_fixture(resources):
 
 
 async def test_given_two_documents_when_retrieving_then_scope_is_immutable(resources):
-    from app.services.retrieval import retrieve
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.pipeline import retrieve_evidence
 
     _, first, _ = await paper_fixture(resources)
     _, second, _ = await paper_fixture(resources)
-    async with resources.sessions() as session:
-        chunks = await retrieve(session, first, "blue accuracy")
-        assert chunks and {chunk.document_id for chunk in chunks} == {first}
-        assert second not in {chunk.document_id for chunk in chunks}
-        assert any("87 percent" in chunk.text for chunk in chunks)
-        fallback = await retrieve(session, first, "nonexistentterm")
-        assert {chunk.page for chunk in fallback} == {1, 2, 3}
+
+    async def passages(question):
+        result = await retrieve_evidence(
+            resources,
+            document_id=first,
+            chunk_set="test",
+            preferred_profile="openai-3-large",
+            queries=[question],
+            question=question,
+            budget=4000,
+            counter=TiktokenCounter(),
+        )
+        return result.passages
+
+    found = await passages("blue accuracy")
+    assert found and {item.document_id for item in found} == {first}
+    assert any("87 percent" in item.text for item in found)
+    fallback = await passages("nonexistentterm")
+    assert {item.page for item in fallback} == {1, 2, 3}
+    assert second not in {item.document_id for item in fallback}
 
 
 async def test_given_metadata_only_when_creating_chat_or_summary_then_ready_gate(resources):
@@ -627,15 +729,16 @@ async def test_given_partial_request_when_expired_then_replay_never_reserves_aga
     _, _, chat_id = await paper_fixture(resources)
     resources.settings.openai_api_key = __import__("pydantic").SecretStr("fixture")
     body = ChatInput(content="What accuracy?", request_id=uuid4())
-    first, _, _, replay = await prepare(resources, chat_id, body)
-    assert replay is False
-    await save(resources, first.id, "partial evidence")
+    first = await prepare(resources, chat_id, body)
+    assert first.replay is False
+    await save(resources, first.assistant.id, "partial evidence")
     async with resources.sessions() as session, session.begin():
-        message = await session.get(ChatMessage, first.id)
+        message = await session.get(ChatMessage, first.assistant.id)
         message.lease_expires_at = now() - timedelta(seconds=1)
         before = await session.scalar(select(func.count(GenerationReservation.id)))
-    stored, prompt, _, replay = await prepare(resources, chat_id, body)
-    assert replay and prompt is None and stored.id == first.id
+    again = await prepare(resources, chat_id, body)
+    stored = again.assistant
+    assert again.replay and stored.id == first.assistant.id
     assert stored.state == "interrupted" and stored.content == "partial evidence"
     async with resources.sessions() as session:
         assert await session.scalar(select(func.count(GenerationReservation.id))) == before
@@ -671,81 +774,43 @@ async def test_given_summary_unknown_paid_outcome_when_worker_recovers_then_no_n
 async def test_given_stream_when_completed_then_final_persisted_and_uuid_replay_is_free(
     resources, monkeypatch
 ):
-    import json
-    import re
-
-    from pydantic import SecretStr
-
-    from app.integrations.llm import HostedLLM
     from app.schemas.ai import ChatInput
     from app.services import chat
-    from tests.test_ai import response_payload
+    from tests.support.answers import first_handle, use_hosted
 
     _, document_id, chat_id = await paper_fixture(resources)
-    resources.settings.openai_api_key = SecretStr("fixture")
     calls = []
-
-    def provider(request):
-        body = json.loads(request.content)
-        calls.append(body)
-        source = re.findall(r"\[source:([\w-]+)\]", body["input"])[0]
-        output = f"The paper supplies evidence [source:{source}]."
-        events = [
-            {
-                "type": "response.output_text.delta",
-                "delta": output,
-                "item_id": "msg",
-                "output_index": 0,
-                "content_index": 0,
-                "sequence_number": 0,
-            },
-            {
-                "type": "response.completed",
-                "response": response_payload(output),
-                "sequence_number": 1,
-            },
-        ]
-        wire = "".join("data: " + json.dumps(item) + "\n\n" for item in events)
-        return httpx.Response(200, content=wire, headers={"Content-Type": "text/event-stream"})
-
-    monkeypatch.setattr(
-        chat,
-        "create_llm",
-        lambda resources, model, **kwargs: HostedLLM(
-            resources.settings,
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(provider)),
-        ),
+    use_hosted(
+        monkeypatch,
+        resources,
+        calls,
+        lambda body: f"The paper supplies evidence [{first_handle(body)}].",
     )
-    request = type(
-        "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
-    )()
     body = ChatInput(content="What accuracy?", request_id=uuid4())
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    frames = chat.stream_answer(resources, request, assistant, prompt, chunks, replay)
+    prepared = await chat.prepare(resources, chat_id, body)
+    frames = chat.stream_answer(resources, CONNECTED, prepared)
     assert "message.started" in await anext(frames)
     async with resources.sessions() as session:
-        stored = await session.get(ChatMessage, assistant.id)
+        stored = await session.get(ChatMessage, prepared.assistant.id)
         assert stored.state == "processing" and stored.content == ""
-    assert "message.delta" in await anext(frames)
+    frame = await anext(frames)
+    while "message.status" in frame:
+        frame = await anext(frames)
+    assert "message.delta" in frame
     async with resources.sessions() as session:
-        stored = await session.get(ChatMessage, assistant.id)
+        stored = await session.get(ChatMessage, prepared.assistant.id)
         assert stored.state == "processing"
     completed = await anext(frames)
     assert "message.completed" in completed
     async with resources.sessions() as session:
-        stored = await session.get(ChatMessage, assistant.id)
+        stored = await session.get(ChatMessage, prepared.assistant.id)
         assert stored.state == "completed"
         assert stored.citations[0]["document_id"] == str(document_id)
     await frames.aclose()
-    existing, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    assert replay and existing.id == assistant.id
+    existing = await chat.prepare(resources, chat_id, body)
+    assert existing.replay and existing.assistant.id == prepared.assistant.id
     replayed = "".join(
-        [
-            frame
-            async for frame in chat.stream_answer(
-                resources, request, existing, prompt, chunks, replay
-            )
-        ]
+        [frame async for frame in chat.stream_answer(resources, CONNECTED, existing)]
     )
     assert "message.completed" in replayed and len(calls) == 1
 
@@ -754,7 +819,6 @@ async def test_given_summary_fixture_when_generated_then_domain_and_job_complete
     resources, monkeypatch
 ):
     import json
-    import re
 
     from pydantic import SecretStr
 
@@ -770,10 +834,7 @@ async def test_given_summary_fixture_when_generated_then_domain_and_job_complete
     def provider(request):
         prompt = json.loads(request.content)["input"]
         seen_inputs.append(prompt)
-        citations = re.findall(r"\[source:([\w-]+)\]", prompt)
-        content = "Supported full paper summary: " + " ".join(
-            f"[source:{identifier}]" for identifier in citations
-        )
+        content = "Supported full paper summary: " + cited_markers(prompt)
         return httpx.Response(200, json=response_payload(content))
 
     monkeypatch.setattr(
@@ -852,27 +913,19 @@ async def test_given_disconnect_when_stream_closes_then_partial_flushes_and_repl
     resources.settings.openai_api_key = SecretStr("fixture")
     calls = []
     sdk_stream_fixture(monkeypatch, chat, "Visible partial answer", calls)
-    request = type(
-        "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
-    )()
     body = ChatInput(content="What accuracy?", request_id=uuid4())
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    stream = chat.stream_answer(resources, request, assistant, prompt, chunks, replay)
-    await anext(stream)
-    assert "Visible partial answer" in await anext(stream)
+    prepared = await chat.prepare(resources, chat_id, body)
+    stream = chat.stream_answer(resources, CONNECTED, prepared)
+    frame = await anext(stream)
+    while "message.delta" not in frame:
+        frame = await anext(stream)
+    assert "Visible partial answer" in frame
     await stream.aclose()
     async with resources.sessions() as session:
-        stored = await session.get(ChatMessage, assistant.id)
+        stored = await session.get(ChatMessage, prepared.assistant.id)
         assert stored.state == "interrupted" and stored.content == "Visible partial answer"
-    stored, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    frames = "".join(
-        [
-            frame
-            async for frame in chat.stream_answer(
-                resources, request, stored, prompt, chunks, replay
-            )
-        ]
-    )
+    again = await chat.prepare(resources, chat_id, body)
+    frames = "".join([frame async for frame in chat.stream_answer(resources, CONNECTED, again)])
     assert "message.failed" in frames and len(calls) == 1
 
 
@@ -888,22 +941,12 @@ async def test_given_invented_citation_when_stream_finishes_then_fail_with_safe_
     resources.settings.openai_api_key = SecretStr("fixture")
     calls = []
     sdk_stream_fixture(monkeypatch, chat, f"Claim [source:{uuid4()}]", calls)
-    request = type(
-        "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
-    )()
     body = ChatInput(content="What accuracy?", request_id=uuid4())
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    frames = "".join(
-        [
-            frame
-            async for frame in chat.stream_answer(
-                resources, request, assistant, prompt, chunks, replay
-            )
-        ]
-    )
+    prepared = await chat.prepare(resources, chat_id, body)
+    frames = "".join([frame async for frame in chat.stream_answer(resources, CONNECTED, prepared)])
     assert "UNGROUNDED_OUTPUT" in frames and "message.completed" not in frames
     async with resources.sessions() as session:
-        stored = await session.get(ChatMessage, assistant.id)
+        stored = await session.get(ChatMessage, prepared.assistant.id)
         assert stored.state == "failed" and stored.citations == []
 
 
@@ -911,7 +954,6 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     resources, monkeypatch
 ):
     import json
-    import re
 
     from pydantic import SecretStr
 
@@ -924,16 +966,17 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     resources.settings.openai_api_key = SecretStr("fixture")
     async with resources.sessions() as session, session.begin():
         for index in range(3, 15):
-            source = f"Section {index}: full-coverage evidence. " * 200
+            source = f"Section {index}: full-coverage evidence. " * 800
             session.add(
                 DocumentChunk(
                     document_id=document_id,
                     ordinal=index,
                     page=index + 1,
                     text=source,
-                    char_start=0,
-                    char_end=len(source),
-                    token_estimate=1700,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=source,
+                    token_count=1700,
                 )
             )
     seen_inputs = []
@@ -941,10 +984,7 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     def provider(request):
         prompt = json.loads(request.content)["input"]
         seen_inputs.append(prompt)
-        sources = re.findall(r"\[source:([\w-]+)\]", prompt)
-        answer = "Complete covered sections: " + " ".join(
-            f"[source:{source}]" for source in sources
-        )
+        answer = "Complete covered sections: " + cited_markers(prompt)
         return httpx.Response(200, json=response_payload(answer))
 
     monkeypatch.setattr(
@@ -1031,14 +1071,9 @@ async def test_given_asgi_level_cancellation_when_disconnected_then_database_ret
             resources.settings, http_client=httpx.AsyncClient(transport=AwaitingTransport(provider))
         ),
     )
-    request = type(
-        "Request", (), {"is_disconnected": lambda self: asyncio.sleep(0, result=False)}
-    )()
     body = ChatInput(content="What accuracy?", request_id=uuid4())
-    assistant, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    response = StreamingResponse(
-        chat.stream_answer(resources, request, assistant, prompt, chunks, replay)
-    )
+    prepared = await chat.prepare(resources, chat_id, body)
+    response = StreamingResponse(chat.stream_answer(resources, CONNECTED, prepared))
 
     async def receive():
         await delta_sent.wait()
@@ -1053,11 +1088,11 @@ async def test_given_asgi_level_cancellation_when_disconnected_then_database_ret
     )
     assert closed == [True]
     async with resources.sessions() as session:
-        stored = await session.get(ChatMessage, assistant.id)
+        stored = await session.get(ChatMessage, prepared.assistant.id)
         assert stored.state == "interrupted" and stored.content == output
-    existing, prompt, chunks, replay = await chat.prepare(resources, chat_id, body)
-    assert replay and existing.id == assistant.id and existing.state == "interrupted"
-    assert len(calls) == 1
+    existing = await chat.prepare(resources, chat_id, body)
+    assert existing.replay and existing.assistant.id == prepared.assistant.id
+    assert existing.assistant.state == "interrupted" and len(calls) == 1
 
 
 async def test_given_completed_summary_when_weights_deleted_then_provenance_survives(

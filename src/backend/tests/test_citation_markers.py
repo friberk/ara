@@ -1,11 +1,10 @@
-"""Only the observed Unicode source-marker wrapper gains canonical support."""
+"""ARA-052 Unicode source-marker cases, run against the ARA-073 passage validator."""
 
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
-from app.services.retrieval import validate_citations
+from support.citations import validate_citations
 
 DOCUMENT = UUID("a4a44444-4444-4444-8444-444444444444")
 SOURCE_ID = UUID("a1a11111-1111-4111-8111-111111111111")

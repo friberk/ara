@@ -2,6 +2,7 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, delete, func, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
 from app.models.jobs import BackgroundJob, JobOutbox
@@ -23,6 +24,21 @@ def recovery_operations(payload: dict) -> list[str]:
         identifiers = []
     identifiers.append(payload.get("_pull_operation_id"))
     return list(dict.fromkeys(identifier for identifier in identifiers if identifier))
+
+
+BUSY_SLOT = {
+    "inference": "A local generation is already running.",
+    "retrieval": "A local search request is already running.",
+}
+# A search waiting for a slot marks it in `model_uses` under this suffix (no migration needed).
+WAITING = "-waiting"
+
+
+class SlotBusy(AppError):
+    """Another holder has the slot. Unlike maintenance, it frees within one short lease."""
+
+    def __init__(self, slot: str):
+        super().__init__(409, "LOCAL_MODEL_BUSY", BUSY_SLOT[slot])
 
 
 async def pending_owner(session):
@@ -199,7 +215,18 @@ async def claim_model_job(sessions, job_id: UUID, generation: int) -> UUID | Non
         return token
 
 
-async def acquire_use(sessions, key: str) -> UUID:
+async def acquire_use(
+    sessions,
+    key: str,
+    *,
+    slot: str = "inference",
+    lease_seconds: int = 60,
+    background: bool = False,
+) -> UUID:
+    """Admit one holder per slot; generation and retrieval slots run side by side.
+
+    A `background` holder also yields while a search waits for the slot (`mark_waiting`).
+    """
     async with sessions() as session, session.begin():
         await lock_models(session)
         installation = await session.get(ModelInstallation, key)
@@ -225,35 +252,56 @@ async def acquire_use(sessions, key: str) -> UUID:
             raise AppError(
                 409, "LOCAL_MODEL_BUSY", "The local runtime is performing model maintenance."
             )
-        lease = await session.get(ModelUse, "inference", with_for_update=True)
+        lease = await session.get(ModelUse, slot, with_for_update=True)
         if lease and lease.expires_at > now():
-            raise AppError(409, "LOCAL_MODEL_BUSY", "A local generation is already running.")
+            raise SlotBusy(slot)
+        if background and await session.scalar(
+            select(ModelUse.token).where(
+                ModelUse.slot == slot + WAITING, ModelUse.expires_at > func.now()
+            )
+        ):
+            raise AppError(409, "LOCAL_MODEL_BUSY", "A search is waiting for the local runtime.")
         token = uuid4()
+        expires_at = now() + timedelta(seconds=lease_seconds)
         if lease:
-            lease.model_key, lease.token, lease.expires_at = (
-                key,
-                token,
-                now() + timedelta(seconds=60),
-            )
+            lease.model_key, lease.token, lease.expires_at = key, token, expires_at
         else:
-            session.add(
-                ModelUse(
-                    slot="inference",
-                    model_key=key,
-                    token=token,
-                    expires_at=now() + timedelta(seconds=60),
-                )
-            )
+            session.add(ModelUse(slot=slot, model_key=key, token=token, expires_at=expires_at))
         return token
 
 
-async def heartbeat_use(sessions, token: UUID) -> bool:
+async def mark_waiting(sessions, key: str, *, slot: str, seconds: float) -> None:
+    """Keep background holders off `slot` for `seconds` while a search waits for it.
+
+    The mark only expires; every waiter renews it, so none can clear another's.
+    """
+    expires_at = now() + timedelta(seconds=seconds)
+    async with sessions() as session, session.begin():
+        await session.execute(
+            insert(ModelUse)
+            .values(slot=slot + WAITING, model_key=key, token=uuid4(), expires_at=expires_at)
+            .on_conflict_do_update(
+                index_elements=["slot"], set_={"model_key": key, "expires_at": expires_at}
+            )
+        )
+
+
+async def use_held(sessions, slot: str = "inference") -> bool:
+    """A cheap look at the slot's lease, without admission's runtime checks."""
+    async with sessions() as session:
+        held = await session.scalar(
+            select(ModelUse.token).where(ModelUse.slot == slot, ModelUse.expires_at > func.now())
+        )
+        return held is not None
+
+
+async def heartbeat_use(sessions, token: UUID, lease_seconds: int = 60) -> bool:
     async with sessions() as session, session.begin():
         return (
             await session.scalar(
                 update(ModelUse)
                 .where(ModelUse.token == token, ModelUse.expires_at > func.now())
-                .values(expires_at=now() + timedelta(seconds=60))
+                .values(expires_at=now() + timedelta(seconds=lease_seconds))
                 .returning(ModelUse.token)
             )
             is not None

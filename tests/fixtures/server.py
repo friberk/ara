@@ -1,17 +1,21 @@
 """Deterministic external HTTP services. Used only by the isolated test stack."""
 
+import base64
 import json
 import os
 import re
+import struct
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from fulltext_fixture import FullTextFixture
-from ollama_fixture import OllamaFixture
+from ollama_fixture import OllamaFixture, cited_answer, relevance
+from vectors import fixture_vector
 
 OLLAMA = OllamaFixture()
 FULLTEXT = FullTextFixture()
+EMBEDDING_DIMENSIONS = {"text-embedding-3-large": 3072, "text-embedding-3-small": 1536}
 
 TITLE = "Traceable Research Systems"
 ABSTRACT = (
@@ -82,7 +86,11 @@ def structured_value(schema, root, field=""):
             for name, value in schema.get("properties", {}).items()
         }
     if schema.get("type") == "array":
-        return ["Ada Researcher"] if field == "authors" else []
+        if field == "authors":
+            return ["Ada Researcher"]
+        # Honour minItems so schemas such as query plans (search_queries >= 1) validate.
+        items = schema.get("items", {"type": "string"})
+        return [structured_value(items, root, field) for _ in range(schema.get("minItems", 0))]
     if schema.get("type") == "integer":
         return 2024 if field in ("year", "publication_year") else 1
     if schema.get("type") == "number":
@@ -206,6 +214,12 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path.startswith("/api/"):
             self.ollama_mutation()
             return
+        if urlparse(self.path).path == "/v1/embeddings":
+            self.embeddings()
+            return
+        if urlparse(self.path).path == "/v1/decisions":
+            self.decisions()
+            return
         if urlparse(self.path).path != "/v1/responses":
             self.send_json({"error": "Unknown fixture endpoint"}, 404)
             return
@@ -224,16 +238,13 @@ class Handler(BaseHTTPRequestHandler):
             answer = json.dumps(structured_value(schema, schema))
         else:
             inputs = json.dumps(request.get("input", ""))
-            sources = list(dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", inputs)))
-            citation = f" [source:{sources[0]}]" if sources else ""
-            answer = (
+            answer = cited_answer(
+                inputs,
                 "The paper evaluates a retrieval-first pipeline on the Orion-12 dataset. "
                 "The reported accuracy is 86 percent; "
-                "the experiment contains only twelve examples. "
-                + citation
-                + "\n\nIts main limitation is the small synthetic dataset, "
-                "so these results do not establish performance on real research libraries."
-                + citation
+                "the experiment contains only twelve examples. ",
+                "\n\nIts main limitation is the small synthetic dataset, "
+                "so these results do not establish performance on real research libraries.",
             )
         if not request.get("stream"):
             self.send_json(response_payload(model, answer))
@@ -283,6 +294,71 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         self.close_connection = True
+
+    def decisions(self):
+        """Predicate relevance for reranking: word overlap between query and passage (ARA-074)."""
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            request = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self.send_json({"error": {"message": "Invalid JSON"}}, 400)
+            return
+        text = request.get("input", "")
+        if not isinstance(text, str):
+            text = json.dumps(text)
+        if "DECISIONS-ERROR-FIXTURE" in text:
+            self.send_json({"error": {"message": "Synthetic decisions failure"}}, 500)
+            return
+        match = re.search(r"Query:\s*(.*?)\n\s*\n(?:Passage|Document)[^:\n]*:\s*(.*)", text, re.S)
+        answers = []
+        for question in request.get("questions", []):
+            name = question.get("name", "answer")
+            if "REFUSE-FIXTURE" in text:
+                answers.append({"type": "refusal", "name": name})
+            else:
+                probability = relevance(*match.groups()) if match else 0.5
+                answers.append({"type": "predicate", "name": name, "probability": round(probability, 4)})
+        tokens = max(1, len(text.split()))
+        self.send_json(
+            {
+                "model": request.get("model", "gpt-6-luna"),
+                "answers": answers,
+                "usage": {"input_tokens": tokens, "output_tokens": 0, "total_tokens": tokens},
+            }
+        )
+
+    def embeddings(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > 4_000_000:
+            self.send_json({"error": "Fixture request too large"}, 413)
+            return
+        try:
+            request = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self.send_json({"error": "Invalid JSON"}, 400)
+            return
+        model = request.get("model", "text-embedding-3-large")
+        texts = request.get("input", [])
+        texts = [texts] if isinstance(texts, str) else texts
+        if model not in EMBEDDING_DIMENSIONS or not all(isinstance(t, str) for t in texts):
+            self.send_json({"error": {"message": "Unsupported fixture embedding request"}}, 400)
+            return
+        dims = request.get("dimensions") or EMBEDDING_DIMENSIONS[model]
+        data = []
+        for index, text in enumerate(texts):
+            vector = fixture_vector(text, dims)
+            if request.get("encoding_format", "base64") == "base64":
+                vector = base64.b64encode(struct.pack(f"<{dims}f", *vector)).decode()
+            data.append({"object": "embedding", "index": index, "embedding": vector})
+        tokens = sum(max(1, len(text.split())) for text in texts)
+        self.send_json(
+            {
+                "object": "list",
+                "data": data,
+                "model": model,
+                "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
+            }
+        )
 
     def do_DELETE(self):
         self.ollama_mutation()

@@ -9,10 +9,21 @@ from typing import Any
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from sqlalchemy import func, select, text
 
+from app.integrations.context_registry import (
+    HOSTED_OUTPUT_TOKENS,
+    context_profile,
+    hosted_profile,
+)
+from app.integrations.tokens import (
+    PromptMessage,
+    check_roles,
+    count_messages,
+    count_prompt,
+    keep_head,
+)
 from app.schemas.ai import Model
 
-INPUT_LIMIT = 32000
-OUTPUT_LIMIT = 4000
+OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
 LOCAL_TEMPERATURE = 0.0
 # Each model owns its controls, even where their current documented sets match.
 # Source: https://developers.openai.com/api/docs/models/gpt-5.6-{sol,terra,luna}
@@ -34,15 +45,23 @@ class LLMError(Exception):
         self.code, self.message, self.status = code, message, status
 
 
-def estimate_tokens(value: str) -> int:
-    # One token per UTF-8 byte is deliberately conservative without a known tokenizer.
-    return len(value.encode("utf-8"))
+def output_allocation(limit: int, requested: int | None) -> int:
+    """An intermediate call may ask for less output than the model's answer allowance."""
+    if requested is None:
+        return limit
+    if not isinstance(requested, int) or isinstance(requested, bool) or not 1 <= requested <= limit:
+        raise LLMError(
+            "CONTEXT_LIMIT", "Intermediate output exceeds the configured allocation.", 413
+        )
+    return requested
 
 
 def validate_selection(model: str, effort: str) -> Model:
     from app.integrations.model_catalog import local_spec
 
     spec = local_spec(model)
+    if spec and spec.kind != "chat":
+        raise LLMError("INVALID_MODEL", "This local model cannot generate text.", 422)
     if spec:
         if not isinstance(effort, str) or not 1 <= len(effort) <= 20:
             raise LLMError("INVALID_REASONING", "The reasoning effort is not supported.", 422)
@@ -68,16 +87,15 @@ def validate_selection(model: str, effort: str) -> Model:
     )
 
 
-def model_limits(resources, model: str) -> tuple[int, int]:
-    from app.integrations.model_catalog import local_spec
+def thinking_controls(selection: Model | None) -> dict | None:
+    return selection.thinking.model_dump() if selection and selection.thinking else None
 
-    if local_spec(model):
-        settings = resources.settings
-        return (
-            settings.ollama_context_window - settings.ollama_max_output_tokens - 512,
-            settings.ollama_max_output_tokens,
-        )
-    return INPUT_LIMIT, OUTPUT_LIMIT
+
+def model_limits(
+    resources, model: str, effort: str = "default", *, thinking: dict | None = None
+) -> tuple[int, int]:
+    profile = context_profile(resources, model, effort, thinking=thinking)
+    return profile.input_budget, profile.max_output
 
 
 async def validate_model_available(resources, model: str, effort: str) -> Model:
@@ -113,7 +131,7 @@ def create_llm(resources, model: str, *, selection: Model | None = None):
             spec.model_id,
             http_client=resources.ollama_generation_http,
             reasoning_efforts=selection.reasoning_efforts if selection else ["default"],
-            thinking=selection.thinking.model_dump() if selection and selection.thinking else None,
+            thinking=thinking_controls(selection),
         )
     validate_selection(model, "low")
     return HostedLLM(resources.settings)
@@ -141,25 +159,33 @@ async def generation_slots(resources, model: str):
 async def generation_configuration(resources, model: str, effort: str) -> dict:
     from app.integrations.model_catalog import local_spec
 
-    input_limit, output_limit = model_limits(resources, model)
     configuration = {
         "provider": "openai",
         "prompt_version": "1",
         "model": model,
-        "input_limit": input_limit,
-        "output_limit": output_limit,
         "reasoning_effort": effort,
     }
+    thinking = None
     if local_spec(model):
         from app.services.local_models import local_generation_provenance
 
-        configuration.update(await local_generation_provenance(resources, model, effort))
+        provenance = await local_generation_provenance(resources, model, effort)
+        thinking = provenance["thinking"]
+        configuration.update(provenance)
         configuration.update(
-            context_window=resources.settings.ollama_context_window,
             num_thread=resources.settings.ollama_num_threads,
-            safety_tokens=512,
             temperature=LOCAL_TEMPERATURE,
         )
+    profile = context_profile(resources, model, effort, thinking=thinking)
+    configuration.update(
+        window=profile.window,
+        max_output=profile.max_output,
+        thinking_allowance=profile.thinking_allowance,
+        safety_tokens=profile.safety,
+        input_budget=profile.input_budget,
+        tokenizer=profile.counter.encoding.name,
+        token_factor=profile.counter.factor,
+    )
     return configuration
 
 
@@ -181,11 +207,21 @@ def reservation_amount(model: str, input_tokens: int, output_tokens: int = OUTPU
 
 async def reserve(resources, model: str, input_tokens: int) -> None:
     from app.integrations.model_catalog import local_spec
-    from app.models.research import GenerationReservation
 
     if local_spec(model):
         return
-    amount = reservation_amount(model, input_tokens)
+    await reserve_amount(resources, model, reservation_amount(model, input_tokens))
+
+
+async def reserve_embedding(resources, profile, input_tokens: int) -> None:
+    """Embeddings share the daily ledger under `embedding:<profile>` at the profile's price."""
+    amount = profile.price_per_million * input_tokens / Decimal(1000000)
+    await reserve_amount(resources, f"embedding:{profile.key}", amount)
+
+
+async def reserve_amount(resources, model: str, amount: Decimal) -> None:
+    from app.models.research import GenerationReservation
+
     async with resources.sessions() as session, session.begin():
         # Serialize budget checks across API and worker processes, not just this event loop.
         await session.execute(text("SELECT pg_advisory_xact_lock(593012)"))
@@ -204,11 +240,14 @@ async def reserve(resources, model: str, input_tokens: int) -> None:
 class Completion:
     content: str
     usage: dict[str, Any]
+    # The model stopped at its output limit; only callers that opted in receive this.
+    truncated: bool = False
 
 
 class HostedLLM:
     def __init__(self, settings, *, http_client=None):
         ensure_configured(settings)
+        self.settings = settings
         self.client = AsyncOpenAI(
             api_key=settings.openai_api_key.get_secret_value(),
             base_url=settings.openai_base_url,
@@ -221,25 +260,49 @@ class HostedLLM:
     async def close(self) -> None:
         await self.client.close()
 
-    def parameters(self, model, effort, instructions, prompt):
+    def request(self, model, effort, messages, *, max_output_tokens=None) -> dict:
+        """Responses arguments: the leading system message becomes `instructions`; the rest,
+        including summaries and recalled turns, keep their user or assistant roles."""
+        if not messages or messages[0].role != "system":
+            raise ValueError("A message list must start with the system instructions.")
+        check_roles(messages)
         if model not in PRICES:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
-        if estimate_tokens(instructions) + estimate_tokens(prompt) > INPUT_LIMIT:
+        profile = hosted_profile(self.settings, model)
+        output = output_allocation(profile.max_output, max_output_tokens)
+        if count_messages(profile.counter, messages) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413
             )
         return {
             "model": model,
             "reasoning": {"effort": effort},
-            "instructions": instructions,
-            "input": prompt,
+            "instructions": messages[0].content,
+            "input": [{"role": m.role, "content": m.content} for m in messages[1:]],
             "store": False,
-            "max_output_tokens": OUTPUT_LIMIT,
+            "max_output_tokens": output,
         }
 
+    def parameters(self, model, effort, instructions, prompt):
+        prompt_messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
+        arguments = self.request(model, effort, prompt_messages)
+        # A single prompt keeps its string form, which Responses reads as one user message.
+        arguments["input"] = prompt
+        return arguments
+
     async def complete(self, model, effort, instructions, prompt, *, schema=None) -> Completion:
-        arguments = self.parameters(model, effort, instructions, prompt)
+        return await self.complete_request(
+            self.parameters(model, effort, instructions, prompt), schema
+        )
+
+    async def complete_messages(
+        self, model, effort, messages, *, schema=None, max_output_tokens=None
+    ) -> Completion:
+        arguments = self.request(model, effort, messages, max_output_tokens=max_output_tokens)
+        return await self.complete_request(arguments, schema)
+
+    async def complete_request(self, arguments, schema) -> Completion:
         if schema is not None:
             arguments["text"] = {
                 "format": {
@@ -258,7 +321,16 @@ class HostedLLM:
             raise provider_error(exc) from None
 
     async def stream(self, model, effort, instructions, prompt) -> AsyncIterator[str]:
-        arguments = self.parameters(model, effort, instructions, prompt)
+        async for delta in self.stream_request(
+            self.parameters(model, effort, instructions, prompt)
+        ):
+            yield delta
+
+    async def stream_messages(self, model, effort, messages) -> AsyncIterator[str]:
+        async for delta in self.stream_request(self.request(model, effort, messages)):
+            yield delta
+
+    async def stream_request(self, arguments) -> AsyncIterator[str]:
         finished = False
         try:
             stream = await self.client.responses.create(**arguments, stream=True)
@@ -288,13 +360,13 @@ def provider_error(exc: Exception) -> LLMError:
     return LLMError("MODEL_REQUEST_FAILED", "The model request failed. It was not retried.")
 
 
-async def default_selection(resources) -> tuple[str, str]:
+async def saved_defaults(resources):
     from app.models.research import ModelConfiguration
     from app.schemas.ai import Defaults
 
     async with resources.sessions() as session:
         row = await session.get(ModelConfiguration, "defaults")
-    defaults = (
+    return (
         Defaults.model_validate(row.value)
         if row
         else Defaults(
@@ -302,6 +374,10 @@ async def default_selection(resources) -> tuple[str, str]:
             reasoning_effort=resources.settings.default_reasoning_effort,
         )
     )
+
+
+async def default_selection(resources) -> tuple[str, str]:
+    defaults = await saved_defaults(resources)
     return defaults.default_model, defaults.reasoning_effort
 
 
@@ -341,16 +417,12 @@ async def extract_metadata(resources, evidence: str) -> dict:
         "Use null for absent fields. Do not infer publication year from PDF creation dates. "
         "Copy title, author names, abstract, and DOI from the evidence."
     )
-    input_limit, _ = model_limits(resources, model)
-    available_bytes = min(18000, input_limit - estimate_tokens(instructions))
-    evidence = evidence.encode("utf-8")[:available_bytes].decode("utf-8", errors="ignore")
+    profile = context_profile(resources, model, effort, thinking=thinking_controls(selection))
+    available = min(18000, profile.input_budget - count_prompt(profile.counter, instructions, ""))
+    evidence = keep_head(profile.counter, evidence, available)
     schema = Metadata.model_json_schema()
     schema["additionalProperties"] = False
-    await reserve(
-        resources,
-        model,
-        estimate_tokens(evidence) + estimate_tokens(instructions),
-    )
+    await reserve(resources, model, count_prompt(profile.counter, instructions, evidence))
     client = create_llm(resources, model, selection=selection)
     try:
         async with generation_slots(resources, model):
