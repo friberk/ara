@@ -109,6 +109,8 @@ NVIDIA requires NVIDIA Container Toolkit. AMD requires supported ROCm hardware/d
 
 The managed image pins Ollama 0.40.1 and llama.cpp b11454. Stock 0.40.1 rejected the real 7B artifact with `unknown model architecture: 'k2-horizon'`. The custom build uses upstream architecture support, reviewed Ollama hook/CLEF adaptations and operation-scoped pull controls. See [runtime provenance, licenses and measured evidence](docker/ollama/README.md). An external `OLLAMA_BASE_URL` must provide the reviewed control protocol for acknowledged pause; stock endpoints cannot promise it.
 
+Reasoning controls belong to each model. The GPT-5.6 catalog records `none`, `low`, `medium`, `high`, `xhigh` and `max` separately for Sol, Terra and Luna. Native models use verified Ollama `thinking.values` and `thinking.default` metadata. The pinned IFM template has thinking off/on and `low`/`medium`/`high`, with `high` as its default; it does not support `xhigh` or `max`. **Model default** leaves the native `think` parameter unspecified. After a runtime or capability-schema update, choose **Verify again** in Settings to refresh an installed model's controls. Verification reuses existing weights, and preserves conversations, summaries and saved defaults.
+
 Opt-in live engine validation downloads only 7B into a labeled isolated volume and preserves that volume:
 
 ```bash
@@ -116,6 +118,12 @@ python3 scripts/test-local-models.py --resume --volume ara-ollama-validation-new
 ```
 
 Use a fresh validation volume to exercise a real resumed transfer. This engine check is separate from the fixture-based browser suite and full application summary/Q&A checks. OCR remains optional.
+
+To check an existing labeled validation volume without making any pull request, use `--retained-only` instead of `--resume`. The command fails if the retained 7B artifact is missing:
+
+```bash
+python3 scripts/test-local-models.py --retained-only --volume ara-ollama-validation-existing --output /tmp/ara-local-thinking-result.json
+```
 
 ## Agent skill and project records
 

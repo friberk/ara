@@ -43,6 +43,8 @@ Alembic owns `ModelInstallation`, durable model-use leases, operation UUID uniqu
 
 ## LLM boundary
 
+ARA-051 corrects thinking discovery after the user's documentation and per-model capability review. `Model.thinking` is nullable `{values: (boolean|string)[], default: boolean|string}`. Existing selection strings remain: `default` omits native `think`, `none` maps Boolean false, `on` maps Boolean true, and named levels preserve their exact native value. Installation validation stores the verified mapping and capability schema version. Generation provenance records the effective value and whether the parameter was omitted; interrupted summaries reject changed defaults. Existing weights need verification after this update, rather than downloading again. Hosted capability entries are keyed individually by model, retaining each GPT-5.6 model's documented `xhigh` and `max` support. No shared list constrains every provider.
+
 Add provider-aware catalog/adapter selection. Ollama native `/api/chat` maps NDJSON to existing app SSE; completion/structured output use the same service interface with Pydantic validation. Local calls do not require OPENAI_API_KEY, hosted price registry membership, or hosted dollars. All responses retain request UUID safety, citation validation, histories, provider/artifact/runtime/effective settings provenance. Enforce context per model across retrieval/history/full-document summary batching and reduction; preserve full-document coverage. Incomplete/truncated outputs fail explicitly. Busy interactive local inference returns actionable 429; background local summaries wait without burning transfer/paid retry budgets.
 
 ## UI and acceptance

@@ -307,6 +307,8 @@ Fully round, 20px tall, label size at regular weight, with a leading 12px icon. 
 ### Composer (signature)
 The single input surface of the app. It is a 22px-radius floating form on paper (card in dark mode) with the soft composer shadow. An optional header row holds context chips. The auto-growing textarea runs from 44px (64px on home) up to 240px. Below it, a toolbar holds leading controls (attach, provider switcher) on the left, trailing controls (model and reasoning switcher) on the right, and a 28px round ink send button that becomes Stop while generating. Enter sends and Shift+Enter adds a new line. An optional centred footnote of 12px muted text sits beneath it and explains why it is disabled or reminds the user to check claims.
 
+Reasoning choices come from the selected model's backend capabilities. Settings uses the same labels as the composer. Native Boolean controls read **On** and **None**; **Model default** leaves the choice to that model. Named levels retain their IDs, with descriptive labels for known values. Switching from a hosted model to a local model resets an unsupported effort to the local default and keeps the selected model's identity.
+
 ### Conversation thread
 User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a muted meta line (copy, model name, reasoning level). While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.
 

@@ -3,7 +3,7 @@
   "title": "Correct Ollama thinking discovery and investigate IFM controls",
   "type": "bug",
   "priority": "P1",
-  "description": "The application reads the legacy thinking_levels field rather than the documented thinking object. The installed IFM 3.7B runtime currently advertises neither field; resolving its controls also requires runtime/template investigation. Preserve verified default/disabled behavior until supported controls are established.",
+  "description": "Correct canonical Ollama thinking discovery, model-specific hosted/native capabilities and exact IFM runtime controls, including the real medium-mode closing-token parser defect. The final retained 7B paper workflow is verified after the related ARA-052 citation-format fix.",
   "dependencies": [
     "ARA-044",
     "ARA-045",
@@ -21,15 +21,23 @@
     "Opt-in 7B runtime verification; no additional weights downloaded without authorization.",
     "Per-model hosted capability isolation; xhigh/max hosted payloads and local/hosted switching."
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "src/backend/app/integrations/ollama.py",
     "src/backend/app/integrations/ollama_llm.py",
     "src/backend/tests/test_local_models_runtime.py",
-    "docker/ollama/README.md"
+    "docker/ollama/README.md",
+    "docker/ollama/004-ifm-thinking.patch",
+    "docker/ollama/005-ifm-thinking-close.patch",
+    "src/backend/tests/test_hosted_reasoning.py"
   ],
-  "commits": [],
+  "commits": [
+    "6e3bb42",
+    "6b0b5c9",
+    "a8f3238",
+    "c220415"
+  ],
   "pull_requests": [],
-  "verification": "Official documentation inspected; current Python parser confirmed against source. Read-only /api/show on installed IFM 3.7B omitted thinking metadata and reported tools/completion. Earlier 7B named-parameter rejection remains a measured result for the pinned build. No behavioral change or new generation test executed in this investigation.",
+  "verification": "279 final backend tests passed after related citation work; 359 frontend tests, strict TypeScript/ESLint/build passed; full stable 12-scenario browser run passed, then two refreshed local-model scenarios passed again. Canonical per-model controls and hosted xhigh/max isolation verified. Final .2 ARM64 CPU image 6bc3fbbc passed all six retained 7B modes, named-level schemas, 24 C++ cases, full upstream chat and Go/race suites. Real low summary and medium cited chat passed; exact provenance and six-service persistence verified. User 3.7B read-only metadata advertises controls; its weights preserved, no inference claim. No new weights/paid hosted calls, merge or push.",
   "updated_at": "2026-10-08"
 }
