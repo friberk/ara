@@ -55,7 +55,7 @@ function ModelOption({ model, name, checked, onSelect }: { model: Model; name: s
 
 function normalise(models: Model[], value: GenerationSettings): GenerationSettings {
   const model = models.find((item) => item.key === value.model)
-  if (!model || model.reasoning_efforts.includes(value.reasoning_effort)) return value
+  if (!model || model.status === 'unavailable' || model.reasoning_efforts.includes(value.reasoning_effort)) return value
   return { model: model.key, reasoning_effort: model.reasoning_efforts[0] ?? 'none' }
 }
 

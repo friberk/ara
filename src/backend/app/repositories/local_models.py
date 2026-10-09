@@ -64,6 +64,84 @@ async def installation_locked(session, key: str) -> ModelInstallation:
     return row
 
 
+def validation_matches_current(validation, *, digest, context_window, runtime_version=None):
+    if not isinstance(validation, dict):
+        return False
+    version = validation.get("runtime_version")
+    return (
+        validation.get("thinking_schema") == 1
+        and validation.get("digest") == digest
+        and validation.get("context_window") == context_window
+        and isinstance(version, str)
+        and bool(version.strip())
+        and (runtime_version is None or version == runtime_version)
+    )
+
+
+async def enqueue_revalidation(
+    sessions,
+    key,
+    *,
+    digest,
+    context_window,
+    runtime_version,
+    expected_validation,
+    expected_job_id,
+    artifact_present,
+):
+    """Recheck an external observation under mutation/inference admission."""
+    from app.repositories.jobs import enqueue
+
+    async with sessions() as session, session.begin():
+        await lock_models(session)
+        row = await session.get(ModelInstallation, key, with_for_update=True)
+        if (
+            row is None
+            or row.state != "ready"
+            or row.desired_state != "ready"
+            or not row.weights_present
+            or row.validation != expected_validation
+            or row.active_job_id != expected_job_id
+        ):
+            return None
+        if artifact_present and validation_matches_current(
+            row.validation,
+            digest=digest,
+            context_window=context_window,
+            runtime_version=runtime_version,
+        ):
+            return None
+        active = await session.get(BackgroundJob, row.active_job_id) if row.active_job_id else None
+        if active and active.state != "completed":
+            return None
+        if await pending_owner(session):
+            return None
+        if await session.scalar(select(ModelUse.token).where(ModelUse.expires_at > func.now())):
+            return None
+        if await session.scalar(
+            select(BackgroundJob.id).where(
+                BackgroundJob.kind.in_(["model_download", "model_delete"]),
+                BackgroundJob.state == "processing",
+            )
+        ):
+            return None
+        job = await enqueue(
+            session,
+            kind="model_download",
+            payload={
+                "model_key": key,
+                "verify_only": True,
+                "automatic": True,
+            },
+        )
+        job.model_key = key
+        job.completed_bytes, job.total_bytes = row.completed_bytes, row.total_bytes
+        row.active_job_id, row.state = job.id, "queued"
+        row.error_code = row.error_message = None
+        row.updated_at = now()
+        return job.id
+
+
 async def claim_model_job(sessions, job_id: UUID, generation: int) -> UUID | None:
     async with sessions() as session, session.begin():
         await lock_models(session)
@@ -93,8 +171,11 @@ async def claim_model_job(sessions, job_id: UUID, generation: int) -> UUID | Non
             return None
         if await session.scalar(select(ModelUse.token).where(ModelUse.expires_at > func.now())):
             return None
+        verify_only = job.model_operation == "verify"
+        if verify_only and installation.desired_state != "ready":
+            return None
         token = uuid4()
-        job.state, job.stage = "processing", "inventory"
+        job.state, job.stage = "processing", "verifying" if verify_only else "inventory"
         job.lease_token, job.lease_expires_at = token, now() + timedelta(seconds=60)
         job.runtime_operation_id = uuid4()
         job.payload = {
@@ -105,7 +186,13 @@ async def claim_model_job(sessions, job_id: UUID, generation: int) -> UUID | Non
             ],
         }
         job.updated_at = now()
-        installation.state = "downloading" if job.kind == "model_download" else "deleting"
+        installation.state = (
+            "verifying"
+            if verify_only
+            else "downloading"
+            if job.kind == "model_download"
+            else "deleting"
+        )
         if installation.desired_state == "paused":
             installation.state, job.stage = "pausing", "pausing"
         installation.updated_at = now()
@@ -248,7 +335,7 @@ def record_failure_locked(job, installation, error):
     marker = job.payload.get("_model_failure")
     if marker is None:
         marker = {"code": error.code, "message": error.message, "status": error.status_code}
-        if active:
+        if active or job.model_operation == "verify":
             job.attempts = min(3, job.attempts + 1)
     pending = recovery_operations(job.payload)
     if active or pending:

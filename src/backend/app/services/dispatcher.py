@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import suppress
 
 from sqlalchemy import func, select
 
@@ -51,19 +52,40 @@ async def dispatch_once(sessions, publish, *, model_publish=None, local_publish=
 
 
 async def dispatcher_loop(resources, publish, *, model_publish=None, local_publish=None) -> None:
-    recovered_at = 0.0
-    while True:
+    from app.services.local_models import reconcile_local_models
+
+    recovered_at = prepared_at = 0.0
+    preparation = None
+
+    async def prepare():
         try:
-            loop = asyncio.get_running_loop()
-            if loop.time() - recovered_at >= resources.settings.recovery_interval_seconds:
-                await recover(resources.sessions)
-                recovered_at = loop.time()
-            await dispatch_once(
-                resources.sessions,
-                publish,
-                model_publish=model_publish,
-                local_publish=local_publish,
-            )
+            await reconcile_local_models(resources)
         except Exception:
-            logger.error("Job dispatcher unavailable; retrying on next poll")
-        await asyncio.sleep(resources.settings.dispatch_interval_seconds)
+            logger.warning("Automatic model preparation unavailable; retrying later")
+
+    try:
+        while True:
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.time() - recovered_at >= resources.settings.recovery_interval_seconds:
+                    await recover(resources.sessions)
+                    recovered_at = loop.time()
+                if loop.time() - prepared_at >= resources.settings.recovery_interval_seconds and (
+                    preparation is None or preparation.done()
+                ):
+                    preparation = asyncio.create_task(prepare())
+                    prepared_at = loop.time()
+                await dispatch_once(
+                    resources.sessions,
+                    publish,
+                    model_publish=model_publish,
+                    local_publish=local_publish,
+                )
+            except Exception:
+                logger.error("Job dispatcher unavailable; retrying on next poll")
+            await asyncio.sleep(resources.settings.dispatch_interval_seconds)
+    finally:
+        if preparation is not None:
+            preparation.cancel()
+            with suppress(asyncio.CancelledError):
+                await preparation

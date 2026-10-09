@@ -9,7 +9,7 @@ export function useModels() {
     queryFn: ({ signal }) => api<Collection<Model>>('/models', { signal }),
     staleTime: 10_000,
     refetchOnWindowFocus: 'always',
-    refetchInterval: (current) => current.state.data?.items.some((model) => model.installation && ['queued', 'downloading', 'pausing', 'verifying', 'deleting'].includes(model.installation.state)) ? 2000 : 30_000,
+    refetchInterval: (current) => current.state.data?.items.some((model) => model.installation && (['queued', 'downloading', 'pausing', 'verifying', 'deleting'].includes(model.installation.state) || (model.installation.state === 'ready' && model.unavailable_code === 'LOCAL_MODEL_REVALIDATION_REQUIRED'))) ? 2000 : 30_000,
   })
 }
 

@@ -8,6 +8,27 @@ const summary = { ...base, id: 'j2', kind: 'summary', state: 'completed', stage:
 const running = { ...base, id: 'j3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 55, paper_id: null, paper_title: null }
 afterEach(() => vi.unstubAllGlobals())
 
+test.each(['queued', 'verifying'])('Given a %s verification-only job, Then Activity names preparation and shows background status without transfer percentages', async (stage) => {
+  const model = { key: 'ifm-k2-horizon-7b', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'] }
+  mockApi({ 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: model.key, state: stage === 'queued' ? 'queued' : 'processing', stage, progress: 80, completed_bytes: 5592218900, total_bytes: 5592218900 }] } })
+  renderApp('/activity')
+  const row = (await screen.findByRole('heading', { name: 'Model preparation' })).closest('li') as HTMLElement
+  expect(within(row).getByRole('link', { name: 'K2 Horizon 7B' })).toHaveAttribute('href', '/settings#local-models')
+  expect(within(row).getByRole('status')).toHaveTextContent(stage === 'queued' ? 'Waiting to check model readiness' : 'Checking model readiness')
+  expect(within(row).getByText(/continues in the background/)).toBeVisible()
+  expect(within(row).queryByText(/\d+%/)).not.toBeInTheDocument()
+  expect(within(row).queryByRole('progressbar')).not.toBeInTheDocument()
+})
+
+test.each(['failed', 'completed'])('Given a %s verification-only job, Then Activity retains its preparation identity', async (state) => {
+  mockApi({ 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: 'ifm-k2-horizon-7b', state, stage: state, progress: state === 'completed' ? 100 : 80, error: state === 'failed' ? { code: 'LOCAL_MODEL_VERIFICATION_FAILED', message: 'Model preparation failed. Retry in Settings.' } : null }] } })
+  renderApp('/activity')
+  const row = (await screen.findByRole('heading', { name: 'Model preparation' })).closest('li') as HTMLElement
+  expect(within(row).getByText(state === 'failed' ? 'Failed' : 'Completed')).toBeVisible()
+  if (state === 'failed') expect(within(row).getByText('Model preparation failed. Retry in Settings.')).toBeVisible()
+  expect(within(row).queryByRole('progressbar')).not.toBeInTheDocument()
+})
+
 test('Given a paused model download, Then Activity names the model and links to its management controls', async () => {
   const model = { key: 'ifm-k2-horizon-7b', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'] }
   mockApi({ 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'model-job', kind: 'model_download', model_key: model.key, state: 'paused', stage: 'paused', progress: 25, completed_bytes: 1398054725, total_bytes: 5592218900 }] } })

@@ -1,6 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { renderWithProviders } from '@/test/render'
-import { mockApi } from '@/test/fetch-routes'
+import { json, mockApi } from '@/test/fetch-routes'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { GenerationSettingsProvider } from './generation-settings'
 import { useGenerationSettings } from './generation-settings-context'
@@ -8,7 +8,7 @@ import { ModelSwitcher } from './ModelSwitcher'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const unavailable = { ...luna, key: 'unavailable-exact', model_id: 'unavailable-exact', display_name: 'Unavailable model', status: 'unavailable', reasoning_efforts: [] }
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 function Selection() { const { settings } = useGenerationSettings(); return <output aria-label="Selection">{`${settings.model}/${settings.reasoning_effort}`}</output> }
 // Submenus are driven by keyboard: jsdom pointer events do not follow Radix's submenu pointer grace.
@@ -24,6 +24,25 @@ function mount() {
 }
 
 const localMissing = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'], unavailable_reason: 'Download weights in Settings to use this model.', unavailable_code: 'MODEL_WEIGHTS_MISSING', installation: { state: 'missing', weights_present: false, quantization: 'Q4_K_M', download_bytes: 5592218900, completed_bytes: 0, total_bytes: 5592218900, job_id: null, digest: null, updated_at: null, error: null } }
+
+test('Given an installed model preparing automatically, When server polling reports readiness, Then the composer permits its selection', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  let model = { ...localMissing, unavailable_code: 'LOCAL_MODEL_REVALIDATION_REQUIRED', unavailable_reason: 'Preparing this model automatically.', installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
+  mockApi({ 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  const { user, client, unmount } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
+  const item = screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ })
+  expect(item).toHaveAttribute('aria-disabled', 'true')
+  await user.click(item)
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/low')
+  model = { ...model, status: 'available', unavailable_code: '', unavailable_reason: '' }
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+  await waitFor(() => expect(screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ })).toHaveAttribute('aria-disabled', 'false'))
+  await user.click(screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ }))
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/default')
+  unmount()
+  client.clear()
+})
 
 test('Given missing local weights, When explored by keyboard, Then the explanation is discoverable and selection is guarded', async () => {
   mockApi({ 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })

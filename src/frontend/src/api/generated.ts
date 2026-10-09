@@ -605,6 +605,8 @@ export interface components {
         };
         /** Installation */
         Installation: {
+            /** Operation */
+            operation?: ("download" | "verify" | "delete") | null;
             /**
              * State
              * @enum {string}
@@ -688,6 +690,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Model Operation */
+            model_operation?: ("download" | "verify" | "delete") | null;
             /** Model Key */
             model_key?: string | null;
             /** Completed Bytes */
