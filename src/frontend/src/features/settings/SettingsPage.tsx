@@ -16,6 +16,7 @@ import { unavailableReason, useModels, useSaveDefaults, useSavedSettings } from 
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
 import { LocalModels } from './LocalModels'
+import { RetrievalSettingsSection } from './RetrievalSettingsSection'
 
 const statusBadges: Record<Model['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -135,6 +136,8 @@ export default function SettingsPage() {
             <EmptyState title="No models configured">Configure model access on the server, then reload this page.</EmptyState>
           ))}
         </section>
+        <Separator />
+        <RetrievalSettingsSection />
         <Separator />
         {models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
         <Appearance />
