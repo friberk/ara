@@ -820,3 +820,15 @@ Open items: ReaderGate (ARA-086) still titles the processing view after a downlo
 - **Pricing check.** The lead checked OpenAlex's current pricing. A free key gives $1 a day; single-work lookups are free. The content endpoint serves about 60M cached open-access PDFs at about $0.01 each. The user's `.env` has neither an OpenAlex nor a Semantic Scholar key, which fits the observed Semantic Scholar 429s.
 - **The decision.** PDFs come only from OpenAlex's stored copies. When there is no stored copy, or the paper is paywalled, the app shows the DOI link and the user uploads. The user is obtaining a key.
 - **Ticket.** ARA-087 deletes the allowlist and third-party host downloading.
+
+**Upload-to-library matching added to ARA-086.**
+- **The request.** The user asked that an uploaded PDF matching a library paper be flagged as a match. If the library paper has no PDF, the upload is attached to it. If it already has one, the user is asked whether to replace it. The user's words: "if there is the same paper on the library let's indicate the user there is match. If that one on the library has no PDFs attached apply the PDF, if there is PDF attached ask user to replace".
+- **Current behaviour.** Ingestion only appends the warning "PDF DOI matches another paper; reconcile bibliographic records manually." and keeps a duplicate paper.
+- **The ARA-086 brief now adds:**
+  - matching by DOI or arXiv ID, or a strict title match;
+  - attaching to a matched paper that has no PDF;
+  - Replace or Cancel when the matched paper already has a PDF;
+  - per-row decisions in multi-file uploads;
+  - late matches found by background enrichment;
+  - a plain warning when an upload into a specific paper belongs to a different paper.
+- **Constraints.** No automatic summary or other paid work starts while a decision is pending, and the pending state is durable in PostgreSQL.
