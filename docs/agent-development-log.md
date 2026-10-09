@@ -699,3 +699,44 @@ The cache-free build completed for backend, frontend, MinIO and patched Ollama. 
 A read-only main-browser smoke initially asserted an obsolete `pdf-page-2` test ID. The independent UI reviewer reproduced the actual successful page jump and identified the current semantic Page2 group; the source reader opens no dialog and announces the jump. Correcting only the harness selector passed the main smoke: old summary and saved citation preview, original PDF page2, Search index panel and local-model Settings were visible, with no horizontal overflow or mutation requests. No product change was needed.
 
 The user then authorized removing merged worktrees. Before deletion, ignored configuration and development evidence were copied to `docs/evidence/generated/worktree-archives/`; model files stay in their existing named Docker volumes. Original and feature databases were not consolidated or replaced. Preview/test stacks were stopped without volume deletion. Orca’s documented remove command normally attempts branch deletion, so its two managed checkouts were detached first; a saved reference-map check confirmed no branch restoration was necessary. Git removed the two Superpowers worktrees; Orca removed the full-text and temporary integration worktrees. Only the primary main checkout remains. All feature and integration refs retain their original tips and are ancestors of main, while the user’s untracked homework files and writing skills remain untouched. Nothing was pushed.
+
+## 2026-10-09 — User feedback round: chat model, automatic PDFs, context meter, upload metadata (ARA-083 to ARA-086)
+
+The user listed four complaints and asked the lead to ticket each one and dispatch one agent per ticket, choosing the model by difficulty. Each agent works on its own branch and git worktree, test-first. The complaints were:
+- summaries and follow-ups should use the chat's active model, not a separate setting;
+- available PDFs should be retrieved and summarized without a click;
+- a hollow context/cost ring belongs at the bottom left of the chat input;
+- the upload experience needs an overhaul, the metadata was wrong (an uploaded paper was titled `paper.dvi`), and lookup should go to OpenAlex or Semantic Scholar, chosen in Settings, while staying resilient to rate limits.
+
+**Setup.** The lead surveyed the relevant code before writing tickets ARA-083 to ARA-086 (`1d789dc`). The integration branch `feat/ux-feedback-round` sits off main `bef2ee6`, and each agent branch sits off it. Assignments:
+
+| Ticket | Model | Branch |
+|---|---|---|
+| ARA-083 | Sonnet | `feat/ara-083-chat-model` |
+| ARA-084 | Opus | `feat/ara-084-auto-pdf` |
+| ARA-085 | Sonnet | `feat/ara-085-context-meter` |
+| ARA-086 | Opus | `feat/ara-086-upload-metadata` |
+
+Opus went to the tickets that change durable background jobs. Each agent has its own test Compose project (`ara-<name>-test`). The main checkout and the user's running `ara` stack are untouched; agents may only read them.
+
+**File ownership.** The brief divided files so the agents wouldn't collide:
+- ARA-086 owns `ReaderGate`, `UploadDropzone`, the parser and the metadata part of ingestion.
+- ARA-084 owns `FullTextAccess`, `SummaryCard`, summarization, and a minimal ready-hook in ingestion.
+
+No migrations and no new dependencies are allowed.
+
+**Lead divergence: the reasoning effort for helper calls.**
+- The user asked that "Summaries and follow-ups should use whatever model is active in that chat." The lead's ticket and brief went further than that. Both said hosted chats should plan follow-ups and compact memory with the chat's model "at that model's quietest verified effort (as local chats already do)", and the lead's report to the user repeated it.
+- That effort rule was the lead's own extrapolation from the existing local-chat behaviour (`quiet_effort` in `services/memory.py`). The user never asked for it.
+- The user corrected it: "the reasoning effort should also follow what is active in that conversation at that time."
+- The lead sent the ARA-083 agent a correction. Planning uses the turn's model and effort, for hosted and local chats alike. Compaction uses the model and effort that were active when it was triggered.
+- The agent must also check that higher efforts don't truncate the planner or compaction output, break structured output or time out, and must report rather than silently downgrade.
+- Consequence for the user: a chat on an expensive model at high effort pays for that effort on its helper calls too, and local chats with reasoning on plan more slowly.
+
+**Metadata decisions.**
+- The lead summarized standard practice for scholarly PDF metadata: distrust the Info dictionary, read identifiers, resolve them in a registry, then extract the header layout as a fallback (GROBID being the usual tool).
+- The lead also noted two gaps in the ARA-086 brief: XMP was not read, and the layout fallback was a largest-font heuristic plus the existing LLM extraction.
+- The user chose XMP reading, no GROBID for now, and no LLM for metadata. The ARA-086 agent was told to:
+  - read XMP and the arXiv margin stamp as clues;
+  - remove `extract_metadata` from ingestion, test-first, while keeping older queued payloads safe;
+  - rely only on deterministic local extraction plus the OpenAlex or Semantic Scholar lookup.
