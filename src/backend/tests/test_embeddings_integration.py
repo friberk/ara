@@ -1,50 +1,17 @@
 """Hosted embeddings over LlamaIndex OpenAIEmbedding reserve budget first (ARA-072)."""
 
-import base64
-import json
 import math
-import struct
 from decimal import Decimal
 
-import httpx
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.models.research import GenerationReservation
-from tests.support.vectors import fixture_vector
+from tests.support.providers import openai_fixture
 
 pytestmark = pytest.mark.integration
-
-
-def openai_fixture(requests, *, status=200):
-    """Mirrors tests/fixtures/server.py /v1/embeddings, including base64 encoding."""
-
-    def handler(request):
-        body = json.loads(request.content)
-        requests.append(body)
-        if status != 200:
-            return httpx.Response(status, json={"error": {"message": "fixture failure"}})
-        dims = body.get("dimensions") or 3072
-        data = []
-        for index, text in enumerate(body["input"]):
-            vector = fixture_vector(text, dims)
-            if body.get("encoding_format", "base64") == "base64":
-                vector = base64.b64encode(struct.pack(f"<{dims}f", *vector)).decode()
-            data.append({"object": "embedding", "index": index, "embedding": vector})
-        tokens = sum(len(text.split()) for text in body["input"])
-        return httpx.Response(
-            200,
-            json={
-                "object": "list",
-                "data": data,
-                "model": body["model"],
-                "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
-            },
-        )
-
-    return httpx.MockTransport(handler)
 
 
 def hosted(resources):
