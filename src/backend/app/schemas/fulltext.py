@@ -54,6 +54,12 @@ class FullTextAccepted(BaseModel):
     job_id: UUID
 
 
+class AutomaticFullText(BaseModel):
+    paper_id: UUID
+    # The paper's automatic retrieval job, or null when the paper does not qualify.
+    job_id: UUID | None = None
+
+
 class FullTextAttemptView(BaseModel):
     provider: Provider
     source_label: str
