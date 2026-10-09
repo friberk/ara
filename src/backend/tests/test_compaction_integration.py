@@ -309,6 +309,28 @@ async def test_given_busy_local_runtime_when_compacting_then_job_waits_without_a
     assert local == [] and hosted == [] and await memories(resources, chat_id) == []
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        "## User goals\n## Established facts (with pages)\n## Questions asked",
+        "## User goals\n\n## Open threads\n\n#\n  \n",
+    ],
+)
+async def test_given_heading_only_summary_when_compacting_then_job_fails_without_a_version(
+    resources, monkeypatch, output
+):
+    hosted_responses(monkeypatch, resources, lambda body: output)
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3))
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id)
+    await run_job(resources, job_id)
+    job = await load_job(resources, job_id)
+    # An empty summary would silently drop the turns it claims to cover.
+    assert (job.state, job.error_code) == ("failed", "COMPACTION_EMPTY")
+    assert await memories(resources, chat_id) == []
+
+
 async def test_given_interrupted_paid_call_when_redelivered_then_no_new_generation(
     resources, monkeypatch
 ):

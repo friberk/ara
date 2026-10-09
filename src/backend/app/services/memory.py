@@ -398,6 +398,11 @@ def compaction_prompt(counter, budget: int, previous: str | None, pairs, target:
     return [instructions, PromptMessage("user", content)]
 
 
+def has_content(summary: str) -> bool:
+    """Whether a summary says anything beyond its section headings."""
+    return any(line.strip() and not line.lstrip().startswith("#") for line in summary.splitlines())
+
+
 async def owned_job(session, job_id, generation, token) -> BackgroundJob | None:
     return await session.scalar(
         select(BackgroundJob).where(*fence(job_id, generation, token)).with_for_update()
@@ -511,6 +516,9 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
                     payload["paid_call_inflight"] = False
                 raise
         summary = result.content.strip()
+        if not has_content(summary):
+            # Storing it would silently drop the turns it claims to cover.
+            raise LLMError("COMPACTION_EMPTY", "The model returned an empty conversation summary.")
         async with resources.sessions() as session, session.begin():
             job = await owned_job(session, job_id, generation, token)
             if job is None:
