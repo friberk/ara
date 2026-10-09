@@ -185,3 +185,19 @@ def test_an_identifier_hit_must_be_the_paper_on_the_first_pages():
         reference, Clues(title=TITLE, doi="10.9999/unrelated.ref"), FIRST_PAGES, by="doi"
     )
     assert acceptable(candidate(), Clues(title=None), FIRST_PAGES, by="doi")
+
+
+async def test_an_equally_good_title_match_in_the_pdfs_venue_wins():
+    """The XMP venue (prism:publicationName) breaks a tie between same-titled records."""
+    from app.services.metadata import Clues, find
+
+    preprint = candidate(external_id="W1", title=TITLE, venue="arXiv (Cornell University)")
+    published = candidate(external_id="W2", title=TITLE, venue="USENIX Security Symposium")
+
+    class Search:
+        async def match_title(self, provider, title):
+            return [preprint, published]
+
+    clues = Clues(title=TITLE, year=2018, venue="27th USENIX Security Symposium")
+    found, by = await find(Search(), "openalex", clues, FIRST_PAGES)
+    assert (found.external_id, by) == ("W2", "title")

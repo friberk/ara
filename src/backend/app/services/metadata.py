@@ -54,6 +54,8 @@ class Clues:
     year: int | None = None
     doi: str | None = None
     arxiv_id: str | None = None
+    # From XMP prism:publicationName; it only breaks ties between equally good title matches.
+    venue: str | None = None
 
     @classmethod
     def from_payload(cls, value) -> "Clues":
@@ -71,6 +73,7 @@ class Clues:
             year=year if isinstance(year, int) and not isinstance(year, bool) else None,
             doi=normalized_doi(text("doi")),
             arxiv_id=text("arxiv_id"),
+            venue=text("venue"),
         )
 
 
@@ -165,9 +168,16 @@ async def queue_lookup(session, paper: Paper, document_id: UUID, metadata: dict)
                 "year": clues.year,
                 "doi": clues.doi,
                 "arxiv_id": clues.arxiv_id,
+                "venue": clues.venue,
             },
         },
     )
+
+
+def rank(candidate: SearchResult, clues: Clues) -> tuple[float, bool]:
+    venue, wanted = words(candidate.venue), words(clues.venue)
+    agrees = bool(venue and wanted and (venue in wanted or wanted in venue))
+    return title_score(clues.title, candidate.title), agrees
 
 
 async def find(
@@ -188,7 +198,7 @@ async def find(
             if acceptable(item, clues, first_pages, by="title")
         ]
         if matches:
-            return max(matches, key=lambda item: title_score(clues.title, item.title)), "title"
+            return max(matches, key=lambda item: rank(item, clues)), "title"
     return None
 
 
