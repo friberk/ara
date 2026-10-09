@@ -147,8 +147,8 @@ async def test_given_old_failed_unicode_answer_when_replayed_then_failure_is_not
 
 
 def cited(prompt, wrapper="[{}]"):
-    """Cite every passage handle a map prompt shows, else every source marker it carries."""
-    handles = list(dict.fromkeys(re.findall(r"^\[(S\d+)\] ", prompt, re.M)))
+    """Cite every handle a summary prompt shows, else every source marker it carries."""
+    handles = list(dict.fromkeys(re.findall(r"\[(S\d+)\]", prompt)))
     sources = re.findall(r"\[(source:[0-9a-f-]{36})\]", prompt)
     return " ".join(wrapper.format(marker) for marker in handles or dict.fromkeys(sources))
 
