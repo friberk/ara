@@ -1,0 +1,42 @@
+{
+  "id": "ARA-087",
+  "title": "Fetch PDFs only from OpenAlex's stored copies; otherwise link the DOI for manual upload",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Automatic retrieval (ARA-019/ARA-084) downloads from provider-listed hosts behind an exact host allowlist (FULLTEXT_ALLOWED_HOSTS). Publishers such as Wiley fail as unsupported or behind bot checks, and Semantic Scholar lookups were rate limited. OpenAlex now serves cached open-access PDFs from its content endpoint (content.openalex.org/works/{id}.pdf, about 60M works, an API key required, about $0.01 per download against the free key's $1 daily allowance), while single-work lookups by DOI are free. User decision on 2026-10-09: \"We will use OpenAlex's thing. If it is not available on OpenAlex or behind Paywall we will present the DOI link to users and they will have to manually upload.\" The user is obtaining an OpenAlex API key.",
+  "dependencies": [
+    "ARA-019",
+    "ARA-084"
+  ],
+  "acceptance_criteria": [
+    "Given a saved paper whose OpenAlex work reports a stored PDF and a configured OPENALEX_API_KEY, when retrieval runs (automatically on save or first open), then the PDF downloads from OpenAlex's content endpoint, is stored and processed, and the automatic summary starts as in ARA-084.",
+    "Given a paper saved from Semantic Scholar or by DOI, when retrieval runs, then it resolves its OpenAlex work by DOI with a free single-work lookup and follows the same rule.",
+    "Given no stored copy on OpenAlex (not cached, paywalled or no matching work), when retrieval ends, then no other host is contacted and the workspace shows the DOI link to open the paper plus a clear request to upload the PDF.",
+    "Given no OpenAlex API key, when a paper is saved or opened, then no download is attempted and the workspace shows the DOI link and upload, noting that an OpenAlex API key enables automatic PDFs.",
+    "Given OpenAlex refuses because the daily allowance is spent or it rate-limits (429), when retrieval ends, then the outcome is rate limited with the reported wait, there is no automatic retry loop, and a manual retry is offered after the wait.",
+    "Given the content download, when bytes arrive, then the existing bounds hold: size, time, redirects only to OpenAlex's storage, public destinations, TLS and PDF validation.",
+    "Given the old multi-host downloader, when this lands, then the host allowlist, third-party host downloads and institutional-network retry guidance are deleted rather than kept for compatibility, and existing documents and acquisition records stay readable."
+  ],
+  "test_cases": [
+    "Backend: content download with a key, missing key, no stored copy, 404, 429 with wait, oversized and non-PDF bodies, redirect to storage host, DOI resolution for Semantic Scholar papers.",
+    "Backend: automatic retrieval on save/open uses only OpenAlex; duplicate saves stay idempotent.",
+    "Frontend: workspace states for OpenAlex download, DOI link plus upload, missing key note, rate limited.",
+    "Browser regression for the provider PDF journey, run at integration; live check once the user's key exists."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/services/fulltext.py",
+    "src/backend/app/services/fulltext_discovery.py",
+    "src/backend/app/integrations/pdf_download.py",
+    "src/backend/app/integrations/public_http.py",
+    "src/backend/app/core/config.py",
+    "src/frontend/src/features/workspace/FullTextAccess.tsx",
+    "src/frontend/src/features/workspace/fulltext-copy.ts",
+    "compose.yaml",
+    "README.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09 from the user's decision. Branch feat/ara-087-openalex-pdf.",
+  "updated_at": "2026-10-09"
+}
