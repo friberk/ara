@@ -5,11 +5,26 @@ import { SourceList } from './SourceList'
 
 const cite = (chunk: string, page: number, document = 'd1'): Citation => ({ chunk_id: chunk, document_id: document, page, excerpt: `Excerpt ${chunk}.` })
 
-test('Given several citations per page, Then each page is listed once in page order', () => {
-  renderWithProviders(<SourceList documentId="d1" citations={[cite('a', 12), cite('b', 3), cite('c', 12), cite('d', 7), cite('e', 3)]} />)
+test('Given several passages per page, Then each cited passage is listed once in page order (ARA-075)', () => {
+  renderWithProviders(<SourceList documentId="d1" citations={[cite('a', 12), cite('b', 3), cite('c', 12), cite('d', 7), cite('e', 3), cite('a', 12)]} />)
   const sources = screen.getByRole('group', { name: 'Sources' })
-  expect(within(sources).getAllByRole('button').map((button) => button.textContent)).toEqual(['p. 3', 'p. 7', 'p. 12'])
+  expect(within(sources).getAllByRole('button').map((button) => button.textContent)).toEqual(['p. 3', 'p. 3', 'p. 7', 'p. 12', 'p. 12'])
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('Given two passages on page 6 from different sections, Then each has a chip named by its section (ARA-075)', () => {
+  const citations = [{ ...cite('a', 6), section: 'Results > Open-domain QA' }, { ...cite('b', 6), section: 'Results > Reading comprehension' }]
+  renderWithProviders(<SourceList documentId="d1" citations={citations} />)
+  const chips = within(screen.getByRole('group', { name: 'Sources' })).getAllByRole('button')
+  expect(chips.map((chip) => chip.textContent)).toEqual(['p. 6', 'p. 6'])
+  expect(chips.map((chip) => chip.getAttribute('aria-label'))).toEqual(['Source, page 6, Open-domain QA', 'Source, page 6, Reading comprehension'])
+})
+
+test('Given a passage spanning pages 5 and 6, Then its chip reads p. 5–6 and sorts by its first page (ARA-075)', () => {
+  renderWithProviders(<SourceList documentId="d1" citations={[cite('x', 7), { ...cite('y', 5), page_end: 6 }]} />)
+  const chips = within(screen.getByRole('group', { name: 'Sources' })).getAllByRole('button')
+  expect(chips.map((chip) => chip.textContent)).toEqual(['p. 5–6', 'p. 7'])
+  expect(chips[0]).toHaveAccessibleName('Source, pages 5–6')
 })
 
 test('Given a citation from another document, Then it is withheld and the mismatch is reported', () => {
@@ -46,7 +61,7 @@ test('Given a keyboard user, Then every source can be reached and opened without
 const chunk = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`
 const lettered = 'abcdefab-cdef-4abc-8def-abcdefabcdef'
 
-test('Given the answer the sources support, When a page chip is opened, Then its claim is the sentences that cite that page', async () => {
+test('Given the answer the sources support, When a passage chip is opened, Then its claim is the sentences that cite that passage (ARA-075)', async () => {
   const onSelect = vi.fn()
   const citations = [cite(chunk(1), 4), cite(chunk(2), 9), cite(lettered, 4)]
   const context = [
@@ -55,8 +70,11 @@ test('Given the answer the sources support, When a page chip is opened, Then its
     `- Heads also track **semantics** [source:${lettered.toUpperCase()}]`,
   ].join('\n')
   const { user } = renderWithProviders(<SourceList documentId="d1" citations={citations} context={context} onSelect={onSelect} />)
-  await user.click(screen.getByRole('button', { name: 'Source, page 4' }))
-  expect(onSelect).toHaveBeenLastCalledWith(citations[0], 'Attention heads capture syntax Heads also track **semantics**')
+  const [syntax, semantics] = screen.getAllByRole('button', { name: 'Source, page 4' })
+  await user.click(syntax!)
+  expect(onSelect).toHaveBeenLastCalledWith(citations[0], 'Attention heads capture syntax')
+  await user.click(semantics!)
+  expect(onSelect).toHaveBeenLastCalledWith(citations[2], 'Heads also track **semantics**')
   await user.click(screen.getByRole('button', { name: 'Source, page 9' }))
   expect(onSelect).toHaveBeenLastCalledWith(citations[1], 'Convolutions are costly.')
 })

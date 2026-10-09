@@ -2,3 +2,4 @@
 export { Markdown, type MarkdownProps } from './Markdown'
 export { SourceList, type SourceListProps } from './SourceList'
 export { CitationChip, type CitationChipProps } from './CitationChip'
+export { pageLabel } from './pages'

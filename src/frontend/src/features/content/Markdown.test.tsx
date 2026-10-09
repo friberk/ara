@@ -113,6 +113,13 @@ test('Given markers for cited chunks, Then page chips appear in the sentence tha
   expect(within(faster).getAllByRole('button', { name: 'Source, page 7' })).toHaveLength(1)
 })
 
+test('Given two passages from one page cited together, Then each gets its own inline chip (ARA-075)', () => {
+  const results = { ...cite('dddddddd-0000-4000-8000-000000000004', 7), section: 'Results > Open-domain QA' }
+  const ablation = { ...cite('eeeeeeee-0000-4000-8000-000000000005', 7), section: 'Results > Ablation' }
+  renderWithProviders(<Markdown documentId={documentId} citations={[results, ablation]} content={`Recall rose [source:${results.chunk_id}][source:${ablation.chunk_id}].`} />)
+  expect(screen.getAllByRole('button').map((chip) => chip.getAttribute('aria-label'))).toEqual(['Source, page 7, Open-domain QA', 'Source, page 7, Ablation'])
+})
+
 test('Given unknown or other-document markers, Then they render nothing', () => {
   const { container } = renderWithProviders(<Markdown documentId={documentId} citations={[first, elsewhere]} content={`Claim one [source:${elsewhere.chunk_id}]. Claim two [source:99999999-9999-4999-8999-999999999999].`} />)
   expect(screen.getByText('Claim one. Claim two.')).toBeVisible()

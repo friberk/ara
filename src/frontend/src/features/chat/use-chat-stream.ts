@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { checkedResponse, json } from '@/api/client'
 import { readEvents } from '@/api/sse'
-import type { Chat, ChatInput, GenerationSettings, Message } from '@/api/types'
+import type { Chat, ChatInput, GenerationSettings, Message, RetrievalStage } from '@/api/types'
 import { useMessages } from '@/hooks/queries/chats'
 import { queryKeys } from '@/lib/query-keys'
 
@@ -11,6 +11,7 @@ export type StreamOutcome = 'completed' | 'stopped' | 'failed'
 type PendingQuestion = { text: string; baseline: number }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
+const stages: ReadonlySet<string> = new Set<RetrievalStage>(['planning', 'retrieving', 'reranking', 'generating'])
 
 /**
  * One chat's saved history plus the answer being streamed into it (ported from the legacy ChatPanel send()).
@@ -26,6 +27,8 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
   const [pending, setPending] = useState<PendingQuestion | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [outcome, setOutcome] = useState<StreamOutcome | null>(null)
+  // The step the server reports while the answer is prepared; unknown stages keep the last known one.
+  const [stage, setStage] = useState<RetrievalStage | null>(null)
   const controller = useRef<AbortController | null>(null)
   const inFlight = useRef(false)
   const mounted = useRef(true)
@@ -36,6 +39,8 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
   const processing = saved.some((message) => message.state === 'processing')
   const busy = streaming || processing
   const refreshChats = () => void client.invalidateQueries({ queryKey: queryKeys.chats.all })
+  // A completed answer may have moved earlier messages into the chat's summary.
+  const refreshMemory = () => void client.invalidateQueries({ queryKey: queryKeys.retrieval.memory(chat.id) })
 
   async function send(content: string, settings: GenerationSettings, requestId: string = crypto.randomUUID()) {
     const text = content.trim()
@@ -44,9 +49,10 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
     const abort = new AbortController()
     controller.current = abort
     const baseline = saved.filter((message) => message.role === 'user').length
-    setStreaming(true); setError(null); setDraft(null); setOutcome(null); setPending({ text, baseline })
+    setStreaming(true); setError(null); setDraft(null); setOutcome(null); setStage(null); setPending({ text, baseline })
     const answer = (id: string, partial = ''): Message => ({ id, role: 'assistant', content: partial, state: 'processing', model: settings.model, reasoning_effort: settings.reasoning_effort, citations: [], created_at: new Date().toISOString() })
     let terminal = false
+    let completed = false
     try {
       const response = await checkedResponse(`/chats/${chat.id}/messages/stream`, { ...json('POST', { content: text, ...settings, request_id: requestId } satisfies ChatInput), signal: abort.signal })
       await readEvents(response, (event) => {
@@ -57,10 +63,12 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
           // The question is saved, and may have titled the chat, before the answer starts.
           refreshChats()
         }
+        if (event.event === 'message.status' && stages.has(event.data.stage)) setStage(event.data.stage as RetrievalStage)
         if (event.event === 'message.delta') setDraft((previous) => previous ? { ...previous, content: previous.content + event.data.text } : answer('stream', event.data.text))
         if (event.event === 'message.completed') {
           if (event.data.citations.some((citation) => citation.document_id !== chat.document_id)) throw new Error('The response included a source outside this document.')
           terminal = true
+          completed = true
           setDraft(event.data)
           setOutcome('completed')
         }
@@ -84,6 +92,7 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
       inFlight.current = false
       if (mounted.current) {
         setStreaming(false)
+        setStage(null)
         const refreshed = await history.refetch()
         if (refreshed.data && mounted.current) {
           const items = refreshed.data.items
@@ -91,9 +100,10 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
           setDraft((previous) => previous && items.some((message) => message.id === previous.id) ? null : previous)
         }
         refreshChats()
+        if (completed) refreshMemory()
       }
     }
   }
 
-  return { history, saved, draft, pending, streaming, processing, busy, error, outcome, send, stop: () => controller.current?.abort() }
+  return { history, saved, draft, pending, streaming, processing, busy, error, outcome, stage, send, stop: () => controller.current?.abort() }
 }

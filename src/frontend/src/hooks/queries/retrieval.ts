@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, json } from '@/api/client'
-import type { EmbeddingProfilePage, PaperRetrieval, PaperRetrievalUpdate, RetrievalIndex, RetrievalSettings } from '@/api/types'
+import type { ChatMemoryState, EmbeddingProfilePage, PaperRetrieval, PaperRetrievalUpdate, RetrievalIndex, RetrievalSettings } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 
 export function isBuilding(index: RetrievalIndex) { return index.state === 'queued' || index.state === 'embedding' }
@@ -43,6 +43,11 @@ export function useUpdatePaperRetrieval(paperId: string) {
     mutationFn: ({ profile }: { profile: string | null }) => api<PaperRetrieval>(`/papers/${encodeURIComponent(paperId)}/retrieval`, json('PUT', { profile, request_id: crypto.randomUUID() } satisfies PaperRetrievalUpdate)),
     onSuccess: (data) => client.setQueryData(queryKeys.retrieval.paper(paperId), data),
   })
+}
+
+/** A chat's running summary of earlier messages, if it has one. The chat stream refreshes it after each answer. */
+export function useChatMemory(chatId: string) {
+  return useQuery({ queryKey: queryKeys.retrieval.memory(chatId), queryFn: ({ signal }) => api<ChatMemoryState>(`/chats/${encodeURIComponent(chatId)}/memory`, { signal }) })
 }
 
 export function useRebuildPaperRetrieval(paperId: string) {

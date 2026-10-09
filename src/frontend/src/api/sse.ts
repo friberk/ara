@@ -1,7 +1,25 @@
 import { z } from 'zod'
-const citation = z.object({ chunk_id: z.string(), document_id: z.string(), page: z.number().int().positive(), excerpt: z.string() })
-const completed = z.object({ id: z.string(), role: z.enum(['user', 'assistant']), content: z.string(), state: z.enum(['completed', 'processing', 'interrupted', 'failed']), model: z.string().nullable(), reasoning_effort: z.string().nullable(), citations: z.array(citation), created_at: z.string() })
-const schemas = { 'message.started': z.object({ message_id: z.string() }), 'message.delta': z.object({ text: z.string() }), 'message.completed': completed, 'message.failed': z.object({ code: z.string(), message: z.string(), message_id: z.string().optional() }) }
+const page = z.number().int().positive()
+// Fields added by the retrieval overhaul are optional, so answers saved before it still parse (docs/api-contract.md).
+const citation = z.object({
+  chunk_id: z.string(), document_id: z.string(), page, excerpt: z.string(),
+  page_end: page.nullish(), section: z.string().nullish(), kind: z.enum(['front_matter', 'text', 'table', 'references']).nullish(), bboxes: z.array(z.array(z.number())).optional(),
+})
+const retrieval = z.object({
+  mode: z.enum(['hybrid', 'keyword']), profile: z.string().nullish(), reranked: z.boolean().default(false), standalone_query: z.string().nullish(), search_queries: z.array(z.string()).optional(),
+  passages_found: z.number().int().default(0), passages_used: z.number().int().default(0), limited_by_context: z.boolean().default(false), note: z.string().nullish(),
+})
+const context = z.object({
+  window: z.number().int(), input_tokens: z.number().int(), output_reserved: z.number().int(), summary_version: z.number().int().nullish(),
+  recent_turns: z.number().int().default(0), recalled_turns: z.number().int().default(0), truncated: z.boolean().default(false),
+})
+const completed = z.object({
+  id: z.string(), role: z.enum(['user', 'assistant']), content: z.string(), state: z.enum(['completed', 'processing', 'interrupted', 'failed']), model: z.string().nullable(), reasoning_effort: z.string().nullable(), citations: z.array(citation), created_at: z.string(),
+  retrieval: retrieval.nullish(), context: context.nullish(), grounding: z.enum(['supported', 'insufficient']).nullish(),
+})
+// Any stage string is accepted here: the contract has clients ignore stages they do not know.
+const status = z.object({ message_id: z.string(), stage: z.string() })
+const schemas = { 'message.started': z.object({ message_id: z.string() }), 'message.status': status, 'message.delta': z.object({ text: z.string() }), 'message.completed': completed, 'message.failed': z.object({ code: z.string(), message: z.string(), message_id: z.string().optional() }) }
 export type StreamEvent = { [K in keyof typeof schemas]: { event: K; data: z.infer<(typeof schemas)[K]> } }[keyof typeof schemas]
 function parseFrame(frame: string): StreamEvent | null {
   let event = ''; const data: string[] = []

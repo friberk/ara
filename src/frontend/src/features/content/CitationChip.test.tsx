@@ -121,3 +121,43 @@ test('Given keyboard focus on the chip, Then the same preview opens', async () =
   expect(screen.getByRole('button', { name: 'Source, page 7' })).toHaveFocus()
   expect(await screen.findByText(fullExcerpt)).toBeVisible()
 })
+
+// Passage provenance (ARA-075): a chunk can span pages and sits under a section heading.
+const passage: Citation = { chunk_id: 'c2', document_id: 'd1', page: 6, page_end: null, section: 'Results > Open-domain QA', kind: 'text', bboxes: [], excerpt: 'Short excerpt.' }
+
+test('Given a passage under a section, When previewed, Then its heading path shows above the excerpt and its last heading names the chip', async () => {
+  mockApi({ 'GET /documents/d1/chunks/c2': { ...passage, excerpt: fullExcerpt } })
+  const { user } = renderWithProviders(<CitationChip citation={passage} />)
+  const chip = screen.getByRole('button', { name: 'Source, page 6, Open-domain QA' })
+  expect(chip).toHaveTextContent(/^p\. 6$/)
+  await user.hover(chip)
+  const section = await screen.findByText('Results > Open-domain QA')
+  const excerpt = await screen.findByText(fullExcerpt)
+  expect(section.compareDocumentPosition(excerpt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.queryByText('Table')).toBeNull()
+})
+
+test('Given a table passage, When previewed, Then the preview says it is a table', async () => {
+  const table: Citation = { ...passage, section: 'Results', kind: 'table' }
+  mockApi({ 'GET /documents/d1/chunks/c2': table })
+  const { user } = renderWithProviders(<CitationChip citation={table} />)
+  await user.hover(screen.getByRole('button', { name: 'Source, page 6, Results' }))
+  expect(await screen.findByText('Table')).toBeVisible()
+  expect(screen.getByText('Page 6')).toBeVisible()
+})
+
+test('Given a passage spanning pages 5 and 6, Then the chip reads p. 5–6 and the dialog names both pages', async () => {
+  const spanning: Citation = { ...passage, page: 5, page_end: 6, section: null }
+  mockApi({ 'GET /documents/d1/chunks/c2': { ...spanning, excerpt: fullExcerpt } })
+  const { user } = renderWithProviders(<CitationChip citation={spanning} />)
+  const chip = screen.getByRole('button', { name: 'Source, pages 5–6' })
+  expect(chip).toHaveTextContent(/^p\. 5–6$/)
+  await user.click(chip)
+  expect(await screen.findByRole('dialog', { name: 'Source on pages 5–6' })).toHaveTextContent(fullExcerpt)
+  expect(screen.getByRole('link', { name: 'Open PDF at page 5' })).toHaveAttribute('href', '/api/v1/documents/d1/download#page=5')
+})
+
+test('Given page_end on the same page, Then the chip names a single page', () => {
+  renderWithProviders(<CitationChip citation={{ ...passage, page_end: 6, section: null }} />)
+  expect(screen.getByRole('button', { name: 'Source, page 6' })).toHaveTextContent(/^p\. 6$/)
+})

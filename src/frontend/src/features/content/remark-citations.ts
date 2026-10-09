@@ -58,8 +58,8 @@ export function citingClaims(text: string, chunkIds: ReadonlySet<string>) {
 }
 
 export type RemarkCitationsOptions = {
-  /** Page of each lowercase chunk id that may render. Markers for any other chunk are removed. */
-  allowed: ReadonlyMap<string, number>
+  /** Lowercase chunk ids that may render. Markers for any other chunk are removed. */
+  allowed: ReadonlySet<string>
 }
 
 export function remarkCitations({ allowed }: RemarkCitationsOptions) {
@@ -163,12 +163,12 @@ function lastWord(node: PhrasingContent): { rest: PhrasingContent | null; word: 
   return null
 }
 
-function split(value: string, allowed: ReadonlyMap<string, number>) {
+function split(value: string, allowed: ReadonlySet<string>) {
   const parts: PhrasingContent[] = []
   const marker = new RegExp(markerPattern, 'g')
-  // Markers separated only by whitespace form a run. A run shows each page once, as "p. 6 p. 6" reads as a
-  // mistake; the first passage cited on that page stands for it.
-  let run = new Set<number>()
+  // Markers separated only by whitespace form a run. A run shows each passage once; two passages from one page
+  // keep a chip each, since each leads to its own evidence (ARA-075).
+  let run = new Set<string>()
   let cursor = 0
   for (let match = marker.exec(value); match; match = marker.exec(value)) {
     const between = value.slice(cursor, match.index)
@@ -178,9 +178,8 @@ function split(value: string, allowed: ReadonlyMap<string, number>) {
     }
     cursor = match.index + match[0].length
     const chunkId = (match[1] ?? '').toLowerCase()
-    const page = allowed.get(chunkId)
-    if (page === undefined || run.has(page)) continue
-    run.add(page)
+    if (!allowed.has(chunkId) || run.has(chunkId)) continue
+    run.add(chunkId)
     parts.push({ type: 'citationMarker', chunkId, data: { hName: 'cite', hProperties: { dataChunkId: chunkId } } })
   }
   pushText(parts, value.slice(cursor))

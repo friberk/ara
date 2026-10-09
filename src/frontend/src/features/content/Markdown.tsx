@@ -80,7 +80,7 @@ export function Markdown({ content, citations, documentId, onCitation, className
       return citation ? <CitationChip citation={citation} claim={typeof claim === 'string' ? claim : undefined} onSelect={onCitation} className="ml-1 align-[0.1em]" /> : null
     },
   }), [sources, onCitation])
-  const allowed = useMemo(() => new Map([...sources].map(([chunkId, citation]) => [chunkId, citation.page])), [sources])
+  const allowed = useMemo(() => new Set(sources.keys()), [sources])
   return (
     <div data-slot="markdown" className={cn('content-markdown text-[15.5px] leading-[1.7] wrap-break-word text-foreground [&>:first-child]:mt-0 [&>:last-child]:mb-0', className)}>
       <ReactMarkdown

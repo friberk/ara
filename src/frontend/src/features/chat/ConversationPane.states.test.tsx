@@ -69,6 +69,17 @@ test('Given a saved answer, When Copy answer is pressed, Then the clipboard gets
   expect(screen.getByRole('button', { name: 'Copied' })).toBeVisible()
 })
 
+test('Given a cited passage spanning two pages, When Copy answer is pressed, Then the clipboard names the page range (ARA-075)', async () => {
+  mockApi({
+    ...settings,
+    'GET /chats': { items: [chatRow('c1')] },
+    'GET /chats/c1/messages': { items: [assistantMessage('m1', `Spanning claim.${marker}`, { citations: [{ ...citation, page: 5, page_end: 6 }] })] },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await user.click(await screen.findByRole('button', { name: 'Copy answer' }))
+  expect(await navigator.clipboard.readText()).toBe('Spanning claim. (p. 5–6)')
+})
+
 test('Given a selected model that cannot stream, Then the footnote says so and Ask question stays disabled', async () => {
   mockApi({ 'GET /models': { items: [{ ...luna, supports_streaming: false }] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   const { user } = mount('/papers/p1')
