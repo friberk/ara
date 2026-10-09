@@ -7,8 +7,14 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from ollama_fixture import OllamaFixture
+
+OLLAMA = OllamaFixture()
+
 TITLE = "Traceable Research Systems"
-ABSTRACT = "A synthetic evaluation of a retrieval-first research assistant using the Orion-12 dataset."
+ABSTRACT = (
+    "A synthetic evaluation of a retrieval-first research assistant using the Orion-12 dataset."
+)
 DOI = "10.5555/cs593.fixture"
 SOURCE_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -83,9 +89,7 @@ def structured_value(schema, root, field=""):
         return True
     if schema.get("type") == "null":
         return None
-    return {"title": TITLE, "abstract": ABSTRACT, "doi": DOI}.get(
-        field, "Synthetic fixture"
-    )
+    return {"title": TITLE, "abstract": ABSTRACT, "doi": DOI}.get(field, "Synthetic fixture")
 
 
 def response_payload(model, text, status="completed"):
@@ -145,6 +149,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
+        if OLLAMA.get(self, parsed.path):
+            return
         if parsed.path == "/health":
             self.send_json({"status": "ok"})
         elif parsed.path == "/graph/v1/paper/search":
@@ -191,6 +197,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "Unknown fixture endpoint"}, 404)
 
     def do_POST(self):
+        if urlparse(self.path).path.startswith("/api/"):
+            self.ollama_mutation()
+            return
         if urlparse(self.path).path != "/v1/responses":
             self.send_json({"error": "Unknown fixture endpoint"}, 404)
             return
@@ -209,15 +218,15 @@ class Handler(BaseHTTPRequestHandler):
             answer = json.dumps(structured_value(schema, schema))
         else:
             inputs = json.dumps(request.get("input", ""))
-            sources = list(
-                dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", inputs))
-            )
+            sources = list(dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", inputs)))
             citation = f" [source:{sources[0]}]" if sources else ""
             answer = (
                 "The paper evaluates a retrieval-first pipeline on the Orion-12 dataset. "
-                "The reported accuracy is 86 percent; the experiment contains only twelve examples. "
+                "The reported accuracy is 86 percent; "
+                "the experiment contains only twelve examples. "
                 + citation
-                + "\n\nIts main limitation is the small synthetic dataset, so these results do not establish performance on real research libraries."
+                + "\n\nIts main limitation is the small synthetic dataset, "
+                "so these results do not establish performance on real research libraries."
                 + citation
             )
         if not request.get("stream"):
@@ -269,8 +278,22 @@ class Handler(BaseHTTPRequestHandler):
             pass
         self.close_connection = True
 
+    def do_DELETE(self):
+        self.ollama_mutation()
+
+    def ollama_mutation(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > 1_000_000:
+            self.send_json({"error": "Fixture request too large"}, 413)
+            return
+        try:
+            body = json.loads(self.rfile.read(length)) if length else {}
+        except (ValueError, TypeError):
+            self.send_json({"error": "Invalid JSON"}, 400)
+            return
+        if not OLLAMA.mutate(self, urlparse(self.path).path, body, structured_value):
+            self.send_json({"error": "Unknown fixture endpoint"}, 404)
+
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(
-        ("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler
-    ).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
