@@ -9,7 +9,7 @@ const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', mo
 const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'unavailable', unavailable_reason: 'Download Qwen3 Embedding 4B in Settings', local_model_key: 'qwen3-embedding-4b' }
 const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: 'qwen3-embedding:8b', display_name: 'Qwen3 Embedding 8B', dimensions: 4096, unavailable_reason: 'Download Qwen3 Embedding 8B in Settings', local_model_key: 'qwen3-embedding-8b' }
 const profiles = { items: [openai, qwen4b, qwen8b], default_profile: openai.key }
-const saved: RetrievalSettings = { embedding_profile: openai.key, reranker_enabled: false }
+const saved: RetrievalSettings = { embedding_profile: openai.key, reranker: 'openai-gpt-6-luna' }
 const base = { 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'GET /retrieval/profiles': profiles }
 afterEach(() => vi.unstubAllGlobals())
 
@@ -37,14 +37,14 @@ test('Given Qwen 4B is not downloaded, Then its reason links to Local models and
   expect(screen.getByRole('button', { name: 'Save search model' })).toBeEnabled()
 })
 
-test('Given a new choice, When Save search model is pressed, Then PUT sends the chosen key and keeps the saved reranker flag', async () => {
-  // The reranker has no control in the UI (ARA-074 deferred), so saving must not overwrite whatever the server holds.
-  const stored = { ...saved, reranker_enabled: true }
+test('Given a new choice, When Save search model is pressed, Then PUT sends the chosen key and keeps the saved reranker choice', async () => {
+  // Saving the search model must not overwrite the stored reranker choice.
+  const stored: RetrievalSettings = { ...saved, reranker: 'qwen3-rerank-0.6b' }
   const { calls } = mockApi({ ...base, 'GET /retrieval/settings': stored, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/settings')
   await user.click(await screen.findByRole('radio', { name: 'Qwen3 Embedding 8B' }))
   await user.click(screen.getByRole('button', { name: 'Save search model' }))
-  await waitFor(() => expect(calls.find((call) => call.method === 'PUT' && call.path === '/retrieval/settings')?.body).toEqual({ embedding_profile: 'qwen3-embed-8b', reranker_enabled: true }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT' && call.path === '/retrieval/settings')?.body).toEqual({ embedding_profile: 'qwen3-embed-8b', reranker: 'qwen3-rerank-0.6b' }))
   expect(await screen.findByText('Search model saved.')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Save search model' })).toBeDisabled()
 })

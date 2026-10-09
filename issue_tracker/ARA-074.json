@@ -1,9 +1,9 @@
 {
   "id": "ARA-074",
-  "title": "Opt-in local reranking with Qwen3-Reranker through Ollama",
+  "title": "Catalog reranking: OpenAI Decisions by default, local Qwen3 optional",
   "type": "improvement",
   "priority": "P2",
-  "description": "Opt-in (off by default) reranking of the top 12 fused passages with fanyx/Qwen3-Reranker-0.6B-Q8_0 through the single Ollama runtime: raw /api/generate with logprobs, scored as P(yes)/(P(yes)+P(no)). Settings shows a toggle that says it adds about 10 s per answer; it is disabled until the reranker model is installed and verified. Any reranker failure falls back to fusion order and is recorded in the trace.",
+  "description": "Rerank the top fused passages with a reranker profile from app/integrations/reranker_catalog.py, extensible like embedding profiles. The default openai-gpt-6-luna uses the OpenAI Decisions API predicate relevance probability (about 1.2 s and $0.002 per question for 20 candidates). qwen3-rerank-0.6b uses fanyx/Qwen3-Reranker-0.6B-Q8_0 through the single Ollama runtime (about 9 s for 12). Off is a choice. Any failure keeps fusion order.",
   "dependencies": [
     "ARA-070",
     "ARA-073"
@@ -17,7 +17,7 @@
   "test_cases": [
     "Probe-pair ordering test against fixtures; skip/fallback path; latency evidence from Phase 0 and live verification."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "docs/superpowers/specs/2026-10-09-rag-context-design.md",
     "src/backend/app/integrations/model_catalog.py",
@@ -26,6 +26,6 @@
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Phase 0 S1 (2026-10-09): the method works on ara-ollama 0.40.1-ara.2. dengcao 0.6B Q8_0 is broken (uniform logits). dengcao 0.6B F16 took 54 s for 30 candidates. At the user's request the lead tested fanyx/Qwen3-Reranker-0.6B-Q8_0 (digest fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3, 639,152,466 bytes): 12/12 probe pairs, relevant median 0.997, irrelevant median 0.094. 30 candidates took 21.99 s (p50 0.72 s per call) against 51.37 s for F16 in the same session, so about 9 s for 12. The user chose opt-in, off by default (2026-10-09). Not yet implemented.",
+  "verification": "Phase 0 S1 (2026-10-09): the method works on ara-ollama 0.40.1-ara.2. dengcao 0.6B Q8_0 is broken (uniform logits). dengcao 0.6B F16 took 54 s for 30 candidates. At the user's request the lead tested fanyx/Qwen3-Reranker-0.6B-Q8_0 (digest fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3, 639,152,466 bytes): 12/12 probe pairs, relevant median 0.997, irrelevant median 0.094. 30 candidates took 21.99 s (p50 0.72 s per call) against 51.37 s for F16 in the same session, so about 9 s for 12. The user chose opt-in, off by default (2026-10-09). Not yet implemented. Later the user asked for an OpenAI-based reranker as the default, with the model not hardcoded. The lead verified /v1/decisions with gpt-6-luna using the project key: 12/12 sanity pairs (relevant 1.0, irrelevant 0.00–0.46); 20 candidates at concurrency 8 took 1.21 s total, p50 0.28 s, $0.0019. The contract became a catalog key (1d14f72).",
   "updated_at": "2026-10-09"
 }

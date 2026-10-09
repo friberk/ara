@@ -54,10 +54,7 @@ def test_message_citation_and_model_carry_new_fields():
 
 def test_retrieval_dtos_have_exact_shapes():
     schemas = openapi()["components"]["schemas"]
-    assert set(schemas["RetrievalSettings"]["properties"]) == {
-        "embedding_profile",
-        "reranker_enabled",
-    }
+    assert set(schemas["RetrievalSettings"]["properties"]) == {"embedding_profile", "reranker"}
     assert set(schemas["PaperRetrievalUpdate"]["properties"]) == {"profile", "request_id"}
     assert {
         "effective_profile",
@@ -72,14 +69,27 @@ def test_retrieval_dtos_have_exact_shapes():
     assert {"memory", "total_messages"} == set(schemas["ChatMemoryState"]["properties"])
 
 
-def test_retrieval_settings_default_to_openai_profile():
+def test_retrieval_settings_default_to_openai_profile_and_catalog_reranker():
+    from app.integrations.reranker_catalog import DEFAULT_RERANKER
     from app.schemas.retrieval import RetrievalSettings
 
-    # ARA-074 is deferred: CPU reranking measured ~54 s per question, so it is off by default.
+    # The user chose OpenAI reranking by default; the model lives in the catalog, not in code paths.
     assert RetrievalSettings().model_dump() == {
         "embedding_profile": "openai-3-large",
-        "reranker_enabled": False,
+        "reranker": DEFAULT_RERANKER,
     }
+    assert RetrievalSettings(reranker=None).reranker is None  # None means reranking is off
+
+
+def test_reranker_catalog_is_extensible_like_embedding_profiles():
+    from app.integrations.reranker_catalog import DEFAULT_RERANKER, RERANKERS, reranker_profile
+
+    default = reranker_profile(DEFAULT_RERANKER)
+    assert default.provider == "openai" and default.method == "openai-decisions"
+    assert default.model_id == "gpt-6-luna" and default.candidates == 20
+    local = next(p for p in RERANKERS.values() if p.provider == "ollama")
+    assert local.method == "ollama-logprobs" and local.local_model_key and local.candidates == 12
+    assert all(p.key == key for key, p in RERANKERS.items())
 
 
 async def test_indexing_hook_is_a_safe_no_op_until_indexing_lands():
@@ -88,10 +98,13 @@ async def test_indexing_hook_is_a_safe_no_op_until_indexing_lands():
     assert await after_chunks_persisted(None, document_id=None) is None
 
 
-def test_profiles_page_reports_reranker_availability():
+def test_profiles_page_reports_every_reranker_choice():
     schemas = openapi()["components"]["schemas"]
-    assert "reranker" in schemas["EmbeddingProfilePage"]["properties"]
+    page = schemas["EmbeddingProfilePage"]["properties"]
+    assert "rerankers" in page and "reranker" not in page
     assert {
+        "key",
+        "provider",
         "model_id",
         "display_name",
         "status",
@@ -99,3 +112,13 @@ def test_profiles_page_reports_reranker_availability():
         "local_model_key",
         "candidates",
     } <= set(schemas["RerankerOut"]["properties"])
+    assert schemas["RerankerOut"]["properties"]["key"]["type"] == "string"
+
+
+async def test_rerank_seam_is_a_safe_pass_through_until_rerankers_land():
+    from app.rag.rerank import rerank_candidates
+
+    outcome = await rerank_candidates(
+        None, query="q", nodes=["a", "b"], reranker="openai-gpt-6-luna"
+    )
+    assert outcome.nodes == ["a", "b"] and outcome.reranked is False

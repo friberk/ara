@@ -50,7 +50,7 @@ async def default_profile(session) -> str:
     if row is None:
         return DEFAULT_PROFILE
     try:
-        key = RetrievalSettings.model_validate(row.value).embedding_profile
+        key = RetrievalSettings.from_stored(row.value).embedding_profile
     except ValidationError:
         return DEFAULT_PROFILE
     return key if key in PROFILES else DEFAULT_PROFILE
