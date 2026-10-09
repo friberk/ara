@@ -246,3 +246,77 @@ async def test_given_local_planner_failure_when_planning_then_fallback_and_no_ho
         question=FOLLOW_UP,
     )
     assert plan.source == "fallback" and len(local) == 1 and hosted == []
+
+
+@pytest.mark.integration
+async def test_given_no_hosted_key_when_planning_then_fallback_without_reserving(resources):
+    from app.services import memory
+
+    resources.settings.openai_api_key = None
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=rag_history(),
+        memory_summary=None,
+        question=FOLLOW_UP,
+    )
+    assert plan.source == "fallback"
+    async with resources.sessions() as session:
+        assert (await session.scalars(select(GenerationReservation))).all() == []
+
+
+@pytest.mark.integration
+async def test_given_slow_planner_when_planning_then_fallback_after_the_time_limit(
+    resources, monkeypatch
+):
+    import asyncio
+
+    from app.services import memory
+
+    async def slow(body):
+        await asyncio.sleep(5)
+        return plan_output()
+
+    requests = hosted_responses(monkeypatch, resources, slow)
+    monkeypatch.setattr(memory, "PLANNER_TIMEOUT_SECONDS", 0.2)
+    started = asyncio.get_running_loop().time()
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=rag_history(),
+        memory_summary=None,
+        question=FOLLOW_UP,
+    )
+    assert plan.source == "fallback" and len(requests) == 1
+    assert asyncio.get_running_loop().time() - started < 2
+
+
+@pytest.mark.integration
+async def test_given_caller_holds_local_slot_when_planning_then_planner_still_runs(
+    resources, monkeypatch
+):
+    from app.integrations.model_catalog import local_spec
+    from app.repositories.local_models import acquire_use, release_use
+    from app.services import memory
+
+    spec = local_spec("ifm-k2-horizon-7b")
+    await install_thinking_model(resources, spec)
+    local, _ = await local_runtime(
+        monkeypatch, resources, spec, lambda body: ollama_reply(plan_output())
+    )
+    # The chat route admits a local answer before preparing it.
+    use = await acquire_use(resources.sessions, spec.key)
+    try:
+        plan = await memory.plan_query(
+            resources,
+            model=spec.key,
+            effort="on",
+            history=rag_history(),
+            memory_summary=None,
+            question=FOLLOW_UP,
+        )
+    finally:
+        await release_use(resources.sessions, use)
+    assert plan.source == "model" and len(local) == 1
