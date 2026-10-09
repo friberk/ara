@@ -19,7 +19,7 @@ def test_given_requested_models_when_selecting_then_reasoning_none_is_explicit()
 
 
 def test_given_citations_when_model_invents_source_then_reject():
-    from app.services.retrieval import validate_citations
+    from support.citations import validate_citations
 
     chunk = SimpleNamespace(id=uuid4(), document_id=uuid4(), page=4, text="Supported text")
     with pytest.raises(ValueError, match="source"):
