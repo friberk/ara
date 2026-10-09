@@ -35,7 +35,7 @@ async def test_missing_models_are_catalogued_without_hosted_credentials(resource
     from app.services.local_models import ensure_local_available, list_local_models
 
     models = await list_local_models(resources, inspect_runtime=False)
-    assert len(models) == 3
+    assert len(models) == 5
     assert all(model.installation.state == "missing" for model in models)
     with pytest.raises(AppError) as error:
         await ensure_local_available(resources, local_spec("ifm-k2-horizon-3.7b").key)

@@ -8,7 +8,13 @@ from app.schemas.jobs import JobStatus
 def test_local_catalog_has_exact_pinned_artifacts():
     from app.integrations.model_catalog import LOCAL_MODELS, local_spec
 
-    assert set(LOCAL_MODELS) == {"ifm-k2-horizon-3.7b", "ifm-k2-horizon-7b", "qwen3.8-27b"}
+    assert set(LOCAL_MODELS) == {
+        "ifm-k2-horizon-3.7b",
+        "ifm-k2-horizon-7b",
+        "qwen3.8-27b",
+        "qwen3-embedding-4b",
+        "qwen3-embedding-8b",
+    }
     assert local_spec("qwen3.8-27b").model_id == "qwen3.8:27b-q4_K_M"
     assert local_spec("ifm-k2-horizon-3.7b").download_bytes == 3156599066
     assert (

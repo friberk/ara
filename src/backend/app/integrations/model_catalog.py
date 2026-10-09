@@ -1,6 +1,7 @@
 """Pinned, opt-in local artifacts. These names must never resolve to substitute models."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,8 @@ class LocalModelSpec:
     download_bytes: int
     quantization: str = "Q4_K_M"
     boolean_enabled_effort: str | None = None
+    kind: Literal["chat", "embedding", "reranker"] = "chat"
+    embedding_dimensions: int | None = None
 
 
 LOCAL_MODELS = {
@@ -39,6 +42,25 @@ LOCAL_MODELS = {
             "Qwen 3.8 27B",
             "25b843619e944cd0ae6069f94ff4e5e26a16e109ccbc0a66a0f05979ed70098e",
             17741872132,
+        ),
+        # Embedding models use native dimensions; digests from the Phase 0 S1 pull.
+        LocalModelSpec(
+            "qwen3-embedding-4b",
+            "qwen3-embedding:4b-q4_K_M",
+            "Qwen3 Embedding 4B",
+            "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+            2496704041,
+            kind="embedding",
+            embedding_dimensions=2560,
+        ),
+        LocalModelSpec(
+            "qwen3-embedding-8b",
+            "qwen3-embedding:8b-q4_K_M",
+            "Qwen3 Embedding 8B",
+            "64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b",
+            4676805193,
+            kind="embedding",
+            embedding_dimensions=4096,
         ),
     )
 }

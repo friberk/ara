@@ -86,6 +86,10 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.services.summarization import run_summary_job
 
             await run_summary_job(resources, identifier, generation, token, payload)
+        elif kind == "embed":
+            from app.rag.indexing import run_embed_job
+
+            await run_embed_job(resources, identifier, generation, token, payload)
         elif kind == "canary":
             await complete(
                 resources.sessions,

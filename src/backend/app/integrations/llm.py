@@ -43,6 +43,8 @@ def validate_selection(model: str, effort: str) -> Model:
     from app.integrations.model_catalog import local_spec
 
     spec = local_spec(model)
+    if spec and spec.kind != "chat":
+        raise LLMError("INVALID_MODEL", "This local model cannot generate text.", 422)
     if spec:
         if not isinstance(effort, str) or not 1 <= len(effort) <= 20:
             raise LLMError("INVALID_REASONING", "The reasoning effort is not supported.", 422)
@@ -181,11 +183,21 @@ def reservation_amount(model: str, input_tokens: int, output_tokens: int = OUTPU
 
 async def reserve(resources, model: str, input_tokens: int) -> None:
     from app.integrations.model_catalog import local_spec
-    from app.models.research import GenerationReservation
 
     if local_spec(model):
         return
-    amount = reservation_amount(model, input_tokens)
+    await reserve_amount(resources, model, reservation_amount(model, input_tokens))
+
+
+async def reserve_embedding(resources, profile, input_tokens: int) -> None:
+    """Embeddings share the daily ledger under `embedding:<profile>` at the profile's price."""
+    amount = profile.price_per_million * input_tokens / Decimal(1000000)
+    await reserve_amount(resources, f"embedding:{profile.key}", amount)
+
+
+async def reserve_amount(resources, model: str, amount: Decimal) -> None:
+    from app.models.research import GenerationReservation
+
     async with resources.sessions() as session, session.begin():
         # Serialize budget checks across API and worker processes, not just this event loop.
         await session.execute(text("SELECT pg_advisory_xact_lock(593012)"))
