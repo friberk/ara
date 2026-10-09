@@ -21,7 +21,7 @@ class EmbeddingProfileOut(BaseModel):
 
 
 class RerankerOut(BaseModel):
-    """The optional local reranker (ARA-074): opt-in, off by default, about 10 s per answer on CPU."""
+    """The optional local reranker (ARA-074): opt-in, off by default, about 10 s per answer."""
 
     model_id: str
     display_name: str
