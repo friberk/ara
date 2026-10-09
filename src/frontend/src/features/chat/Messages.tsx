@@ -63,12 +63,13 @@ function CopyAnswer({ message }: { message: Message }) {
  * elsewhere the content module's source dialog applies. The footer names the model the answer was
  * generated with, as stored, never the current selection.
  */
-export function AssistantMessage({ message, documentId }: { message: Message; documentId: string }) {
+export function AssistantMessage({ message, documentId, progress }: { message: Message; documentId: string; progress?: string | null }) {
   const workspace = useOptionalWorkspace()
   const writing = message.state === 'processing'
   return (
     <article aria-label="Assistant message" aria-busy={writing} className="grid gap-2.5">
-      {writing && !message.content ? <Preparing /> : message.content ? (
+      {writing && progress && <p className="text-sm leading-7 text-muted-foreground motion-safe:animate-pulse">{progress}</p>}
+      {writing && !message.content ? !progress && <Preparing /> : message.content ? (
         <div className="text-[15.5px] leading-7">
           <Markdown content={message.content} citations={message.citations} documentId={documentId} onCitation={workspace?.showSource} />
           {writing && <span aria-hidden="true" className="mt-2 block size-2.5 rounded-full bg-foreground motion-safe:animate-pulse" />}

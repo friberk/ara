@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react'
-import type { ChatSummary, GenerationSettings, Paper } from '@/api/types'
+import type { ChatSummary, GenerationSettings, Paper, RetrievalStage } from '@/api/types'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,6 +14,7 @@ import { useChatStream } from './use-chat-stream'
 import { useFollowBottom } from './use-follow-bottom'
 
 const announcements = { completed: 'Response complete.', stopped: 'Generation stopped. The partial answer was kept.', failed: '' }
+const stageLabels: Record<RetrievalStage, string> = { planning: 'Searching the paper…', retrieving: 'Searching the paper…', reranking: 'Searching the paper…', generating: 'Writing the answer…' }
 
 function HistorySkeleton() {
   return (
@@ -34,6 +35,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
   const ready = canAsk(gate) && loaded && !stream.busy
 
   const { saved, draft, pending } = stream
+  const progress = stream.streaming && stream.stage ? stageLabels[stream.stage] : null
   const asked = saved.filter((message) => message.role === 'user').length
   // While streaming, the live draft stands in for its saved row; the optimistic question shows until saved.
   const rows = draft ? saved.map((message) => (message.id === draft.id ? draft : message)) : saved
@@ -93,12 +95,12 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
       {empty && ready && <SuggestedQuestions onSelect={ask} />}
       {rows.map((message) => message.role === 'user'
         ? <UserMessage key={message.id} content={message.content} />
-        : <AssistantMessage key={message.id} message={message} documentId={chat.document_id} />)}
+        : <AssistantMessage key={message.id} message={message} documentId={chat.document_id} progress={message.id === draft?.id ? progress : null} />)}
       {question && <UserMessage content={question} />}
-      {unsavedDraft && <AssistantMessage message={unsavedDraft} documentId={chat.document_id} />}
+      {unsavedDraft && <AssistantMessage message={unsavedDraft} documentId={chat.document_id} progress={progress} />}
       {stream.streaming && !draft && <PendingAnswer />}
       <ErrorNotice error={stream.error} />
-      <p role="status" className="sr-only">{stream.streaming ? 'Assistant is responding.' : stream.outcome ? announcements[stream.outcome] : ''}</p>
+      <p role="status" className="sr-only">{stream.streaming ? progress ?? 'Assistant is responding.' : stream.outcome ? announcements[stream.outcome] : ''}</p>
     </ThreadLayout>
   )
 }
