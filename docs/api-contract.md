@@ -117,6 +117,33 @@ ARA-055 adds derived `Model.reasoning_aliases` for presentation of equivalent ve
 
 Settings and the composer use declared aliases only for available native models. IFM displays None/Low/Medium/High, with legacy default/on preferences resolving to explicit High for future UI requests. Normalized default comparisons avoid automatic writes and false dirty state; unavailable preferences retain their identity and effort. Binary-only models get a Reasoning toggle. Raw default/on API requests remain supported with their original omission/Boolean behavior, and stored preferences, histories, provenance and UUID replay semantics remain unchanged. Historical labels are Runtime preset and Reasoning enabled; past records are not reinterpreted using current capabilities.
 
+## Retrieval and conversation context (ARA-070; ARA-021, ARA-043)
+
+Frozen contract for the retrieval and context overhaul. Spec: `docs/superpowers/specs/2026-10-09-rag-context-design.md`. Until the owning tasks merge, the endpoints return 501 `NOT_IMPLEMENTED`.
+
+- `GET /api/v1/retrieval/profiles` returns `EmbeddingProfilePage {items: EmbeddingProfileOut[], default_profile}`.
+  - Each `EmbeddingProfileOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `dimensions`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, and `local_model_key` for local install links.
+  - Keys: `openai-3-large` (default), `qwen3-embed-4b`, `qwen3-embed-8b`.
+- `GET`/`PUT /api/v1/retrieval/settings` reads and writes `RetrievalSettings {embedding_profile="openai-3-large", reranker_enabled=true}`.
+  - These settings are separate from the model defaults in `/settings`.
+  - `PUT` validates the key but does not require the profile to be available.
+- `GET /api/v1/papers/{paper_id}/retrieval` returns `PaperRetrieval`:
+  - `effective_profile` and `source` (`default|paper`);
+  - `parser`, `chunk_count`, `section_count`;
+  - `mode` (`hybrid|keyword|unavailable`) and a plain-language `mode_note`;
+  - `indexes: RetrievalIndexOut[]`, each with `profile`, `state` (`queued|embedding|ready|failed|unavailable`), `embedded`, `total`, `updated_at`, `error`.
+- `PUT /api/v1/papers/{paper_id}/retrieval` takes `{profile: str|null, request_id}`. `null` follows the global default. Replaying the same request UUID returns the same body.
+- `POST /api/v1/papers/{paper_id}/retrieval/rebuild` takes `{request_id}` and returns 202 with `PaperRetrieval`. The rebuild is blue/green: the previous ready index keeps serving until the new one is ready.
+- `GET /api/v1/chats/{chat_id}/memory` returns `ChatMemoryState {memory: {version, summary, summarized_messages, model, created_at} | null, total_messages}`. The original messages are never altered.
+- `Message` gains three fields:
+  - `retrieval: RetrievalSummary | null`, with `mode`, `profile`, `reranked`, `standalone_query`, `search_queries`, `passages_found`, `passages_used`, `limited_by_context` and `note`;
+  - `context: ContextUsage | null`, with `window`, `input_tokens`, `output_reserved`, `summary_version`, `recent_turns`, `recalled_turns` and `truncated`;
+  - `grounding: "supported" | "insufficient" | null`.
+- Messages persisted before this change report `retrieval`/`context` as `null`.
+- `Citation` gains `page_end`, `section` (heading path), `kind` (`front_matter|text|table|references`) and `bboxes` (`[[page,x0,y0,x1,y1]]`). Persisted answers keep canonical `[source:<chunk-uuid>]` markers; the model's short `[S#]` handles never reach clients.
+- `Model` gains `kind` (`chat|embedding|reranker`). The composer lists only `chat` models; Settings shows every kind.
+- New SSE event `message.status`: `{message_id, stage}`, where `stage` is `planning|retrieving|reranking|generating`. It is emitted between `message.started` and the first `message.delta`. Clients ignore unknown stages.
+
 ## SSE
 
 Events have JSON data, blank-line framing and heartbeat comments. `message.started`: `{message_id}`; `message.delta`: `{text}`; `message.completed`: Message; `message.failed`: `{code,message,message_id?}`. Complete emitted only after persistence. Unknown/invalid frames produce a visible client error; AbortController stops streaming and authoritative history refreshes. Duplicate UUIDs cannot launch inference again. Histories retain partial/interrupted status after process failure.

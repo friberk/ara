@@ -31,3 +31,18 @@ export type SearchHit = Schemas['SearchHit']
 /** Jobs carry paper_id and paper_title (null when the paper no longer exists). */
 export type JobView = Job
 export const providerLabels: Record<Provider, string> = { openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar' }
+
+// Retrieval and conversation context (ARA-070, docs/api-contract.md).
+export type ModelKind = Model['kind']
+export type RetrievalSummary = Schemas['RetrievalSummary']
+export type ContextUsage = Schemas['ContextUsage']
+export type Grounding = NonNullable<Message['grounding']>
+export type EmbeddingProfile = Schemas['EmbeddingProfileOut']
+export type EmbeddingProfilePage = Schemas['EmbeddingProfilePage']
+export type RetrievalSettings = Schemas['RetrievalSettings']
+export type RetrievalIndex = Schemas['RetrievalIndexOut']
+export type PaperRetrieval = Schemas['PaperRetrieval']
+export type PaperRetrievalUpdate = Schemas['PaperRetrievalUpdate']
+export type ChatMemory = Schemas['ChatMemoryOut']
+export type ChatMemoryState = Schemas['ChatMemoryState']
+export type RetrievalStage = 'planning' | 'retrieving' | 'reranking' | 'generating'

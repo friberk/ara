@@ -24,7 +24,7 @@ test.each(['ready', 'queued', 'verifying'] as const)('Given %s local weights pen
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   focusManager.setFocused(true)
   let model: Model = {
-    key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B',
+    kind: 'chat', key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B',
     status: 'unavailable', reasoning_efforts: ['default'], supports_streaming: true, supports_structured_output: true, context_window: 8192,
     unavailable_code: state === 'ready' ? 'LOCAL_MODEL_REVALIDATION_REQUIRED' : 'LOCAL_MODEL_NOT_READY',
     installation: { state, weights_present: true, quantization: 'Q4_K_M', download_bytes: 5592218900, completed_bytes: 5592218900, total_bytes: 5592218900, job_id: state === 'ready' ? null : 'b24b9f87-6035-4f72-b5f8-850d10d9fc57', digest: null, updated_at: null, error: null },

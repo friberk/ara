@@ -437,6 +437,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/retrieval/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Profiles */
+        get: operations["profiles_api_v1_retrieval_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/retrieval/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Retrieval Settings */
+        get: operations["retrieval_settings_api_v1_retrieval_settings_get"];
+        /** Update Retrieval Settings */
+        put: operations["update_retrieval_settings_api_v1_retrieval_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/retrieval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paper Retrieval */
+        get: operations["paper_retrieval_api_v1_papers__paper_id__retrieval_get"];
+        /** Update Paper Retrieval */
+        put: operations["update_paper_retrieval_api_v1_papers__paper_id__retrieval_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/retrieval/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebuild Paper Retrieval */
+        post: operations["rebuild_paper_retrieval_api_v1_papers__paper_id__retrieval_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chat Memory */
+        get: operations["chat_memory_api_v1_chats__chat_id__memory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -511,6 +598,28 @@ export interface components {
             /** Content */
             content: string;
         };
+        /** ChatMemoryOut */
+        ChatMemoryOut: {
+            /** Version */
+            version: number;
+            /** Summary */
+            summary: string;
+            /** Summarized Messages */
+            summarized_messages: number;
+            /** Model */
+            model: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ChatMemoryState */
+        ChatMemoryState: {
+            memory: components["schemas"]["ChatMemoryOut"] | null;
+            /** Total Messages */
+            total_messages: number;
+        };
         /** ChatPage */
         ChatPage: {
             /** Items */
@@ -567,6 +676,35 @@ export interface components {
             /** Items */
             items: components["schemas"]["ChatSummary"][];
         };
+        /**
+         * ContextUsage
+         * @description Token accounting for one answer request.
+         */
+        ContextUsage: {
+            /** Window */
+            window: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Reserved */
+            output_reserved: number;
+            /** Summary Version */
+            summary_version?: number | null;
+            /**
+             * Recent Turns
+             * @default 0
+             */
+            recent_turns: number;
+            /**
+             * Recalled Turns
+             * @default 0
+             */
+            recalled_turns: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
         /** Defaults */
         Defaults: {
             /**
@@ -579,6 +717,38 @@ export interface components {
              * @default low
              */
             reasoning_effort: string;
+        };
+        /** EmbeddingProfileOut */
+        EmbeddingProfileOut: {
+            /** Key */
+            key: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openai" | "ollama";
+            /** Model Id */
+            model_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Dimensions */
+            dimensions: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "unavailable";
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /** Local Model Key */
+            local_model_key?: string | null;
+        };
+        /** EmbeddingProfilePage */
+        EmbeddingProfilePage: {
+            /** Items */
+            items: components["schemas"]["EmbeddingProfileOut"][];
+            /** Default Profile */
+            default_profile: string;
         };
         /** GenerationInput */
         GenerationInput: {
@@ -734,6 +904,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            retrieval?: components["schemas"]["RetrievalSummary"] | null;
+            context?: components["schemas"]["ContextUsage"] | null;
+            /** Grounding */
+            grounding?: ("supported" | "insufficient") | null;
         };
         /** MessagePage */
         MessagePage: {
@@ -752,6 +926,12 @@ export interface components {
             /** Unavailable Code */
             unavailable_code?: string | null;
             installation?: components["schemas"]["Installation"] | null;
+            /**
+             * Kind
+             * @default chat
+             * @enum {string}
+             */
+            kind: "chat" | "embedding" | "reranker";
             /** Key */
             key: string;
             /**
@@ -847,6 +1027,125 @@ export interface components {
             abstract?: string | null;
             /** Doi */
             doi?: string | null;
+        };
+        /** PaperRetrieval */
+        PaperRetrieval: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Document Id */
+            document_id: string | null;
+            /** Effective Profile */
+            effective_profile: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "default" | "paper";
+            /** Parser */
+            parser: string | null;
+            /** Chunk Count */
+            chunk_count: number;
+            /** Section Count */
+            section_count: number;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "hybrid" | "keyword" | "unavailable";
+            /** Mode Note */
+            mode_note?: string | null;
+            /** Indexes */
+            indexes: components["schemas"]["RetrievalIndexOut"][];
+        };
+        /** PaperRetrievalUpdate */
+        PaperRetrievalUpdate: {
+            /** Profile */
+            profile: string | null;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** RebuildInput */
+        RebuildInput: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** RetrievalIndexOut */
+        RetrievalIndexOut: {
+            /** Profile */
+            profile: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "embedding" | "ready" | "failed" | "unavailable";
+            /** Embedded */
+            embedded: number;
+            /** Total */
+            total: number;
+            /** Updated At */
+            updated_at?: string | null;
+            error?: components["schemas"]["JobError"] | null;
+        };
+        /** RetrievalSettings */
+        RetrievalSettings: {
+            /**
+             * Embedding Profile
+             * @default openai-3-large
+             */
+            embedding_profile: string;
+            /**
+             * Reranker Enabled
+             * @default true
+             */
+            reranker_enabled: boolean;
+        };
+        /**
+         * RetrievalSummary
+         * @description How an answer's evidence was found; persisted on the assistant message.
+         */
+        RetrievalSummary: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "hybrid" | "keyword";
+            /** Profile */
+            profile?: string | null;
+            /**
+             * Reranked
+             * @default false
+             */
+            reranked: boolean;
+            /** Standalone Query */
+            standalone_query?: string | null;
+            /** Search Queries */
+            search_queries?: string[];
+            /**
+             * Passages Found
+             * @default 0
+             */
+            passages_found: number;
+            /**
+             * Passages Used
+             * @default 0
+             */
+            passages_used: number;
+            /**
+             * Limited By Context
+             * @default false
+             */
+            limited_by_context: boolean;
+            /** Note */
+            note?: string | null;
         };
         /** SavePaper */
         SavePaper: {
@@ -1063,6 +1362,14 @@ export interface components {
             document_id: string;
             /** Page */
             page: number;
+            /** Page End */
+            page_end?: number | null;
+            /** Section */
+            section?: string | null;
+            /** Kind */
+            kind?: ("front_matter" | "text" | "table" | "references") | null;
+            /** Bboxes */
+            bboxes?: number[][];
             /** Excerpt */
             excerpt: string;
         };
@@ -2097,6 +2404,211 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    profiles_api_v1_retrieval_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingProfilePage"];
+                };
+            };
+        };
+    };
+    retrieval_settings_api_v1_retrieval_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalSettings"];
+                };
+            };
+        };
+    };
+    update_retrieval_settings_api_v1_retrieval_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperRetrieval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_paper_retrieval_api_v1_papers__paper_id__retrieval_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperRetrievalUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperRetrieval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_paper_retrieval_api_v1_papers__paper_id__retrieval_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RebuildInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperRetrieval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_memory_api_v1_chats__chat_id__memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMemoryState"];
+                };
             };
             /** @description Validation Error */
             422: {
