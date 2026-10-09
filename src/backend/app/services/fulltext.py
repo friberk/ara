@@ -1,6 +1,7 @@
 """Full-text request orchestration; worker downloading is added independently."""
 
 import asyncio
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from minio.error import S3Error
@@ -207,6 +208,7 @@ async def run_fulltext_job(
                 return
             failures = []
             for ordinal, candidate in enumerate(discovery.candidates):
+                payload["source_host"] = urlsplit(candidate.url).hostname
                 if not await checkpoint(
                     resources, job_id, generation, lease_token, payload, "fetching_pdf", 40
                 ):

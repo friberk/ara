@@ -213,6 +213,7 @@ async def fulltext_status(session, paper_id: UUID) -> FullTextStatus:
         availability=availability,
         locations=locations,
         retrieval_job=(await job_statuses(session, [job]))[0] if job else None,
+        source_host=job.payload.get("source_host") if job else None,
         document_id=document.id if document else None,
         ingest_job_id=document.ingest_job_id if document else None,
         last_checked_at=attempts[-1].checked_at if attempts else job.updated_at if job else None,

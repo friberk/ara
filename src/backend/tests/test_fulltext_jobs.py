@@ -676,3 +676,29 @@ async def test_rate_limited_lookup_reports_the_providers_wait_not_an_outage(
     assert "Semantic Scholar" in job.error_message
     assert job.payload["discovery_warnings"], "lookup warnings must survive a no-candidate finish"
     assert requests == []
+
+
+async def test_status_names_the_host_a_download_is_coming_from(resources, original_pdf):
+    """Given a download in progress, when status is read, then it names the source host so
+    the workspace can say where the PDF is coming from (ARA-084)."""
+    from app.services.fulltext import run_fulltext_job
+
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def respond(_request):
+        started.set()
+        await release.wait()
+        return httpx.Response(200, stream=httpx.ByteStream(original_pdf))
+
+    paper_id, _ = await prepare(resources, original_pdf, response=respond)
+    args = await enqueue_and_claim(resources, paper_id)
+    task = asyncio.create_task(run_fulltext_job(resources, *args))
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        async with app_client(resources) as client:
+            status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
+        assert status["retrieval_job"]["stage"] == "fetching_pdf"
+        assert status["source_host"] == "arxiv.org"
+    finally:
+        release.set()
+        await task
