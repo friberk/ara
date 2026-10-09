@@ -1,15 +1,19 @@
 """Deterministic external HTTP services. Used only by the isolated test stack."""
 
+import base64
 import json
 import os
 import re
+import struct
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from ollama_fixture import OllamaFixture
+from ollama_fixture import OllamaFixture, cited_answer
+from vectors import fixture_vector
 
 OLLAMA = OllamaFixture()
+EMBEDDING_DIMENSIONS = {"text-embedding-3-large": 3072, "text-embedding-3-small": 1536}
 
 TITLE = "Traceable Research Systems"
 ABSTRACT = (
@@ -200,6 +204,9 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path.startswith("/api/"):
             self.ollama_mutation()
             return
+        if urlparse(self.path).path == "/v1/embeddings":
+            self.embeddings()
+            return
         if urlparse(self.path).path != "/v1/responses":
             self.send_json({"error": "Unknown fixture endpoint"}, 404)
             return
@@ -218,16 +225,13 @@ class Handler(BaseHTTPRequestHandler):
             answer = json.dumps(structured_value(schema, schema))
         else:
             inputs = json.dumps(request.get("input", ""))
-            sources = list(dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", inputs)))
-            citation = f" [source:{sources[0]}]" if sources else ""
-            answer = (
+            answer = cited_answer(
+                inputs,
                 "The paper evaluates a retrieval-first pipeline on the Orion-12 dataset. "
                 "The reported accuracy is 86 percent; "
-                "the experiment contains only twelve examples. "
-                + citation
-                + "\n\nIts main limitation is the small synthetic dataset, "
-                "so these results do not establish performance on real research libraries."
-                + citation
+                "the experiment contains only twelve examples. ",
+                "\n\nIts main limitation is the small synthetic dataset, "
+                "so these results do not establish performance on real research libraries.",
             )
         if not request.get("stream"):
             self.send_json(response_payload(model, answer))
@@ -277,6 +281,39 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         self.close_connection = True
+
+    def embeddings(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > 4_000_000:
+            self.send_json({"error": "Fixture request too large"}, 413)
+            return
+        try:
+            request = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self.send_json({"error": "Invalid JSON"}, 400)
+            return
+        model = request.get("model", "text-embedding-3-large")
+        texts = request.get("input", [])
+        texts = [texts] if isinstance(texts, str) else texts
+        if model not in EMBEDDING_DIMENSIONS or not all(isinstance(t, str) for t in texts):
+            self.send_json({"error": {"message": "Unsupported fixture embedding request"}}, 400)
+            return
+        dims = request.get("dimensions") or EMBEDDING_DIMENSIONS[model]
+        data = []
+        for index, text in enumerate(texts):
+            vector = fixture_vector(text, dims)
+            if request.get("encoding_format", "base64") == "base64":
+                vector = base64.b64encode(struct.pack(f"<{dims}f", *vector)).decode()
+            data.append({"object": "embedding", "index": index, "embedding": vector})
+        tokens = sum(max(1, len(text.split())) for text in texts)
+        self.send_json(
+            {
+                "object": "list",
+                "data": data,
+                "model": model,
+                "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
+            }
+        )
 
     def do_DELETE(self):
         self.ollama_mutation()

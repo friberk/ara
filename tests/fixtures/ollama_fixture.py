@@ -1,10 +1,13 @@
 """Synthetic Ollama HTTP protocol for deterministic browser tests; no model weights."""
 
 import json
+import math
 import re
 import threading
 import time
 from uuid import UUID
+
+from vectors import STOP, WORD, fixture_vector
 
 MODELS = {
     "hf.co/IFM/K2-Horizon-3.7B-GGUF:Q4_K_M": (
@@ -20,6 +23,41 @@ MODELS = {
         17741872132,
     ),
 }
+
+
+# Passage headers start a line: "[S1] Results · p. 3". Example handles inside instructions do not.
+PASSAGE_HANDLE = re.compile(r'(?:^|\\n|\n|")\[(S\d{1,3})\] ')
+SOURCE = re.compile(r"source:([0-9a-fA-F-]{36})")
+RERANK = re.compile(r"<Query>: (.*?)\n<Document>: (.*?)<\|im_end\|>", re.S)
+
+
+def embedding_dimensions(model: str) -> int:
+    for size, dims in ((":0.6b", 1024), (":4b", 2560), (":8b", 4096)):
+        if size in model:
+            return dims
+    return 1024
+
+
+def cited_answer(prompt: str, first: str, second: str, wrapper: str = "[{}]") -> str:
+    """Cite the first supplied passage handle, else the first legacy source UUID."""
+    if "NO-EVIDENCE-FIXTURE" in prompt:
+        return "[insufficient-evidence] The supplied passages do not report this."
+    handles = list(dict.fromkeys(PASSAGE_HANDLE.findall(prompt)))
+    sources = list(dict.fromkeys(SOURCE.findall(prompt)))
+    if handles:
+        citation = " " + wrapper.format(handles[0])
+    elif sources:
+        citation = " " + wrapper.format("source:" + sources[0])
+    else:
+        citation = ""
+    return first + citation + second + citation
+
+
+def relevance(query: str, document: str) -> float:
+    terms = {w for w in WORD.findall(query.lower()) if w not in STOP}
+    words = {w for w in WORD.findall(document.lower()) if w not in STOP}
+    overlap = len(terms & words) / max(1, len(terms))
+    return 0.02 + 0.96 * overlap
 
 
 class OllamaFixture:
@@ -78,19 +116,45 @@ class OllamaFixture:
                         {"error": "Synthetic transfer has not stopped"}, 503
                     )
         elif path == "/api/show":
-            handler.send_json(
-                {
-                    "template": "{{ .Prompt }}",
-                    "capabilities": ["completion", "thinking"],
-                    "thinking": {
-                        "values": [False, True, "low", "medium", "high"],
-                        "default": "high",
-                    },
-                    "model_info": {"fixture.context_length": 8192},
-                }
-            )
+            model = str(body.get("model", ""))
+            if "embedding" in model:
+                handler.send_json(
+                    {
+                        "template": "",
+                        "capabilities": ["embedding"],
+                        "model_info": {
+                            "fixture.context_length": 32768,
+                            "fixture.embedding_length": embedding_dimensions(model),
+                        },
+                    }
+                )
+            elif "reranker" in model:
+                handler.send_json(
+                    {
+                        "template": "{{ .Prompt }}",
+                        "capabilities": ["completion"],
+                        "model_info": {"fixture.context_length": 32768},
+                    }
+                )
+            else:
+                handler.send_json(
+                    {
+                        "template": "{{ .Prompt }}",
+                        "capabilities": ["completion", "thinking"],
+                        "thinking": {
+                            "values": [False, True, "low", "medium", "high"],
+                            "default": "high",
+                        },
+                        "model_info": {"fixture.context_length": 8192},
+                    }
+                )
+        elif path == "/api/embed":
+            self.embed(handler, body)
         elif path == "/api/generate":
-            handler.send_json({"done": True, "done_reason": "stop"})
+            if body.get("logprobs") and "reranker" in str(body.get("model", "")):
+                self.rerank(handler, body)
+            else:
+                handler.send_json({"done": True, "done_reason": "stop"})
         elif path == "/api/delete":
             with self.lock:
                 self.installed.discard(body.get("model"))
@@ -101,6 +165,65 @@ class OllamaFixture:
         else:
             return False
         return True
+
+    def installed_or_404(self, handler, model) -> bool:
+        with self.lock:
+            installed = model in self.installed
+        if not installed:
+            handler.send_json({"error": "Synthetic model weights missing"}, 404)
+        return installed
+
+    def embed(self, handler, body):
+        model = str(body.get("model", ""))
+        if not self.installed_or_404(handler, model):
+            return
+        texts = body.get("input", [])
+        texts = [texts] if isinstance(texts, str) else texts
+        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+            handler.send_json({"error": "Invalid synthetic embed input"}, 400)
+            return
+        dims = body.get("dimensions") or embedding_dimensions(model)
+        handler.send_json(
+            {
+                "model": model,
+                "embeddings": [fixture_vector(text, dims) for text in texts],
+                "total_duration": 1,
+                "load_duration": 0,
+                "prompt_eval_count": sum(max(1, len(text.split())) for text in texts),
+            }
+        )
+
+    def rerank(self, handler, body):
+        model = str(body.get("model", ""))
+        if not self.installed_or_404(handler, model):
+            return
+        match = RERANK.search(str(body.get("prompt", "")))
+        if not body.get("raw") or match is None:
+            handler.send_json({"error": "Synthetic reranker expects a raw template"}, 400)
+            return
+        p_yes = relevance(*match.groups())
+        yes, no = math.log(p_yes), math.log(1 - p_yes)
+        token, logprob = ("yes", yes) if p_yes >= 0.5 else ("no", no)
+        handler.send_json(
+            {
+                "model": model,
+                "response": token,
+                "done": True,
+                "done_reason": "length",
+                "prompt_eval_count": len(match.group(2).split()) + 40,
+                "eval_count": 1,
+                "logprobs": [
+                    {
+                        "token": token,
+                        "logprob": logprob,
+                        "top_logprobs": [
+                            {"token": "yes", "logprob": yes},
+                            {"token": "no", "logprob": no},
+                        ],
+                    }
+                ],
+            }
+        )
 
     def ndjson(self, handler, event):
         handler.wfile.write((json.dumps(event) + "\n").encode())
@@ -179,19 +302,15 @@ class OllamaFixture:
         elif "Reply OK" in prompt:
             answer = "OK"
         else:
-            sources = list(
-                dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", prompt))
-            )
             # The retained 7B medium chat used this wrapper in a live run.
             # Exercise canonicalization in the browser instead of hiding it in mocks.
-            marker = "【source:{}】" if thinking == "medium" else "[source:{}]"
-            citation = " " + marker.format(sources[0]) if sources else ""
-            answer = (
+            answer = cited_answer(
+                prompt,
                 "The paper evaluates a retrieval-first pipeline on the Orion-12 dataset. "
-                "Its measured accuracy is 86 percent, using twelve synthetic examples."
-                + citation
-                + "\n\nThe small synthetic dataset limits the result's "
-                "applicability to real research libraries." + citation
+                "Its measured accuracy is 86 percent, using twelve synthetic examples.",
+                "\n\nThe small synthetic dataset limits the result's "
+                "applicability to real research libraries.",
+                wrapper="【{}】" if thinking == "medium" else "[{}]",
             )
         message = {"role": "assistant", "content": answer}
         if body.get("think") is not False:
