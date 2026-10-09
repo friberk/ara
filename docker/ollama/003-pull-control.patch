@@ -1,0 +1,242 @@
+diff --git a/server/download.go b/server/download.go
+index b77342e..7e25085 100644
+--- a/server/download.go
++++ b/server/download.go
+@@ -38,6 +38,7 @@ var (
+ )
+ 
+ var blobDownloadManager sync.Map
++var blobDownloadMu sync.Mutex
+ 
+ type blobDownload struct {
+ 	Name   string
+@@ -51,6 +52,9 @@ type blobDownload struct {
+ 	context.CancelFunc
+ 
+ 	done       chan struct{}
++	ready      chan struct{}
++	released   chan struct{}
++	closing    bool // guarded by blobDownloadMu
+ 	err        error
+ 	references atomic.Int32
+ }
+@@ -134,8 +138,6 @@ func (b *blobDownload) Prepare(ctx context.Context, requestURL *url.URL, opts *r
+ 		return err
+ 	}
+ 
+-	b.done = make(chan struct{})
+-
+ 	for _, partFilePath := range partFilePaths {
+ 		part, err := b.readPart(partFilePath)
+ 		if err != nil {
+@@ -217,8 +219,7 @@ func newBackoff(maxBackoff time.Duration) func(ctx context.Context) error {
+ }
+ 
+ func (b *blobDownload) run(ctx context.Context, requestURL *url.URL, opts *registryOptions) error {
+-	defer blobDownloadManager.Delete(b.Digest)
+-	ctx, b.CancelFunc = context.WithCancel(ctx)
++	// Cancellation ownership is initialized before publishing the download.
+ 
+ 	file, err := os.OpenFile(b.Name+"-partial", os.O_CREATE|os.O_RDWR, 0o644)
+ 	if err != nil {
+@@ -308,7 +309,13 @@ func (b *blobDownload) run(ctx context.Context, requestURL *url.URL, opts *regis
+ 				case err != nil:
+ 					sleep := time.Second * time.Duration(math.Pow(2, float64(try)))
+ 					slog.Info(fmt.Sprintf("%s part %d attempt %d failed: %v, retrying in %s", b.Digest[7:19], part.N, try, err, sleep))
+-					time.Sleep(sleep)
++					timer := time.NewTimer(sleep)
++					select {
++					case <-inner.Done():
++						timer.Stop()
++						return inner.Err()
++					case <-timer.C:
++					}
+ 					continue
+ 				default:
+ 					return nil
+@@ -444,21 +451,37 @@ func (b *blobDownload) writePart(partName string, part *blobDownloadPart) error
+ 	return json.NewEncoder(partFile).Encode(part)
+ }
+ 
+-func (b *blobDownload) acquire() {
+-	b.references.Add(1)
+-}
+-
++// Only publication/reference bookkeeping holds the manager lock. Closing is
++// per digest: new owners wait for released while unrelated downloads proceed.
+ func (b *blobDownload) release() {
+-	if b.references.Add(-1) == 0 {
++	blobDownloadMu.Lock()
++	last := b.references.Add(-1) == 0
++	if last {
++		b.closing = true
++	}
++	blobDownloadMu.Unlock()
++	if last {
+ 		b.CancelFunc()
++		<-b.done // includes preparation, transfer, and checkpoint/file closure
++		blobDownloadMu.Lock()
++		blobDownloadManager.CompareAndDelete(b.Digest, b)
++		close(b.released)
++		blobDownloadMu.Unlock()
+ 	}
+ }
+ 
+ func (b *blobDownload) Wait(ctx context.Context, fn func(api.ProgressResponse)) error {
+-	b.acquire()
+ 	defer b.release()
+ 
++	// Prepare publishes metadata by closing ready. A waiter may cancel during
++	// preparation; only the last reference cancels that shared preparation.
++	select {
++	case <-b.ready:
++	case <-ctx.Done():
++		return ctx.Err()
++	}
+ 	ticker := time.NewTicker(60 * time.Millisecond)
++	defer ticker.Stop()
+ 	for {
+ 		select {
+ 		case <-b.done:
+@@ -494,35 +517,55 @@ func downloadBlob(ctx context.Context, opts downloadOpts) (cacheHit bool, _ erro
+ 		return false, err
+ 	}
+ 
+-	fi, err := os.Stat(fp)
+-	switch {
+-	case errors.Is(err, os.ErrNotExist):
+-	case err != nil:
+-		return false, err
+-	default:
+-		opts.fn(api.ProgressResponse{
+-			Status:    fmt.Sprintf("pulling %s", opts.digest[7:19]),
+-			Digest:    opts.digest,
+-			Total:     fi.Size(),
+-			Completed: fi.Size(),
+-		})
+-
+-		return true, nil
+-	}
+-
+-	data, ok := blobDownloadManager.LoadOrStore(opts.digest, &blobDownload{Name: fp, Digest: opts.digest})
+-	download := data.(*blobDownload)
+-	if !ok {
+-		requestURL := opts.n.BaseURL()
+-		requestURL = requestURL.JoinPath("v2", opts.n.DisplayNamespaceModel(), "blobs", opts.digest)
+-		if err := download.Prepare(ctx, requestURL, opts.regOpts); err != nil {
+-			blobDownloadManager.Delete(opts.digest)
++	for {
++		if err := ctx.Err(); err != nil {
+ 			return false, err
+ 		}
++		fi, err := os.Stat(fp)
++		switch {
++		case errors.Is(err, os.ErrNotExist):
++		case err != nil:
++			return false, err
++		default:
++			opts.fn(api.ProgressResponse{Status: fmt.Sprintf("pulling %s", opts.digest[7:19]), Digest: opts.digest, Total: fi.Size(), Completed: fi.Size()})
++			return true, nil
++		}
+ 
+-		//nolint:contextcheck
+-		go download.Run(context.Background(), requestURL, opts.regOpts)
++		blobDownloadMu.Lock()
++		data, ok := blobDownloadManager.Load(opts.digest)
++		var download *blobDownload
++		if ok {
++			download = data.(*blobDownload)
++			if download.closing {
++				released := download.released
++				blobDownloadMu.Unlock()
++				select {
++				case <-released:
++					continue
++				case <-ctx.Done():
++					return false, ctx.Err()
++				}
++			}
++		} else {
++			// Initialize ownership and all signals before publication. Network/disk
++			// preparation runs outside the global lock under the shared owner context.
++			transferCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
++			download = &blobDownload{Name: fp, Digest: opts.digest, CancelFunc: cancel, ready: make(chan struct{}), done: make(chan struct{}), released: make(chan struct{})}
++			blobDownloadManager.Store(opts.digest, download)
++			requestURL := opts.n.BaseURL().JoinPath("v2", opts.n.DisplayNamespaceModel(), "blobs", opts.digest)
++			go func() {
++				err := download.Prepare(transferCtx, requestURL, opts.regOpts)
++				close(download.ready)
++				if err != nil {
++					download.err = err
++					close(download.done)
++					return
++				}
++				download.Run(transferCtx, requestURL, opts.regOpts)
++			}()
++		}
++		download.references.Add(1)
++		blobDownloadMu.Unlock()
++		return false, download.Wait(ctx, opts.fn)
+ 	}
+-
+-	return false, download.Wait(ctx, opts.fn)
+ }
+diff --git a/server/routes.go b/server/routes.go
+index addc6c1..a1ae892 100644
+--- a/server/routes.go
++++ b/server/routes.go
+@@ -99,6 +99,7 @@ var useClient2 = experimentEnabled("client2")
+ var mode string = gin.DebugMode
+ 
+ type Server struct {
++	araPulls      araPullRegistry
+ 	addr          net.Addr
+ 	sched         *Scheduler
+ 	defaultNumCtx int
+@@ -1476,22 +1477,31 @@ func (s *Server) PullHandler(c *gin.Context) {
+ 		return
+ 	}
+ 
++	ctx, cancel := context.WithCancel(c.Request.Context())
++	defer cancel()
++	done := make(chan struct{})
+ 	ch := make(chan any)
++	// The handler owns its goroutine, including cancellation and checkpoints.
++	defer func() { cancel(); <-done }()
+ 	go func() {
++		defer close(done)
+ 		defer close(ch)
+ 		fn := func(r api.ProgressResponse) {
+-			ch <- r
++			select {
++			case ch <- r:
++			case <-ctx.Done():
++			}
+ 		}
+ 
+ 		regOpts := &registryOptions{
+ 			Insecure: req.Insecure,
+ 		}
+ 
+-		ctx, cancel := context.WithCancel(c.Request.Context())
+-		defer cancel()
+-
+ 		if err := PullModel(ctx, name.DisplayShortest(), runner, regOpts, fn); err != nil {
+-			ch <- gin.H{"error": err.Error()}
++			select {
++			case ch <- gin.H{"error": err.Error()}:
++			case <-ctx.Done():
++			}
+ 			return
+ 		}
+ 
+@@ -2299,6 +2309,9 @@ func (s *Server) GenerateRoutes() (http.Handler, error) {
+ 	r.Any(proxy.CodexDesktopPathPrefix+"/*path", gin.WrapH(codexDesktopProxy))
+ 
+ 	// Local model cache management (new implementation is at end of function)
++	r.GET("/api/ara/capabilities", s.araCapabilities)
++	r.POST("/api/ara/pull", s.araPull)
++	r.POST("/api/ara/pulls/:operation_id/pause", s.araPause)
+ 	r.POST("/api/pull", s.PullHandler)
+ 	r.POST("/api/push", s.PushHandler)
+ 	r.HEAD("/api/tags", s.ListHandler)

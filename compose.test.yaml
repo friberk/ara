@@ -37,3 +37,19 @@ services:
     environment: *test-env
   frontend:
     ports: !reset []
+  # Core tests never build the custom inference runtime or fetch weights.
+  ollama:
+    image: ara-backend:development
+    build: !reset null
+    entrypoint: !reset []
+    command: ["python", "/fixtures/runtime-fixture.py"]
+    environment:
+      APP_ENV: test
+    volumes: !override
+      - ./docker/ollama/runtime-fixture.py:/fixtures/runtime-fixture.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11434/api/ara/capabilities', timeout=3).close()"]
+    mem_limit: 128m
+  model-worker:
+    profiles: ["local-model-tests"]
+    environment: *test-env
