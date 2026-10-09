@@ -1,0 +1,35 @@
+{
+  "id": "ARA-080",
+  "title": "Memory-aware loading of local models on the shared Ollama runtime",
+  "type": "bug",
+  "priority": "P2",
+  "description": "Chat, embedding and reranker models share one Ollama container capped at OLLAMA_MEMORY_LIMIT (12 GiB by default) with OLLAMA_MAX_LOADED_MODELS=3 and swap disabled. Ollama does not schedule against the container's memory limit, and the app does not check what is resident, so a combination the UI offers can exceed the limit: Phase 0 measured IFM K2 Horizon 7B plus Qwen3 Embedding 8B swapping 7.7 GiB, or being OOM-killed with swap off. The kill fails the in-flight answer and any running local jobs. Reported by the whole-branch review of feat/rag-context (finding 6). On 2026-10-09 the user chose to document the limit in the README and track a fix here, without a Settings note.",
+  "dependencies": [
+    "ARA-072",
+    "ARA-074"
+  ],
+  "acceptance_criteria": [
+    "Given a resident 7B chat model and a paper indexed with Qwen3 Embedding 8B, when a local question needs the embedder, then the runtime is not OOM-killed: idle resident models are unloaded first, or the request waits or falls back to keyword search with a plain note.",
+    "Given a local model in use by a running generation, embedding or rerank, when another model must load, then the busy model is never unloaded.",
+    "Given models that fit together under the limit, when they serve one question, then they stay resident and no extra reload happens.",
+    "Given OLLAMA_MEMORY_LIMIT is raised, when the same combination runs, then no unloading is needed."
+  ],
+  "test_cases": [
+    "Unit tests of the fit check against /api/ps sizes, catalog sizes and the configured limit.",
+    "Integration tests with the Ollama fixture: idle unload, busy model kept, keyword fallback with note.",
+    "Opt-in live check: IFM 7B with Qwen3 Embedding 8B under 12 GiB, with zero OOM events."
+  ],
+  "status": "planned",
+  "related_files": [
+    "compose.yaml",
+    "src/backend/app/integrations/embeddings.py",
+    "src/backend/app/rag/rerank.py",
+    "src/backend/app/repositories/local_models.py",
+    "src/backend/app/integrations/model_catalog.py",
+    "README.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09; the limit is documented in the README. Evidence: Phase 0 S1 co-residency measurements in docs/superpowers/specs/2026-10-09-rag-context-design.md.",
+  "updated_at": "2026-10-09"
+}
