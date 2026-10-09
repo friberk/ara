@@ -492,13 +492,13 @@ async def test_an_untitled_paper_reports_its_file_name_while_processing(resource
     assert paper.title is None and paper.file_name == "sec18-han.pdf"
 
 
-async def test_a_rejected_artifact_title_asks_the_saved_default_model_and_seeds_the_lookup(resources):
+async def test_a_rejected_artifact_title_asks_the_saved_default_model_for_clues(resources):
     """paper.dvi with no printed title counts as missing, so the existing LLM fallback runs with
     the saved default model and effort, and its title becomes the catalog lookup's clue."""
     import pymupdf
+    from support.llm_server import metadata_model
 
     from app.models.research import ModelConfiguration
-    from support.llm_server import metadata_model
 
     async with resources.sessions() as session, session.begin():
         session.add(
