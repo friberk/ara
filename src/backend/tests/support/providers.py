@@ -103,3 +103,21 @@ def decisions_fixture(requests, *, delay=0.0, peak=None):
         )
 
     return httpx.MockTransport(handler)
+
+
+class OfflineOpenAI(httpx.AsyncBaseTransport):
+    """Serves OpenAI requests from the Decisions fixture, so no test reaches the real API;
+    every other request passes through unchanged."""
+
+    def __init__(self, base_url: str, requests: list):
+        self.base_url = base_url.rstrip("/") + "/"
+        self.fixture = decisions_fixture(requests)
+        self.network = httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request):
+        if str(request.url).startswith(self.base_url):
+            return await self.fixture.handle_async_request(request)
+        return await self.network.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self.network.aclose()

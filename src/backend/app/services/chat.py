@@ -27,7 +27,14 @@ from app.integrations.llm import (
     thinking_controls,
     validate_model_available,
 )
-from app.models.research import ChatMessage, ChatSession, Document, Paper, PaperAuthor
+from app.models.research import (
+    ChatMessage,
+    ChatSession,
+    Document,
+    ModelConfiguration,
+    Paper,
+    PaperAuthor,
+)
 from app.rag.citations import (
     HandleMap,
     HandleTransducer,
@@ -38,6 +45,7 @@ from app.rag.indexing import effective_profile
 from app.rag.pipeline import retrieve_evidence
 from app.repositories.jobs import now
 from app.schemas.ai import Message
+from app.schemas.retrieval import RetrievalSettings
 from app.services.context import INSTRUCTIONS_VERSION, PaperHeader, assemble_answer_prompt
 
 LEASE = timedelta(seconds=60)
@@ -132,6 +140,7 @@ class Prepared:
     document_id: UUID | None = None
     chunk_set: str | None = None
     retrieval_profile: str | None = None
+    reranker: str | None = None
     paper: PaperHeader | None = None
     history: list[ChatMessage] = field(default_factory=list)
     limits: ContextProfile | None = None
@@ -174,6 +183,8 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
         paper = await session.get(Paper, chat.paper_id)
         header = await paper_header(session, paper)
         profile, _ = await effective_profile(session, paper)
+        stored = await session.get(ModelConfiguration, "retrieval")
+        reranker = RetrievalSettings.from_stored(stored.value if stored else None).reranker
         # Sizing without evidence raises CONTEXT_LIMIT (413) before anything is stored.
         sizing = assemble_answer_prompt(
             profile=limits,
@@ -225,6 +236,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             document_id=chat.document_id,
             chunk_set=document.chunk_set,
             retrieval_profile=profile,
+            reranker=reranker,
             paper=header,
             history=history,
             limits=limits,
@@ -351,6 +363,8 @@ async def stream_answer(resources, request, prepared: Prepared, *, inference_slo
                 queries=plan.search_queries,
                 budget=prepared.evidence_budget,
                 counter=prepared.limits.counter,
+                reranker=prepared.reranker,
+                on_stage=lambda stage: queue.put(("status", stage)),
             )
             if plan.standalone_question != prepared.question:
                 evidence.summary.standalone_query = plan.standalone_question

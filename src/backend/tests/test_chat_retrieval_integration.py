@@ -9,7 +9,7 @@ import pytest
 
 from app.models.research import ChatMessage, ChatSession
 from tests.support.answers import ask, first_handle, named, parse, use_hosted
-from tests.support.evidence import OPENAI, TITLE, seed_structured
+from tests.support.evidence import CHUNK_SET, OPENAI, TITLE, seed_structured
 from tests.support.providers import openai_fixture
 
 pytestmark = pytest.mark.integration
@@ -71,7 +71,8 @@ async def test_given_ready_index_when_answering_then_hybrid_evidence_is_cited_ca
     retrieval = completed["retrieval"]
     assert retrieval["mode"] == "hybrid" and retrieval["profile"] == OPENAI
     assert retrieval["search_queries"] == [question]
-    assert retrieval["passages_used"] >= 1 and retrieval["reranked"] is False
+    # The default reranker (OpenAI Decisions, served by the test fixture) reorders the evidence.
+    assert retrieval["passages_used"] >= 1 and retrieval["reranked"] is True
     assert completed["context"]["input_tokens"] > 0
     assert completed["context"]["output_reserved"] == 4000
     # One query embedding: the bare question, as OpenAI receives it.
@@ -87,6 +88,10 @@ async def test_given_ready_index_when_answering_then_hybrid_evidence_is_cited_ca
     assert {item["retriever"] for item in trace["lists"]} == {"keyword", "vector"}
     assert trace["selected"][first_handle(request)] == cited["chunk_id"]
     assert trace["fused"] and trace["budget"] > 0 and "total" in trace["timings_ms"]
+    rerank = trace["rerank"]
+    assert rerank["profile"] == "openai-gpt-6-luna" and rerank["skipped"] is None
+    assert set(rerank["scores"]) <= {str(chunk_id) for chunk_id in chunk_ids}
+    assert rerank["scores"] and rerank["elapsed_ms"] >= 0 and "rerank" in trace["timings_ms"]
 
 
 async def test_given_no_ready_index_when_answering_then_keyword_search_explains_why(
@@ -146,7 +151,14 @@ async def test_given_stream_when_answering_then_status_stages_precede_the_answer
         for event, data in events
         if event in {"message.started", "message.status", "message.delta"}
     ]
-    assert order[:5] == ["message.started", "planning", "retrieving", "generating", "message.delta"]
+    assert order[:6] == [
+        "message.started",
+        "planning",
+        "retrieving",
+        "reranking",
+        "generating",
+        "message.delta",
+    ]
     message_id = named(events, "message.started")[0]["message_id"]
     assert {data["message_id"] for data in named(events, "message.status")} == {message_id}
     assert named(events, "message.completed")
@@ -308,3 +320,118 @@ async def test_given_old_answer_with_source_marker_when_asking_again_then_it_is_
     assert "[source:" not in json.dumps(sent)
     assert sent[0] == {"role": "user", "content": "Who wrote reference one?"}
     assert sent[1] == {"role": "assistant", "content": "Robertson and Zaragoza (p. 4)."}
+
+
+async def choose_reranker(resources, reranker) -> None:
+    from app.models.research import ModelConfiguration
+
+    async with resources.sessions() as session, session.begin():
+        session.add(
+            ModelConfiguration(
+                key="retrieval", value={"embedding_profile": OPENAI, "reranker": reranker}
+            )
+        )
+
+
+async def test_given_reranking_off_when_answering_then_no_stage_and_fusion_order(
+    resources, monkeypatch, embeddings
+):
+    paper_id, document_id, _ = await seed_structured(resources)
+    chat_id = await new_chat(resources, paper_id, document_id)
+    await choose_reranker(resources, None)
+    use_hosted(monkeypatch, resources, [], cite_first)
+    prepared, events = await ask(resources, chat_id, "How does BM25 recall compare?")
+    stages = [data["stage"] for data in named(events, "message.status")]
+    assert stages == ["planning", "retrieving", "generating"]
+    (completed,) = named(events, "message.completed")
+    assert completed["retrieval"]["reranked"] is False and completed["retrieval"]["note"] is None
+    row = await stored(resources, prepared.assistant.id)
+    assert row.retrieval["trace"]["rerank"] == {
+        "profile": None,
+        "skipped": None,
+        "scores": {},
+        "elapsed_ms": 0,
+    }
+
+
+async def evidence(resources, document_id, *, budget=8000, reranker="openai-gpt-6-luna"):
+    from pydantic import SecretStr
+
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.pipeline import retrieve_evidence
+
+    # The ready OpenAI index embeds queries through the fixture, which needs a configured key.
+    resources.settings.openai_api_key = SecretStr("http-fixture-only")
+    return await retrieve_evidence(
+        resources,
+        document_id=document_id,
+        chunk_set=CHUNK_SET,
+        preferred_profile=OPENAI,
+        queries=["BM25 recall dense retrieval"],
+        budget=budget,
+        counter=TiktokenCounter(),
+        reranker=reranker,
+    )
+
+
+async def test_given_reranked_order_when_packing_then_evidence_follows_the_outcome(
+    resources, monkeypatch, embeddings
+):
+    from dataclasses import replace
+
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag import pipeline
+    from app.rag.rerank import RerankOutcome
+
+    seen = []
+
+    async def reverse(resources, *, query, nodes, reranker):
+        seen.append((query, reranker, [item.node.node_id for item in nodes]))
+        return RerankOutcome(nodes=list(reversed(nodes)), reranked=True, reranker=reranker)
+
+    _, document_id, _ = await seed_structured(resources)
+    fused = (await evidence(resources, document_id, reranker=None)).ranked
+    monkeypatch.setattr(pipeline, "rerank_candidates", reverse)
+    roomy = await evidence(resources, document_id)
+    ((query, reranker, ids),) = seen
+    assert (query, reranker) == ("BM25 recall dense retrieval", "openai-gpt-6-luna")
+    assert ids == [item.node.node_id for item in fused]
+    assert [item.node.node_id for item in roomy.ranked] == ids[::-1]
+    assert roomy.summary.reranked is True
+    # A budget for one passage keeps the reranker's first choice, the last fused one.
+    first = next(item for item in roomy.passages if str(item.chunk_id) == ids[-1])
+    one = TiktokenCounter().count(replace(first, handle="S16").render()) + 1
+    tight = await evidence(resources, document_id, budget=one)
+    assert [str(item.chunk_id) for item in tight.passages] == [ids[-1]]
+
+
+@pytest.mark.parametrize(
+    ("skipped", "note"),
+    [
+        ("LOCAL_MODEL_NOT_READY", "Reranking was unavailable, so results use the hybrid order."),
+        ("RERANKER_FAILED", "Reranking was unavailable, so results use the hybrid order."),
+        # Without an OpenAI key the default reranker cannot be offered; Settings explains it.
+        ("MODEL_NOT_CONFIGURED", None),
+    ],
+)
+async def test_given_skipped_reranker_when_retrieving_then_only_relevant_reasons_are_noted(
+    resources, monkeypatch, embeddings, skipped, note
+):
+    from app.rag import pipeline
+    from app.rag.rerank import RerankOutcome
+
+    async def skip(resources, *, query, nodes, reranker):
+        return RerankOutcome(
+            nodes=list(nodes), reranked=False, reranker=reranker, skipped=skipped, elapsed_ms=3
+        )
+
+    monkeypatch.setattr(pipeline, "rerank_candidates", skip)
+    _, document_id, _ = await seed_structured(resources)
+    result = await evidence(resources, document_id)
+    assert result.summary.reranked is False and result.summary.note == note
+    assert result.trace["rerank"] == {
+        "profile": "openai-gpt-6-luna",
+        "skipped": skipped,
+        "scores": {},
+        "elapsed_ms": 3,
+    }

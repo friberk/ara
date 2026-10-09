@@ -1,6 +1,7 @@
 import os
 from uuid import uuid4
 
+import httpx
 import pytest
 from sqlalchemy import delete
 
@@ -28,6 +29,14 @@ async def resources():
         }
     )
     resources = Resources(settings)
+    # Answers rerank with OpenAI Decisions by default (ARA-074); tests that set a fixture key
+    # get the in-process Decisions fixture instead of the real API.
+    from tests.support.providers import OfflineOpenAI
+
+    await resources.http.aclose()
+    resources.http = httpx.AsyncClient(
+        transport=OfflineOpenAI(settings.openai_base_url, []), timeout=httpx.Timeout(20, connect=5)
+    )
     from app.models.jobs import BackgroundJob
     from app.models.local_models import ModelInstallation, ModelRequest, ModelUse
     from app.models.research import (
