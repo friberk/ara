@@ -638,3 +638,41 @@ async def test_retrieval_can_reuse_older_document_after_failed_replacement(resou
     assert (
         paper["active_document_id"] == str(good.document_id) and paper["document_status"] == "ready"
     )
+
+
+async def test_rate_limited_lookup_reports_the_providers_wait_not_an_outage(
+    resources, original_pdf
+):
+    """Given no listed PDF and a rate-limited Semantic Scholar lookup, when retrieval ends,
+    then it reports that provider's wait instead of a generic outage (ARA-084)."""
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, requests = await prepare(resources, original_pdf, urls=[])
+    async with resources.sessions() as session, session.begin():
+        from app.models.research import Paper
+
+        paper = await session.get(Paper, paper_id)
+        paper.doi = paper.normalized_doi = "10.1000/limited"
+
+    def respond(request):
+        if request.url.host == "api.semanticscholar.org":
+            return httpx.Response(429, headers={"Retry-After": "45"})
+        return httpx.Response(
+            200,
+            json={
+                "id": "https://openalex.org/W123",
+                "display_name": "Download fixture",
+                "doi": "https://doi.org/10.1000/limited",
+            },
+        )
+
+    await resources.http.aclose()
+    resources.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    args = await enqueue_and_claim(resources, paper_id)
+    await run_fulltext_job(resources, *args)
+    job = await state(resources, args[0])
+    assert job.state == "failed"
+    assert job.result == {"outcome": "rate_limited", "retry_after": 45}
+    assert "Semantic Scholar" in job.error_message
+    assert job.payload["discovery_warnings"], "lookup warnings must survive a no-candidate finish"
+    assert requests == []
