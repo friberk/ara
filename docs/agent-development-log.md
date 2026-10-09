@@ -699,3 +699,79 @@ The cache-free build completed for backend, frontend, MinIO and patched Ollama. 
 A read-only main-browser smoke initially asserted an obsolete `pdf-page-2` test ID. The independent UI reviewer reproduced the actual successful page jump and identified the current semantic Page2 group; the source reader opens no dialog and announces the jump. Correcting only the harness selector passed the main smoke: old summary and saved citation preview, original PDF page2, Search index panel and local-model Settings were visible, with no horizontal overflow or mutation requests. No product change was needed.
 
 The user then authorized removing merged worktrees. Before deletion, ignored configuration and development evidence were copied to `docs/evidence/generated/worktree-archives/`; model files stay in their existing named Docker volumes. Original and feature databases were not consolidated or replaced. Preview/test stacks were stopped without volume deletion. Orca’s documented remove command normally attempts branch deletion, so its two managed checkouts were detached first; a saved reference-map check confirmed no branch restoration was necessary. Git removed the two Superpowers worktrees; Orca removed the full-text and temporary integration worktrees. Only the primary main checkout remains. All feature and integration refs retain their original tips and are ancestors of main, while the user’s untracked homework files and writing skills remain untouched. Nothing was pushed.
+
+## 2026-10-09 — ARA-086 upload overhaul and accurate metadata
+
+The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat/ara-086-upload-metadata`. The ticket came from the user's feedback: the "processing continues in the background" popup was confusing, an uploaded paper was titled `paper.dvi`, and OpenAlex (default) or Semantic Scholar should supply the metadata, with local extraction as the fallback and resilience to rate limits. Tests ran in the isolated `ara-upload-test` project. The baseline was 905 backend tests passing in 150.66 s.
+
+**Diagnosis of `paper.dvi`** (read-only access to `ara`):
+- The paper's row had `title=paper.dvi` with provenance `pdf`. Its authors and year came from `llm`.
+- The original (`sec18-han.pdf`, USENIX Security 2018) was copied to a scratch directory outside the repository. Its Info dictionary had `title: paper.dvi`, an empty author and `creator: dvips(k) 5.997`.
+- `extract()` copied the Info title verbatim. The first page is a USENIX cover page with the real title set at 24 pt.
+- A read-only OpenAlex `title.search` found W2889518255 with the same title, year 2018, venue "USENIX Security Symposium" and the surname Han. Semantic Scholar's `/paper/search/match` found it too, but its abstract was elided.
+
+**Decisions:**
+- **Parser.**
+  - An Info title is dropped when it is a file name, an application prefix, an identifier, a placeholder or a file stem.
+  - An Info title is also dropped when the first two pages do not print it.
+  - Otherwise the title is the first page's largest horizontal text in the top 60%. Rotated text, such as arXiv's 20 pt margin stamp, is skipped. The text must be at least 1.15 times the size of the body text, the size that carries the most characters.
+  - Embedded DOIs (Info subject/keywords and XMP) win over DOIs in the text. The arXiv ID from page 1 becomes a clue.
+- **Lookup acceptance.**
+  - A title hit needs a normalized-title difflib ratio of at least 0.9, or a prefix of 5 or more words. An author surname must also agree (a listed author, or a surname of 3+ letters printed on the first pages), or the year.
+  - An identifier hit must be the paper printed on the first pages, because a DOI in the text can be a reference's.
+  - Provider values replace values from `pdf` or `llm`, never `manual` ones.
+  - A record that confirms the printed title keeps the PDF's capitalisation.
+  - Venue lives in the linked record's snapshot, so no migration was needed.
+- **Durability.**
+  - A `metadata` job is queued in the commit that makes the document ready. It is queued only for papers without a provider record, and once per document.
+  - The chosen source goes first, then the other one.
+  - Retries wait the larger of the longest Retry-After and a 60 s or 120 s backoff, capped at 30 min. The job stops at the existing 3-attempt constraint and keeps the PDF values; Details offers "Look up again".
+  - `retry_locked` gained an optional `delay_seconds`.
+- **UX.**
+  - Uploads go through XMLHttpRequest, so progress is real.
+  - One step list (Uploading, Reading pages, Finding paper details, Ready) appears in the dropzone, the reader gate, Details and library rows. The gate says "Preparing the PDF" and never "uploaded", so retrieved PDFs read correctly.
+  - Home and library open the picker directly and take drops anywhere on the page. The library accepts several files, each with its own row.
+  - A duplicate opens the existing paper with a note. Untitled papers show their file name.
+  - The header keeps "Ready to read" and adds a quiet "Finding paper details" note. When the lookup settles, the paper and library refresh in place.
+
+**Red → green, with the actual failures:**
+- **First run of the new backend tests:** 52 failed and 2 passed. The failures were:
+  - `AssertionError: assert 'paper.dvi' == 'A Bad Dream:... Are Sleeping'`, which reproduces the bug;
+  - `ImportError: cannot import name 'artifact_title'`;
+  - `AttributeError: 'AcademicSearch' object has no attribute 'by_arxiv'` and `… 'match_title'`;
+  - `ModuleNotFoundError: No module named 'app.services.metadata'`;
+  - `KeyError: 'duplicate'`;
+  - a 422 for `kind=metadata`.
+- **The first parser version broke two existing tests.** `test_pdf_upload_child_extraction…` failed with `'Abstract Gro...PDF evidence.' == 'Original PDF Title'`, and `test_configured_metadata_fallback…` with `'Traceable Re...da Researcher' == 'Traceable Research Systems'`. Pages set in one font size had their body lines joined into a "title". A new one-size test failed the same way, and the body-size rule (`12ad2ca`) fixed all three.
+- **Semantic Scholar's live `openAccessPdf.url` is `""`.** The arXiv test failed with `assert '' is None`, so the empty value now becomes `null`.
+- **Duplicate flag.** The existing duplicate-upload test was updated for the intended `duplicate: true` contract change.
+- **A wrong test, not a code fault.** The fallback test first stayed `queued` because its Semantic Scholar record had no agreeing author. The rejection was correct, so the fixture data was fixed.
+- **Frontend red:** 25 failed and 61 passed, plus a missing-module failure. The messages included `Unable to find role="list" and name "Preparation steps"`, `… role="region" and name "Metadata source"`, `Unable to find a label with the text of: PDF files` and `expected 'metadata' to be 'Paper details lookup'`.
+- **A settings test was itself wrong.** It used `getByRole` before the data loaded, and was corrected to `findByRole`.
+- **One edit in ARA-084's file.** `FullTextAccess.test.tsx` lost one line, the now-unneeded "Upload PDF" confirm click. ARA-084 was messaged beforehand.
+- **The live check found a real fault.** Anonymous Semantic Scholar answered 429 after OpenAlex had found no match, so lookups of unknown papers retried for minutes. The new test `test_the_chosen_source_answering_no_match_is_final…` failed with `assert ('queued' == 'completed')`, run in isolation. Only the chosen source's transient failure now schedules a retry (`176a15d`).
+- **The same live run changed the status display.** The paper showed amber "Finding paper details" instead of "Ready to read" while it was readable. Tests asserting "Ready to read" plus the note went red first, then green.
+- **File name while untitled.** It went red with `AttributeError: 'PaperDetail' object has no attribute 'file_name'`, then green.
+- **The polite step announcement** went red with `Unable to find … Uploading … [aria-live="polite"]`, then green.
+- **Test-after, labelled honestly.** The retry eligibility of an exhausted lookup was implemented before a test named it. Its API test passed at once. Removing `PROVIDER_RATE_LIMITED` from the retryable codes made it fail with `assert 409 == 202`, and the file was then restored.
+
+**Agent process errors:**
+- A `ruff format app` run reformatted the unrelated, already-unformatted `app/jobs/development_worker.py`. It was reverted with `git checkout`.
+- A focused pytest ran while the isolated live stack's dispatcher and worker were up against the same test database. The stack was stopped and the test re-run in isolation, with the same red result. Later tests always ran with the stack stopped.
+- The Playwright MCP browser was missing Chrome. The live check used the frontend's own Playwright Chromium from a scratch script.
+- One scripted edit failed its exact-match assertion after ruff had reformatted the file. It was redone against the new text.
+
+**Verification:**
+- Backend: 962 passed in 153.50 s, Ruff clean.
+- Frontend: `npm run check` passed with 501 tests, and `npm run build` passed with the existing over-500 kB chunk warning.
+- Live check on the isolated stack with the real APIs, uploading the user's PDF from home:
+  - the workspace opened in 87 ms;
+  - the header first showed `sec18-han.pdf`, then the printed title;
+  - about 11 s after it was readable, OpenAlex filled the authors, 2018, the venue and the abstract without a reload.
+- An arXiv-stamped synthetic PDF matched by its arXiv ID. An unknown synthetic title kept the PDF values. A repeated PDF showed "Already in your library".
+- `e2e/upload.spec.ts` passed 3/3 against that stack, on its own port with `--no-deps`. The full fixture-stack browser suite, including the updated E2E-03, is left to the lead.
+
+**Open:**
+- OpenAlex's record for the arXiv DOI of "Attention Is All You Need" reports 2025 and a different DOI, and a lookup copies that.
+- The paid LLM metadata step in ingestion still runs when authors are missing, which is often redundant now.
+- The sidebar still says "Untitled paper" while a PDF is read; it is outside ARA-086's files.

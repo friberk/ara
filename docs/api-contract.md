@@ -182,3 +182,48 @@ Local native requests explicitly set temperature `0.0`. Chat stores the applied 
 The current migration head is `0007_feature_merge`, joining `0006_fulltext` and `0006_retrieval_context` without changing either existing parent. `alembic upgrade head` applies both independent schema branches from the old main schema, or the missing branch when upgrading an existing feature database. API readiness requires the merge head. Document rows retain full-text acquisition provenance and structured parser/chunk-set fields. Paper-linked jobs include summary, fulltext and embed operations. The shared generated OpenAPI contract includes both access/retrieval schemas and managed-model controls.
 
 The retrieval migration replaces pre-structured chunk rows. Startup queues idempotent re-ingestion using stored PDF originals and previous metadata checkpoints. Analysis waits for valid chunks; previously generated messages and summaries keep stored citations with original document/page/excerpt provenance. An old chunk-ID endpoint can return 404 after replacement; the reader can show the saved citation excerpt and original PDF page. This behavior is distinct from losing the stored analysis or original file.
+
+## Uploaded-paper metadata and uploads (ARA-086)
+
+No migration. The changes are additive:
+- `SearchResult` and the stored provider snapshots gain nullable `venue`. Semantic Scholar's empty open-access URL (`""`) is now `null`.
+- `Paper` gains:
+  - nullable `venue`, read from the linked provider record named by `metadata_provenance.venue`, else from any linked record;
+  - nullable `file_name`, the active PDF's original name, so an untitled paper can be named while it is read.
+- `UploadAccepted` gains `duplicate` (default `false`). It is `true` when a new request UUID uploads bytes the library already holds; the response then names the existing paper, document and job. A replay of the same request UUID stays `false`.
+- Attaching bytes that belong to another paper still returns 409 `DOCUMENT_ALREADY_ATTACHED`, now with `details: [{paper_id}]`. `AppError` responses can carry `details`.
+
+`GET /metadata/settings` → `{source}`, and `PUT /metadata/settings {source}` → `{source}`:
+- `source` is `openalex` (the default) or `semantic_scholar`. Extra fields or another value return 422.
+- The value is stored under the `metadata` key of `model_configurations`.
+- Queued lookups read it when they run.
+
+PDF parsing keeps local values as the fallback and as lookup clues:
+- An Info title is ignored when it names a file or a tool. Examples are `paper.dvi`, `*.tex`, `*.pdf`, `Microsoft Word - …`, `untitled`, `Layout 1`, `PII:`, file stems and very short values.
+- An Info title is also ignored when it is not printed on the first two pages. The title then comes from the first page: the largest horizontal text in the top 60%, which must be at least 1.15 times the size of the body text. Rotated arXiv stamps are skipped.
+- A DOI in the Info subject/keywords or XMP wins over one found in the text. The arXiv ID from page 1 is reported as `arxiv_id`. Placeholder authors such as `Administrator` are dropped.
+
+Lookup job:
+- Queuing:
+  - Ingestion queues a durable `metadata` job, payload `{paper_id, document_id, clues}`, in the commit that makes the document ready. Reading, summaries and questions never wait for it.
+  - Only a paper without a provider record gets a job, and only one per document. A startup re-ingest therefore never asks again, and neither does a paper saved from search.
+- Search order:
+  - The chosen source is asked first, then the other one: by DOI, then by arXiv ID, then by title.
+  - OpenAlex is queried with `filter=doi:…` (using `10.48550/arxiv.<id>` for arXiv) and `filter=title.search:…`. Semantic Scholar is queried with `paper/DOI:…`, `paper/ARXIV:…` and `paper/search/match`.
+- Acceptance:
+  - A title hit is accepted only when the normalized title has a difflib ratio of at least 0.9, or is a prefix match of 5 or more words, and an author surname or the year agrees with the PDF.
+  - An identifier hit must be the paper printed on the first pages, because a DOI in the text can belong to a cited reference.
+- Writing values:
+  - Provider values replace values from `pdf` or `llm`. Provenance becomes `{source: provider, external_id}`.
+  - A record that confirms the printed title keeps the PDF's capitalisation.
+  - Fields with provenance `manual`, or already taken from a provider, are never replaced.
+  - The provider record is linked as a source unless another paper already owns it or its DOI. In that case the descriptive fields are still filled, DOI deduplication holds, and the result carries `duplicate_paper_id`.
+- Outcomes:
+  - Job results are `{outcome: matched|no_match|paper_missing, provider, matched_by: doi|arxiv|title, external_id, updated_fields}`.
+  - The chosen source's own `no_match` is final.
+  - When the chosen source is rate limited or unreachable and the other source cannot match, the job waits in `retry_wait`. The wait is the larger of the longest Retry-After and a 60 s or 120 s backoff, capped at 30 minutes.
+  - On the third attempt the job fails with `PROVIDER_RATE_LIMITED` or `PROVIDER_UNAVAILABLE`, and the PDF values are kept.
+- Jobs API:
+  - `/jobs` accepts `kind=metadata` and links these jobs to their paper.
+  - `POST /jobs/{id}/retry` accepts a failed lookup with those two codes.
+  - Stages are `queued`, `finding_metadata`, `retry_wait`, `completed` and `failed`.
