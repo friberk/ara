@@ -23,7 +23,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /papers/{id} → Paper; PATCH `{title?,authors?,year?,abstract?,doi?}` → Paper.
 - POST /documents multipart `{file,paper_id?,request_id}` → UploadAccepted.
 - GET /jobs → `{items:Job[]}`; GET /jobs/{id} → Job; POST /jobs/{id}/retry → Job.
-- POST /papers/{id}/summaries `{model,reasoning_effort,request_id}` → `{job_id,summary_id?}`; GET same → `{items:Summary[]}`.
+- POST /papers/{id}/summaries `{model,reasoning_effort,request_id}` → `{job_id,summary_id?}`; GET same → `{items:Summary[],blocked?}` (ARA-084, below).
 - POST /papers/{id}/chats `{title?}` → Chat; GET same → `{items:Chat[]}`.
 - GET /chats/{id}/messages → `{items:Message[]}`.
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
@@ -43,6 +43,18 @@ Alembic `0006_fulltext` follows the local-model migration. It adds durable reque
 - Retrieval outcomes distinguish `downloaded`, `access_required`, `blocked`, `not_found`, `rate_limited`, `unavailable`, `invalid_pdf`, `unsafe_url`, `unsupported_source`, `no_pdf_link`, `already_attached`, and `superseded`. A rate-limit result can carry bounded `retry_after` seconds. Authentication/403/HTML responses do not prove a paywall.
 - A successful parent carries `{outcome,document_id,ingest_job_id}`. Download/storage completion is separate from extraction readiness; analysis stays gated until the document is ready. Existing usable attachments skip downloads; a newer manual attachment supersedes retrieval. Stable attachment IDs and job lease/generation fences protect recovery and historical citations.
 - Acquisition metadata can include provider, candidate/final URL, reported OA/license/version, retrieval time and job ID. PDF Details labels accepted/submitted manuscripts distinctly from a published version. A manual replacement refreshes this metadata immediately.
+
+## Automatic retrieval and summaries (ARA-084)
+
+No migration; job kinds and JSONB carry the new state.
+
+- `POST /papers` also queues retrieval, in the save transaction, for a metadata-only paper whose provider metadata lists a PDF or that has a DOI. Each paper has one automatic request UUID (UUIDv5 of the paper ID), so duplicate or concurrent saves, deliveries and restarts replay one job. A paper with an earlier retrieval job of any kind is not retried automatically.
+- `POST /papers/{id}/retrieve-fulltext/automatic` (no body) → 200 `{paper_id,job_id}`: the same automatic request for papers saved earlier. `job_id` is the automatic job (repeats replay it, including a failed one) or null when the paper has a PDF attached, has had any attempt, or names neither a PDF nor a DOI. 404 `PAPER_NOT_FOUND` for an unknown paper. The workspace calls it once on open.
+- A deliberate request after a `rate_limited` failure queues its job and outbox event only once the reported `retry_after` (at most 300 s) has passed.
+- When discovery finds no candidate because a provider lookup was rate limited, the job fails `rate_limited` with that provider's `retry_after` and a reason naming it, instead of `unavailable`.
+- `GET /papers/{id}/fulltext` adds nullable `source_host`: the host of the copy the latest retrieval tried, so progress can name the source.
+- The ingestion transaction that first marks a document ready queues one `summary` job with the saved default model and effort, payload `automatic: true` and a per-document request UUID. Re-ingesting a ready document (startup chunk-set rebuilds, retries) never does; neither does a document that is not the paper's active PDF, has no passages, or already has a summary or summary job. Nothing starts when the default is a local model that is not ready, hosted generation is unconfigured, or today's budget cannot cover one hosted call; there is no fallback to another model.
+- `GET /papers/{id}/summaries` adds nullable `blocked: {code,message,model,reasoning_effort}`: why the saved default cannot summarize the active PDF now, while the paper has no summary or running summary job for it (also before a PDF exists). It reads settings and PostgreSQL only.
 
 The backend’s network determines IP-based access. Browser university sessions are not inherited. Retry does not run automatically on focus/network changes; browser links and manual upload remain the fallback. `FULLTEXT_ALLOWED_HOSTS` controls exact supported public hostnames, including redirect hosts. The HTTP boundary pins validated DNS addresses while retaining original Host/TLS verification; it sends no provider credentials, ignores proxy environment configuration, rejects encoded bodies and enforces byte/redirect/time bounds described in README. Normal startup never enables the deterministic fixture relay or fixture control routes.
 
