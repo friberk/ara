@@ -82,6 +82,28 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.services.ingestion import run_ingest_job
 
             await run_ingest_job(resources, identifier, generation, token, payload)
+        elif kind == "fulltext":
+            from app.services.fulltext import run_fulltext_job
+
+            running = asyncio.create_task(
+                run_fulltext_job(resources, identifier, generation, token, payload)
+            )
+            try:
+                done, _ = await asyncio.wait(
+                    (running, heartbeats), return_when=asyncio.FIRST_COMPLETED
+                )
+                if running not in done:
+                    running.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await running
+                    await heartbeats
+                else:
+                    await running
+            finally:
+                if not running.done():
+                    running.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await running
         elif kind == "summary":
             from app.services.summarization import run_summary_job
 
@@ -104,6 +126,7 @@ async def execute_job(job_id: str, generation: int) -> None:
         heartbeats.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeats
+
 
 # Register dedicated actors when Dramatiq imports this module as its worker entrypoint.
 from app.jobs import model_actors  # noqa: E402,F401
