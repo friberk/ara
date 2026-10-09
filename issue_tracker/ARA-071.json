@@ -16,15 +16,22 @@
   "test_cases": [
     "Child-process parser unit tests with fixture PDFs; ingestion integration test; fenced job and duplicate-delivery regression; reindex command test."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/app/jobs/pdf_parser.py",
     "src/backend/app/services/ingestion.py",
     "src/backend/pyproject.toml",
     "src/backend/tests"
   ],
-  "commits": [],
+  "commits": [
+    "f2123ce",
+    "b7cd44e",
+    "380f2fd",
+    "e7c3a24",
+    "0c599ea",
+    "ffe9421"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Agent A (feat/rag-ingest), TDD per task.\n- Parsing uses layout to_markdown with tuned child threads, formula boxes and a legacy fallback.\n- One whole-paper LlamaIndex Document with MarkdownNodeParser and SentenceSplitter(512/64), plus page and box offset mapping.\n- Structured persistence and the hook call; reindex; chunk-source provenance contract (red from the old schema: missing fields).\nAgent full run: 454 passed. Lead integration: the chunker raised ValueError on '<|endoftext|>' in paper text (red reproduced), fixed by using the shared TiktokenCounter with disallowed_special=(). Chunking tests 15 passed; merged suite 601 passed.",
   "updated_at": "2026-10-09"
 }

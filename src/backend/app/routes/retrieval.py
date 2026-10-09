@@ -10,6 +10,7 @@ from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
 from app.integrations.llm import configured
 from app.integrations.model_catalog import local_spec
+from app.integrations.reranker_catalog import reranker_profile
 from app.models.local_models import ModelInstallation
 from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
 from app.models.retrieval import DocumentSection, RetrievalIndex
@@ -78,14 +79,15 @@ async def profiles(request: Request):
 async def retrieval_settings(request: Request):
     async with request.app.state.resources.sessions() as session:
         row = await session.get(ModelConfiguration, "retrieval")
-        return RetrievalSettings.model_validate(row.value) if row else RetrievalSettings()
+        return RetrievalSettings.from_stored(row.value if row else None)
 
 
 @router.put("/retrieval/settings", response_model=RetrievalSettings)
 async def update_retrieval_settings(body: RetrievalSettings, request: Request):
     # Availability is not required: a default can be chosen before its model is installed.
-    # reranker_enabled is stored only; reranking is deferred (ARA-074).
     embedding_profile(body.embedding_profile)
+    if body.reranker is not None:
+        reranker_profile(body.reranker)
     async with request.app.state.resources.sessions() as session, session.begin():
         await session.execute(
             insert(ModelConfiguration)

@@ -749,7 +749,8 @@ export interface components {
             items: components["schemas"]["EmbeddingProfileOut"][];
             /** Default Profile */
             default_profile: string;
-            reranker?: components["schemas"]["RerankerOut"] | null;
+            /** Rerankers */
+            rerankers?: components["schemas"]["RerankerOut"][];
         };
         /** GenerationInput */
         GenerationInput: {
@@ -1081,9 +1082,16 @@ export interface components {
         };
         /**
          * RerankerOut
-         * @description The optional local reranker (ARA-074): opt-in, off by default, about 10 s per answer on CPU.
+         * @description A reranker profile from the catalog (ARA-074).
          */
         RerankerOut: {
+            /** Key */
+            key: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openai" | "ollama";
             /** Model Id */
             model_id: string;
             /** Display Name */
@@ -1125,10 +1133,10 @@ export interface components {
              */
             embedding_profile: string;
             /**
-             * Reranker Enabled
-             * @default false
+             * Reranker
+             * @default openai-gpt-6-luna
              */
-            reranker_enabled: boolean;
+            reranker: string | null;
         };
         /**
          * RetrievalSummary

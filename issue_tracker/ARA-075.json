@@ -17,7 +17,7 @@
   "test_cases": [
     "Vitest/RTL component tests; generated OpenAPI types; Playwright updates for citation selectors, the Advanced panel and indexing progress."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/src/features/settings",
     "src/frontend/src/features/workspace/DetailsPanel.tsx",
@@ -25,8 +25,12 @@
     "src/frontend/src/features/chat",
     "src/frontend/src/api/generated.ts"
   ],
-  "commits": [],
+  "commits": [
+    "4a2598c",
+    "bd97837",
+    "689f6a7"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Part 1 (agent E, feat/rag-ui-a): Settings default search model, paper Search index panel, chat pickers limited to chat models. Merged; frontend 409 tests passed. Part 2 is in Wave 3 (agent H).",
   "updated_at": "2026-10-09"
 }

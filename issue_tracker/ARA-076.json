@@ -16,15 +16,24 @@
   "test_cases": [
     "TokenCounter accuracy against reference counts; allocator property tests; provider request-shape tests for Responses and Ollama chat."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/app/integrations/tokens.py",
     "src/backend/app/integrations/llm.py",
     "src/backend/app/integrations/ollama_llm.py",
     "src/backend/app/services/chat.py"
   ],
-  "commits": [],
+  "commits": [
+    "8ed5a7f",
+    "cbcaeca",
+    "dd3f379",
+    "780a3ee",
+    "8f31410",
+    "779a749",
+    "b22b853",
+    "4583e78"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Agent C (feat/rag-context-budget), TDD per task.\n- Tokens: 6 failed before.\n- Registry: 16 failed / 1 passed before.\n- Chat and metadata in tokens: assert 4 == 10 before.\n- Summaries: 3 unit and 13 integration failures before.\n- Context assembly: 56 failed before.\n- Providers: 10 failed before.\n- 3,072 local cap: assert 5632 == 3072 before.\nByte-based tests were deliberately migrated to token semantics; the agent listed each one. Agent full run: 513 passed. The lead added compose passthrough for the budget settings.",
   "updated_at": "2026-10-09"
 }

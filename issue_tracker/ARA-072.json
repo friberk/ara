@@ -18,7 +18,7 @@
   "test_cases": [
     "Embed job idempotency and lease fencing on real Postgres; profile switch state machine; OpenAI and Ollama embedding fixtures; local catalog verification tests."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/app/integrations/embedding_catalog.py",
     "src/backend/app/integrations/model_catalog.py",
@@ -26,8 +26,18 @@
     "src/backend/app/jobs",
     "src/backend/app/routes"
   ],
-  "commits": [],
+  "commits": [
+    "6054ff8",
+    "2dca182",
+    "0bb4053",
+    "abc8e4c",
+    "08539eb",
+    "d3c0aa4",
+    "50993f2",
+    "55ad577",
+    "3d1f0dc"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Agent B (feat/rag-index), TDD per task: continue_locked, retrieval admission slot, embedding profiles and adapters, resumable blue/green embed jobs (yield after 240 s), retrieval and paper-index APIs with request-UUID replay, embedding catalog with pinned digests, embedder context-length check (red: DID NOT RAISE x2), embed jobs linked to papers (red: 2 failed). Agent full run: 474 passed with Ruff clean. Accepted deviation: embed jobs run on the default worker queue instead of a separate retrieval queue.",
   "updated_at": "2026-10-09"
 }
