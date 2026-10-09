@@ -160,28 +160,33 @@ def join_lines(lines: list[str]) -> str:
 def page_title(page) -> str | None:
     """The first page's largest horizontal text near the top, as printed (ARA-086).
 
-    Rotated text such as arXiv's margin stamp is skipped, and a group that does not read like
-    a title gives way to the next size down.
+    Rotated text such as arXiv's margin stamp is skipped. A title is set larger than the body
+    text (the size carrying most characters), and a group that does not read like a title
+    gives way to the next size down.
     """
-    lines = []
+    lines, weights = [], {}
     for block in page.get_text("dict")["blocks"]:
         for line in block.get("lines", []):
             dx, dy = line["dir"]
             spans = [span for span in line["spans"] if span["text"].strip()]
+            if dx < 0.99 or abs(dy) > 0.01 or not spans:
+                continue
             text = " ".join(storable("".join(span["text"] for span in spans)).split())
+            size = round(max(span["size"] for span in spans), 1)
+            weights[size] = weights.get(size, 0) + len(text)
             x0, top, _, bottom = line["bbox"]
             if (
-                dx < 0.99
-                or abs(dy) > 0.01
-                or not spans
-                or top > page.rect.height * 0.6
-                or not re.search(r"[^\W\d_]", text)
-                or NOT_TITLE.search(text)
+                top <= page.rect.height * 0.6
+                and re.search(r"[^\W\d_]", text)
+                and not NOT_TITLE.search(text)
             ):
-                continue
-            lines.append((top, x0, bottom, round(max(span["size"] for span in spans), 1), text))
+                lines.append((top, x0, bottom, size, text))
+    if not lines:
+        return None
+    body = max(weights, key=weights.get)
     lines.sort()
-    for size in sorted({line[3] for line in lines}, reverse=True)[:3]:
+    sizes = sorted({line[3] for line in lines if line[3] >= body * 1.15}, reverse=True)
+    for size in sizes[:3]:
         group, end = [], None
         for top, _, bottom, line_size, text in lines:
             if abs(line_size - size) > 0.5:

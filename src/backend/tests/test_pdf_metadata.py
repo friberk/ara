@@ -91,3 +91,15 @@ def test_embedded_doi_wins_over_a_reference_doi_and_placeholder_authors_are_drop
 
 def test_without_embedded_identifiers_the_first_pages_doi_is_a_clue():
     assert extracted(toolchain_pdf(stamp=None))["doi"] == "10.9999/unrelated.ref"
+
+
+def test_a_page_set_in_one_size_has_no_printed_title_so_the_info_title_stays():
+    """Body text is not a title: a title must be set larger than the page's body text."""
+    document = pymupdf.open()
+    document.set_metadata({"title": "Original PDF Title"})
+    document.new_page().insert_text(
+        (72, 72), "Abstract\nGrounded citations refer to physical pages.\nIntroduction\nEvidence."
+    )
+    data = document.tobytes()
+    document.close()
+    assert extracted(data)["title"] == "Original PDF Title"
