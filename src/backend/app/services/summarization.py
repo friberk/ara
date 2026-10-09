@@ -602,16 +602,17 @@ async def queue_automatic_summary(session, resources, document) -> BackgroundJob
 async def summary_block(session, resources, paper) -> SummaryBlock | None:
     """Why the saved default cannot summarize the active PDF now, while it has no summary.
 
-    This is also why an automatic summary did not start; a read never starts one.
+    This is also why an automatic summary did not or will not start, including for a paper
+    still waiting for its PDF. A read never starts one.
     """
     from app.models.research import Document, PaperSummary
 
     document = (
         await session.get(Document, paper.active_document_id) if paper.active_document_id else None
     )
-    if document is None or document.status == "failed":
+    if document is not None and document.status == "failed":
         return None
-    settled = await session.scalar(
+    settled = document is not None and await session.scalar(
         select(
             exists().where(PaperSummary.document_id == document.id)
             | exists().where(
@@ -624,7 +625,8 @@ async def summary_block(session, resources, paper) -> SummaryBlock | None:
     if settled:
         return None
     model, effort = await default_selection(resources)
-    tokens = await passage_tokens(session, document) if document.status == "ready" else 0
+    ready = document is not None and document.status == "ready"
+    tokens = await passage_tokens(session, document) if ready else 0
     error = await summary_blocker(session, resources, model, effort, input_tokens=tokens)
     if error is None:
         return None

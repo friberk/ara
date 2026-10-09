@@ -225,3 +225,19 @@ async def test_summarized_running_or_replaced_documents_are_skipped(resources):
     assert len(await summary_jobs(resources)) == 1
     for paper_id, _ in (summarized, running):
         assert await blocked(resources, paper_id) is None
+
+
+async def test_a_paper_still_waiting_for_its_pdf_reports_why_no_summary_will_follow(resources):
+    """Given a metadata-only paper whose PDF is being retrieved, when summaries are read,
+    then the reason a summary would not start by itself is already known."""
+    from app.models.research import Paper
+
+    async with resources.sessions() as session, session.begin():
+        paper = Paper(title="Waiting for its PDF", metadata_provenance={})
+        session.add(paper)
+        await session.flush()
+        paper_id = paper.id
+    resources.settings.openai_api_key = None
+    assert (await blocked(resources, paper_id))["code"] == "MODEL_NOT_CONFIGURED"
+    hosted(resources)
+    assert await blocked(resources, paper_id) is None
