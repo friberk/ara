@@ -54,9 +54,11 @@ async def local_fixture(resources):
             payload = json.loads(request.content)
             requests.append(payload)
             prompt = payload["messages"][-1]["content"]
-            # Answers cite passage handles; summaries still cite legacy source markers.
-            markers = re.findall(r"^(\[S\d+\]) ", prompt, re.M) or re.findall(
-                r"\[source:[\w-]+\]", prompt
+            # Cite the passages a prompt lists, else the handles a summary reduction carries.
+            markers = (
+                re.findall(r"^(\[S\d+\]) ", prompt, re.M)
+                or re.findall(r"\[S\d+\]", prompt)
+                or re.findall(r"\[source:[\w-]+\]", prompt)
             )
             answer = "Supported sections: " + " ".join(dict.fromkeys(markers))
             result = {
@@ -389,10 +391,10 @@ async def summary_job_fixture(resources, spec, count):
 
 
 def cited_markers(prompt: str) -> str:
-    """A fixture summary cites every passage handle it was shown, else the source markers."""
+    """A fixture summary cites every handle it was shown, else the source markers."""
     import re
 
-    handles = re.findall(r"^(\[S\d+\]) ", prompt, re.M)
+    handles = re.findall(r"\[S\d+\]", prompt)
     return " ".join(dict.fromkeys(handles or re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
 
 

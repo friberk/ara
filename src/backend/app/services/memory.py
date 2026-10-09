@@ -674,3 +674,38 @@ async def recall_turns(
         if answer.id in wanted
     }
     return [found[message_id] for message_id in wanted if message_id in found]
+
+
+@dataclass(frozen=True)
+class AnswerMemory:
+    """What one answer remembers: the latest summary and the turns it does not cover."""
+
+    summary: tuple[int, str] | None
+    history: list
+
+
+async def answer_memory(resources, chat_id: UUID, history: list) -> AnswerMemory:
+    async with resources.sessions() as session:
+        latest = await latest_memory(session, chat_id)
+    if latest is None:
+        return AnswerMemory(None, history)
+    return AnswerMemory((latest.version, latest.summary), after(history, latest.through_message_id))
+
+
+def recent_answer_ids(history: list, kept: int) -> set[UUID]:
+    """Answers of the newest `kept` turns, which the prompt already carries verbatim."""
+    pairs = turn_pairs(history)
+    return {answer.id for _, answer in pairs[len(pairs) - kept :]} if kept else set()
+
+
+async def remember_turn(resources, chat_id: UUID, message_id: UUID, model: str) -> None:
+    """Queue compaction and turn embedding after a completed answer, never failing it."""
+    try:
+        async with resources.sessions() as session, session.begin():
+            await maybe_enqueue_compaction(session, chat_id, model, settings=resources.settings)
+            await enqueue_embed_turn(session, message_id)
+    except Exception:
+        # The next completed turn catches up on compaction; recall skips this turn.
+        logger.warning(
+            "Conversation memory upkeep was not queued", extra={"message_id": message_id}
+        )

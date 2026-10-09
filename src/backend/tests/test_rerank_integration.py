@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.integrations.model_catalog import local_spec
-from app.integrations.reranker_catalog import RELEVANCE_INSTRUCTIONS
+from app.integrations.reranker_catalog import RELEVANCE_INSTRUCTIONS, reranker_profile
 from app.models.local_models import ModelInstallation, ModelUse
 from app.models.research import GenerationReservation
 from tests.support.nodes import node
@@ -90,13 +90,14 @@ async def test_given_more_fused_nodes_than_candidates_when_reranking_then_the_ta
     from app.rag.rerank import rerank_candidates
 
     requests = []
-    nodes = [node(index, f"{IRRELEVANT} Sample {index}.") for index in range(1, 21)]
+    window = reranker_profile(OPENAI).candidates  # catalog value, never hardcoded
+    nodes = [node(index, f"{IRRELEVANT} Sample {index}.") for index in range(1, window + 1)]
     nodes[4] = node(5, RELEVANT)
-    nodes += [node(21, RELEVANT), node(22, RELEVANT)]
+    nodes += [node(window + 1, RELEVANT), node(window + 2, RELEVANT)]
     outcome = await rerank_candidates(
         await hosted(resources, requests), query=QUERY, nodes=nodes, reranker=OPENAI
     )
-    assert len(requests) == 20 and len(outcome.scores) == 20
+    assert len(requests) == window and len(outcome.scores) == window
     assert ids(outcome.nodes) == ids([nodes[4], *nodes[:4], *nodes[5:]])
 
 
@@ -364,7 +365,7 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
         "status": "unavailable",
         "unavailable_reason": "Add an OpenAI API key on the server.",
         "local_model_key": None,
-        "candidates": 20,
+        "candidates": reranker_profile(OPENAI).candidates,
     }
     assert items[LOCAL] == {
         "key": LOCAL,
@@ -374,7 +375,7 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
         "status": "unavailable",
         "unavailable_reason": "Download Qwen3 Reranker 0.6B in Settings.",
         "local_model_key": "qwen3-reranker-0.6b",
-        "candidates": 12,
+        "candidates": reranker_profile(LOCAL).candidates,
     }
 
 
