@@ -10,6 +10,7 @@ import pytest
 from app.models.research import ChatMessage, ChatSession
 from tests.support.answers import ask, first_handle, named, parse, use_hosted
 from tests.support.evidence import CHUNK_SET, OPENAI, TITLE, seed_structured
+from tests.support.models import hosted_responses
 from tests.support.providers import openai_fixture
 
 pytestmark = pytest.mark.integration
@@ -314,6 +315,8 @@ async def test_given_old_answer_with_source_marker_when_asking_again_then_it_is_
         return f"Dense retrieval wins [{first_handle(body)}]. {copied}".strip()
 
     use_hosted(monkeypatch, resources, calls, copy_everything)
+    # The follow-up's planner gets no usable plan and falls back, without a real provider.
+    hosted_responses(monkeypatch, resources, lambda body: "not a plan")
     _, events = await ask(resources, chat_id, "And how does dense retrieval compare?")
     assert named(events, "message.completed"), events
     sent = calls[0]["input"]

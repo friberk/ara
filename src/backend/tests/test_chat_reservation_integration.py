@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app.models.research import ChatMessage, ChatSession, GenerationReservation
 from tests.support.answers import ask, first_handle, named, use_hosted
 from tests.support.evidence import seed_structured
+from tests.support.models import hosted_responses
 
 pytestmark = pytest.mark.integration
 
@@ -86,6 +87,7 @@ async def test_given_hosted_question_when_preparing_then_the_reservation_bounds_
     chat_id = await chat_with_history(resources)
     calls = []
     use_hosted(monkeypatch, resources, calls, lambda body: f"Answer [{first_handle(body)}].")
+    hosted_responses(monkeypatch, resources, lambda body: "not a plan")  # planning falls back
     _, events = await ask(resources, chat_id, "How does BM25 recall compare with dense vectors?")
     assert named(events, "message.completed")
     ((model, tokens),) = reserved
@@ -112,6 +114,7 @@ async def test_given_replayed_request_when_preparing_then_nothing_more_is_reserv
 ):
     chat_id = await chat_with_history(resources)
     use_hosted(monkeypatch, resources, [], lambda body: f"Answer [{first_handle(body)}].")
+    hosted_responses(monkeypatch, resources, lambda body: "not a plan")  # planning falls back
     question, request_id = "How does BM25 recall compare?", uuid4()
     await ask(resources, chat_id, question, request_id=request_id)
     rows = await ledger_rows(resources)
