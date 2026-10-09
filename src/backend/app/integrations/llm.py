@@ -14,7 +14,7 @@ from app.integrations.context_registry import (
     context_profile,
     hosted_profile,
 )
-from app.integrations.tokens import count_prompt, keep_head
+from app.integrations.tokens import PromptMessage, count_messages, count_prompt, keep_head
 from app.schemas.ai import Model
 
 OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
@@ -37,6 +37,17 @@ class LLMError(Exception):
     def __init__(self, code: str, message: str, status: int = 502):
         super().__init__(message)
         self.code, self.message, self.status = code, message, status
+
+
+def output_allocation(limit: int, requested: int | None) -> int:
+    """An intermediate call may ask for less output than the model's answer allowance."""
+    if requested is None:
+        return limit
+    if not isinstance(requested, int) or isinstance(requested, bool) or not 1 <= requested <= limit:
+        raise LLMError(
+            "CONTEXT_LIMIT", "Intermediate output exceeds the configured allocation.", 413
+        )
+    return requested
 
 
 def validate_selection(model: str, effort: str) -> Model:
@@ -229,26 +240,51 @@ class HostedLLM:
     async def close(self) -> None:
         await self.client.close()
 
-    def parameters(self, model, effort, instructions, prompt):
+    def request(self, model, effort, messages, *, max_output_tokens=None) -> dict:
+        """Responses arguments: the leading system message becomes `instructions`, and any
+        later system messages (summaries, recalled turns) become developer messages."""
+        if not messages or messages[0].role != "system":
+            raise ValueError("A message list must start with the system instructions.")
         if model not in PRICES:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
         profile = hosted_profile(self.settings, model)
-        if count_prompt(profile.counter, instructions, prompt) > profile.input_budget:
+        output = output_allocation(profile.max_output, max_output_tokens)
+        if count_messages(profile.counter, messages) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413
             )
         return {
             "model": model,
             "reasoning": {"effort": effort},
-            "instructions": instructions,
-            "input": prompt,
+            "instructions": messages[0].content,
+            "input": [
+                {"role": "developer" if m.role == "system" else m.role, "content": m.content}
+                for m in messages[1:]
+            ],
             "store": False,
-            "max_output_tokens": profile.max_output,
+            "max_output_tokens": output,
         }
 
+    def parameters(self, model, effort, instructions, prompt):
+        prompt_messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
+        arguments = self.request(model, effort, prompt_messages)
+        # A single prompt keeps its string form, which Responses reads as one user message.
+        arguments["input"] = prompt
+        return arguments
+
     async def complete(self, model, effort, instructions, prompt, *, schema=None) -> Completion:
-        arguments = self.parameters(model, effort, instructions, prompt)
+        return await self.complete_request(
+            self.parameters(model, effort, instructions, prompt), schema
+        )
+
+    async def complete_messages(
+        self, model, effort, messages, *, schema=None, max_output_tokens=None
+    ) -> Completion:
+        arguments = self.request(model, effort, messages, max_output_tokens=max_output_tokens)
+        return await self.complete_request(arguments, schema)
+
+    async def complete_request(self, arguments, schema) -> Completion:
         if schema is not None:
             arguments["text"] = {
                 "format": {
@@ -267,7 +303,16 @@ class HostedLLM:
             raise provider_error(exc) from None
 
     async def stream(self, model, effort, instructions, prompt) -> AsyncIterator[str]:
-        arguments = self.parameters(model, effort, instructions, prompt)
+        async for delta in self.stream_request(
+            self.parameters(model, effort, instructions, prompt)
+        ):
+            yield delta
+
+    async def stream_messages(self, model, effort, messages) -> AsyncIterator[str]:
+        async for delta in self.stream_request(self.request(model, effort, messages)):
+            yield delta
+
+    async def stream_request(self, arguments) -> AsyncIterator[str]:
         finished = False
         try:
             stream = await self.client.responses.create(**arguments, stream=True)
