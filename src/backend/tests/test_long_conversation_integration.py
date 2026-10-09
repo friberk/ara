@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from app.models.jobs import BackgroundJob
 from app.models.research import ChatMessage, ChatSession
@@ -89,16 +89,17 @@ async def new_chat(resources, paper_id, document_id):
 
 
 async def run_memory_jobs(resources) -> list[str]:
-    """What the workers would do between turns."""
+    """What the workers would do between turns, the reader pausing past the idle delay."""
     from app.services.memory import run_compact_job, run_embed_turn_job
 
     runners = {"compact_chat": run_compact_job, "embed_turn": run_embed_turn_job}
+    waiting = (BackgroundJob.state == "queued", BackgroundJob.kind.in_(runners))
+    async with resources.sessions() as session, session.begin():
+        await session.execute(update(BackgroundJob).where(*waiting).values(available_at=func.now()))
     async with resources.sessions() as session:
         jobs = (
             await session.scalars(
-                select(BackgroundJob)
-                .where(BackgroundJob.state == "queued", BackgroundJob.kind.in_(runners))
-                .order_by(BackgroundJob.created_at)
+                select(BackgroundJob).where(*waiting).order_by(BackgroundJob.created_at)
             )
         ).all()
     for job in jobs:

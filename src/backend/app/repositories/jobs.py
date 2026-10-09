@@ -12,11 +12,13 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
-async def enqueue(session, *, kind: str, payload: dict) -> BackgroundJob:
-    job = BackgroundJob(kind=kind, payload=payload, state="queued", generation=1)
+async def enqueue(session, *, kind: str, payload: dict, delay_seconds: float = 0) -> BackgroundJob:
+    # Dispatch and claim both wait for `available_at`, which defaults to the database's now.
+    later = {"available_at": now() + timedelta(seconds=delay_seconds)} if delay_seconds else {}
+    job = BackgroundJob(kind=kind, payload=payload, state="queued", generation=1, **later)
     session.add(job)
     await session.flush()
-    session.add(JobOutbox(job_id=job.id, generation=job.generation))
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, **later))
     await session.flush()
     return job
 

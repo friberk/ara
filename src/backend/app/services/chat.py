@@ -206,6 +206,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
         )
         ceiling = await evidence_ceiling(session, document.id, document.chunk_set, limits.counter)
         await reserve(resources, body.model, prompt_bound(limits, sizing, ceiling, body.content))
+        await memory.defer_compaction(session, chat_id)
         user = ChatMessage(
             id=uuid4(),
             session_id=chat_id,

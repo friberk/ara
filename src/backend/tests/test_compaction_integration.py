@@ -62,9 +62,26 @@ async def compact_jobs(resources):
         ).all()
 
 
+async def make_due(resources, job_id) -> None:
+    """As if the idle delay had passed."""
+    from sqlalchemy import update
+
+    from app.models.jobs import JobOutbox
+
+    async with resources.sessions() as session, session.begin():
+        await session.execute(
+            update(BackgroundJob).where(BackgroundJob.id == job_id).values(available_at=func.now())
+        )
+        await session.execute(
+            update(JobOutbox).where(JobOutbox.job_id == job_id).values(available_at=func.now())
+        )
+
+
 async def run_job(resources, job_id):
     from app.services.memory import run_compact_job
 
+    # A local summary waits for the chat to be idle; these turns are already done.
+    await make_due(resources, job_id)
     async with resources.sessions() as session:
         job = await session.get(BackgroundJob, job_id)
         generation, payload = job.generation, job.payload
@@ -442,6 +459,7 @@ async def test_given_local_compaction_on_local_lane_when_executed_then_summary_i
     await add_turns(resources, chat_id, turns(3), model=spec.key)
     resources.settings.memory_compaction_ratio = 0.01
     job_id = await maybe_enqueue(resources, chat_id, spec.key)
+    await make_due(resources, job_id)
     await model_actors.execute_local_summary.fn.__wrapped__(str(job_id), 1)
     assert (await load_job(resources, job_id)).result == {"version": 1}
     (memory,) = await memories(resources, chat_id)
@@ -461,3 +479,124 @@ async def test_given_pending_compaction_when_boundary_moves_then_no_second_job_u
     await run_job(resources, first)
     assert await maybe_enqueue(resources, chat_id) is not None
     assert len(await compact_jobs(resources)) == 2
+
+
+LOCAL = "ifm-k2-horizon-7b"
+
+
+async def seconds_until_due(resources, job_id) -> tuple[float, list[float]]:
+    """How far ahead the job and its undelivered current outbox event are available."""
+    from app.models.jobs import JobOutbox
+
+    async with resources.sessions() as session:
+        job = await session.get(BackgroundJob, job_id)
+        clock = await session.scalar(select(func.now()))
+        events = (
+            await session.scalars(
+                select(JobOutbox.available_at).where(
+                    JobOutbox.job_id == job_id, JobOutbox.generation == job.generation
+                )
+            )
+        ).all()
+    return (job.available_at - clock).total_seconds(), [
+        (at - clock).total_seconds() for at in events
+    ]
+
+
+async def published(resources) -> list[tuple[str, int]]:
+    from app.services.dispatcher import dispatch_once
+
+    delivered = []
+    await dispatch_once(
+        resources.sessions,
+        lambda *args: delivered.append(args),
+        local_publish=lambda *args: delivered.append(args),
+    )
+    return delivered
+
+
+async def test_given_local_chat_over_threshold_when_turn_completes_then_summary_waits_for_idle(
+    resources,
+):
+    from app.services.memory import LOCAL_COMPACTION_IDLE_SECONDS
+
+    assert LOCAL_COMPACTION_IDLE_SECONDS == 60
+    _, _, local_chat = await seed_chat(resources)
+    await add_turns(resources, local_chat, turns(3), model=LOCAL)
+    _, _, hosted_chat = await seed_chat(resources)
+    await add_turns(resources, hosted_chat, turns(3))
+    resources.settings.memory_compaction_ratio = 0.01
+    local_job = await maybe_enqueue(resources, local_chat, LOCAL)
+    hosted_job = await maybe_enqueue(resources, hosted_chat)
+    # A local summary holds the local runtime, so it waits until the chat is idle.
+    job_due, (event_due,) = await seconds_until_due(resources, local_job)
+    assert 55 < job_due <= 60 and 55 < event_due <= 60
+    # Hosted compaction is unchanged: it is delivered at once.
+    assert await published(resources) == [(str(hosted_job), 1)]
+
+
+async def test_given_waiting_local_summary_when_a_question_arrives_then_it_is_pushed_back(
+    resources,
+):
+    from pydantic import SecretStr
+
+    from app.schemas.ai import ChatInput
+    from app.services import chat
+
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3), model=LOCAL)
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id, LOCAL)
+    await make_due(resources, job_id)
+    resources.settings.openai_api_key = SecretStr("fixture")
+    body = ChatInput(
+        content="And the baselines?",
+        model="gpt-5.6-luna",
+        reasoning_effort="low",
+        request_id=uuid4(),
+    )
+    await chat.prepare(resources, chat_id, body)
+    job = await load_job(resources, job_id)
+    # The same job, now waiting again; the old delivery is superseded and nothing is sent.
+    assert (job.state, job.generation, job.attempts) == ("queued", 2, 0)
+    job_due, (event_due,) = await seconds_until_due(resources, job_id)
+    assert 55 < job_due <= 60 and 55 < event_due <= 60
+    assert await published(resources) == []
+    assert await claim(resources.sessions, job_id, 1) is None
+
+
+async def test_given_waiting_local_summary_when_next_turn_completes_then_newer_boundary_wins(
+    resources,
+):
+    _, _, chat_id = await seed_chat(resources)
+    added = await add_turns(resources, chat_id, turns(3), model=LOCAL)
+    resources.settings.memory_compaction_ratio = 0.01
+    first = await maybe_enqueue(resources, chat_id, LOCAL)
+    added += await add_turns(resources, chat_id, turns(3, start=3), model=LOCAL)
+    second = await maybe_enqueue(resources, chat_id, LOCAL)
+    # The waiting job never started, so the newer boundary replaces it.
+    assert second is not None and second != first
+    old, new = await load_job(resources, first), await load_job(resources, second)
+    assert (old.state, old.result) == ("completed", {"skipped": True, "superseded_by": str(new.id)})
+    assert new.payload["through_message_id"] == str(added[2].answer)
+    job_due, _ = await seconds_until_due(resources, second)
+    assert 55 < job_due <= 60
+    # A completed turn with the same boundary only pushes the waiting job back.
+    await make_due(resources, second)
+    assert await maybe_enqueue(resources, chat_id, LOCAL) is None
+    assert (await load_job(resources, second)).generation == 2
+    assert len(await compact_jobs(resources)) == 2
+
+
+async def test_given_running_local_summary_when_turns_arrive_then_it_is_left_alone(resources):
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3), model=LOCAL)
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id, LOCAL)
+    await make_due(resources, job_id)
+    assert await claim(resources.sessions, job_id, 1) is not None
+    await add_turns(resources, chat_id, turns(3, start=3), model=LOCAL)
+    assert await maybe_enqueue(resources, chat_id, LOCAL) is None
+    job = await load_job(resources, job_id)
+    assert (job.state, job.generation) == ("processing", 1)
+    assert len(await compact_jobs(resources)) == 1

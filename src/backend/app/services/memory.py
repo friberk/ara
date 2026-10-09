@@ -11,11 +11,12 @@ import logging
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-from sqlalchemy import or_, select, true, update
+from sqlalchemy import select, true, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
@@ -42,7 +43,7 @@ from app.integrations.tokens import (
     keep_head,
     keep_tail,
 )
-from app.models.jobs import BackgroundJob
+from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.memory import ChatMemory, ChatTurnEmbedding
 from app.models.research import ChatMessage, ChatSession, Paper
 from app.rag.indexing import UNAVAILABLE, effective_profile
@@ -74,6 +75,9 @@ SUMMARY_TOKEN_LIMIT = 2000
 COMPACTION_MIN_OUTPUT = 1024
 # A short local summary keeps the CPU runtime free for the user's next question.
 LOCAL_COMPACTION_OUTPUT = 400
+# A local summary holds the local generation slot (a 7B one took 29 s), so it waits until the
+# chat has been idle this long; every question and answer in the chat pushes it back.
+LOCAL_COMPACTION_IDLE_SECONDS = 60
 BUSY_WAIT_SECONDS = 10
 # Under the 2,048-token local embedding context; the start of an answer carries its gist.
 TURN_EMBED_TOKENS = 1800
@@ -327,12 +331,64 @@ async def latest_memory(session, chat_id: UUID) -> ChatMemory | None:
     )
 
 
+def waits_for_idle(job: BackgroundJob) -> bool:
+    return job.state == "queued" and local_spec(job.payload.get("model")) is not None
+
+
+def postpone(session, job: BackgroundJob) -> None:
+    """Move a waiting local summary's delivery out again, keeping its attempts."""
+    job.generation += 1
+    job.updated_at = now()
+    job.available_at = job.updated_at + timedelta(seconds=LOCAL_COMPACTION_IDLE_SECONDS)
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
+
+
+async def pending_compactions(session, chat_id: UUID) -> list[BackgroundJob]:
+    return list(
+        (
+            await session.scalars(
+                select(BackgroundJob)
+                .where(
+                    BackgroundJob.kind == "compact_chat",
+                    BackgroundJob.payload["chat_id"].astext == str(chat_id),
+                    BackgroundJob.state.in_(["queued", "processing"]),
+                )
+                .order_by(BackgroundJob.created_at)
+                .with_for_update()
+            )
+        ).all()
+    )
+
+
+async def defer_compaction(session, chat_id: UUID) -> None:
+    """A new question keeps a waiting local summary off the runtime it is about to use."""
+    for job in filter(waits_for_idle, await pending_compactions(session, chat_id)):
+        postpone(session, job)
+
+
+def compaction_boundary(pairs, profile, ratio: float) -> str | None:
+    """The last answer of the oldest half of the unsummarized turns, once they pass the
+    threshold. The newest turn always stays verbatim."""
+    sizes = [turn_cost(profile.counter, pair) for pair in pairs]
+    total = sum(sizes)
+    if len(pairs) < 2 or total <= ratio * memory_shares(profile).recent:
+        return None
+    evicted = used = 0
+    for size in sizes[:-1]:
+        if evicted and used + size > total // 2:
+            break
+        evicted, used = evicted + 1, used + size
+    return str(pairs[evicted - 1][1].id)
+
+
 async def maybe_enqueue_compaction(
     session, chat_id: UUID, model: str, *, settings
 ) -> BackgroundJob | None:
     """After a completed turn, queue a summary of the oldest half of the unsummarized turns.
 
-    `model` answered the turn and decides who compacts. The newest turn always stays verbatim.
+    `model` answered the turn and decides who compacts. A local summary waits until the chat
+    is idle: each completed turn pushes it back, and a newer boundary replaces one that has
+    not started. A running or hosted summary blocks a second job until it is done.
     """
     chat = await session.scalar(
         select(ChatSession).where(ChatSession.id == chat_id).with_for_update()
@@ -343,36 +399,41 @@ async def maybe_enqueue_compaction(
     pairs = turn_pairs(
         after(await chat_messages(session, chat_id), latest and latest.through_message_id)
     )
-    profile = answer_profile(settings, model)
-    sizes = [turn_cost(profile.counter, pair) for pair in pairs]
-    total = sum(sizes)
-    if len(pairs) < 2 or total <= settings.memory_compaction_ratio * memory_shares(profile).recent:
-        return None
-    evicted = used = 0
-    for size in sizes[:-1]:
-        if evicted and used + size > total // 2:
-            break
-        evicted, used = evicted + 1, used + size
-    through = str(pairs[evicted - 1][1].id)
-    pending = await session.scalar(
+    local = local_spec(model) is not None
+    through = compaction_boundary(
+        pairs, answer_profile(settings, model), settings.memory_compaction_ratio
+    )
+    pending = await pending_compactions(session, chat_id)
+    replaced = [
+        job
+        for job in pending
+        if local
+        and through
+        and waits_for_idle(job)
+        and job.payload.get("through_message_id") != through
+    ]
+    covered = through and await session.scalar(
         select(BackgroundJob.id)
         .where(
             BackgroundJob.kind == "compact_chat",
             BackgroundJob.payload["chat_id"].astext == str(chat_id),
-            or_(
-                BackgroundJob.state.in_(["queued", "processing"]),
-                BackgroundJob.payload["through_message_id"].astext == through,
-            ),
+            BackgroundJob.payload["through_message_id"].astext == through,
         )
         .limit(1)
     )
-    if pending is not None:
+    if through is None or covered or len(replaced) < len(pending):
+        for job in filter(waits_for_idle, pending):
+            postpone(session, job)
         return None
-    return await enqueue(
+    job = await enqueue(
         session,
         kind="compact_chat",
         payload={"chat_id": str(chat_id), "through_message_id": through, "model": model},
+        delay_seconds=LOCAL_COMPACTION_IDLE_SECONDS if local else 0,
     )
+    for old in replaced:
+        settle_locked(old, result={"skipped": True, "superseded_by": str(job.id)})
+    return job
 
 
 def compaction_prompt(counter, budget: int, previous: str | None, pairs, target: int):
