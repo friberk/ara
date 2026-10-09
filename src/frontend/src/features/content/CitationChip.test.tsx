@@ -63,10 +63,32 @@ test('Given a source that does not match the citation, When the dialog opens, Th
 })
 
 test('Given a server error, When the dialog opens, Then the server message is shown', async () => {
-  mockApi({ 'GET /documents/d1/chunks/c1': () => json({ code: 'CHUNK_NOT_FOUND', message: 'This source passage no longer exists.' }, 404) })
+  mockApi({ 'GET /documents/d1/chunks/c1': () => json({ code: 'SERVICE_UNAVAILABLE', message: 'The library is temporarily unavailable.' }, 503) })
   const { user } = renderWithProviders(<CitationChip citation={citation} />)
   await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('This source passage no longer exists.')
+  expect(await screen.findByRole('alert')).toHaveTextContent('The library is temporarily unavailable.')
+})
+
+// Re-indexing a paper replaces its passages (ARA-071), so older answers cite chunks that no longer exist.
+const replaced = () => json({ code: 'CITATION_NOT_FOUND', message: 'This source excerpt does not belong to the selected document.' }, 404)
+
+test('Given a passage replaced by re-indexing, When the dialog opens, Then the excerpt saved with the answer is shown', async () => {
+  const saved: Citation = { ...citation, excerpt: fullExcerpt }
+  const { calls } = mockApi({ 'GET /documents/d1/chunks/c1': replaced })
+  const { user } = renderWithProviders(<CitationChip citation={saved} />)
+  await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Source on page 7' })
+  expect(await within(dialog).findByText(fullExcerpt)).toBeVisible()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(calls.map((call) => call.path)).toEqual(['/documents/d1/chunks/c1'])
+})
+
+test('Given a passage replaced by re-indexing, When previewed, Then the saved excerpt shows instead of an error', async () => {
+  mockApi({ 'GET /documents/d1/chunks/c1': replaced })
+  const { user } = renderWithProviders(<CitationChip citation={{ ...citation, excerpt: fullExcerpt }} />)
+  await user.hover(screen.getByRole('button', { name: 'Source, page 7' }))
+  expect(await screen.findByText(fullExcerpt)).toBeVisible()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 test('Given a pointer resting on the chip, Then a preview loads the excerpt only once it opens', async () => {

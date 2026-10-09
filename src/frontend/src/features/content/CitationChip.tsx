@@ -1,6 +1,6 @@
 import { useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { ExternalLinkIcon } from 'lucide-react'
-import { downloadUrl } from '@/api/client'
+import { ApiError, downloadUrl } from '@/api/client'
 import type { Citation } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -78,7 +78,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
             {citation.kind === 'table' && <><span aria-hidden="true">·</span><span>Table</span></>}
           </p>
           {citation.section && <p className="line-clamp-2 text-xs font-medium text-popover-foreground">{citation.section}</p>}
-          <SourcePassage source={source} preview />
+          <SourcePassage citation={citation} source={source} preview />
         </HoverCardContent>
       </HoverCard>
     )
@@ -92,7 +92,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
           <DialogTitle>Source on {spansPages(citation) ? 'pages' : 'page'} {pageSpan(citation)}</DialogTitle>
           <DialogDescription>Compare this passage with the claim it supports.</DialogDescription>
         </DialogHeader>
-        <SourcePassage source={source} />
+        <SourcePassage citation={citation} source={source} />
         <DialogFooter>
           <Button asChild variant="outline">
             <a href={downloadUrl(citation.document_id, citation.page)} target="_blank" rel="noreferrer">
@@ -106,8 +106,11 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
   )
 }
 
-function SourcePassage({ source, preview = false }: { source: ReturnType<typeof useCitationSource>; preview?: boolean }) {
-  if (source.isError) {
+function SourcePassage({ citation, source, preview = false }: { citation: Citation; source: ReturnType<typeof useCitationSource>; preview?: boolean }) {
+  // Re-indexing a paper replaces its passages; the excerpt saved with the answer is still what it cited.
+  const replaced = source.error instanceof ApiError && source.error.status === 404
+  const passage = replaced ? citation : source.data
+  if (source.isError && !replaced) {
     return (
       <div role="alert" className="grid justify-items-start gap-2 text-sm text-destructive">
         <p>{source.error.message}</p>
@@ -115,7 +118,7 @@ function SourcePassage({ source, preview = false }: { source: ReturnType<typeof 
       </div>
     )
   }
-  if (!source.data) {
+  if (!passage) {
     return (
       <div role="status" className="grid gap-2 py-1">
         <span className="sr-only">Loading the cited passage…</span>
@@ -126,10 +129,10 @@ function SourcePassage({ source, preview = false }: { source: ReturnType<typeof 
     )
   }
   // Passages are layout Markdown: the clamped preview reads as text, the dialog renders headings and tables.
-  if (preview) return <p className="line-clamp-8 text-[13px] leading-relaxed text-popover-foreground">{markdownToText(source.data.excerpt)}</p>
+  if (preview) return <p className="line-clamp-8 text-[13px] leading-relaxed text-popover-foreground">{markdownToText(passage.excerpt)}</p>
   return (
-    <blockquote tabIndex={0} aria-label={`Passage on page ${source.data.page}`} className="max-h-[min(55vh,26rem)] overflow-y-auto rounded-lg bg-muted/60 px-3.5 py-3">
-      <Markdown content={source.data.excerpt} className="text-sm leading-relaxed" />
+    <blockquote tabIndex={0} aria-label={`Passage on page ${passage.page}`} className="max-h-[min(55vh,26rem)] overflow-y-auto rounded-lg bg-muted/60 px-3.5 py-3">
+      <Markdown content={passage.excerpt} className="text-sm leading-relaxed" />
     </blockquote>
   )
 }
