@@ -43,7 +43,8 @@
     "ebd71f3",
     "a2b9d63",
     "f8dc668",
-    "326ebec"
+    "326ebec",
+    "285f7f1"
   ],
   "pull_requests": [],
   "verification": "Red first: backend test_memory_model_integration.py failed (memory_model still returned; PUT with memory_model 'gpt-unknown' returned 422 INVALID_MEMORY_MODEL; hosted compaction/planning called gpt-5.6-luna instead of the chat's gpt-5.6-terra/sol). Frontend: ConversationPane.model.test.tsx restore tests failed (composer stayed on Luna), settings.test.tsx failed ('expected radiogroup ... to be null'). Green after implementation. Final: backend 906 passed in 145.95s with Ruff clean (ara-chatmodel-test); frontend check 483 tests passed and build passes; generated.ts regenerated (memory_model removed). Existing tests that encoded the separate memory model (test_query_planner, test_compaction_integration, memory-note, ConversationPane.standalone) were updated after observing them fail. Composer adopts a chat's latest answer model and normalised effort when the model is available; criterion 5 verified through the summary card in a restored chat. Correction 2026-10-09 (user): effort follows the chat, not the quietest. Red first: hosted plan at high sent effort none; local plan with effort on sent think False; compaction payload lacked effort (TypeError on the new effort argument); planner_timeout missing (ImportError). Green after implementation: backend 911 passed in 142.35s, Ruff clean.",
