@@ -190,3 +190,37 @@ async def test_given_chunks_saved_then_indexing_hook_runs_in_the_same_transactio
         document = await session.get(Document, document_id)
         persisted = await count(session, DocumentChunk, document_id)
     assert persisted == 0 and document.status != "ready"
+
+
+async def test_given_pdf_with_control_characters_when_ingested_then_document_is_ready(
+    resources, tmp_path
+):
+    """A live RAG paper failed ingest: a formula's NUL reached PostgreSQL text."""
+    from test_pdf_parser_structured import formula_pdf
+
+    from app.models.jobs import BackgroundJob
+    from app.models.research import Document, DocumentChunk, DocumentPage
+
+    path = formula_pdf(tmp_path / "control.pdf", formula="Attention(Q, K, V) = softmax\x00(")
+    original = path.read_bytes()
+    async with client_for(resources) as client:
+        response = await client.post(
+            "/api/v1/documents",
+            files={"file": ("control.pdf", original, "application/pdf")},
+            data={"request_id": str(uuid4())},
+        )
+        assert response.status_code == 202, response.text
+        references = response.json()
+        async with resources.sessions() as session:
+            payload = (await session.get(BackgroundJob, references["job_id"])).payload
+        await ingest(resources, UUID(references["job_id"]), 1, payload)
+    document_id = UUID(references["document_id"])
+    async with resources.sessions() as session:
+        assert (await session.get(Document, document_id)).status == "ready"
+        texts = (
+            await session.scalars(
+                select(DocumentChunk.text).where(DocumentChunk.document_id == document_id)
+            )
+        ).all()
+        assert await count(session, DocumentPage, document_id) == 1
+    assert any("softmax\ufffd" in text for text in texts)

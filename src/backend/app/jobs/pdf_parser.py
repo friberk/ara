@@ -16,8 +16,18 @@ ADDRESS_SPACE_LIMIT = 3 * 1024**3 // 2
 CPU_SECONDS_LIMIT = 150
 
 
+# C0 controls other than tab, newline and carriage return, plus DEL. TeX math-extension fonts
+# encode big delimiters at code points 0 and 1, and PostgreSQL text rejects NUL.
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 def error(code: str, message: str) -> dict:
     return {"error": {"code": code, "message": message}}
+
+
+def storable(text: str) -> str:
+    """U+FFFD for control characters, as layout Markdown renders them; offsets stay valid."""
+    return CONTROL.sub("\ufffd", text)
 
 
 def fill_formulas(markdown: str, boxes: list[dict], clip_text) -> tuple[str, list[dict]]:
@@ -96,7 +106,7 @@ def legacy_markdown(path: str) -> list[tuple[str, list[dict]]]:
 def extract(document) -> dict:
     pages, total = [], 0
     for index, page in enumerate(document):
-        text = page.get_text(sort=True)
+        text = storable(page.get_text(sort=True))
         total += len(text)
         if total > 4_000_000:
             return error("PDF_TEXT_LIMIT", "This PDF contains too much text.")
@@ -105,8 +115,8 @@ def extract(document) -> dict:
         return error("OCR_REQUIRED", "No readable text found. Upload a text PDF; OCR is disabled.")
     first = "\n".join(page["text"] for page in pages[:2])
     metadata = document.metadata or {}
-    title = (metadata.get("title") or "").strip() or None
-    author = (metadata.get("author") or "").strip()
+    title = storable(metadata.get("title") or "").strip() or None
+    author = storable(metadata.get("author") or "").strip()
     authors = [x.strip() for x in re.split(r";|\s+and\s+", author) if x.strip()]
     doi = re.search(r"\b10\.\d{4,9}/[^\s<>\"\]]+", first, re.I)
     year = re.search(
@@ -163,7 +173,7 @@ def parse(path: str, *, legacy: bool = False) -> dict:
         if not text.strip() and page["text"].strip():
             # Layout files a lone top line as a page header, which header=False drops.
             text, boxes = page["text"], []
-        page["markdown"], page["boxes"] = text, boxes
+        page["markdown"], page["boxes"] = storable(text), boxes
     mode = "legacy" if legacy else "layout"
     parsed["parser"] = f"pymupdf4llm-{mode}"
     parsed["extractor_version"] = f"pymupdf4llm-{pymupdf4llm.__version__}+{mode}"

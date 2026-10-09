@@ -13,7 +13,7 @@ def assert_boxes_tile(page):
     assert all(a[1] == b[0] for a, b in zip(spans, spans[1:], strict=False))
 
 
-def formula_pdf(path):
+def formula_pdf(path, formula="Attention(Q, K, V) = softmax("):
     """One page of prose around a typeset display equation, which layout classifies as formula."""
     import pymupdf
 
@@ -25,7 +25,7 @@ def formula_pdf(path):
     document = pymupdf.open()
     page = document.new_page(width=612, height=792)
     page.insert_textbox(pymupdf.Rect(72, 100, 540, 200), body, fontsize=10, fontname="tiro")
-    page.insert_text((200, 230), "Attention(Q, K, V) = softmax(", fontsize=10, fontname="tiit")
+    page.insert_text((200, 230), formula, fontsize=10, fontname="tiit")
     page.insert_text((340, 222), "QK", fontsize=10, fontname="tiit")
     page.insert_text((356, 218), "T", fontsize=7, fontname="tiit")
     page.draw_line((335, 226), (380, 226), width=0.5)
@@ -226,3 +226,23 @@ def test_parser_environment_tunes_threads_and_scrubs_secrets(monkeypatch):
     environment = parser_environment()
     assert {key: environment[key] for key in TUNING} == TUNING
     assert not {"OPENAI_API_KEY", "APP_ENV", "ARA_PARSER_FORCE_LAYOUT_ERROR"} & set(environment)
+
+
+
+async def test_given_control_characters_in_a_formula_then_parsed_strings_are_storable(tmp_path):
+    """TeX math-extension fonts encode big parentheses at code points 0 and 1 (RAG, 2005.11401).
+
+    Formula filling copies clipped PDF text, and PostgreSQL text rejects NUL. Control characters
+    become U+FFFD, as layout Markdown already renders them in body text, so offsets keep.
+    """
+    import re
+
+    from app.services.ingestion import parse_in_child
+
+    path = formula_pdf(tmp_path / "control.pdf", formula="Attention(Q, K, V) = softmax\x00(")
+    page = (await parse_in_child(path.read_bytes()))["pages"][0]
+    control = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+    assert not control.search(page["text"]) and not control.search(page["markdown"])
+    formula = next(b for b in page["boxes"] if b["class"] == "formula")
+    assert "softmax\ufffd" in page["markdown"][formula["start"] : formula["end"]]
+    assert_boxes_tile(page)
