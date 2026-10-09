@@ -1189,6 +1189,8 @@ export interface components {
             metadata_provenance: {
                 [key: string]: unknown;
             };
+            /** File Name */
+            file_name?: string | null;
         };
         /** PaperPage */
         PaperPage: {

@@ -127,3 +127,9 @@ test('Given an empty library, Then searching and uploading are offered', async (
   expect(click).toHaveBeenCalled()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
+
+test('Given an upload still being read, Then its row is named by its file until a title is known', async () => {
+  mockApi({ 'GET /papers': { items: [{ ...saved, id: 'p3', title: null, authors: [], year: null, document_status: 'processing', active_document_id: 'd3', file_name: 'sec18-han.pdf' }] } })
+  mount('/library')
+  expect(await within(screen.getByRole('main')).findByRole('link', { name: 'sec18-han.pdf' })).toHaveAttribute('href', '/papers/p3')
+})

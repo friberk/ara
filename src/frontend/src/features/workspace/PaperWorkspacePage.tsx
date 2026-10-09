@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ShellHeader } from '@/components/shell/shell-header'
 import { ConversationPane } from '@/features/chat'
+import { paperName } from '@/features/research/paper-format'
 import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { DetailsPanel } from './DetailsPanel'
@@ -26,7 +27,7 @@ const parseView = (value: string | null): WorkspaceView => views.find((view) => 
 function PaperTitle({ paper }: { paper: Paper }) {
   return (
     <>
-      <h1 className="min-w-0 truncate text-sm font-medium md:text-base">{paper.title || 'Untitled paper'}</h1>
+      <h1 className="min-w-0 truncate text-sm font-medium md:text-base">{paperName(paper)}</h1>
       <PaperStatusBadge paper={paper} className="shrink-0" />
     </>
   )

@@ -446,3 +446,18 @@ async def test_duplicate_pdf_upload_opens_the_existing_paper_with_a_note(resourc
         )
     assert conflict.status_code == 409 and conflict.json()["code"] == "DOCUMENT_ALREADY_ATTACHED"
     assert conflict.json()["details"] == [{"paper_id": first.json()["paper_id"]}]
+
+
+async def test_an_untitled_paper_reports_its_file_name_while_processing(resources):
+    """The workspace can name a paper by its file until a title is known."""
+    from app.services.uploads import ingest_pdf_bytes
+
+    accepted = await ingest_pdf_bytes(
+        resources,
+        data=toolchain_pdf(stamp=None, second_page=NO_DOI_PAGE),
+        filename="sec18-han.pdf",
+        request_id=uuid4(),
+        paper_id=None,
+    )
+    paper = await detail(resources, accepted.paper_id)
+    assert paper.title is None and paper.file_name == "sec18-han.pdf"

@@ -65,6 +65,8 @@ class PaperDetail(BaseModel):
     document_status: Literal["metadata_only", "processing", "ready", "failed"]
     active_document_id: UUID | None
     metadata_provenance: dict
+    # The active PDF's file name, so an untitled paper can be named while it is read (ARA-086).
+    file_name: str | None = None
 
 
 class PaperPage(BaseModel):

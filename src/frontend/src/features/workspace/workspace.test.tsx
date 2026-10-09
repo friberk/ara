@@ -134,13 +134,14 @@ test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then 
 
 test('Given a PDF that arrived without an upload here, Then the processing view never claims it was uploaded', async () => {
   const job = { id: 'job-3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 50, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: null }
-  mockApi({ 'GET /papers/p1': { ...metadataOnly, document_status: 'processing', active_document_id: 'doc-1' }, 'GET /jobs': { items: [job] }, 'GET /jobs/job-3': job })
+  mockApi({ 'GET /papers/p1': { ...metadataOnly, title: null, file_name: 'retrieved-paper.pdf', document_status: 'processing', active_document_id: 'doc-1' }, 'GET /jobs': { items: [job] }, 'GET /jobs/job-3': job })
   renderApp('/papers/p1')
   const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
   const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
   await waitFor(() => expect(within(steps).getByText('Finding paper details').closest('li')).toHaveAttribute('aria-current', 'step'))
   expect(within(steps).queryByText(/Upload/)).not.toBeInTheDocument()
   expect(within(reader).queryByText(/uploaded/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('heading', { level: 1, name: 'retrieved-paper.pdf' })).toBeVisible()
 })
 
 test('Given a ready paper whose catalog lookup is running, When it finishes, Then the title updates without a reload', async () => {

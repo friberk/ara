@@ -164,6 +164,7 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
         document_status=status,
         active_document_id=paper.active_document_id,
         metadata_provenance=paper.metadata_provenance,
+        file_name=document.original_filename if document else None,
     )
 
 

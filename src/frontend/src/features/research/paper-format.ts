@@ -8,6 +8,11 @@ export function displayText(value: string | null | undefined): string {
   return (value ?? '').replace(/[\p{Cc}\p{Co}]/gu, ' ').replace(/\s+/g, ' ').trim()
 }
 
+/** A paper's title, else its PDF's file name while the title is still being read (ARA-086). */
+export function paperName(paper: { title: string | null; file_name?: string | null }): string {
+  return displayText(paper.title) || displayText(paper.file_name) || 'Untitled paper'
+}
+
 /** First `max` authors, then "et al."; the full list stays available for a tooltip and screen readers. */
 export function authorLine(authors: string[] | null | undefined, max = 3): AuthorLine | null {
   const names = (authors ?? []).map(displayText).filter(Boolean)

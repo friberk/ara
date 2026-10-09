@@ -15,7 +15,7 @@ import { usePageDrop } from '@/components/upload/use-page-drop'
 import { useUploads } from '@/components/upload/use-upload'
 import { usePapers } from '@/hooks/queries/papers'
 import { PaperByline } from '@/features/research/PaperByline'
-import { countFormat, displayText } from '@/features/research/paper-format'
+import { countFormat, displayText, paperName } from '@/features/research/paper-format'
 
 const FILTER_DELAY_MS = 250
 
@@ -24,7 +24,7 @@ function PaperRow({ paper }: { paper: Paper }) {
     <article className="group relative py-5">
       <h2 className="text-base leading-snug font-semibold tracking-tight text-balance break-words">
         {/* The title link stretches over the row so the whole row opens the paper. */}
-        <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{displayText(paper.title) || 'Untitled paper'}</Link>
+        <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{paperName(paper)}</Link>
       </h2>
       <PaperByline authors={paper.authors} year={paper.year} className="mt-1.5">
         <DocumentStatusBadge state={paper.document_status} />

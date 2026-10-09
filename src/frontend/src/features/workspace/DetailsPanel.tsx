@@ -5,6 +5,7 @@ import { providerLabels, type Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
+import { paperName } from '@/features/research/paper-format'
 import { BibliographyEditor } from './BibliographyEditor'
 import { MetadataSources } from './MetadataSources'
 import { FullTextAccess } from './FullTextAccess'
@@ -36,7 +37,7 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
           <section aria-labelledby={`${id}-title`} className="grid gap-5">
             <div className="grid gap-2">
               <div className="flex items-start justify-between gap-3">
-                <h2 id={`${id}-title`} className="text-lg leading-snug font-semibold text-balance">{paper.title || 'Untitled paper'}</h2>
+                <h2 id={`${id}-title`} className="text-lg leading-snug font-semibold text-balance">{paperName(paper)}</h2>
                 <Button variant="ghost" size="sm" className="-mr-2 shrink-0 text-muted-foreground" onClick={() => setEditing(true)}><Pencil data-icon="inline-start" aria-hidden="true" />Edit</Button>
               </div>
               <p className="text-sm">{paper.authors.length ? paper.authors.join(', ') : <span className="text-muted-foreground">Authors not available</span>}</p>
