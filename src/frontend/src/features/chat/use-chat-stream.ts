@@ -11,7 +11,7 @@ export type StreamOutcome = 'completed' | 'stopped' | 'failed'
 type PendingQuestion = { text: string; baseline: number }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
-const stages: ReadonlySet<string> = new Set<RetrievalStage>(['planning', 'retrieving', 'reranking', 'generating'])
+const stages: ReadonlySet<string> = new Set<RetrievalStage>(['waiting', 'planning', 'retrieving', 'reranking', 'generating'])
 
 /**
  * One chat's saved history plus the answer being streamed into it (ported from the legacy ChatPanel send()).

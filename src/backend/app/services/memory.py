@@ -1,6 +1,7 @@
 """Conversation memory: follow-up planning, running summaries and turn recall (ARA-077).
 
-Local chats only ever use their own local model; hosted chats plan and compact with Luna.
+Local chats only ever use their own local model; hosted chats plan and compact with the
+saved memory model (`Defaults.memory_model`).
 Summaries are versioned rows anchored to a message; original messages are never altered.
 """
 
@@ -10,11 +11,12 @@ import logging
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-from sqlalchemy import or_, select, true, update
+from sqlalchemy import select, true, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
@@ -22,11 +24,13 @@ from app.integrations.context_registry import context_profile, hosted_profile, l
 from app.integrations.embedding_catalog import embedding_profile
 from app.integrations.embeddings import create_embedder
 from app.integrations.llm import (
+    HOSTED_REASONING_EFFORTS,
     LLMError,
     create_llm,
     generation_slots,
     reservation_amount,
     reserve_amount,
+    saved_defaults,
     thinking_controls,
 )
 from app.integrations.model_catalog import local_spec
@@ -39,11 +43,12 @@ from app.integrations.tokens import (
     keep_head,
     keep_tail,
 )
-from app.models.jobs import BackgroundJob
+from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.memory import ChatMemory, ChatTurnEmbedding
 from app.models.research import ChatMessage, ChatSession, Paper
 from app.rag.indexing import UNAVAILABLE, effective_profile
 from app.repositories.jobs import continue_locked, enqueue, fence, now
+from app.schemas.ai import Defaults
 from app.schemas.retrieval import ChatMemoryOut, ChatMemoryState
 from app.services.context import (
     ELLIPSIS,
@@ -57,7 +62,6 @@ from app.services.context import (
 
 logger = logging.getLogger(__name__)
 
-HOSTED_MEMORY_MODEL = "gpt-5.6-luna"
 COMPACTION_PROMPT_VERSION = "1"
 SUMMARY_SECTIONS = (
     "User goals",
@@ -71,6 +75,9 @@ SUMMARY_TOKEN_LIMIT = 2000
 COMPACTION_MIN_OUTPUT = 1024
 # A short local summary keeps the CPU runtime free for the user's next question.
 LOCAL_COMPACTION_OUTPUT = 400
+# A local summary holds the local generation slot (a 7B one took 29 s), so it waits until the
+# chat has been idle this long; every question and answer in the chat pushes it back.
+LOCAL_COMPACTION_IDLE_SECONDS = 60
 BUSY_WAIT_SECONDS = 10
 # Under the 2,048-token local embedding context; the start of an answer carries its gist.
 TURN_EMBED_TOKENS = 1800
@@ -146,11 +153,15 @@ def quiet_effort(efforts: list[str]) -> str:
 
 
 async def memory_model(resources, chat_model: str):
-    """The model that plans and compacts for a chat: its own local model, or hosted Luna."""
+    """The model that plans and compacts for a chat: its own local model, or the saved hosted
+    memory model. A saved key no longer in the hosted catalog falls back to the default."""
     if local_spec(chat_model):
         selection = await local_selection(resources, chat_model)
         return chat_model, quiet_effort(selection.reasoning_efforts), selection
-    return HOSTED_MEMORY_MODEL, "none", None
+    model = (await saved_defaults(resources)).memory_model
+    if model not in HOSTED_REASONING_EFFORTS:
+        model = Defaults().memory_model
+    return model, quiet_effort(list(HOSTED_REASONING_EFFORTS[model])), None
 
 
 def planner_turns(counter, turns, room: int | None) -> str:
@@ -320,12 +331,64 @@ async def latest_memory(session, chat_id: UUID) -> ChatMemory | None:
     )
 
 
+def waits_for_idle(job: BackgroundJob) -> bool:
+    return job.state == "queued" and local_spec(job.payload.get("model")) is not None
+
+
+def postpone(session, job: BackgroundJob) -> None:
+    """Move a waiting local summary's delivery out again, keeping its attempts."""
+    job.generation += 1
+    job.updated_at = now()
+    job.available_at = job.updated_at + timedelta(seconds=LOCAL_COMPACTION_IDLE_SECONDS)
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
+
+
+async def pending_compactions(session, chat_id: UUID) -> list[BackgroundJob]:
+    return list(
+        (
+            await session.scalars(
+                select(BackgroundJob)
+                .where(
+                    BackgroundJob.kind == "compact_chat",
+                    BackgroundJob.payload["chat_id"].astext == str(chat_id),
+                    BackgroundJob.state.in_(["queued", "processing"]),
+                )
+                .order_by(BackgroundJob.created_at)
+                .with_for_update()
+            )
+        ).all()
+    )
+
+
+async def defer_compaction(session, chat_id: UUID) -> None:
+    """A new question keeps a waiting local summary off the runtime it is about to use."""
+    for job in filter(waits_for_idle, await pending_compactions(session, chat_id)):
+        postpone(session, job)
+
+
+def compaction_boundary(pairs, profile, ratio: float) -> str | None:
+    """The last answer of the oldest half of the unsummarized turns, once they pass the
+    threshold. The newest turn always stays verbatim."""
+    sizes = [turn_cost(profile.counter, pair) for pair in pairs]
+    total = sum(sizes)
+    if len(pairs) < 2 or total <= ratio * memory_shares(profile).recent:
+        return None
+    evicted = used = 0
+    for size in sizes[:-1]:
+        if evicted and used + size > total // 2:
+            break
+        evicted, used = evicted + 1, used + size
+    return str(pairs[evicted - 1][1].id)
+
+
 async def maybe_enqueue_compaction(
     session, chat_id: UUID, model: str, *, settings
 ) -> BackgroundJob | None:
     """After a completed turn, queue a summary of the oldest half of the unsummarized turns.
 
-    `model` answered the turn and decides who compacts. The newest turn always stays verbatim.
+    `model` answered the turn and decides who compacts. A local summary waits until the chat
+    is idle: each completed turn pushes it back, and a newer boundary replaces one that has
+    not started. A running or hosted summary blocks a second job until it is done.
     """
     chat = await session.scalar(
         select(ChatSession).where(ChatSession.id == chat_id).with_for_update()
@@ -336,36 +399,41 @@ async def maybe_enqueue_compaction(
     pairs = turn_pairs(
         after(await chat_messages(session, chat_id), latest and latest.through_message_id)
     )
-    profile = answer_profile(settings, model)
-    sizes = [turn_cost(profile.counter, pair) for pair in pairs]
-    total = sum(sizes)
-    if len(pairs) < 2 or total <= settings.memory_compaction_ratio * memory_shares(profile).recent:
-        return None
-    evicted = used = 0
-    for size in sizes[:-1]:
-        if evicted and used + size > total // 2:
-            break
-        evicted, used = evicted + 1, used + size
-    through = str(pairs[evicted - 1][1].id)
-    pending = await session.scalar(
+    local = local_spec(model) is not None
+    through = compaction_boundary(
+        pairs, answer_profile(settings, model), settings.memory_compaction_ratio
+    )
+    pending = await pending_compactions(session, chat_id)
+    replaced = [
+        job
+        for job in pending
+        if local
+        and through
+        and waits_for_idle(job)
+        and job.payload.get("through_message_id") != through
+    ]
+    covered = through and await session.scalar(
         select(BackgroundJob.id)
         .where(
             BackgroundJob.kind == "compact_chat",
             BackgroundJob.payload["chat_id"].astext == str(chat_id),
-            or_(
-                BackgroundJob.state.in_(["queued", "processing"]),
-                BackgroundJob.payload["through_message_id"].astext == through,
-            ),
+            BackgroundJob.payload["through_message_id"].astext == through,
         )
         .limit(1)
     )
-    if pending is not None:
+    if through is None or covered or len(replaced) < len(pending):
+        for job in filter(waits_for_idle, pending):
+            postpone(session, job)
         return None
-    return await enqueue(
+    job = await enqueue(
         session,
         kind="compact_chat",
         payload={"chat_id": str(chat_id), "through_message_id": through, "model": model},
+        delay_seconds=LOCAL_COMPACTION_IDLE_SECONDS if local else 0,
     )
+    for old in replaced:
+        settle_locked(old, result={"skipped": True, "superseded_by": str(job.id)})
+    return job
 
 
 def compaction_prompt(counter, budget: int, previous: str | None, pairs, target: int):
@@ -396,6 +464,11 @@ def compaction_prompt(counter, budget: int, previous: str | None, pairs, target:
         )
     content = f"Previous summary:\n{summary}\n\nNew exchanges:\n{exchanges}"
     return [instructions, PromptMessage("user", content)]
+
+
+def has_content(summary: str) -> bool:
+    """Whether a summary says anything beyond its section headings."""
+    return any(line.strip() and not line.lstrip().startswith("#") for line in summary.splitlines())
 
 
 async def owned_job(session, job_id, generation, token) -> BackgroundJob | None:
@@ -511,6 +584,9 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
                     payload["paid_call_inflight"] = False
                 raise
         summary = result.content.strip()
+        if not has_content(summary):
+            # Storing it would silently drop the turns it claims to cover.
+            raise LLMError("COMPACTION_EMPTY", "The model returned an empty conversation summary.")
         async with resources.sessions() as session, session.begin():
             job = await owned_job(session, job_id, generation, token)
             if job is None:
@@ -572,15 +648,6 @@ async def memory_state(session, chat_id: UUID) -> ChatMemoryState:
     return ChatMemoryState(memory=memory, total_messages=len(ids))
 
 
-def embeds_turn_text(chat_is_local: bool, profile) -> bool:
-    """Whether a turn's question and answer may go to `profile` for recall.
-
-    User decision (spec §4.6): embeddings follow the paper's profile even for local chats,
-    as the paper text and search queries already do; only generation must stay local.
-    """
-    return True
-
-
 async def enqueue_embed_turn(session, message_id: UUID) -> BackgroundJob | None:
     """Queue embedding of a completed answer and its question, once per answer."""
     message = await session.get(ChatMessage, message_id)
@@ -606,7 +673,9 @@ async def enqueue_embed_turn(session, message_id: UUID) -> BackgroundJob | None:
 async def run_embed_turn_job(resources, job_id, generation, token, payload) -> None:
     """Embed one turn as "Q: <question>" and "A: <answer>" lines with the paper's profile.
 
-    Embedding is idempotent: a failure retries through the job's attempts.
+    User decision (spec §4.6): local chats embed with the paper's profile too, as the paper
+    text and search queries already do; only generation must stay local. Embedding is
+    idempotent: a failure retries through the job's attempts.
     """
     message_id = UUID(payload["message_id"])
     async with resources.sessions() as session:
@@ -620,9 +689,7 @@ async def run_embed_turn_job(resources, job_id, generation, token, payload) -> N
             # The paper's profile at embedding time, the same one its index will use.
             chat = await session.get(ChatSession, answer.session_id)
             profile, _ = await effective_profile(session, await session.get(Paper, chat.paper_id))
-    if question is None or not embeds_turn_text(
-        local_spec(answer.model or "") is not None, embedding_profile(profile)
-    ):
+    if question is None:
         await settle(resources, job_id, generation, token, result={"skipped": True})
         return
     text = f"Q: {question.content}\nA: {render_history_turn(answer)}"

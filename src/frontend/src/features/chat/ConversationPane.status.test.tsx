@@ -76,3 +76,22 @@ test('Given a server that sends no status events, Then the answer streams as bef
   stream.close()
   expect(await screen.findByText('Plain answer.')).toBeVisible()
 })
+
+test('Given background local work holds the runtime, When the waiting status arrives, Then the reader and the live region say the answer is waiting until search starts', async () => {
+  const stream = controlledStream()
+  const answer = assistantMessage('m3', 'BM25 reached 71.2 recall.')
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
+  const { user } = mount('/papers/p1/chats/c1')
+  await ask(user, 'What recall did BM25 reach?')
+  stream.push('message.started', { message_id: 'm3' })
+  stream.push('message.status', { message_id: 'm3', stage: 'waiting' })
+  await waitFor(() => expect(within(reply()).getByText('Waiting for the local model…')).toBeVisible())
+  expect(announced('Waiting for the local model…')).toBe(true)
+
+  stream.push('message.status', { message_id: 'm3', stage: 'planning' })
+  await waitFor(() => expect(within(reply()).getByText('Searching the paper…')).toBeVisible())
+  expect(within(reply()).queryByText('Waiting for the local model…')).not.toBeInTheDocument()
+  stream.push('message.completed', answer)
+  stream.close()
+  expect(await screen.findByText('BM25 reached 71.2 recall.')).toBeVisible()
+})

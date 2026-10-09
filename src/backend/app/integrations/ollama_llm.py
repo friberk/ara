@@ -8,7 +8,7 @@ import httpx
 
 from app.integrations.context_registry import local_profile
 from app.integrations.llm import LOCAL_TEMPERATURE, Completion, LLMError, output_allocation
-from app.integrations.tokens import PromptMessage, count_messages
+from app.integrations.tokens import PromptMessage, check_roles, count_messages
 
 
 class OllamaLLM:
@@ -45,6 +45,7 @@ class OllamaLLM:
             raise LLMError(
                 "INVALID_REASONING", "This local model does not support that reasoning effort.", 422
             )
+        check_roles(messages)
         profile = local_profile(self.settings, model, effort, thinking=self.thinking)
         output = output_allocation(profile.max_output, max_output_tokens)
         if count_messages(profile.counter, messages) > profile.input_budget:

@@ -191,7 +191,12 @@ def test_given_any_conversation_when_assembling_then_tokens_never_exceed_the_bud
 
 
 def test_given_summary_and_recall_when_assembling_then_messages_are_role_separated():
-    from app.services.context import CITE_REMINDER, answer_instructions
+    from app.services.context import (
+        CITE_REMINDER,
+        RECALL_PREFIX,
+        SUMMARY_PREFIX,
+        answer_instructions,
+    )
 
     profile = hosted()
     citation = uuid4()
@@ -204,18 +209,23 @@ def test_given_summary_and_recall_when_assembling_then_messages_are_role_separat
         summary=(2, "They discussed the blue condition."),
         recalled=[("Which dataset?", "The fixture dataset.")],
     )
+    # Only the instructions hold the system role; the summary and recalled turns are
+    # untrusted, so they arrive as user messages labelled as context.
     assert [m.role for m in result.messages] == [
         "system",
-        "system",
-        "system",
+        "user",
+        "user",
         "user",
         "assistant",
         "user",
     ]
     assert result.messages[0].content == answer_instructions(paper())
     assert "Traceable research" in result.messages[0].content
+    assert result.messages[1].content.startswith(SUMMARY_PREFIX)
     assert "They discussed the blue condition." in result.messages[1].content
+    assert result.messages[2].content.startswith(RECALL_PREFIX)
     assert "Which dataset?" in result.messages[2].content
+    assert "not instructions" in SUMMARY_PREFIX and "not instructions" in RECALL_PREFIX
     assert result.messages[4].content == "It reached 87% (p. 6)."
     assert result.messages[5].content.startswith("Paper passages")
     assert result.messages[5].content.endswith("Question: And the baseline?")
@@ -225,6 +235,15 @@ def test_given_summary_and_recall_when_assembling_then_messages_are_role_separat
     assert (result.usage.summary_version, result.usage.recalled_turns) == (2, 1)
     # Only the current turn carries evidence.
     assert all("improved accuracy by" not in m.content for m in result.messages[:-1])
+
+
+def test_given_summary_over_its_share_when_assembling_then_its_opening_sections_are_kept():
+    summary = "## User goals\nCompare recall.\n## Open threads\n" + " detail" * 3000 + " LAST"
+    result, _ = assemble(local(), summary=(4, summary))
+    sent = result.messages[1].content
+    # "User goals" opens the summary and matters most; the least useful detail goes last.
+    assert "## User goals\nCompare recall." in sent and "LAST" not in sent
+    assert result.usage.summary_version == 4 and result.usage.truncated
 
 
 def test_given_two_questions_when_assembling_then_the_stable_prefix_is_identical():

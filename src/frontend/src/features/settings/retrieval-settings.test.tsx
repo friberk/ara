@@ -115,5 +115,5 @@ test('Given retrieval settings fail to load, Then the section explains it inline
   const section = await screen.findByRole('region', { name: 'Search and retrieval' })
   expect(await within(section).findByRole('alert')).toHaveTextContent('Search settings are not available yet.')
   expect(within(section).getByRole('button', { name: 'Try again' })).toBeEnabled()
-  expect(await screen.findByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked()
+  expect(await within(await screen.findByRole('radiogroup', { name: 'Default model' })).findByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked()
 })

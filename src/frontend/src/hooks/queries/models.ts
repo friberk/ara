@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, json } from '@/api/client'
-import type { Collection, GenerationSettings, Model, Settings } from '@/api/types'
+import type { Collection, GenerationSettings, Model, Settings, SettingsUpdate } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 
 export function useModels() {
@@ -20,7 +20,7 @@ export function useSavedSettings() {
 export function useSaveDefaults() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (value: GenerationSettings) => api<Settings>('/settings', json('PUT', { default_model: value.model, reasoning_effort: value.reasoning_effort } satisfies Settings)),
+    mutationFn: (value: GenerationSettings & Pick<SettingsUpdate, 'memory_model'>) => api<Settings>('/settings', json('PUT', { default_model: value.model, reasoning_effort: value.reasoning_effort, memory_model: value.memory_model } satisfies SettingsUpdate)),
     onSuccess: (data) => client.setQueryData(queryKeys.settings, data),
   })
 }

@@ -126,6 +126,9 @@ class Model(DTO):
 class Defaults(BaseModel):
     default_model: str = "gpt-5.6-luna"
     reasoning_effort: str = "low"
+    # A hosted chat-model key. Hosted chats summarize earlier messages and plan follow-up
+    # searches with it at its quietest effort; local chats use their own model (ARA-077).
+    memory_model: str = "gpt-5.6-luna"
 
 
 class Summary(DTO):

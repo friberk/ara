@@ -21,7 +21,7 @@ from app.schemas.ai import (
     Message,
     MessagePage,
 )
-from app.services.chat import expire, prepare, stream_answer
+from app.services.chat import expire, held_by_background, prepare, stream_answer
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
@@ -140,6 +140,7 @@ async def list_messages(chat_id: UUID, request: Request):
 async def answer(chat_id: UUID, body: ChatInput, request: Request):
     resources = request.app.state.resources
     slots = AsyncExitStack()
+    wait_for_slot = False
     try:
         validate_selection(body.model, body.reasoning_effort)
         if local_spec(body.model):
@@ -153,7 +154,13 @@ async def answer(chat_id: UUID, body: ChatInput, request: Request):
                 )
             if replay_id is None:
                 # Admission happens before returning HTTP headers; busy is actionable 429.
-                await slots.enter_async_context(generation_slots(resources, body.model))
+                # Background work, which the reader cannot see, is waited out in the stream.
+                try:
+                    await slots.enter_async_context(generation_slots(resources, body.model))
+                except LLMError as exc:
+                    if exc.code != "LOCAL_MODEL_BUSY" or not await held_by_background(resources):
+                        raise
+                    wait_for_slot = True
         prepared = await prepare(resources, chat_id, body)
     except LLMError as exc:
         await slots.aclose()
@@ -167,6 +174,7 @@ async def answer(chat_id: UUID, body: ChatInput, request: Request):
             request,
             prepared,
             inference_slot=slots if local_spec(body.model) and not prepared.replay else None,
+            wait_for_slot=wait_for_slot and not prepared.replay,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

@@ -295,37 +295,6 @@ async def test_given_local_default_when_extracting_metadata_then_no_hosted_key_n
         assert await session.scalar(select(func.count()).select_from(GenerationReservation)) == 0
 
 
-async def test_given_busy_local_runtime_when_posting_chat_then_http_429_without_generation(
-    resources,
-):
-    from app.main import create_app
-    from app.repositories.local_models import acquire_use, release_use
-
-    spec, requests = await local_fixture(resources)
-    _, _, chat_id = await paper_fixture(resources)
-    token = await acquire_use(resources.sessions, spec.key)
-    app = create_app(resources.settings)
-    app.state.resources = resources
-    try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                f"/api/v1/chats/{chat_id}/messages/stream",
-                json={
-                    "model": spec.key,
-                    "reasoning_effort": "default",
-                    "content": "What accuracy?",
-                    "request_id": str(uuid4()),
-                },
-            )
-        assert response.status_code == 429, response.text
-        assert response.json()["code"] == "LOCAL_MODEL_BUSY"
-        assert requests == []
-    finally:
-        await release_use(resources.sessions, token)
-
-
 async def test_given_runtime_503_when_local_summary_starts_then_rejection_clears_inflight(
     resources,
 ):

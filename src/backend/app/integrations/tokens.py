@@ -34,6 +34,12 @@ class TiktokenCounter:
         return math.ceil(len(self.encoding.encode(text, disallowed_special=())) * self.factor)
 
 
+def check_roles(messages: Sequence[PromptMessage]) -> None:
+    """Only the leading message holds instructions; summaries and recalled turns are untrusted."""
+    if any(m.role == "system" for m in messages[1:]):
+        raise ValueError("Only the leading message may hold the system instructions.")
+
+
 def count_messages(counter: TokenCounter, messages: Sequence[PromptMessage]) -> int:
     return sum(counter.count(m.content) + MESSAGE_OVERHEAD for m in messages) + REPLY_PRIMING
 
