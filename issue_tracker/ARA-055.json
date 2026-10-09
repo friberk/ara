@@ -1,0 +1,50 @@
+{
+  "id": "ARA-055",
+  "title": "Replace confusing reasoning protocol flags with explicit model controls",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "The user found Model default and On confusing as effort options. Both resolve to High for the pinned IFM models. Show explicit per-model levels, use a truthful toggle for binary-only models, and preserve existing preferences and history.",
+  "dependencies": [
+    "ARA-051",
+    "ARA-053"
+  ],
+  "acceptance_criteria": [
+    "Given verified IFM capabilities, when viewing Settings or the composer, then effort choices are None, Low, Medium and High with no Model default or On options.",
+    "Given old IFM default/on preferences, when capabilities load, then both display as High through verified per-model aliases without an automatic preference write or a falsely dirty form.",
+    "Given named hosted capabilities, when choosing a GPT model, then its own supported choices including xhigh/max remain available.",
+    "Given verified binary-only reasoning, when editing it, then a Reasoning toggle uses the supported Boolean controls without invented effort levels.",
+    "Given unavailable or incomplete capabilities, when models refresh, then selections are preserved and unproven alias targets or settings remain unavailable.",
+    "Given historical messages, when viewing them after this update, then their original generation settings and provenance remain unchanged."
+  ],
+  "test_cases": [
+    "Backend alias derivation from canonical metadata and exact verified mappings; hosted isolation and raw compatibility.",
+    "Settings/composer explicit choices, alias/default comparison, readiness transitions and binary controls.",
+    "Request payloads use explicit levels; browser checks preserve defaults and make no paid calls."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/model_catalog.py",
+    "src/backend/app/services/local_models.py",
+    "src/backend/app/schemas/ai.py",
+    "src/frontend/src/components/composer/ModelSwitcher.tsx",
+    "src/frontend/src/components/composer/generation-settings.tsx",
+    "src/frontend/src/features/settings/SettingsPage.tsx",
+    "src/backend/tests/test_reasoning_aliases.py",
+    "src/backend/tests/test_reasoning_aliases_integration.py",
+    "src/frontend/src/components/composer/reasoning.ts",
+    "src/frontend/src/components/composer/effort.ts",
+    "src/frontend/src/features/summary/format.ts",
+    "src/frontend/e2e/local-models.spec.ts",
+    "src/frontend/src/api/generated.ts",
+    "docs/api-contract.md",
+    "docs/agent-development-log.md",
+    "docs/verification-final.md"
+  ],
+  "commits": [
+    "3c3e0d6",
+    "6b721fd"
+  ],
+  "pull_requests": [],
+  "verification": "TDD: initial backend 32 failed/4 passed, frontend 18 failed/33 passed; explicit-choice and terminal-alias defects reproduced before fixes. Final full backend 409 passed (43.86s), frontend 392 passed (61.84s), strict TypeScript/ESLint and build passed. Full 12 E2E passed (1.9m) before final producer correction; final E2E-12 passed (24.5s) after fixture API/model-worker restart. Independent frontend 53 tests and final backend 39 unit + 5 SQL passed. Actual ready 3.7B metadata returned direct default/on-to-high aliases. Desktop/mobile Light/Dark browser checks used legacy preference GET fixtures only, showed four choices with no false dirty state, issued zero mutations and preserved persisted defaults. Final source OpenAPI byte-matched generated TypeScript. Raw API flags, histories, provenance and UUID replay remain compatible. No weights, inference, merge or push.",
+  "updated_at": "2026-10-09"
+}

@@ -5,13 +5,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
   DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { unavailableReason, useSaveDefaults, type Purpose } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { effortLabel } from './effort'
 import { useGenerationSettings } from './generation-settings-context'
+import { reasoningControls } from './reasoning'
 
 
 /** Compact model and reasoning-effort picker. The choice applies to the next request; "Set as default" saves it. */
@@ -21,7 +22,8 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
   const [open, setOpen] = useState(false)
   const isDefault = savedDefaults?.model === settings.model && savedDefaults.reasoning_effort === settings.reasoning_effort
   const name = selectedModel?.display_name ?? (loading ? 'Loading models' : 'Choose a model')
-  const effort = selectedModel ? effortLabel(settings.reasoning_effort) : null
+  const controls = reasoningControls(selectedModel)
+  const effort = !selectedModel || selectedModel.status === 'unavailable' ? null : controls.kind === 'boolean' ? settings.reasoning_effort === 'on' ? 'Enabled' : 'Disabled' : controls.options.includes(settings.reasoning_effort) ? effortLabel(settings.reasoning_effort) : 'Model-controlled'
   return (
     <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (next) save.reset() }}>
       <DropdownMenuTrigger asChild>
@@ -48,17 +50,21 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
           })}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger disabled={!selectedModel?.reasoning_efforts.length}>
+        {controls.kind === 'levels' && controls.options.length > 0 ? <DropdownMenuSub>
+          <DropdownMenuSubTrigger disabled={disabled}>
             Reasoning effort
             <span className="ml-auto pl-4 text-xs text-muted-foreground">{effort}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-44">
             <DropdownMenuRadioGroup value={settings.reasoning_effort} onValueChange={(reasoning_effort) => setSettings({ model: settings.model, reasoning_effort })}>
-              {(selectedModel?.reasoning_efforts ?? []).map((value) => <DropdownMenuRadioItem key={value} value={value}>{effortLabel(value)}</DropdownMenuRadioItem>)}
+              {controls.options.map((value) => <DropdownMenuRadioItem key={value} value={value}>{effortLabel(value)}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        </DropdownMenuSub> : controls.kind === 'boolean' ? (
+          <DropdownMenuCheckboxItem checked={settings.reasoning_effort === 'on'} disabled={disabled} onSelect={(event) => event.preventDefault()} onCheckedChange={(enabled) => setSettings({ model: settings.model, reasoning_effort: enabled ? 'on' : 'none' })}>Reasoning</DropdownMenuCheckboxItem>
+        ) : (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">{selectedModel?.status === 'unavailable' ? unavailableReason(selectedModel, purpose) : 'Reasoning is controlled by this model.'}</p>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem

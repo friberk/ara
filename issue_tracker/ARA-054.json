@@ -1,0 +1,34 @@
+{
+  "id": "ARA-054",
+  "title": "Fail malformed Ollama verification responses without recovery loops",
+  "type": "bug",
+  "priority": "P1",
+  "description": "Independent ARA-053 review reproduced HTTP-200 model_info=null raising AttributeError in verification. The actor logged the error, while expired-lease recovery could repeat verification indefinitely and fence local inference. Validate malformed inventory/metadata/probe shapes at the runtime boundary and persist a safe terminal failure.",
+  "dependencies": [
+    "ARA-045",
+    "ARA-053"
+  ],
+  "acceptance_criteria": [
+    "Given malformed runtime inventory or model metadata, when inspected or verified, then a structured safe protocol error is returned rather than an unhandled shape exception.",
+    "Given a verification-only job and a permanent malformed response, when the worker executes, then failure is persisted without a pull or indefinite recovery loop.",
+    "Given valid runtime responses, when verification executes, then the existing streaming, structured-output and thinking probes retain their behavior."
+  ],
+  "test_cases": [
+    "Malformed tags, capabilities, model_info/context lengths, probe messages and streaming events.",
+    "Real isolated PostgreSQL job failure/recovery and no-pull assertions.",
+    "Existing local runtime and full backend regressions."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/ollama.py",
+    "src/backend/app/services/local_models.py",
+    "src/backend/tests/test_ollama_protocol_shapes.py",
+    "src/backend/tests/test_ollama_protocol_shapes_integration.py"
+  ],
+  "commits": [
+    "459290d"
+  ],
+  "pull_requests": [],
+  "verification": "Observed RED: 41 failed, 7 passed; corrected boundary GREEN: 48 passed, including 10 isolated PostgreSQL automatic-job outcomes. Safe permanent MODEL_PROTOCOL_ERROR records one failure attempt, clears the lease, preserves weights, and prevents recovery/reconciliation/pull loops. Final backend suite passed 365 tests in 44.08 seconds with Ruff clean. Focused cross-review independently passed 38 unit and 10 SQL cases. Retained real 7B passed the updated boundary with six controls, streaming and structured output, hosted key empty; all 12 browser scenarios passed. Cancellation and valid/unusable response semantics remain covered; no generic database exception catch.",
+  "updated_at": "2026-10-08"
+}

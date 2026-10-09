@@ -86,10 +86,36 @@ def verified_think_mapping(validation: dict) -> dict[str, bool | str]:
     }
 
 
+def reasoning_aliases(spec, validation: dict) -> dict[str, str]:
+    """Expose protocol equivalence only when its actual controls were verified."""
+    from app.integrations.ollama import local_model_thinking
+
+    if type(validation.get("thinking_schema")) is not int or validation["thinking_schema"] != 1:
+        return {}
+    thinking = local_model_thinking(validation)
+    if thinking is None:
+        return {}
+    mapping = verified_think_mapping(validation)
+    aliases = {}
+    default = thinking["default"]
+    for effort, value in mapping.items():
+        if type(value) is type(default) and value == default:
+            aliases["default"] = effort
+            break
+    enabled = spec.boolean_enabled_effort
+    if mapping.get("on") is True and enabled and mapping.get(enabled) == enabled:
+        aliases["on"] = enabled
+    if aliases.get("default") == "on" and "on" in aliases:
+        aliases["default"] = aliases["on"]
+    return aliases
+
+
 def model_dto(spec, row: ModelInstallation | None, *, context_window=8192, operation=None) -> Model:
     from app.integrations.ollama import local_model_thinking
 
     validation = (row.validation or {}) if row else {}
+    if not isinstance(validation, dict):
+        validation = {}
     thinking = local_model_thinking(validation)
     state = row.state if row else "missing"
     installed_ready = state == "ready" and row.weights_present
@@ -124,6 +150,7 @@ def model_dto(spec, row: ModelInstallation | None, *, context_window=8192, opera
         display_name=spec.display_name,
         status="available" if ready else "unavailable",
         reasoning_efforts=["default", *verified_think_mapping(validation)],
+        reasoning_aliases=reasoning_aliases(spec, validation),
         thinking=thinking,
         supports_streaming=validation.get("supports_streaming", False),
         supports_structured_output=validation.get("supports_structured_output", False),

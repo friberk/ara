@@ -11,6 +11,7 @@ class LocalModelSpec:
     expected_digest: str
     download_bytes: int
     quantization: str = "Q4_K_M"
+    boolean_enabled_effort: str | None = None
 
 
 LOCAL_MODELS = {
@@ -22,6 +23,7 @@ LOCAL_MODELS = {
             "IFM K2 Horizon 3.7B",
             "2e334d42ac17a07fb7e6447dd5c98d0c501d4f90bef900cc57fd3f6cd067dd2c",
             3156599066,
+            boolean_enabled_effort="high",
         ),
         LocalModelSpec(
             "ifm-k2-horizon-7b",
@@ -29,6 +31,7 @@ LOCAL_MODELS = {
             "IFM K2 Horizon 7B",
             "3a4c598f85cc1e1977b7384e0e9b5e6181ff3e2ac5a535f68bbf26aaf90dc278",
             5592218900,
+            boolean_enabled_effort="high",
         ),
         LocalModelSpec(
             "qwen3.8-27b",
