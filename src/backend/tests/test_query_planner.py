@@ -155,7 +155,7 @@ async def test_given_invalid_planner_output_when_planning_then_heuristic_fallbac
     resources, monkeypatch, output
 ):
     from app.services import memory
-    from app.services.retrieval import retrieval_query
+    from app.services.memory import retrieval_query
 
     requests = hosted_responses(monkeypatch, resources, lambda body: output)
     history = rag_history()

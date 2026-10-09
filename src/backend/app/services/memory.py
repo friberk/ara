@@ -7,6 +7,7 @@ Summaries are versioned rows anchored to a message; original messages are never 
 import asyncio
 import json
 import logging
+import re
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Annotated, Literal
@@ -53,7 +54,6 @@ from app.services.context import (
     cost,
     render_history_turn,
 )
-from app.services.retrieval import retrieval_query
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,13 @@ PLAN_SCHEMA = {
     "additionalProperties": False,
 }
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+
+
+def retrieval_query(question: str, messages) -> str:
+    """Deterministic planner fallback: recent user questions supply the referent of a follow-up."""
+    previous = [m.content for m in messages if m.role == "user" and m.state == "completed"][-2:]
+    terms = re.findall(r"[\w-]{2,}", " ".join([question, *previous]).lower())
+    return " ".join(terms[-80:])
 
 
 @dataclass(frozen=True)
