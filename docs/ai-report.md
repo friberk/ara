@@ -1,5 +1,7 @@
 # ARA-011–014 AI implementation evidence
 
+> October 9 note: this report records the original ARA-011–014 implementation and keeps its time scope. The retrieval and context overhaul (ARA-021, ARA-043; see the [implementation plan](implementation-plan.md)) replaced `services/retrieval.py`, the UTF-8 byte budgets, the 32,000-token input cap and the 4,000/12,000-token history and retrieval bounds described below.
+
 Owned files only: `src/backend/app/integrations/llm.py`, services `retrieval.py`, `summarization.py`, `chat.py`, routes `ai.py`, `chat.py`, schemas `ai.py`, tests `test_ai.py`, `test_ai_integration.py`. No commits, migrations, actor/main/config edits, or subagents. Backend owner supplied research models, migration 0002, configuration, SDK dependency/lock, router/actor wiring, `Resources.llm_slots`, and shared real-service fixture.
 
 ## Result and acceptance
