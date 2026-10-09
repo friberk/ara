@@ -16,13 +16,15 @@
   "test_cases": [
     "Probe-pair ordering test against fixtures; skip/fallback path; latency evidence from Phase 0 and live verification."
   ],
-  "status": "planned",
+  "status": "deferred",
   "related_files": [
+    "docs/superpowers/specs/2026-10-09-rag-context-design.md",
+    "src/backend/app/integrations/model_catalog.py",
     "src/backend/app/rag",
-    "src/backend/app/integrations/model_catalog.py"
+    "src/backend/app/schemas/retrieval.py"
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; no implementation yet.",
+  "verification": "Deferred on 2026-10-09 after the Phase 0 S1 probe, per the user's rule (defer if not feasible through Ollama). Ollama 0.40.1-ara.2 returns logprobs from raw /api/generate, so the method works. However, the community dengcao/Qwen3-Reranker-0.6B:Q8_0 artifact produced uniform logits (also on stock 0.40.1). The 0.6B F16 tag ranked 12/12 probe triples correctly but took 54 s for 30 candidates (1.77 s per call, 4 CPUs). The 4B Q4_K_M took 180 s, and NUM_PARALLEL=4 gave no gain. That latency is not interactive on the reference CPU. RetrievalSettings.reranker_enabled now defaults to false, the UI hides the control, and retrieval uses reciprocal rank fusion. Revisit on GPU hosts or with a faster runtime.",
   "updated_at": "2026-10-09"
 }

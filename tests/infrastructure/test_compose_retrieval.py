@@ -53,6 +53,16 @@ class ComposeRetrievalTests(unittest.TestCase):
         environment = services["ollama"]["environment"]
         self.assertEqual(environment["OLLAMA_MAX_LOADED_MODELS"], "3")
 
+    def test_ollama_defaults_keep_chat_embedder_and_reranker_resident_without_swap(self):
+        services = compose_services("compose.yaml")
+        ollama = services["ollama"]
+        environment = ollama["environment"]
+        # Phase 0 (S1): residency 3 avoids chat reloads; the prompt cache grew ~265 MiB per prompt.
+        self.assertEqual(environment["OLLAMA_MAX_LOADED_MODELS"], "3")
+        self.assertEqual(environment["LLAMA_ARG_CACHE_RAM"], "0")
+        # Swap equal to memory turns overload into a visible error instead of 12 GiB of swapping.
+        self.assertEqual(ollama["memswap_limit"], ollama["mem_limit"])
+
 
 if __name__ == "__main__":
     unittest.main()
