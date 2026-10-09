@@ -1,4 +1,4 @@
-"""Evidence for one answer: hybrid search, fusion, expansion and packing (ARA-073).
+"""Evidence for one answer: hybrid search, fusion, reranking, expansion and packing (ARA-073).
 
 Retrieval stays inside the chat's immutable document and that document's current chunk set.
 Without a ready index it searches by keywords and says why; it never reads a half-built index.
@@ -6,7 +6,7 @@ Without a ready index it searches by keywords and says why; it never reads a hal
 
 import asyncio
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -21,7 +21,8 @@ from app.models.research import DocumentChunk
 from app.models.retrieval import RetrievalIndex
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.indexing import ready_index
-from app.rag.packing import Passage, pack_evidence, render_evidence
+from app.rag.packing import SEPARATOR, Passage, node_passage, pack_evidence, render_evidence
+from app.rag.rerank import rerank_candidates
 from app.rag.retrievers import PgLexicalRetriever, PgVectorRetriever, chunk_node
 from app.schemas.ai import RetrievalSummary
 
@@ -31,6 +32,8 @@ BUILDING_NOTE = "Searched by keywords until the search index is built."
 UNAVAILABLE_NOTE = "Searched by keywords because the search index is unavailable."
 MODEL_DOWN_NOTE = "Searched by keywords because the search model is unavailable right now."
 OPENING_NOTE = "No passage matched the question, so the paper's opening passages were used."
+# Without an OpenAI key the default reranker cannot run at all; Settings already says why.
+QUIET_RERANK_SKIPS = {"MODEL_NOT_CONFIGURED"}
 
 
 @dataclass
@@ -101,6 +104,20 @@ def scoped(document_id: UUID, chunk_set: str):
     )
 
 
+async def evidence_ceiling(session, document_id: UUID, chunk_set: str, counter) -> int:
+    """The most evidence packing can choose: the costliest passages, at most MAX_PASSAGES."""
+    chunks = await session.scalars(
+        scoped(document_id, chunk_set)
+        .order_by(DocumentChunk.token_count.desc(), DocumentChunk.ordinal)
+        .limit(MAX_PASSAGES)
+    )
+    widest = f"S{MAX_PASSAGES}"
+    return sum(
+        counter.count(node_passage(chunk_node(chunk), widest).render()) + counter.count(SEPARATOR)
+        for chunk in chunks
+    )
+
+
 async def opening_nodes(resources, document_id: UUID, chunk_set: str) -> list[NodeWithScore]:
     async with resources.sessions() as session:
         chunks = await session.scalars(
@@ -141,7 +158,10 @@ async def retrieve_evidence(
     queries: list[str],
     budget: int,
     counter: TokenCounter,
+    reranker: str | None = None,
+    on_stage: Callable[[str], Awaitable[None]] | None = None,
 ) -> EvidenceResult:
+    """`reranker` is a catalog profile key, or None for off; `on_stage` hears "reranking"."""
     started = time.monotonic()
     timings = {}
     summary = RetrievalSummary(mode="keyword", search_queries=list(queries))
@@ -179,7 +199,15 @@ async def retrieve_evidence(
     results = await asyncio.gather(*(search for _, _, search in searches))
     timings["search"] = elapsed(clock)
     fused = reciprocal_rank_fusion(results)
-    ranked = fused
+    if reranker is not None and fused and on_stage is not None:
+        await on_stage("reranking")
+    reranked = await rerank_candidates(resources, query=queries[0], nodes=fused, reranker=reranker)
+    timings["rerank"] = reranked.elapsed_ms
+    summary.reranked = reranked.reranked
+    if reranked.skipped and reranked.skipped not in QUIET_RERANK_SKIPS:
+        skip_note = f"Reranking was unavailable, so results use the {summary.mode} order."
+        summary.note = " ".join(filter(None, [summary.note, skip_note]))
+    ranked = reranked.nodes
     if not ranked:
         ranked = await opening_nodes(resources, document_id, chunk_set)
         summary.note = " ".join(filter(None, [summary.note, OPENING_NOTE]))
@@ -194,7 +222,12 @@ async def retrieve_evidence(
             for (kind, query, _), found in zip(searches, results, strict=True)
         ],
         "fused": [[item.node.node_id, item.score] for item in fused[:TOP_K]],
-        "reranked": [],
+        "rerank": {
+            "profile": reranker,
+            "skipped": reranked.skipped,
+            "scores": reranked.scores,
+            "elapsed_ms": reranked.elapsed_ms,
+        },
         "timings_ms": timings,
     }
     result = EvidenceResult([], summary, trace, ranked, neighbours, counter, vectors)
