@@ -8,6 +8,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCitationSource } from '@/hooks/queries/documents'
 import { cn } from '@/lib/utils'
+import { pageLabel, pageSpan, sourceName, spansPages } from './pages'
 
 export type CitationChipProps = {
   citation: Citation
@@ -47,7 +48,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
   let chip: ReactElement = (
     <button
       type="button"
-      aria-label={`Source, page ${citation.page}`}
+      aria-label={sourceName(citation)}
       className={cn(
         'inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.5 text-xs leading-none font-medium whitespace-nowrap text-foreground/70 tabular transition-colors outline-none select-none',
         'hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] hover:text-foreground data-[state=open]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] data-[state=open]:text-foreground',
@@ -60,7 +61,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
         onSelect?.(citation, claim)
       }}
     >
-      p. {citation.page}
+      {pageLabel(citation)}
     </button>
   )
   if (!touchOnly) chip = <HoverCardTrigger asChild>{chip}</HoverCardTrigger>
@@ -70,7 +71,11 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
       <HoverCard openDelay={200} closeDelay={100} open={preview} onOpenChange={(open) => setPreview(open && performance.now() >= pausedUntil.current)}>
         {chip}
         <HoverCardContent side="top" collisionPadding={12} className="grid w-80 max-w-[calc(100vw-1.5rem)] gap-1.5 p-3">
-          <p className="text-xs font-medium text-muted-foreground tabular">Page {citation.page}</p>
+          <p className="flex gap-1.5 text-xs font-medium text-muted-foreground tabular">
+            <span>{spansPages(citation) ? 'Pages' : 'Page'} {pageSpan(citation)}</span>
+            {citation.kind === 'table' && <><span aria-hidden="true">·</span><span>Table</span></>}
+          </p>
+          {citation.section && <p className="line-clamp-2 text-xs font-medium text-popover-foreground">{citation.section}</p>}
           <SourcePassage source={source} preview />
         </HoverCardContent>
       </HoverCard>
@@ -82,7 +87,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
       {chip}
       <DialogContent className="sm:max-w-lg" onCloseAutoFocus={pause}>
         <DialogHeader>
-          <DialogTitle>Source on page {citation.page}</DialogTitle>
+          <DialogTitle>Source on {spansPages(citation) ? 'pages' : 'page'} {pageSpan(citation)}</DialogTitle>
           <DialogDescription>Compare this passage with the claim it supports.</DialogDescription>
         </DialogHeader>
         <SourcePassage source={source} />

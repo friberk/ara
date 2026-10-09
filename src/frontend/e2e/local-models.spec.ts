@@ -155,7 +155,7 @@ test('E2E-12 Given verified local weights, when summarizing and asking a paper, 
   await page.getByRole('button', { name: 'Ask question', exact: true }).click()
   const answer = page.getByRole('article', { name: 'Assistant message' }).last()
   await expect(answer).toContainText('Orion-12', { timeout: 45_000 })
-  await expect(answer.getByRole('button', { name: /^Source, page \d+$/ }).first()).toBeVisible()
+  await expect(answer.getByRole('button', { name: /^Source, pages? \d+/ }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Stop generation' })).toBeHidden()
   await expect(answer).not.toContainText('Synthetic reasoning fixture')
   const chatId = page.url().split('/').at(-1)

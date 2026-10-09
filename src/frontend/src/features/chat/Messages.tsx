@@ -4,7 +4,7 @@ import type { Citation, Message } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Markdown, SourceList } from '@/features/content'
+import { Markdown, pageLabel, SourceList } from '@/features/content'
 import { GenerationMeta } from '@/features/summary'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
 
@@ -13,7 +13,7 @@ const sourceMarker = /\s?\[source:([0-9a-fA-F-]{36})\]/g
 function plainAnswer(content: string, citations: Citation[]) {
   return content.replace(sourceMarker, (_marker, chunkId: string) => {
     const citation = citations.find((item) => item.chunk_id === chunkId)
-    return citation ? ` (p. ${citation.page})` : ''
+    return citation ? ` (${pageLabel(citation)})` : ''
   })
 }
 
