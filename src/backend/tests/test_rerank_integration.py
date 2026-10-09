@@ -330,3 +330,71 @@ async def test_given_runtime_lost_mid_rerank_when_reranking_then_scoring_stops(r
     assert (outcome.reranked, outcome.skipped) == (True, None)
     assert outcome.scores == {nodes[0].node.node_id: pytest.approx(0.02)}
     assert ids(outcome.nodes) == ids(nodes)
+
+
+@pytest.fixture
+async def client(resources):
+    from app.main import create_app
+
+    app = create_app(resources.settings)
+    app.state.resources = resources
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http:
+        yield http
+
+
+async def rerankers(client):
+    response = await client.get("/api/v1/retrieval/profiles")
+    assert response.status_code == 200, response.text
+    return {item["key"]: item for item in response.json()["rerankers"]}
+
+
+async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_to_enable_them(
+    resources, client
+):
+    resources.settings.openai_api_key = None
+    items = await rerankers(client)
+    assert list(items) == [OPENAI, LOCAL]
+    assert items[OPENAI] == {
+        "key": OPENAI,
+        "provider": "openai",
+        "model_id": "gpt-6-luna",
+        "display_name": "OpenAI GPT-6 Luna",
+        "status": "unavailable",
+        "unavailable_reason": "Add an OpenAI API key on the server.",
+        "local_model_key": None,
+        "candidates": 20,
+    }
+    assert items[LOCAL] == {
+        "key": LOCAL,
+        "provider": "ollama",
+        "model_id": "fanyx/Qwen3-Reranker-0.6B-Q8_0",
+        "display_name": "Qwen3 Reranker 0.6B (local)",
+        "status": "unavailable",
+        "unavailable_reason": "Download Qwen3 Reranker 0.6B in Settings.",
+        "local_model_key": "qwen3-reranker-0.6b",
+        "candidates": 12,
+    }
+
+
+async def test_given_key_and_verified_install_when_listing_profiles_then_rerankers_are_available(
+    resources, client
+):
+    resources.settings.openai_api_key = SecretStr("http-fixture-only")
+    await install(resources, local_spec("qwen3-reranker-0.6b"))
+    items = await rerankers(client)
+    assert [(item["status"], item["unavailable_reason"]) for item in items.values()] == [
+        ("available", None),
+        ("available", None),
+    ]
+
+
+async def test_given_downloading_reranker_when_listing_profiles_then_its_progress_is_the_reason(
+    resources, client
+):
+    async with resources.sessions() as session, session.begin():
+        session.add(ModelInstallation(model_key="qwen3-reranker-0.6b", state="downloading"))
+    item = (await rerankers(client))[LOCAL]
+    assert item["status"] == "unavailable"
+    assert item["unavailable_reason"] == "Wait for the model download to finish."

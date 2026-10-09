@@ -10,7 +10,7 @@ from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
 from app.integrations.llm import configured
 from app.integrations.model_catalog import local_spec
-from app.integrations.reranker_catalog import reranker_profile
+from app.integrations.reranker_catalog import RERANKERS, reranker_profile
 from app.models.local_models import ModelInstallation
 from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
 from app.models.retrieval import DocumentSection, RetrievalIndex
@@ -23,6 +23,7 @@ from app.schemas.retrieval import (
     PaperRetrieval,
     PaperRetrievalUpdate,
     RebuildInput,
+    RerankerOut,
     RetrievalIndexOut,
     RetrievalSettings,
 )
@@ -36,14 +37,15 @@ def not_ready() -> AppError:
 
 
 async def profile_status(session, settings, profile) -> tuple[str, str | None]:
+    """Embedding and reranker profiles: a hosted key, or a ready, verified local install."""
     if profile.provider == "openai":
         if configured(settings):
             return "available", None
         return "unavailable", "Add an OpenAI API key on the server."
-    download = f"Download {profile.display_name} in Settings."
     spec = local_spec(profile.local_model_key)
     if spec is None:
-        return "unavailable", download
+        return "unavailable", f"Download {profile.display_name} in Settings."
+    download = f"Download {spec.display_name} in Settings."
     row = await session.get(ModelInstallation, spec.key)
     model = model_dto(spec, row, context_window=settings.ollama_context_window)
     if model.status == "available":
@@ -72,7 +74,24 @@ async def profiles(request: Request):
                     local_model_key=profile.local_model_key,
                 )
             )
-        return EmbeddingProfilePage(items=items, default_profile=await default_profile(session))
+        rerankers = []
+        for profile in RERANKERS.values():
+            status, reason = await profile_status(session, resources.settings, profile)
+            rerankers.append(
+                RerankerOut(
+                    key=profile.key,
+                    provider=profile.provider,
+                    model_id=profile.model_id,
+                    display_name=profile.display_name,
+                    status=status,
+                    unavailable_reason=reason,
+                    local_model_key=profile.local_model_key,
+                    candidates=profile.candidates,
+                )
+            )
+        return EmbeddingProfilePage(
+            items=items, default_profile=await default_profile(session), rerankers=rerankers
+        )
 
 
 @router.get("/retrieval/settings", response_model=RetrievalSettings)
