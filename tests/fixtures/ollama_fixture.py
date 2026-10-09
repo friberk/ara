@@ -182,7 +182,10 @@ class OllamaFixture:
             sources = list(
                 dict.fromkeys(re.findall(r"source:([0-9a-fA-F-]{36})", prompt))
             )
-            citation = f" [source:{sources[0]}]" if sources else ""
+            # The retained 7B medium chat used this wrapper in a live run.
+            # Exercise canonicalization in the browser instead of hiding it in mocks.
+            marker = "【source:{}】" if thinking == "medium" else "[source:{}]"
+            citation = " " + marker.format(sources[0]) if sources else ""
             answer = (
                 "The paper evaluates a retrieval-first pipeline on the Orion-12 dataset. "
                 "Its measured accuracy is 86 percent, using twelve synthetic examples."

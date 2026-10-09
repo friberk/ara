@@ -17,7 +17,12 @@ from app.integrations.llm import (
 )
 from app.models.jobs import BackgroundJob
 from app.repositories.jobs import fence, now
-from app.services.retrieval import INSTRUCTIONS, passage, validate_citations
+from app.services.retrieval import (
+    INSTRUCTIONS,
+    normalize_source_markers,
+    passage,
+    validate_citations,
+)
 
 
 def supported_citations(content, chunks, document_id):
@@ -27,6 +32,12 @@ def supported_citations(content, chunks, document_id):
         raise LLMError(
             "UNGROUNDED_OUTPUT", "The summary cited unavailable source evidence."
         ) from None
+
+
+def canonical_summary_content(content, chunks, document_id):
+    if not supported_citations(content, chunks, document_id):
+        raise LLMError("UNGROUNDED_OUTPUT", "The summary did not cite its source evidence.")
+    return normalize_source_markers(content)
 
 
 PART_PREFIX = (
@@ -136,6 +147,29 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                 "GENERATION_PROVENANCE_UNKNOWN",
                 "Previous summary sections lack model provenance. Start a new summary request.",
             )
+        # Only an owned processing job reaches this point. Reused completed
+        # sections must satisfy the same source contract as new output before
+        # entering another prompt or durable checkpoint.
+        partials = [
+            canonical_summary_content(
+                content, groups[index] if index < len(groups) else chunks, document_id
+            )
+            for index, content in enumerate(partials)
+        ]
+        payload["partials"] = partials
+        for key in ("reduced", "reduction_results"):
+            if key in payload:
+                payload[key] = [
+                    canonical_summary_content(content, chunks, document_id)
+                    for content in payload[key]
+                ]
+        if payload.get("compression"):
+            payload["compression"] = {
+                **payload["compression"],
+                "candidate": canonical_summary_content(
+                    payload["compression"]["candidate"], chunks, document_id
+                ),
+            }
         client = create_llm(resources, model, selection=selection)
         total_usage = dict(payload.get("usage", {}))
 
@@ -172,13 +206,14 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                 for key in ("input_tokens", "output_tokens", "total_tokens"):
                     total_usage[key] = total_usage.get(key, 0) + result.usage.get(key, 0)
                 payload["usage"] = total_usage
-                save_completed(result.content)
+                content = canonical_summary_content(result.content, chunks, document_id)
+                save_completed(content)
                 payload["paid_call_inflight"] = False
                 # Commit the completed result and cursor before releasing admission.
                 await checkpoint(
                     resources, job_id, generation, lease_token, payload, stage, progress
                 )
-            return result.content
+            return content
 
         for index, group in enumerate(groups):
             if index < len(partials):
@@ -315,8 +350,8 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
             payload["reduced"] = reduced
             payload.pop("reduction_results", None)
             await checkpoint(resources, job_id, generation, lease_token, payload, "combining", 95)
-        content = reduced[0]
-        citations = supported_citations(content, chunks, document_id)
+        citations = supported_citations(reduced[0], chunks, document_id)
+        content = normalize_source_markers(reduced[0])
         if not citations:
             raise LLMError("UNGROUNDED_OUTPUT", "The summary did not cite its source evidence.")
         summary_id = uuid4()

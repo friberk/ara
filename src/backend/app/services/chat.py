@@ -26,6 +26,7 @@ from app.schemas.ai import Message
 from app.services.retrieval import (
     INSTRUCTIONS,
     history_context,
+    normalize_source_markers,
     passage,
     retrieve,
     validate_citations,
@@ -265,6 +266,7 @@ async def stream_answer(
                 last_checkpoint = asyncio.get_running_loop().time()
             yield event("message.delta", {"text": value})
         try:
+            content = normalize_source_markers(content)
             citations = validate_citations(
                 content, chunks, chunks[0].document_id if chunks else UUID(int=0)
             )
