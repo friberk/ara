@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Check, ChevronDown, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
   DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
@@ -32,17 +33,18 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-72">
         <DropdownMenuLabel>Model</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={settings.model} onValueChange={(model) => setSettings({ model, reasoning_effort: settings.reasoning_effort })}>
+        <DropdownMenuRadioGroup value={settings.model} onValueChange={(model) => { const option = models.find((item) => item.key === model); if (option && !unavailableReason(option, purpose)) setSettings({ model, reasoning_effort: settings.reasoning_effort }) }}>
           {models.map((model) => {
             const reason = unavailableReason(model, purpose)
-            return (
-              <DropdownMenuRadioItem key={model.key} value={model.key} disabled={!!reason} className="items-start py-2">
+            const item = (
+              <DropdownMenuRadioItem key={model.key} value={model.key} aria-disabled={!!reason} onSelect={(event) => { if (reason) event.preventDefault() }} className={cn('items-start py-2', reason && 'text-muted-foreground')}>
                 <div className="grid gap-0.5">
                   <span>{model.display_name}</span>
                   <span className="text-xs text-muted-foreground">{reason ?? model.model_id}</span>
                 </div>
               </DropdownMenuRadioItem>
             )
+            return reason ? <Tooltip key={model.key}><TooltipTrigger asChild>{item}</TooltipTrigger><TooltipContent>{reason}</TooltipContent></Tooltip> : item
           })}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
@@ -60,7 +62,7 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem
-            disabled={isDefault || !selectedModel || save.isPending}
+            disabled={isDefault || !selectedModel || !!unavailableReason(selectedModel, purpose) || save.isPending}
             onSelect={(event) => {
               // Stay open while saving so a failure can be explained here; errors are never toasts.
               event.preventDefault()
@@ -70,7 +72,7 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
             <Check aria-hidden="true" className={cn(!isDefault && 'opacity-0')} />
             {isDefault ? 'Default model' : 'Set as default'}
           </DropdownMenuItem>
-          <DropdownMenuItem asChild><Link to="/settings"><Settings2 aria-hidden="true" />Model settings</Link></DropdownMenuItem>
+          <DropdownMenuItem asChild><Link to="/settings#local-models"><Settings2 aria-hidden="true" />Model settings</Link></DropdownMenuItem>
         </DropdownMenuGroup>
         {save.error && <p role="alert" className="px-2 pt-1 pb-1.5 text-xs text-destructive">{save.error.message}</p>}
       </DropdownMenuContent>

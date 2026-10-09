@@ -4,7 +4,13 @@ import type { Collection, GenerationSettings, Model, Settings } from '@/api/type
 import { queryKeys } from '@/lib/query-keys'
 
 export function useModels() {
-  return useQuery({ queryKey: queryKeys.models, queryFn: ({ signal }) => api<Collection<Model>>('/models', { signal }), staleTime: 5 * 60_000 })
+  return useQuery({
+    queryKey: queryKeys.models,
+    queryFn: ({ signal }) => api<Collection<Model>>('/models', { signal }),
+    staleTime: 10_000,
+    refetchOnWindowFocus: 'always',
+    refetchInterval: (current) => current.state.data?.items.some((model) => model.installation && ['queued', 'downloading', 'pausing', 'verifying', 'deleting'].includes(model.installation.state)) ? 2000 : 30_000,
+  })
 }
 
 export function useSavedSettings() {
@@ -28,7 +34,7 @@ export function modelSupports(model: Model | undefined, purpose?: Purpose) {
   return true
 }
 export function unavailableReason(model: Model, purpose?: Purpose) {
-  if (model.status === 'unavailable') return 'Not configured on the server'
+  if (model.status === 'unavailable') return model.unavailable_reason ?? (model.installation ? 'Download weights in Settings to use this model.' : 'Not configured on the server')
   if (purpose === 'chat' && !model.supports_streaming) return 'Cannot stream answers'
   if (purpose === 'summary' && !model.supports_structured_output) return 'Cannot write summaries'
   return null

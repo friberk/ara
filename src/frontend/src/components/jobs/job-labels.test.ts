@@ -15,3 +15,13 @@ test('Given job kinds and stages, Then readers see plain descriptions instead of
 test('Given job states, Then only queued and processing jobs count as active', () => {
   expect(['queued', 'processing', 'completed', 'failed'].map((state) => isActiveJob({ state: state as 'queued' }))).toEqual([true, true, false, false])
 })
+
+test('Given model transfer stages, Then Activity uses readable labels and paused work stays unfinished', () => {
+  expect(jobKindLabel('model_download')).toBe('Model download')
+  expect(jobKindLabel('model_delete')).toBe('Model weights deletion')
+  expect(jobStageLabel({ state: 'processing', stage: 'downloading' })).toBe('Downloading weights')
+  expect(jobStageLabel({ state: 'processing', stage: 'pausing' })).toBe('Stopping the transfer')
+  expect(jobStageLabel({ state: 'queued', stage: 'settling' })).toBe('Stopping download')
+  expect(jobStageLabel({ state: 'paused', stage: 'paused' })).toBe('Paused')
+  expect(isActiveJob({ state: 'paused' })).toBe(true)
+})

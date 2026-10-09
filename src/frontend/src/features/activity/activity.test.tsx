@@ -8,6 +8,17 @@ const summary = { ...base, id: 'j2', kind: 'summary', state: 'completed', stage:
 const running = { ...base, id: 'j3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 55, paper_id: null, paper_title: null }
 afterEach(() => vi.unstubAllGlobals())
 
+test('Given a paused model download, Then Activity names the model and links to its management controls', async () => {
+  const model = { key: 'ifm-k2-horizon-7b', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'] }
+  mockApi({ 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'model-job', kind: 'model_download', model_key: model.key, state: 'paused', stage: 'paused', progress: 25, completed_bytes: 1398054725, total_bytes: 5592218900 }] } })
+  const { user } = renderApp('/activity')
+  const row = (await screen.findByRole('heading', { name: 'Model download' })).closest('li') as HTMLElement
+  expect(within(row).getByRole('link', { name: 'K2 Horizon 7B' })).toHaveAttribute('href', '/settings#local-models')
+  expect(within(row).getAllByText('Paused').length).toBeGreaterThan(0)
+  await user.click(screen.getByRole('radio', { name: 'Active' }))
+  expect(screen.getByRole('heading', { name: 'Model download' })).toBeVisible()
+})
+
 test('Given a failed ingest job, When Retry processing is pressed, Then it is queued again and links to its paper', async () => {
   const { calls } = mockApi({ 'GET /jobs': { items: [failed, summary] }, 'POST /jobs/j1/retry': { ...failed, state: 'queued', stage: 'queued', error: null } })
   const { user } = renderApp('/activity')

@@ -13,6 +13,7 @@ import { useTheme } from '@/components/theme/theme-context'
 import { useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
+import { LocalModels } from './LocalModels'
 
 const statusBadges: Record<Model['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -26,7 +27,7 @@ const themes = [
 ] as const
 
 function capabilityNote(model: Model) {
-  if (model.status === 'unavailable') return 'Not configured on the server. Ask the server administrator to enable access.'
+  if (model.status === 'unavailable') return model.unavailable_reason ?? (model.installation ? 'Download weights in Local models below to enable this model.' : 'Not configured on the server. Ask the server administrator to enable access.')
   if (model.supports_streaming && model.supports_structured_output) return 'Streams answers and writes summaries.'
   return [model.supports_streaming ? 'Streams answers.' : 'Cannot stream answers.', model.supports_structured_output ? 'Writes summaries.' : 'Cannot write summaries.'].join(' ')
 }
@@ -134,6 +135,7 @@ export default function SettingsPage() {
           ))}
         </section>
         <Separator />
+        {models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
         <Appearance />
         <Separator />
         <p className="text-sm text-pretty text-muted-foreground">API keys are managed on the server and never reach this browser. A model shows as unavailable until the server has access to it.</p>

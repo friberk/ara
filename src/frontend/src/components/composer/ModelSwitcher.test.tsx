@@ -23,6 +23,31 @@ function mount() {
   return renderWithProviders(<TooltipProvider><GenerationSettingsProvider><ModelSwitcher purpose="chat" /><Selection /></GenerationSettingsProvider></TooltipProvider>)
 }
 
+const localMissing = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'], unavailable_reason: 'Download weights in Settings to use this model.', unavailable_code: 'MODEL_WEIGHTS_MISSING', installation: { state: 'missing', weights_present: false, quantization: 'Q4_K_M', download_bytes: 5592218900, completed_bytes: 0, total_bytes: 5592218900, job_id: null, digest: null, updated_at: null, error: null } }
+
+test('Given missing local weights, When explored by keyboard, Then the explanation is discoverable and selection is guarded', async () => {
+  mockApi({ 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
+  const item = await screen.findByRole('menuitemradio', { name: /K2 Horizon 7B/ })
+  expect(item).toHaveTextContent(/Download weights/)
+  await user.keyboard('{Home}{ArrowDown}')
+  expect(item).toHaveFocus()
+  await user.keyboard('{Enter}')
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/low')
+  expect(item).toHaveAttribute('aria-disabled', 'true')
+  expect(screen.getByRole('menuitem', { name: 'Model settings' })).toHaveAttribute('href', '/settings#local-models')
+})
+
+test('Given deleted default weights, Then the selected model remains visible and no hosted model replaces it', async () => {
+  mockApi({ 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: localMissing.key, reasoning_effort: 'default' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model: K2 Horizon 7B/ }))
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/default')
+  expect(screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ })).toHaveTextContent(/Download weights/)
+})
+
 test('Given unavailable and supported models, Then exact IDs and reasoning capabilities govern selection', async () => {
   mockApi({ 'GET /models': { items: [luna, unavailable] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   const { user } = mount()

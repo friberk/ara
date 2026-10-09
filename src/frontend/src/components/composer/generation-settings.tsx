@@ -17,7 +17,9 @@ export function GenerationSettingsProvider({ children }: { children: React.React
   const value = useMemo<GenerationSettingsValue>(() => {
     const items = models.data?.items ?? []
     const savedDefaults = saved.data?.default_model ? { model: saved.data.default_model, reasoning_effort: saved.data.reasoning_effort } : null
-    const fallback = items.find((model) => model.status !== 'unavailable')
+    // Missing defaults may choose a first model; a failed settings request is not evidence
+    // that there is no saved local default. Keep automatic paid selection blocked.
+    const fallback = saved.isSuccess ? items.find((model) => model.status !== 'unavailable') : undefined
     const base = choice ?? savedDefaults ?? (fallback ? { model: fallback.key, reasoning_effort: fallback.reasoning_efforts[0] ?? 'none' } : { model: '', reasoning_effort: 'none' })
     const settings = normalise(items, base)
     const selectedModel = items.find((model) => model.key === settings.model)
