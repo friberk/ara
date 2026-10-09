@@ -309,6 +309,8 @@ The single input surface of the app. It is a 22px-radius floating form on paper 
 
 Reasoning choices come from the selected model's backend capabilities. Settings uses the same labels as the composer. Native Boolean controls read **On** and **None**; **Model default** leaves the choice to that model. Named levels retain their IDs, with descriptive labels for known values. Switching from a hosted model to a local model resets an unsupported effort to the local default and keeps the selected model's identity.
 
+Installed local models prepare automatically when runtime or capability checks become stale. Settings shows **Preparing model**, the current phase and background continuity; preparation has no transfer percentage or Pause button. Selection remains unavailable until the server confirms readiness, then enables through polling. Temporary unavailability preserves the saved model and reasoning effort. Activity calls verification-only work **Model preparation**, including its history. Failed preparation offers **Retry preparation** with retained weights, or an explicit **Download** if weights disappeared; failed transfer/deletion actions name their respective retries. Routine upgrades require no **Verify again** action.
+
 ### Conversation thread
 User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a muted meta line (copy, model name, reasoning level). While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.
 

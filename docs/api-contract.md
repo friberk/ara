@@ -76,6 +76,7 @@ Alembic revision `0005_local_models` follows `0004_workspace_history`. It extend
 | Installation field | Type / meaning |
 | --- | --- |
 | `state` | `missing`, `queued`, `downloading`, `pausing`, `paused`, `verifying`, `ready`, `deleting`, `failed` |
+| `operation` | `download`, `verify`, `delete` or null; current unfinished/failed operation, separate from installation state |
 | `weights_present` | boolean; presence alone does not establish usability |
 | `quantization` | string; curated artifacts use `Q4_K_M` |
 | `download_bytes` | integer; catalog installation size |
@@ -87,6 +88,10 @@ Alembic revision `0005_local_models` follows `0004_workspace_history`. It extend
 | `error` | `{code,message}` or null |
 
 Catalog size is not resident memory, current network bytes, or a guaranteed amount reclaimed by deletion. Progress events are cumulative per layer, and checkpoints are written at most once per second or on stage changes. A resumed attempt reconciles authoritative runtime checkpoints, so previously displayed byte counts may decrease. Transfer completion remains unavailable through verification.
+
+The dispatcher owns a separate cancellable reconciliation loop for previously installed, desired-ready models. Stale capability-schema, runtime-version or context records enqueue one durable verification-only maintenance job. It retains `kind="model_download"` for the existing queue/worker contract, with private `verify_only=true` intent; public `JobStatus.model_operation="verify"` distinguishes preparation in active and historical Activity rows. No weights are pulled on this path, including retries or worker recovery. Queued verification rejects pause/resume as well as running verification. Concurrent reconciliation rechecks state and validation under the global model lock. Missing, deleted, manually paused, failed or already active installations are not automatically restarted; active use defers scheduling. Runtime outages cannot block core job dispatch or startup. GET routes remain read-only.
+
+Stale-ready models report `LOCAL_MODEL_REVALIDATION_REQUIRED` while awaiting automatic preparation. Inventory/runtime availability is checked before freshness, so an offline or malformed-version runtime reports `LOCAL_RUNTIME_UNAVAILABLE`, and absent weights report `MODEL_WEIGHTS_MISSING`. Clients poll pending preparation and queued/verifying jobs every two seconds, then enable selection after successful verification. A genuine failed preparation retains its existing job for explicit retry. If verification discovers missing weights, it records `weights_present=false` and the UI offers an explicit new download request; retrying verification cannot pull. Completed installations report no current operation; completed jobs retain their own operation label. No new endpoint or migration is required for these derived fields.
 
 | Route | Request | Response / rules |
 | --- | --- | --- |
@@ -106,7 +111,7 @@ Settings accepts valid catalog/effort preferences independently of installation 
 
 The native Ollama `/api/chat` adapter maps NDJSON content to the existing SSE events and validates structured output through the same Pydantic service interface. Local requests need no hosted key or dollar reservation. `context_window` reports the effective configured allocation (8,192 by default), with 2,048 output and 512 safety tokens reserved. Conservative UTF-8 byte bounds govern assembled prompts when an exact tokenizer is unavailable. Whole-document summaries use ordered batching/reduction and bounded compression of complete intermediate sections, retain source markers and checkpoint completed calls before releasing admission. Oversized or repeatedly noncompliant output fails explicitly rather than truncating coverage.
 
-Local `default` reasoning omits `think`; successfully verified `none` sends `think:false`. Named levels are advertised only after successful native probes. The live 7B engine exposed `default` and `none`; low/medium/high probes were rejected despite template branches. Separate thinking fields never enter answer content. Provider, artifact digest, runtime version, effective context/output/thread configuration and reasoning are persisted in generation configuration; existing Summary/Message response shapes and SSE framing remain unchanged. Replays still return stored state without launching inference again, and citation validation still binds evidence to the selected document.
+Local `default` reasoning omits `think`; successfully verified `none` sends `think:false`, `on` sends `think:true`, and named levels pass their exact verified strings. Named levels are advertised only after successful native probes. The final `0.40.1-ara.2` runtime passed all six retained 7B choices; the earlier runtime's named-level rejection is preserved in the development journal. Separate thinking fields never enter answer content. Provider, artifact digest, runtime version, effective context/output/thread configuration and reasoning are persisted in generation configuration; existing Summary/Message response shapes and SSE framing remain unchanged. Replays still return stored state without launching inference again, and citation validation still binds evidence to the selected document.
 
 ## SSE
 

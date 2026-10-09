@@ -94,3 +94,23 @@ Restarting PostgreSQL, MinIO, Ollama, API and both workers preserved histories, 
 Independent runtime, backend, generation, frontend and whole-branch reviews reproduced defects before correction. Final probes cleared all findings; the latest whole-branch review also passed 38 native adapter tests and a deletion-race provenance probe after the temperature correction. Native amd64, NVIDIA/AMD hardware and live 3.7B/27B inference were not tested. ARA-050 separately tracks seven baseline development-tool dependency advisories; they were not introduced or force-remediated by this feature.
 
 After the sampling correction, refreshed fixture workers passed E2E-11 and E2E-12 again: two tests in 43.8 seconds. The feature preview runs on localhost:5191 with an empty model store; its ignored worktree configuration uses the separate `ara-feature` project and leaves the original development data intact.
+
+## Automatic readiness and protocol failures — ARA-053–054, October 8
+
+The user's installed-but-unselectable IFM report was reproduced in `ara-feature`. Its 3.7B weights were present, but the old capability record required a manual refresh. Readiness now refreshes automatically with durable verification-only jobs. Settings and Activity show preparation, preserve saved preferences and offer explicit recovery only when needed. No migration or new endpoint was required.
+
+| Check | Executed result | Scope |
+| --- | --- | --- |
+| Backend full suite / Ruff | 365 passed in 44.08s; lint and whitespace checks passed | Isolated real PostgreSQL/Redis/MinIO; deterministic external responses |
+| Frontend check / production build | 375 passed across 54 files; strict TypeScript/ESLint and build passed | Readiness polling/status, operation labels, failure recovery, saved-effort preservation; existing warning output retained |
+| Full Playwright | 12 passed in 1.9 minutes | Fresh `ara-e2e` fixture stack; mandatory workflows and managed-model journeys |
+| Protocol cross-review | Independently 38 unit + 10 SQL cases passed | Malformed shape errors terminate safely without lease/pull/recovery loops; original P1 cleared |
+| Final generated contract | Byte-identical after regeneration from source OpenAPI | Nullable installation/job operation enums; no handwritten TypeScript duplication |
+| Real automatic 7B readiness | Exactly one verification-only job; six controls available | Retained weights, browser navigation/closure, API restart; default/history counts and digest preserved, hosted reservations zero, no pull/OOM |
+| Updated protocol boundary with real 7B | Six controls, streaming and structured output passed | Retained ARM64 CPU runtime under inference admission, hosted key empty; no new installation job |
+| Actual feature 3.7B | Automatic preparation completed; Settings selection and six controls verified | Existing user-installed weights; saved defaults unchanged, no browser mutation/verification request; 7B/27B siblings remained missing |
+| Preparation layouts | No horizontal overflow at 1440px and 390px in both themes | Existing shadcn/Geist design; native theme controls and browser closure tested |
+
+The first readiness regressions failed 30 backend cases plus two lifecycle tests. Offline/freshness review added four failing cases before correction. Protocol regressions failed 41 and passed seven before the boundary fix. These are actual observed test results; test-harness timing/locator corrections are distinguished from product failures in the [development journal](agent-development-log.md).
+
+The preview now contains the user's ready 3.7B installation; the older empty-store statement above describes its initial ARA-022 startup. Tests use 7B fixtures and retained 7B inference; the 3.7B check establishes background installation readiness, without a full paper-quality benchmark. Native amd64/GPU and 27B remain untested. No new weights, paid generation, main merge or GitHub push occurred. Focused code commits: `a2d1861`, `0b312f4`, `459290d`.
