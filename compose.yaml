@@ -35,6 +35,8 @@ x-backend: &backend
     OLLAMA_THINKING_TOKENS: ${OLLAMA_THINKING_TOKENS:-1024}
     LOCAL_TOKEN_FACTOR: ${LOCAL_TOKEN_FACTOR:-1.05}
     HOSTED_WORKING_CONTEXT_TOKENS: ${HOSTED_WORKING_CONTEXT_TOKENS:-64000}
+    # Start summarizing older turns once they fill this share of the recent-turn budget (ARA-077).
+    MEMORY_COMPACTION_RATIO: ${MEMORY_COMPACTION_RATIO:-0.6}
     UV_PROJECT_ENVIRONMENT: /opt/venv
     WATCHFILES_FORCE_POLLING: "true"
   volumes:

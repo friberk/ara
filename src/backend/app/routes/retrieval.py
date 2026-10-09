@@ -1,4 +1,4 @@
-"""Retrieval controls (ARA-072). Conversation memory is a stub until ARA-077 implements it."""
+"""Retrieval settings, model profiles, paper indexes and conversation memory (ARA-072/074/077)."""
 
 from uuid import UUID
 
@@ -30,10 +30,6 @@ from app.schemas.retrieval import (
 from app.services.local_models import model_dto
 
 router = APIRouter(prefix="/api/v1", tags=["retrieval"])
-
-
-def not_ready() -> AppError:
-    return AppError(501, "NOT_IMPLEMENTED", "Retrieval controls are not available yet.")
 
 
 async def profile_status(session, settings, profile) -> tuple[str, str | None]:

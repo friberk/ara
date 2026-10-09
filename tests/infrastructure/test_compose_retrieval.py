@@ -69,6 +69,7 @@ class ComposeRetrievalTests(unittest.TestCase):
             "OLLAMA_THINKING_TOKENS": "512",
             "LOCAL_TOKEN_FACTOR": "1.1",
             "HOSTED_WORKING_CONTEXT_TOKENS": "32000",
+            "MEMORY_COMPACTION_RATIO": "0.4",
         }
         services = compose_services("compose.yaml", **overrides)
         for name in ("api", "worker", "model-worker"):
