@@ -284,5 +284,8 @@ async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput, request: R
 
 
 @router.get("/chats/{chat_id}/memory", response_model=ChatMemoryState)
-async def chat_memory(chat_id: UUID):
-    raise not_ready()
+async def chat_memory(chat_id: UUID, request: Request):
+    from app.services.memory import memory_state
+
+    async with request.app.state.resources.sessions() as session:
+        return await memory_state(session, chat_id)

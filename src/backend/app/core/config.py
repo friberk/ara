@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # Local tokenizers measured 0.974-1.018x o200k (ARA-070 S1); counts round up from o200k.
     local_token_factor: float = Field(default=1.05, ge=1, le=2)
     hosted_working_context_tokens: int = Field(default=64000, ge=1024, le=1_000_000)
+    # Compact older turns once unsummarized turns pass this share of the recent-turns budget.
+    memory_compaction_ratio: float = Field(default=0.6, gt=0, le=1)
     ollama_num_threads: int = Field(default=4, ge=1, le=64)
     ollama_request_timeout_seconds: float = Field(default=900, gt=0, le=21600)
     ollama_pull_timeout_seconds: float = Field(default=21600, gt=0, le=21600)

@@ -71,7 +71,9 @@ async def requeue_busy_summary(resources, job_id, generation, token):
     broker=actors.broker, queue_name="local-generation", max_retries=0, time_limit=21_660_000
 )
 async def execute_local_summary(job_id: str, generation: int) -> None:
+    """Long local generation: paper summaries and conversation compaction."""
     from app.integrations.llm import LLMError
+    from app.services.memory import run_compact_job
     from app.services.summarization import run_summary_job
 
     resources, identifier = worker_resources(), UUID(job_id)
@@ -80,12 +82,11 @@ async def execute_local_summary(job_id: str, generation: int) -> None:
         return
     async with resources.sessions() as session:
         job = await session.get(BackgroundJob, identifier)
-    if job.kind != "summary":
+    runner = {"summary": run_summary_job, "compact_chat": run_compact_job}.get(job.kind)
+    if runner is None:
         await fail(resources.sessions, identifier, generation, token, permanent=True)
         return
-    work = asyncio.create_task(
-        run_summary_job(resources, identifier, generation, token, job.payload)
-    )
+    work = asyncio.create_task(runner(resources, identifier, generation, token, job.payload))
     try:
         async with asyncio.timeout(21_600):
             while not work.done():
