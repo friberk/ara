@@ -683,6 +683,8 @@ export interface components {
         ContextUsage: {
             /** Window */
             window: number;
+            /** Input Budget */
+            input_budget?: number | null;
             /** Input Tokens */
             input_tokens: number;
             /** Output Reserved */

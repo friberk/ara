@@ -43,6 +43,7 @@ def test_message_citation_and_model_carry_new_fields():
     usage = schemas["ContextUsage"]["properties"]
     assert {
         "window",
+        "input_budget",
         "input_tokens",
         "output_reserved",
         "summary_version",

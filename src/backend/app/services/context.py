@@ -243,6 +243,7 @@ def assemble_answer_prompt(
             raise LLMError("CONTEXT_LIMIT", "The assembled question exceeds the context.", 413)
     usage = ContextUsage(
         window=profile.window,
+        input_budget=profile.input_budget,
         input_tokens=total,
         output_reserved=profile.max_output + profile.thinking_allowance,
         summary_version=memory_summary[0] if summary else None,

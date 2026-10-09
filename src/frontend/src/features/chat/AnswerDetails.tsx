@@ -20,7 +20,7 @@ export function AnswerDetails({ retrieval, context, model }: { retrieval: Retrie
     `${retrieval.mode === 'hybrid' ? 'Keyword and meaning search' : 'Keyword search'}${retrieval.note ? `. ${retrieval.note}` : ''}`,
     retrieval.reranked ? 'Results were reranked' : 'Results were not reranked',
     `Used ${count(retrieval.passages_used)} of ${count(retrieval.passages_found)} relevant passages${retrieval.limited_by_context ? ` (limited by ${modelName ? `${modelName}’s` : 'the model’s'} context)` : ''}`,
-    context && `Context: ${count(context.input_tokens)} of ${count(context.window)} tokens${context.summary_version ? ' (earlier messages summarized)' : ''}`,
+    context && `Context: ${count(context.input_tokens)} of ${count(context.input_budget ?? context.window)} tokens${context.summary_version ? ' (earlier messages summarized)' : ''}`,
   ].filter((row): row is string => !!row)
   return (
     <Popover>

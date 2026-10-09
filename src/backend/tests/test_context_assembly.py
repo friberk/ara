@@ -185,6 +185,8 @@ def test_given_any_conversation_when_assembling_then_tokens_never_exceed_the_bud
     )
     assert sent_tokens(profile, result) <= profile.input_budget
     assert result.usage.window == profile.window
+    # The UI reports use against the cap that applied, not the advertised window.
+    assert result.usage.input_budget == profile.input_budget
     assert result.usage.output_reserved == profile.max_output + profile.thinking_allowance
 
 

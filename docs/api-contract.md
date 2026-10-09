@@ -139,7 +139,7 @@ Contract for the retrieval and context overhaul, implemented on `feat/rag-contex
 - `GET /api/v1/chats/{chat_id}/memory` returns `ChatMemoryState {memory: {version, summary, summarized_messages, model, created_at} | null, total_messages}`. The original messages are never altered.
 - `Message` gains three fields:
   - `retrieval: RetrievalSummary | null`, with `mode`, `profile`, `reranked`, `standalone_query`, `search_queries`, `passages_found`, `passages_used`, `limited_by_context` and `note`;
-  - `context: ContextUsage | null`, with `window`, `input_tokens`, `output_reserved`, `summary_version`, `recent_turns`, `recalled_turns` and `truncated`;
+  - `context: ContextUsage | null`, with `window`, `input_budget` (the input cap that applied: the window less output and thinking, or the hosted working cap; `null` on answers saved before it existed), `input_tokens`, `output_reserved`, `summary_version`, `recent_turns`, `recalled_turns` and `truncated`;
   - `grounding: "supported" | "insufficient" | null`.
 - Messages persisted before this change report `retrieval`/`context` as `null`.
 - `Citation` gains `page_end`, `section` (heading path), `kind` (`front_matter|text|table|references`) and `bboxes` (`[[page,x0,y0,x1,y1]]`). Persisted answers keep canonical `[source:<chunk-uuid>]` markers; the model's short `[S#]` handles never reach clients.

@@ -40,6 +40,8 @@ class ContextUsage(BaseModel):
     """Token accounting for one answer request."""
 
     window: int
+    # The input cap that applied: the window less output and thinking, or a working cap.
+    input_budget: int | None = None
     input_tokens: int
     output_reserved: int
     summary_version: int | None = None

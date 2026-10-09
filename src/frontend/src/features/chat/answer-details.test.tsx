@@ -33,6 +33,12 @@ test('Given a hybrid answer, When Details is opened, Then it names the query, th
   expect(screen.queryByText(/enough evidence/)).not.toBeInTheDocument()
 })
 
+test('Given a local answer under its input cap, When Details is opened, Then context is counted against that cap, not the window', async () => {
+  const { user } = showAnswer({ retrieval: hybrid, context: { ...usage, input_tokens: 2900, input_budget: 3072 } })
+  const details = await openDetails(user)
+  expect(within(details).getByText('Context: 2,900 of 3,072 tokens')).toBeInTheDocument()
+})
+
 test('Given a keyword-only answer limited by context after a summary, When Details is opened, Then it says so with the note and the model name', async () => {
   const keyword: RetrievalSummary = { ...hybrid, mode: 'keyword', reranked: true, standalone_query: null, search_queries: ['BM25 recall', 'Natural Questions recall'], passages_found: 20, passages_used: 5, limited_by_context: true, note: 'Meaning search starts once this paper’s search index is ready.' }
   const { user } = showAnswer({ retrieval: keyword, context: { ...usage, input_tokens: 7900, summary_version: 2 } })
