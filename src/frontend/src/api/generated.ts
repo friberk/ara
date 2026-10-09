@@ -479,8 +479,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Paper Retrieval */
-        get: operations["paper_retrieval_api_v1_papers__paper_id__retrieval_get"];
+        /** Read Paper Retrieval */
+        get: operations["read_paper_retrieval_api_v1_papers__paper_id__retrieval_get"];
         /** Update Paper Retrieval */
         put: operations["update_paper_retrieval_api_v1_papers__paper_id__retrieval_put"];
         post?: never;
@@ -1387,6 +1387,14 @@ export interface components {
             document_id: string;
             /** Page */
             page: number;
+            /** Page End */
+            page_end?: number | null;
+            /** Section */
+            section?: string | null;
+            /** Kind */
+            kind?: ("front_matter" | "text" | "table" | "references") | null;
+            /** Bboxes */
+            bboxes?: number[][];
             /** Excerpt */
             excerpt: string;
         };
@@ -2489,7 +2497,7 @@ export interface operations {
             };
         };
     };
-    paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
+    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
         parameters: {
             query?: never;
             header?: never;

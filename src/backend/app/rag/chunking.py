@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Any, Protocol
 
+from app.integrations.tokens import TiktokenCounter
+
 CHUNK_SET = "pymupdf4llm-1.28.2-layout:md-sentence-512-64:v1"  # bump on any parameter change
 
 # Unit separator: unlike "/", it never appears in a heading.
@@ -60,15 +62,13 @@ class ChunkPlan:
 
 
 @cache
-def encoding():
-    import tiktoken
+def default_counter() -> TiktokenCounter:
+    """The shared o200k counter; it treats special-token text in papers as ordinary text."""
+    return TiktokenCounter("o200k_base")
 
-    return tiktoken.get_encoding("o200k_base")
 
-
-class _O200kCount:
-    def count(self, text: str) -> int:
-        return len(encoding().encode(text))
+def encode(text: str) -> list[int]:
+    return default_counter().encoding.encode(text, disallowed_special=())
 
 
 def clean_heading(segment: str) -> str:
@@ -143,7 +143,7 @@ def build_chunk_plan(
     from llama_index.core.ingestion import IngestionPipeline
     from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 
-    counter = counter or _O200kCount()
+    counter = counter or default_counter()
     # One whole-paper Document without metadata keeps the heading stack across page breaks.
     page_starts, parts, offset = [], [], 0
     for page in pages:
@@ -158,7 +158,7 @@ def build_chunk_plan(
             SentenceSplitter(
                 chunk_size=chunk_tokens,
                 chunk_overlap=overlap_tokens,
-                tokenizer=encoding().encode,
+                tokenizer=encode,
             ),
         ],
         disable_cache=True,

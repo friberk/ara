@@ -181,3 +181,28 @@ def test_section_page_range_covers_its_subsections():
     assert (sections["2 Method"].page, sections["2 Method"].page_end) == (2, 3)
     assert (sections["Sparse Retrieval"].page, sections["Sparse Retrieval"].page_end) == (1, 4)
     assert sections["Sparse Retrieval"].role == "front_matter"
+
+
+def test_special_token_text_in_a_paper_does_not_break_chunking():
+    # LLM papers quote tokenizer markers; tiktoken raises on them unless special tokens are allowed.
+    pages = [
+        {
+            "page": 1,
+            "markdown": "## Method\n\nSequences end with <|endoftext|> and <|im_start|>. "
+            + ("Training continues for many steps. " * 300),
+            "boxes": [],
+        }
+    ]
+    from app.rag.chunking import build_chunk_plan
+
+    plan = build_chunk_plan(pages, title="Tokenizers")
+    assert plan.chunks and any("<|endoftext|>" in c.text for c in plan.chunks)
+    assert all(c.token_count <= 512 for c in plan.chunks)
+
+
+def test_default_counter_is_the_shared_o200k_counter():
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.chunking import default_counter
+
+    counter = default_counter()
+    assert isinstance(counter, TiktokenCounter) and counter.factor == 1.0
