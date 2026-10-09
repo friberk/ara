@@ -199,3 +199,15 @@ test('Given local and hosted models, When switching between them, Then their rea
   expect(screen.queryByRole('menuitemradio', { name: 'Extra high' })).not.toBeInTheDocument()
   expect(screen.queryByRole('menuitemradio', { name: 'Max' })).not.toBeInTheDocument()
 })
+
+test('Given chat, search and ranking models, Then the composer lists only the chat models', async () => {
+  // luna carries no kind, like responses before ARA-070: the schema default makes it a chat model.
+  const search = { ...luna, kind: 'embedding', key: 'qwen3-embedding-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', status: 'available', reasoning_efforts: ['default'] }
+  const ranking = { ...search, kind: 'reranker', key: 'qwen3-reranker', model_id: 'qwen3-reranker:0.6b', display_name: 'Qwen3 Reranker' }
+  const terra = { ...luna, kind: 'chat', key: 'gpt-5.6-terra', model_id: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra' }
+  mockApi({ 'GET /models': { items: [search, luna, ranking, terra] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
+  const menu = await screen.findByRole('menu')
+  expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['GPT-5.6 Lunagpt-5.6-luna', 'GPT-5.6 Terragpt-5.6-terra'])
+})

@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { BibliographyEditor } from './BibliographyEditor'
 import { MetadataSources } from './MetadataSources'
+import { SearchIndexPanel } from './SearchIndexPanel'
 
 const pdfState: Record<Exclude<Paper['document_status'], 'ready'>, string> = {
   metadata_only: 'No PDF attached yet. Attach one to read, summarize and ask about this paper.',
@@ -78,6 +79,7 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
             </div>
           )}
         </section>
+        {paper.document_status === 'ready' && <><Separator /><SearchIndexPanel paperId={paper.id} /></>}
       </div>
     </div>
   )

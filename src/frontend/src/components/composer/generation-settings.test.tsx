@@ -98,3 +98,10 @@ test('Given switching from hosted Max chooses native High, When its runtime pres
   await waitFor(() => expect(result.current.selectedModel?.reasoning_aliases?.default).toBe('low'))
   expect(result.current.settings).toEqual({ model: 'native', reasoning_effort: 'high' })
 })
+
+test('Given no saved default and a search model listed first, Then the first chat model is chosen', async () => {
+  mockApi({ 'GET /models': { items: [model('qwen3-embedding-4b', { kind: 'embedding', provider: 'ollama' }), model('terra', { kind: 'chat' })] }, 'GET /settings': { default_model: '', reasoning_effort: 'low' } })
+  const { result } = mount()
+  await waitFor(() => expect(result.current.settings).toEqual({ model: 'terra', reasoning_effort: 'low' }))
+  expect(result.current.models.map((item) => item.key)).toEqual(['terra'])
+})

@@ -131,3 +131,20 @@ test('Given hosted Max switches to native High, When the native preset changes, 
   await screen.findByRole('radio', { name: 'Updated native model' })
   expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('aria-checked', 'true')
 })
+
+test('Given local chat, search and ranking models, Then Default model lists chat models only and Local models labels the other kinds', async () => {
+  const weights = { state: 'ready', operation: null, weights_present: true, quantization: 'Q4_K_M', download_bytes: 2500000000, completed_bytes: 2500000000, total_bytes: 2500000000, job_id: null, digest: null, updated_at: null, error: null }
+  const chat = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default'], installation: weights }
+  const search = { ...chat, kind: 'embedding', key: 'qwen3-embedding-4b', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B' }
+  const ranking = { ...chat, kind: 'reranker', key: 'qwen3-reranker', model_id: 'qwen3-reranker:0.6b', display_name: 'Qwen3 Reranker' }
+  mockApi({ 'GET /models': { items: [luna, search, chat, ranking] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  renderApp('/settings')
+  const models = await screen.findByRole('radiogroup', { name: 'Default model' })
+  await waitFor(() => expect(within(models).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([luna.key, chat.key]))
+  const local = screen.getByRole('region', { name: 'Local models' })
+  expect(within(within(local).getByRole('region', { name: 'Manage Qwen3 Embedding 4B' })).getByText('Search')).toBeVisible()
+  expect(within(within(local).getByRole('region', { name: 'Manage Qwen3 Reranker' })).getByText('Ranking')).toBeVisible()
+  const chatRow = within(local).getByRole('region', { name: 'Manage K2 Horizon 7B' })
+  expect(within(chatRow).queryByText('Search')).not.toBeInTheDocument()
+  expect(within(chatRow).queryByText('Ranking')).not.toBeInTheDocument()
+})
