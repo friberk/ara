@@ -1,0 +1,36 @@
+{
+  "id": "ARA-089",
+  "title": "Make citation highlights in the PDF reader obvious and robust",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "The user asked whether clicking a citation could highlight the cited text in the reader. Highlighting already exists: PdfViewer matches citation.excerpt against the pdf.js text layer (text-highlight.ts, evidence.ts) and marks the supporting sentences strong and the rest context. Outcomes are 'highlighted' or 'page-only'. On 2026-10-09 the lead clicked 9 citations across 3 papers in the user's running app, and all 9 reported 'Highlighted the cited passage'. Screenshots show the problems:\n- the strong highlight is a faint pale yellow that is easy to miss on dense pages;\n- the context marks are invisible;\n- the reader scrolls to the cited page rather than centring the passage;\n- when text matching fails, the reader only jumps to the page.\nCitations already carry block-level bboxes ([page, x0, y0, x1, y1] in PDF points from PyMuPDF). 23 of the user's 27 stored citations and 156 of 159 chunks have them, but the frontend never uses them. The user approved a ticket and a Sonnet agent.",
+  "dependencies": [
+    "ARA-020",
+    "ARA-021"
+  ],
+  "acceptance_criteria": [
+    "Given a citation chip is clicked, when the reader reaches the passage, then the supporting sentences carry a clearly visible highlight that meets contrast in light and dark themes, with a brief arrival pulse that respects reduced motion.",
+    "Given a passage anywhere on a page, when the reader jumps to it, then the highlighted passage, not just the page top, is scrolled into the centre of the reader.",
+    "Given the excerpt cannot be located in the text layer and the citation has bboxes, when the reader jumps, then it outlines the passage region from the stored boxes on the correct page(s), including rotated or cropped pages, instead of page-only.",
+    "Given neither text matching nor boxes are available, when the reader jumps, then today's page-only behaviour and status message remain.",
+    "Given a second citation is clicked, when the reader moves, then earlier highlights and outlines are cleared and zoom changes keep the current highlight aligned.",
+    "Given summary-card and answer citations, when either is clicked, then both get the same behaviour."
+  ],
+  "test_cases": [
+    "Unit: bbox to viewport rectangle conversion, including scale, rotation and CropBox offset.",
+    "Component: highlight attributes and outline overlay rendered; fallback order text, then boxes, then page-only; clearing on a new citation; zoom realignment.",
+    "Visual check: screenshots in light and dark themes on real papers through a read-only preview against the user's dev API."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/workspace/PdfViewer.tsx",
+    "src/frontend/src/features/workspace/pdf-viewer.css",
+    "src/frontend/src/features/workspace/text-highlight.ts",
+    "src/frontend/src/features/workspace/evidence.ts",
+    "src/frontend/src/features/workspace/workspace-context.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09. Branch feat/ara-089-citation-highlight.",
+  "updated_at": "2026-10-09"
+}
