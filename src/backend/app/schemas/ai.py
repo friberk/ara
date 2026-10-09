@@ -15,7 +15,37 @@ class Citation(DTO):
     chunk_id: UUID
     document_id: UUID
     page: int = Field(ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    section: str | None = None
+    kind: Literal["front_matter", "text", "table", "references"] | None = None
+    bboxes: list[list[float]] = Field(default_factory=list)
     excerpt: str
+
+
+class RetrievalSummary(BaseModel):
+    """How an answer's evidence was found; persisted on the assistant message."""
+
+    mode: Literal["hybrid", "keyword"]
+    profile: str | None = None
+    reranked: bool = False
+    standalone_query: str | None = None
+    search_queries: list[str] = Field(default_factory=list)
+    passages_found: int = 0
+    passages_used: int = 0
+    limited_by_context: bool = False
+    note: str | None = None
+
+
+class ContextUsage(BaseModel):
+    """Token accounting for one answer request."""
+
+    window: int
+    input_tokens: int
+    output_reserved: int
+    summary_version: int | None = None
+    recent_turns: int = 0
+    recalled_turns: int = 0
+    truncated: bool = False
 
 
 class GenerationInput(BaseModel):
@@ -79,6 +109,7 @@ class Model(DTO):
     unavailable_reason: str | None = None
     unavailable_code: str | None = None
     installation: Installation | None = None
+    kind: Literal["chat", "embedding", "reranker"] = "chat"
     key: str
     provider: str = "openai"
     model_id: str
@@ -148,6 +179,15 @@ class Message(DTO):
     reasoning_effort: str | None
     citations: list[Citation]
     created_at: datetime
+    retrieval: RetrievalSummary | None = None
+    context: ContextUsage | None = None
+    grounding: Literal["supported", "insufficient"] | None = None
+
+    @field_validator("retrieval", "context", mode="before")
+    @classmethod
+    def empty_json_is_absent(cls, value):
+        # Persisted JSONB defaults to {} for messages written before retrieval traces existed.
+        return value or None
 
 
 class MessagePage(BaseModel):

@@ -1,4 +1,4 @@
-"""Deterministic bag-of-words embeddings for fixtures. Keep identical to src/backend/tests/support/vectors.py."""
+"""Deterministic fixture embeddings; keep identical to src/backend/tests/support/vectors.py."""
 
 import hashlib
 import math

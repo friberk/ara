@@ -21,6 +21,7 @@ from app.routes.history import router as history_router
 from app.routes.jobs import router
 from app.routes.local_models import router as local_models_router
 from app.routes.research import router as research_router
+from app.routes.retrieval import router as retrieval_router
 from app.services.dispatcher import dispatcher_loop
 from app.services.health import readiness
 
@@ -138,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(local_models_router)
     app.include_router(chat_router)
     app.include_router(history_router)
+    app.include_router(retrieval_router)
     return app
 
 
