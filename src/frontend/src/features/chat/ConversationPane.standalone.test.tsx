@@ -12,7 +12,7 @@ const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: ['A.
 const chat = { id: 'stored-chat', paper_id: 'p1', document_id: 'd1', title: 'Earlier discussion', title_source: 'manual', created_at: '2026-10-08T00:00:00Z', paper_title: paper.title, last_activity_at: '2026-10-08T00:00:00Z', message_count: 2, last_question_preview: 'What is saved?' }
 afterEach(() => vi.unstubAllGlobals())
 
-test('Given a stored Luna answer and a current Terra selection, Then the answer shows its stored Luna and low reasoning', async () => {
+test('Given a stored Luna answer and a Terra default, When the chat opens, Then the composer adopts Luna and the answer keeps its stored Luna and low reasoning', async () => {
   const answer = { id: 'stored-luna-answer', role: 'assistant', content: 'A saved response from this paper.', state: 'completed', model: 'gpt-5.6-luna', reasoning_effort: 'low', citations: [], created_at: '2026-10-08T00:00:00Z' }
   mockApi({
     'GET /models': { items: models },
@@ -23,7 +23,7 @@ test('Given a stored Luna answer and a current Terra selection, Then the answer 
   renderWithProviders(<TooltipProvider><GenerationSettingsProvider><div style={{ height: 800 }}><ConversationPane paper={paper} chatId="stored-chat" /></div></GenerationSettingsProvider></TooltipProvider>)
   const reply = await screen.findByRole('article', { name: 'Assistant message' })
   expect(await within(reply).findByText('A saved response from this paper.')).toBeVisible()
-  expect(await screen.findByRole('button', { name: 'Model: Terra, High reasoning' })).toBeVisible()
+  expect(await screen.findByRole('button', { name: 'Model: Luna, Low reasoning' })).toBeVisible()
   expect(within(reply).getByText('Luna')).toBeVisible()
   expect(within(reply).getByText('Low reasoning')).toBeVisible()
   expect(within(reply).queryByText('Terra')).not.toBeInTheDocument()

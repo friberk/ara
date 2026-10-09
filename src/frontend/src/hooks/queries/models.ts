@@ -20,7 +20,7 @@ export function useSavedSettings() {
 export function useSaveDefaults() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (value: GenerationSettings & Pick<SettingsUpdate, 'memory_model'>) => api<Settings>('/settings', json('PUT', { default_model: value.model, reasoning_effort: value.reasoning_effort, memory_model: value.memory_model } satisfies SettingsUpdate)),
+    mutationFn: (value: GenerationSettings) => api<Settings>('/settings', json('PUT', { default_model: value.model, reasoning_effort: value.reasoning_effort } satisfies SettingsUpdate)),
     onSuccess: (data) => client.setQueryData(queryKeys.settings, data),
   })
 }
