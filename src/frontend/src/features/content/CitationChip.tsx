@@ -7,7 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCitationSource } from '@/hooks/queries/documents'
+import { markdownToText } from '@/lib/markdown-text'
 import { cn } from '@/lib/utils'
+import { Markdown } from './Markdown'
 import { pageLabel, pageSpan, sourceName, spansPages } from './pages'
 
 export type CitationChipProps = {
@@ -123,10 +125,11 @@ function SourcePassage({ source, preview = false }: { source: ReturnType<typeof 
       </div>
     )
   }
-  if (preview) return <p className="line-clamp-8 text-[13px] leading-relaxed text-popover-foreground">{source.data.excerpt}</p>
+  // Passages are layout Markdown: the clamped preview reads as text, the dialog renders headings and tables.
+  if (preview) return <p className="line-clamp-8 text-[13px] leading-relaxed text-popover-foreground">{markdownToText(source.data.excerpt)}</p>
   return (
-    <blockquote tabIndex={0} aria-label={`Passage on page ${source.data.page}`} className="max-h-[min(55vh,26rem)] overflow-y-auto rounded-lg bg-muted/60 px-3.5 py-3 text-sm leading-relaxed text-foreground">
-      {source.data.excerpt}
+    <blockquote tabIndex={0} aria-label={`Passage on page ${source.data.page}`} className="max-h-[min(55vh,26rem)] overflow-y-auto rounded-lg bg-muted/60 px-3.5 py-3">
+      <Markdown content={source.data.excerpt} className="text-sm leading-relaxed" />
     </blockquote>
   )
 }

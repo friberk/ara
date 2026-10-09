@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import type { Citation } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { renderWithProviders } from '@/test/render'
@@ -77,6 +77,27 @@ test('Given a pointer resting on the chip, Then a preview loads the excerpt only
   expect(await screen.findByText('Page 7')).toBeVisible()
   expect(await screen.findByText(fullExcerpt)).toBeVisible()
   expect(calls.map((call) => call.path)).toEqual(['/documents/d1/chunks/c1'])
+})
+
+const markdownExcerpt = '# **Results**\n\n|Model|Recall@10|\n|---|---|\n|BM25|0.61|'
+
+test('Given a Markdown passage, When the preview opens, Then it reads as text without markup', async () => {
+  mockApi({ 'GET /documents/d1/chunks/c1': { ...citation, excerpt: markdownExcerpt } })
+  const { user } = renderWithProviders(<CitationChip citation={citation} />)
+  await user.hover(screen.getByRole('button', { name: 'Source, page 7' }))
+  const preview = (await screen.findByText(/Model Recall@10/)).closest('p')!
+  expect(preview).toHaveTextContent('Results Model Recall@10 BM25 0.61')
+  expect(preview.textContent).not.toMatch(/[#*|]|---/)
+})
+
+test('Given a Markdown passage, When the dialog opens, Then its heading and table render as formatted text', async () => {
+  mockApi({ 'GET /documents/d1/chunks/c1': { ...citation, excerpt: markdownExcerpt } })
+  const { user } = renderWithProviders(<CitationChip citation={citation} />)
+  await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Source on page 7' })
+  expect(await within(dialog).findByRole('heading', { name: 'Results' })).toBeVisible()
+  expect(within(dialog).getByRole('cell', { name: '0.61' })).toBeVisible()
+  expect(dialog.textContent).not.toMatch(/[#*|]|---/)
 })
 
 test('Given a device that cannot hover, Then no preview opens and a tap still reads the source', async () => {
