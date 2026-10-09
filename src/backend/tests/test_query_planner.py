@@ -97,7 +97,7 @@ async def test_given_unfinished_first_turn_when_planning_then_it_still_counts_as
 
 
 @pytest.mark.integration
-async def test_given_follow_up_on_hosted_chat_when_planning_then_luna_names_the_subject(
+async def test_given_follow_up_on_hosted_chat_when_planning_then_sol_names_the_subject(
     resources, monkeypatch
 ):
     from app.services import memory
@@ -123,7 +123,7 @@ async def test_given_follow_up_on_hosted_chat_when_planning_then_luna_names_the_
     assert plan.search_queries == ["RAG baselines comparison", "RAG results"]
     assert plan.needs_paper_evidence is True
     (body,) = requests
-    assert body["model"] == "gpt-5.6-luna" and body["reasoning"] == {"effort": "none"}
+    assert body["model"] == "gpt-5.6-sol" and body["reasoning"] == {"effort": "none"}
     schema = body["text"]["format"]["schema"]
     assert schema["properties"]["search_queries"]["maxItems"] == 3
     assert schema["required"] == ["standalone_question", "search_queries", "needs_paper_evidence"]
@@ -135,7 +135,7 @@ async def test_given_follow_up_on_hosted_chat_when_planning_then_luna_names_the_
     assert FOLLOW_UP in sent
     async with resources.sessions() as session:
         reserved = (await session.scalars(select(GenerationReservation.model))).all()
-    assert reserved == ["gpt-5.6-luna"]
+    assert reserved == ["gpt-5.6-sol"]
 
 
 @pytest.mark.integration

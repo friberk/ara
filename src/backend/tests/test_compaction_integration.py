@@ -168,13 +168,13 @@ async def test_given_compaction_when_delivered_twice_then_one_version_and_messag
     await run_compact_job(resources, job_id, generation, token, payload)
     (memory,) = await memories(resources, chat_id)
     assert (memory.version, memory.through_message_id) == (1, added[0].answer)
-    assert memory.summary == SUMMARY_V1 and memory.model == "gpt-5.6-luna"
+    assert memory.summary == SUMMARY_V1 and memory.model == "gpt-5.6-sol"
     from app.services.memory import COMPACTION_PROMPT_VERSION
 
     assert memory.prompt_version == COMPACTION_PROMPT_VERSION and memory.token_count > 0
     assert len(requests) == 1
     (body,) = requests
-    assert body["model"] == "gpt-5.6-luna" and body["reasoning"] == {"effort": "none"}
+    assert body["model"] == "gpt-5.6-sol" and body["reasoning"] == {"effort": "none"}
     sent = body["instructions"] + json.dumps(body["input"])
     for heading in (
         "User goals",
