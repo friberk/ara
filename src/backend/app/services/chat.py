@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from datetime import timedelta
 from uuid import UUID, uuid4
 
@@ -11,12 +11,14 @@ from fastapi import HTTPException
 from sqlalchemy import func, select, update
 
 from app.integrations.llm import (
-    INPUT_LIMIT,
-    HostedLLM,
     LLMError,
-    ensure_configured,
+    create_llm,
     estimate_tokens,
+    generation_configuration,
+    generation_slots,
+    model_limits,
     reserve,
+    validate_model_available,
 )
 from app.models.research import ChatMessage, ChatSession, Document
 from app.repositories.jobs import now
@@ -102,7 +104,7 @@ async def prepare(resources, chat_id: UUID, body):
             )
         ):
             raise HTTPException(409, "Another answer is already processing in this chat")
-        ensure_configured(resources.settings)
+        await validate_model_available(resources, body.model, body.reasoning_effort)
         document = await session.get(Document, chat.document_id)
         if document is None or document.status != "ready":
             raise HTTPException(409, "The selected document is not ready")
@@ -115,16 +117,28 @@ async def prepare(resources, chat_id: UUID, body):
                 )
             ).all()
         )
-        history = history_context(messages)
-        base = "Conversation (context only):\n" + history + "\nPaper evidence:\n"
+        input_limit, _ = model_limits(resources, body.model)
         question = "\nCurrent question:\n" + body.content
-        budget = INPUT_LIMIT - estimate_tokens(INSTRUCTIONS + base + question) - 512
+        history_budget = 4000
+        if input_limit < 32000:
+            history_budget = min(
+                4000, max(0, (input_limit - estimate_tokens(INSTRUCTIONS + question) - 64) // 3)
+            )
+        history = history_context(messages, budget=history_budget)
+        base = "Conversation (context only):\n" + history + "\nPaper evidence:\n"
+        safety = 512 if input_limit == 32000 else 0
+        budget = input_limit - estimate_tokens(INSTRUCTIONS + base + question) - safety
         if budget < 0:
             raise LLMError("CONTEXT_LIMIT", "The question exceeds the context budget.", 413)
         chunks = await retrieve(
             session, chat.document_id, body.content, messages, budget=min(12000, budget)
         )
-        prompt = base + "\n".join(passage(c) for c in chunks) + question
+        # passage() already terminates each source with a newline counted by retrieval.
+        prompt = base + "".join(passage(c) for c in chunks) + question
+        if estimate_tokens(INSTRUCTIONS + prompt) > input_limit:
+            raise LLMError(
+                "CONTEXT_LIMIT", "The assembled question exceeds the context budget.", 413
+            )
         await reserve(
             resources, body.model, estimate_tokens(prompt) + estimate_tokens(INSTRUCTIONS)
         )
@@ -151,7 +165,9 @@ async def prepare(resources, chat_id: UUID, body):
             citations=[],
             request_id=body.request_id,
             lease_expires_at=now() + timedelta(seconds=60),
-            configuration={"prompt_version": "1", "input_limit": 32000, "output_limit": 4000},
+            configuration=await generation_configuration(
+                resources, body.model, body.reasoning_effort
+            ),
             created_at=now(),
         )
         if chat.title_source == "default":
@@ -182,7 +198,9 @@ async def save(resources, message_id, content, *, state="processing", citations=
         return Message.model_validate(message).model_dump(mode="json")
 
 
-async def stream_answer(resources, request, assistant, prompt, chunks, replay=False):
+async def stream_answer(
+    resources, request, assistant, prompt, chunks, replay=False, *, inference_slot=None
+):
     if replay:
         yield event("message.started", {"message_id": str(assistant.id)})
         if assistant.state == "completed":
@@ -208,7 +226,9 @@ async def stream_answer(resources, request, assistant, prompt, chunks, replay=Fa
 
     async def pump():
         try:
-            async with resources.llm_slots:
+            async with (
+                nullcontext() if inference_slot else generation_slots(resources, assistant.model)
+            ):
                 async for delta in client.stream(
                     assistant.model, assistant.reasoning_effort, INSTRUCTIONS, prompt
                 ):
@@ -219,7 +239,10 @@ async def stream_answer(resources, request, assistant, prompt, chunks, replay=Fa
 
     try:
         yield event("message.started", {"message_id": str(assistant.id)})
-        client = HostedLLM(resources.settings)
+        selection = await validate_model_available(
+            resources, assistant.model, assistant.reasoning_effort
+        )
+        client = create_llm(resources, assistant.model, selection=selection)
         task = asyncio.create_task(pump())
         while True:
             if await request.is_disconnected():
@@ -288,6 +311,9 @@ async def stream_answer(resources, request, assistant, prompt, chunks, replay=Fa
                 if client is not None:
                     with anyio.move_on_after(2), suppress(Exception):
                         await client.close()
+                if inference_slot is not None:
+                    with anyio.move_on_after(5), suppress(Exception):
+                        await inference_slot.__aexit__(None, None, None)
             finally:
                 if not completed:
                     with anyio.move_on_after(5), suppress(LLMError):

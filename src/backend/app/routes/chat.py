@@ -1,11 +1,14 @@
+from contextlib import AsyncExitStack
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
+from starlette.background import BackgroundTask
 
 from app.core.errors import AppError
-from app.integrations.llm import LLMError, validate_selection
+from app.integrations.llm import LLMError, generation_slots, validate_selection
+from app.integrations.model_catalog import local_spec
 from app.models.research import ChatMessage, ChatSession, Document, Paper
 from app.repositories.chats import chat_summaries
 from app.schemas.ai import (
@@ -136,13 +139,39 @@ async def list_messages(chat_id: UUID, request: Request):
 @router.post("/chats/{chat_id}/messages/stream", response_class=StreamingResponse)
 async def answer(chat_id: UUID, body: ChatInput, request: Request):
     resources = request.app.state.resources
+    slots = AsyncExitStack()
     try:
         validate_selection(body.model, body.reasoning_effort)
+        if local_spec(body.model):
+            async with resources.sessions() as session:
+                replay_id = await session.scalar(
+                    select(ChatMessage.id).where(
+                        ChatMessage.session_id == chat_id,
+                        ChatMessage.role == "assistant",
+                        ChatMessage.request_id == body.request_id,
+                    )
+                )
+            if replay_id is None:
+                # Admission happens before returning HTTP headers; busy is actionable 429.
+                await slots.enter_async_context(generation_slots(resources, body.model))
         assistant, prompt, chunks, replay = await prepare(resources, chat_id, body)
     except LLMError as exc:
+        await slots.aclose()
         raise AppError(exc.status, exc.code, exc.message) from None
+    except BaseException:
+        await slots.aclose()
+        raise
     return StreamingResponse(
-        stream_answer(resources, request, assistant, prompt, chunks, replay),
+        stream_answer(
+            resources,
+            request,
+            assistant,
+            prompt,
+            chunks,
+            replay,
+            inference_slot=slots if local_spec(body.model) and not replay else None,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        background=BackgroundTask(slots.aclose),
     )

@@ -10,7 +10,7 @@ from app.integrations.llm import (
     PRICES,
     LLMError,
     configured,
-    ensure_configured,
+    validate_model_available,
     validate_selection,
 )
 from app.models.jobs import BackgroundJob
@@ -24,7 +24,6 @@ from app.schemas.ai import (
     SummaryAccepted,
     SummaryPage,
 )
-
 from app.services.local_models import list_local_models
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
@@ -75,6 +74,40 @@ async def create_summary(paper_id: UUID, body: GenerationInput, request: Request
     resources = request.app.state.resources
     try:
         validate_selection(body.model, body.reasoning_effort)
+        # Replays remain readable even if the provider is offline. Availability HTTP runs
+        # before taking the paper write lock; the transaction repeats all document checks.
+        async with resources.sessions() as preflight:
+            paper = await preflight.get(Paper, paper_id)
+            if paper is None:
+                raise HTTPException(404, "Paper not found")
+            existing = await preflight.scalar(
+                select(BackgroundJob).where(
+                    BackgroundJob.kind == "summary",
+                    BackgroundJob.payload["paper_id"].astext == str(paper_id),
+                    BackgroundJob.payload["request_id"].astext == str(body.request_id),
+                )
+            )
+            if existing:
+                if (
+                    existing.payload["model"] != body.model
+                    or existing.payload["reasoning_effort"] != body.reasoning_effort
+                ):
+                    raise HTTPException(
+                        409, "Request UUID was already used with different settings"
+                    )
+                return SummaryAccepted(
+                    job_id=existing.id, summary_id=(existing.result or {}).get("summary_id")
+                )
+            document = (
+                await preflight.get(Document, paper.active_document_id)
+                if paper.active_document_id
+                else None
+            )
+            if document is None or document.status != "ready":
+                raise HTTPException(
+                    409, "Upload and process a paper PDF before requesting a summary"
+                )
+        await validate_model_available(resources, body.model, body.reasoning_effort)
         async with resources.sessions() as session, session.begin():
             paper = await session.scalar(
                 select(Paper).where(Paper.id == paper_id).with_for_update()
@@ -109,7 +142,6 @@ async def create_summary(paper_id: UUID, body: GenerationInput, request: Request
                 raise HTTPException(
                     409, "Upload and process a paper PDF before requesting a summary"
                 )
-            ensure_configured(resources.settings)
             if await session.scalar(
                 select(BackgroundJob.id).where(
                     BackgroundJob.kind == "summary",
