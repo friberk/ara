@@ -20,9 +20,21 @@ class EmbeddingProfileOut(BaseModel):
     local_model_key: str | None = None
 
 
+class RerankerOut(BaseModel):
+    """The optional local reranker (ARA-074): opt-in, off by default, about 10 s per answer on CPU."""
+
+    model_id: str
+    display_name: str
+    status: Literal["available", "unavailable"]
+    unavailable_reason: str | None = None
+    local_model_key: str | None = None
+    candidates: int
+
+
 class EmbeddingProfilePage(BaseModel):
     items: list[EmbeddingProfileOut]
     default_profile: str
+    reranker: RerankerOut | None = None
 
 
 class RetrievalSettings(BaseModel):

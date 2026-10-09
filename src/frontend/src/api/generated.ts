@@ -749,6 +749,7 @@ export interface components {
             items: components["schemas"]["EmbeddingProfileOut"][];
             /** Default Profile */
             default_profile: string;
+            reranker?: components["schemas"]["RerankerOut"] | null;
         };
         /** GenerationInput */
         GenerationInput: {
@@ -1077,6 +1078,27 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+        };
+        /**
+         * RerankerOut
+         * @description The optional local reranker (ARA-074): opt-in, off by default, about 10 s per answer on CPU.
+         */
+        RerankerOut: {
+            /** Model Id */
+            model_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "unavailable";
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /** Local Model Key */
+            local_model_key?: string | null;
+            /** Candidates */
+            candidates: number;
         };
         /** RetrievalIndexOut */
         RetrievalIndexOut: {

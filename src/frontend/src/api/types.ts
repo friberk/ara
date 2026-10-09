@@ -46,3 +46,4 @@ export type PaperRetrievalUpdate = Schemas['PaperRetrievalUpdate']
 export type ChatMemory = Schemas['ChatMemoryOut']
 export type ChatMemoryState = Schemas['ChatMemoryState']
 export type RetrievalStage = 'planning' | 'retrieving' | 'reranking' | 'generating'
+export type Reranker = Schemas['RerankerOut']

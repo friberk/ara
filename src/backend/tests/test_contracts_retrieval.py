@@ -86,3 +86,16 @@ async def test_indexing_hook_is_a_safe_no_op_until_indexing_lands():
     from app.rag.hooks import after_chunks_persisted
 
     assert await after_chunks_persisted(None, document_id=None) is None
+
+
+def test_profiles_page_reports_reranker_availability():
+    schemas = openapi()["components"]["schemas"]
+    assert "reranker" in schemas["EmbeddingProfilePage"]["properties"]
+    assert {
+        "model_id",
+        "display_name",
+        "status",
+        "unavailable_reason",
+        "local_model_key",
+        "candidates",
+    } <= set(schemas["RerankerOut"]["properties"])
