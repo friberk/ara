@@ -30,6 +30,7 @@ def chunk_node(chunk: DocumentChunk) -> TextNode:
             "kind": chunk.kind,
             "ordinal": chunk.ordinal,
             "document_id": str(chunk.document_id),
+            "bboxes": chunk.bboxes,
         },
     )
 

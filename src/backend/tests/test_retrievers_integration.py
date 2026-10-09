@@ -49,6 +49,7 @@ async def test_given_keyword_question_when_retrieving_then_results_table_ranks_f
         "kind": "table",
         "ordinal": 3,
         "document_id": str(document_id),
+        "bboxes": [[3, 72.0, 90.0, 540.0, 180.0]],
     }
     assert found[0].score > 0
 

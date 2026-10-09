@@ -125,6 +125,7 @@ async def seed_structured(
                 page_end=page_end,
                 text=text,
                 context_text=f"{title}\n{heading}\n{text}",
+                bboxes=[[page, 72.0, 90.0, 540.0, 180.0]],
                 token_count=len(text.split()),
             )
             for ordinal, (heading, kind, page, page_end, text) in enumerate(sections)
