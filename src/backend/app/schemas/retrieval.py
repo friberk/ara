@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.jobs import JobError
 
@@ -21,8 +21,10 @@ class EmbeddingProfileOut(BaseModel):
 
 
 class RerankerOut(BaseModel):
-    """The optional local reranker (ARA-074): opt-in, off by default, about 10 s per answer."""
+    """A reranker profile from the catalog (ARA-074)."""
 
+    key: str
+    provider: Literal["openai", "ollama"]
     model_id: str
     display_name: str
     status: Literal["available", "unavailable"]
@@ -34,14 +36,21 @@ class RerankerOut(BaseModel):
 class EmbeddingProfilePage(BaseModel):
     items: list[EmbeddingProfileOut]
     default_profile: str
-    reranker: RerankerOut | None = None
+    rerankers: list[RerankerOut] = Field(default_factory=list)
 
 
 class RetrievalSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     embedding_profile: str = "openai-3-large"
-    # ARA-074 deferred: CPU reranking measured ~54 s per question (Phase 0 S1).
-    reranker_enabled: bool = False
+    # A reranker profile key from app.integrations.reranker_catalog; None turns reranking off.
+    # User decision (ARA-074): OpenAI reranking by default (DEFAULT_RERANKER).
+    reranker: str | None = "openai-gpt-6-luna"
+
+    @classmethod
+    def from_stored(cls, value: dict | None) -> "RetrievalSettings":
+        """Read a stored row, ignoring keys from earlier contract versions."""
+        value = value or {}
+        return cls.model_validate({k: v for k, v in value.items() if k in cls.model_fields})
 
 
 class RetrievalIndexOut(BaseModel):

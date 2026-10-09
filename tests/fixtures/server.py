@@ -9,7 +9,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from ollama_fixture import OllamaFixture, cited_answer
+from ollama_fixture import OllamaFixture, cited_answer, relevance
 from vectors import fixture_vector
 
 OLLAMA = OllamaFixture()
@@ -211,6 +211,9 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path == "/v1/embeddings":
             self.embeddings()
             return
+        if urlparse(self.path).path == "/v1/decisions":
+            self.decisions()
+            return
         if urlparse(self.path).path != "/v1/responses":
             self.send_json({"error": "Unknown fixture endpoint"}, 404)
             return
@@ -285,6 +288,38 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         self.close_connection = True
+
+    def decisions(self):
+        """Predicate relevance for reranking: word overlap between query and passage (ARA-074)."""
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            request = json.loads(self.rfile.read(length))
+        except (ValueError, TypeError):
+            self.send_json({"error": {"message": "Invalid JSON"}}, 400)
+            return
+        text = request.get("input", "")
+        if not isinstance(text, str):
+            text = json.dumps(text)
+        if "DECISIONS-ERROR-FIXTURE" in text:
+            self.send_json({"error": {"message": "Synthetic decisions failure"}}, 500)
+            return
+        match = re.search(r"Query:\s*(.*?)\n\s*\n(?:Passage|Document)[^:\n]*:\s*(.*)", text, re.S)
+        answers = []
+        for question in request.get("questions", []):
+            name = question.get("name", "answer")
+            if "REFUSE-FIXTURE" in text:
+                answers.append({"type": "refusal", "name": name})
+            else:
+                probability = relevance(*match.groups()) if match else 0.5
+                answers.append({"type": "predicate", "name": name, "probability": round(probability, 4)})
+        tokens = max(1, len(text.split()))
+        self.send_json(
+            {
+                "model": request.get("model", "gpt-6-luna"),
+                "answers": answers,
+                "usage": {"input_tokens": tokens, "output_tokens": 0, "total_tokens": tokens},
+            }
+        )
 
     def embeddings(self):
         length = int(self.headers.get("Content-Length", "0"))
