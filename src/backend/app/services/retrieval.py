@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from app.integrations.llm import estimate_tokens
+from app.integrations.tokens import TiktokenCounter, TokenCounter
 from app.schemas.ai import Citation
 
 SOURCE = re.compile(r"\[source:([^\]]+)\]")
@@ -60,14 +60,15 @@ def validate_citations(content: str, chunks, document_id: UUID) -> list[Citation
     return citations
 
 
-def history_context(messages, budget: int = 4000) -> str:
+def history_context(messages, budget: int = 4000, counter: TokenCounter | None = None) -> str:
+    counter = counter or TiktokenCounter()
     selected = []
     remaining = budget
     for item in reversed(messages):
         if item.state != "completed":
             continue
         line = f"{item.role}: {item.content}\n"
-        cost = estimate_tokens(line)
+        cost = counter.count(line)
         if cost > remaining:
             break
         remaining -= cost
@@ -82,9 +83,17 @@ def retrieval_query(question: str, messages) -> str:
     return " ".join(terms[-80:])
 
 
-async def retrieve(session, document_id: UUID, question: str, messages=(), budget: int = 12000):
+async def retrieve(
+    session,
+    document_id: UUID,
+    question: str,
+    messages=(),
+    budget: int = 12000,
+    counter: TokenCounter | None = None,
+):
     from app.models.research import DocumentChunk
 
+    counter = counter or TiktokenCounter()
     query = retrieval_query(question, messages)
     base = select(DocumentChunk).where(DocumentChunk.document_id == document_id)
     results = []
@@ -122,7 +131,7 @@ async def retrieve(session, document_id: UUID, question: str, messages=(), budge
         if chunk.id in seen:
             continue
         seen.add(chunk.id)
-        cost = estimate_tokens(passage(chunk))
+        cost = counter.count(passage(chunk))
         if used + cost > budget:
             continue
         selected.append(chunk)

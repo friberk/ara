@@ -147,7 +147,13 @@ async def test_given_verified_controls_when_generating_then_complete_and_stream_
                 {"role": "user", "content": "Paper"},
             ],
             "stream": stream,
-            "options": {"num_ctx": 8192, "num_predict": 2048, "num_thread": 4, "temperature": 0.0},
+            "options": {
+                "num_ctx": 8192,
+                # Thinking efforts get their own allowance on top of the answer's 2,048.
+                "num_predict": 2048 + (0 if expected in (None, False) else 1024),
+                "num_thread": 4,
+                "temperature": 0.0,
+            },
             **({"think": expected} if effort != "default" else {}),
         }
     ]

@@ -144,7 +144,7 @@ async def test_given_old_failed_unicode_answer_when_replayed_then_failure_is_not
     assert requests == []
 
 
-@pytest.mark.parametrize("map_size", [100, 3000])
+@pytest.mark.parametrize("map_size", [100, 2000])
 async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_are_canonical(
     resources,
     monkeypatch,
@@ -169,11 +169,8 @@ async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_
         prefix = "Supported result " + " ".join(
             f"【source:{identifier}】" for identifier in identifiers
         )
-        return (
-            prefix + "x" * max(0, map_size - len(prefix))
-            if prompt.startswith("Summarize")
-            else prefix
-        )
+        # Real tokens: 2,000-word sections exceed the reduction share and need compression.
+        return prefix + " word" * map_size if prompt.startswith("Summarize") else prefix
 
     requests = await generation_fixture(resources, output)
     await summarization.run_summary_job(resources, identifier, 1, token, payload)
@@ -184,7 +181,7 @@ async def test_given_unicode_summary_when_generating_then_checkpoints_and_final_
         assert "【source:" not in summary.content and "[source:" in summary.content
         assert len(summary.citations) == 2
     assert len(requests) >= 3
-    if map_size == 3000:
+    if map_size == 2000:
         assert any(body["messages"][-1]["content"].startswith("Compress") for body in requests)
     for snapshot in snapshots:
         contents = [

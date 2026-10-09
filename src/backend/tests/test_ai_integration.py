@@ -95,6 +95,20 @@ async def local_fixture(resources):
     return spec, requests
 
 
+def within_local_budget(resources, spec, requests):
+    from app.integrations.context_registry import context_profile
+    from app.integrations.tokens import PromptMessage, count_messages
+
+    profile = context_profile(resources, spec.key, "default")
+    return all(
+        count_messages(
+            profile.counter, [PromptMessage(m["role"], m["content"]) for m in body["messages"]]
+        )
+        <= profile.input_budget
+        for body in requests
+    )
+
+
 async def test_given_local_chat_when_answering_then_provenance_citations_and_uuid_replay(
     resources,
 ):
@@ -127,10 +141,24 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
         )
         assert saved.configuration["runtime_version"] == "0.40.1-ara.fixture"
         assert saved.configuration["temperature"] == 0.0
-        assert (
-            saved.configuration["input_limit"] == 5632
-            and saved.configuration["output_limit"] == 2048
-        )
+        assert {
+            key: saved.configuration[key]
+            for key in (
+                "window",
+                "max_output",
+                "thinking_allowance",
+                "input_budget",
+                "tokenizer",
+                "token_factor",
+            )
+        } == {
+            "window": 8192,
+            "max_output": 2048,
+            "thinking_allowance": 0,
+            "input_budget": 3072,
+            "tokenizer": "o200k_base",
+            "token_factor": 1.05,
+        }
         assert saved.citations and all(
             c["document_id"] == str(document_id) for c in saved.citations
         )
@@ -142,7 +170,6 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
 async def test_given_local_full_paper_when_summarizing_then_every_section_is_reduced_under_context(
     resources,
 ):
-    from app.integrations.llm import estimate_tokens
     from app.models.jobs import BackgroundJob
     from app.services import summarization
 
@@ -151,7 +178,8 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(12):
-            text = f"Section {index}: " + "evidence " * 240
+            # About 1,000 tokens each: real tokens, not bytes, decide the map batches.
+            text = f"Section {index}: " + "evidence " * 1000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
@@ -186,7 +214,7 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     assert len(requests) > 2 and any(
         "Section 11:" in x["messages"][-1]["content"] for x in requests
     )
-    assert all(sum(estimate_tokens(m["content"]) for m in x["messages"]) <= 5632 for x in requests)
+    assert within_local_budget(resources, spec, requests)
 
 
 async def test_given_busy_local_summary_when_worker_runs_then_job_does_not_fail_or_spend_attempt(
@@ -339,7 +367,8 @@ async def summary_job_fixture(resources, spec, count):
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(count):
-            text = f"Section {index}: " + "x" * 4000
+            # About 2,100 tokens: each section needs its own map batch under the 3,072 budget.
+            text = f"Section {index}: " + " word" * 2000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
@@ -402,7 +431,8 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
         if busy_kind == "http" and len(prompts) == 6:
             return httpx.Response(503, json={"error": "busy"})
         markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        content = markers + " " + "z" * (1999 - len(markers))
+        # About 1,200 tokens: two outputs share a reduction batch, three do not.
+        content = markers + " word" * 1100
         return httpx.Response(
             200,
             json={
@@ -440,7 +470,6 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
     import json
     import re
 
-    from app.integrations.llm import estimate_tokens
     from app.models.jobs import BackgroundJob
     from app.services import summarization
 
@@ -453,8 +482,9 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         calls.append(body)
         prompt = body["messages"][-1]["content"]
         markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        size = 1000 if prompt.startswith("Compress") and compression == "short" else 3000
-        content = markers + " " + "z" * (size - len(markers) - 1)
+        # 2,000-word outputs cannot pair in a reduction; 500-word compressions can.
+        words = 500 if prompt.startswith("Compress") and compression == "short" else 2000
+        content = markers + " word" * words
         return httpx.Response(
             200,
             json={
@@ -482,12 +512,70 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         else:
             assert job.state == "failed" and job.error_code == "SUMMARY_COMPRESSION_FAILED"
             assert len(calls) == 5 and job.payload["paid_call_inflight"] is False
-    assert all(
-        sum(estimate_tokens(message["content"]) for message in call["messages"]) <= 5632
-        for call in calls
-    )
+    assert within_local_budget(resources, spec, calls)
     assert any("Section 0:" in call["messages"][-1]["content"] for call in calls)
     assert any("Section 1:" in call["messages"][-1]["content"] for call in calls)
+
+
+PROSE = (
+    "Retrieval-augmented generation grounds each answer in passages selected from the paper. "
+    "The retriever ranks passages by relevance, and the generator cites them while writing. "
+) * 6
+
+
+def answer_tokens(counter, prompt):
+    from app.integrations.tokens import PromptMessage, count_messages
+    from app.services.retrieval import INSTRUCTIONS
+
+    return count_messages(
+        counter, [PromptMessage("system", INSTRUCTIONS), PromptMessage("user", prompt)]
+    )
+
+
+async def replace_chunks(resources, document_id, texts):
+    from uuid import UUID
+
+    async with resources.sessions() as session, session.begin():
+        await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
+        for index, text in enumerate(texts):
+            session.add(
+                DocumentChunk(
+                    id=UUID(int=index + 1),
+                    document_id=document_id,
+                    ordinal=index,
+                    page=index + 1,
+                    text=text,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=text,
+                    token_count=len(text),
+                )
+            )
+
+
+async def test_given_prose_evidence_when_preparing_local_chat_then_tokens_fit_more_than_bytes(
+    resources,
+):
+    from app.integrations.context_registry import context_profile
+    from app.schemas.ai import ChatInput
+    from app.services import chat
+    from app.services.retrieval import passage
+
+    spec, _ = await local_fixture(resources)
+    _, document_id, chat_id = await paper_fixture(resources)
+    await replace_chunks(resources, document_id, [f"Passage {i}: {PROSE}" for i in range(10)])
+    body = ChatInput(
+        model=spec.key,
+        reasoning_effort="default",
+        content="How does retrieval ground answers?",
+        request_id=uuid4(),
+    )
+    _, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
+    profile = context_profile(resources, spec.key, "default")
+    assert len(chunks) == 10
+    # Byte counting could never fit these passages in the 3,072-token local budget.
+    assert sum(len(passage(chunk).encode()) for chunk in chunks) > profile.input_budget
+    assert answer_tokens(profile.counter, prompt) <= profile.input_budget
 
 
 async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assembled_prompt_fits(
@@ -495,36 +583,84 @@ async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assemb
 ):
     from uuid import UUID
 
-    from app.integrations.llm import create_llm, estimate_tokens, validate_selection
+    from app.integrations.context_registry import context_profile
+    from app.integrations.llm import create_llm, validate_selection
     from app.schemas.ai import ChatInput
     from app.services import chat
-    from app.services.retrieval import INSTRUCTIONS
+    from app.services.retrieval import INSTRUCTIONS, passage
 
     spec, _ = await local_fixture(resources)
     _, document_id, chat_id = await paper_fixture(resources)
-    async with resources.sessions() as session, session.begin():
-        await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
-        for index, size in enumerate((2474, 2475)):
-            session.add(
-                DocumentChunk(
-                    id=UUID(int=index + 1),
-                    document_id=document_id,
-                    ordinal=index,
-                    page=index + 1,
-                    text="x" * size,
-                    chunk_set="test",
-                    page_end=index + 1,
-                    context_text="x" * size,
-                    token_count=size,
-                )
-            )
+    profile = context_profile(resources, spec.key, "default")
+    counter = profile.counter
+    question = "\nCurrent question:\n?"
+    base = "Conversation (context only):\n\nPaper evidence:\n"
+    evidence = profile.input_budget - answer_tokens(counter, base + question)
+
+    def cost(index, words):
+        chunk = type("Chunk", (), {"id": UUID(int=index + 1), "page": index + 1})()
+        chunk.text = " word" * words
+        return counter.count(passage(chunk))
+
+    # Two passages whose real token counts exactly fill the evidence budget.
+    sizes = next(
+        (first, second)
+        for first in range(evidence // 3, evidence // 2)
+        for second in range(
+            int((evidence - cost(0, first)) / counter.factor) - 40,
+            int((evidence - cost(0, first)) / counter.factor) + 1,
+        )
+        if cost(0, first) + cost(1, second) == evidence
+    )
+    await replace_chunks(resources, document_id, [" word" * size for size in sizes])
     body = ChatInput(model=spec.key, reasoning_effort="default", content="?", request_id=uuid4())
     _, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
     assert len(chunks) == 2
-    assert estimate_tokens(INSTRUCTIONS + prompt) == 5632
+    assert profile.input_budget - 8 <= answer_tokens(counter, prompt) <= profile.input_budget
     create_llm(resources, spec.key, selection=validate_selection(spec.key, "default")).parameters(
         spec.key, "default", INSTRUCTIONS, prompt
     )
+
+
+@pytest.mark.parametrize(("words", "whole"), [(2000, True), (12000, False)])
+async def test_given_local_metadata_evidence_when_extracting_then_real_tokens_bound_it(
+    resources, words, whole
+):
+    import json
+
+    from app.integrations.context_registry import context_profile
+    from app.integrations.llm import extract_metadata
+    from app.integrations.tokens import PromptMessage, count_messages
+    from app.models.research import ModelConfiguration
+
+    spec, _ = await local_fixture(resources)
+    async with resources.sessions() as session, session.begin():
+        session.add(
+            ModelConfiguration(
+                key="defaults", value={"default_model": spec.key, "reasoning_effort": "default"}
+            )
+        )
+    requests = []
+
+    def provider(request):
+        requests.append(json.loads(request.content))
+        result = {"title": None, "authors": None, "year": None, "abstract": None, "doi": None}
+        return httpx.Response(
+            200,
+            json={"message": {"content": json.dumps(result)}, "done": True, "done_reason": "stop"},
+        )
+
+    await resources.ollama_generation_http.aclose()
+    resources.ollama_generation_http = httpx.AsyncClient(transport=httpx.MockTransport(provider))
+    evidence = "Traceable Research\nAda Example\n2024\n" + " word" * words
+    await extract_metadata(resources, evidence)
+    sent = requests[0]["messages"]
+    # 2,000 words are about 10 KB: byte counting cut them near 2.8 KB.
+    assert (sent[-1]["content"] == evidence) is whole
+    assert evidence.startswith(sent[-1]["content"])
+    profile = context_profile(resources, spec.key, "default")
+    messages = [PromptMessage(m["role"], m["content"]) for m in sent]
+    assert count_messages(profile.counter, messages) <= profile.input_budget
 
 
 async def paper_fixture(resources):
@@ -928,7 +1064,7 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
     resources.settings.openai_api_key = SecretStr("fixture")
     async with resources.sessions() as session, session.begin():
         for index in range(3, 15):
-            source = f"Section {index}: full-coverage evidence. " * 200
+            source = f"Section {index}: full-coverage evidence. " * 800
             session.add(
                 DocumentChunk(
                     document_id=document_id,

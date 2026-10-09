@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://ollama:11434"
     ollama_context_window: int = Field(default=8192, ge=1024, le=131072)
     ollama_max_output_tokens: int = Field(default=2048, ge=1, le=32768)
+    # Ollama counts thinking against num_predict, so thinking efforts get their own allowance.
+    ollama_thinking_tokens: int = Field(default=1024, ge=0, le=32768)
+    # Interactive cap on local prompts: CPU prefill runs at tens of tokens per second, so
+    # 3,072 tokens keep a local answer near one minute (ARA-070 S1).
+    local_input_budget_tokens: int = Field(default=3072, ge=256, le=131072)
+    # Local tokenizers measured 0.974-1.018x o200k (ARA-070 S1); counts round up from o200k.
+    local_token_factor: float = Field(default=1.05, ge=1, le=2)
+    hosted_working_context_tokens: int = Field(default=64000, ge=1024, le=1_000_000)
     ollama_num_threads: int = Field(default=4, ge=1, le=64)
     ollama_request_timeout_seconds: float = Field(default=900, gt=0, le=21600)
     ollama_pull_timeout_seconds: float = Field(default=21600, gt=0, le=21600)
@@ -69,8 +77,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def local_context_reserves_output(self):
-        if self.ollama_context_window <= self.ollama_max_output_tokens + 512:
-            raise ValueError("Local context must reserve output tokens and 512 safety tokens")
+        reserved = self.ollama_max_output_tokens + self.ollama_thinking_tokens + 512
+        if self.ollama_context_window <= reserved:
+            raise ValueError("Local context must reserve output, thinking and 512 safety tokens")
         return self
 
     @field_validator("database_url")

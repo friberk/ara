@@ -5,16 +5,17 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 
+from app.integrations.context_registry import context_profile
 from app.integrations.llm import (
     LLMError,
     create_llm,
-    estimate_tokens,
     generation_configuration,
     generation_slots,
-    model_limits,
     reserve,
+    thinking_controls,
     validate_model_available,
 )
+from app.integrations.tokens import TokenCounter, count_prompt, keep_head
 from app.models.jobs import BackgroundJob
 from app.repositories.jobs import fence, now
 from app.services.retrieval import (
@@ -51,32 +52,34 @@ REDUCE_PREFIX = (
 )
 
 
-def batches(chunks, budget=24000, *, split_oversize=False):
+def batches(chunks, budget=24000, *, split_oversize=False, counter: TokenCounter):
     groups, current, used = [], [], 0
     pending = []
     for chunk in chunks:
-        if split_oversize and estimate_tokens(passage(chunk)) > budget:
-            header = SimpleNamespace(id=chunk.id, page=chunk.page, text="")
-            capacity = budget - estimate_tokens(passage(header))
-            if capacity < 4:
+        if split_oversize and counter.count(passage(chunk)) > budget:
+
+            def fragment(text, chunk=chunk):
+                return SimpleNamespace(
+                    id=chunk.id, document_id=chunk.document_id, page=chunk.page, text=text
+                )
+
+            if budget - counter.count(passage(fragment(""))) < 4:
                 raise LLMError("CONTEXT_LIMIT", "Source markers exceed the summary budget.", 413)
-            remaining = chunk.text.encode("utf-8")
+            # Count each fragment with its marker, so every passage fits the budget exactly.
+            framed = SimpleNamespace(count=lambda text: counter.count(passage(fragment(text))))
+            remaining = chunk.text
             while remaining:
-                text = remaining[:capacity].decode("utf-8", errors="ignore")
+                text = keep_head(framed, remaining, budget)
                 if not text:
                     raise LLMError(
                         "CONTEXT_LIMIT", "A source passage cannot fit the summary budget.", 413
                     )
-                pending.append(
-                    SimpleNamespace(
-                        id=chunk.id, document_id=chunk.document_id, page=chunk.page, text=text
-                    )
-                )
-                remaining = remaining[len(text.encode("utf-8")) :]
+                pending.append(fragment(text))
+                remaining = remaining[len(text) :]
         else:
             pending.append(chunk)
     for chunk in pending:
-        cost = estimate_tokens(passage(chunk))
+        cost = counter.count(passage(chunk))
         if cost > budget:
             raise LLMError("CONTEXT_LIMIT", "A source passage exceeds the summary budget.", 413)
         if current and used + cost > budget:
@@ -115,7 +118,8 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
             payload = dict(owned.payload)
         model, effort = payload["model"], payload["reasoning_effort"]
         selection = await validate_model_available(resources, model, effort)
-        input_limit, _ = model_limits(resources, model)
+        profile = context_profile(resources, model, effort, thinking=thinking_controls(selection))
+        counter, input_limit = profile.counter, profile.input_budget
         # An unknown paid outcome is never automatically resubmitted by job recovery.
         if payload.get("paid_call_inflight"):
             raise LLMError(
@@ -139,8 +143,10 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
         if not chunks:
             raise LLMError("NO_EVIDENCE", "The document has no extracted passages.", 409)
         local = selection.provider == "ollama"
-        batch_budget = input_limit - estimate_tokens(INSTRUCTIONS + PART_PREFIX) if local else 24000
-        groups = batches(chunks, budget=batch_budget, split_oversize=local)
+        batch_budget = input_limit - count_prompt(counter, INSTRUCTIONS, PART_PREFIX)
+        if not local:
+            batch_budget = min(24000, batch_budget)
+        groups = batches(chunks, budget=batch_budget, split_oversize=local, counter=counter)
         partials = list(payload.get("partials", []))
         if (partials or payload.get("reduced")) and not payload.get("_generation_configuration"):
             raise LLMError(
@@ -175,7 +181,7 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
 
         async def generate(prompt, stage, progress, *, save_completed, max_output_tokens=None):
             nonlocal total_usage
-            await reserve(resources, model, estimate_tokens(INSTRUCTIONS) + estimate_tokens(prompt))
+            await reserve(resources, model, count_prompt(counter, INSTRUCTIONS, prompt))
             async with generation_slots(resources, model):
                 configuration = await generation_configuration(resources, model, effort)
                 previous = payload.get("_generation_configuration")
@@ -242,16 +248,16 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
             )
         # Recursive ordered reductions keep all sections represented under the application cap.
         reduced = list(payload.get("reduced", partials))
-        reduction_budget = (
-            input_limit - estimate_tokens(INSTRUCTIONS + REDUCE_PREFIX) if local else 23000
-        )
+        reduction_budget = input_limit - count_prompt(counter, INSTRUCTIONS, REDUCE_PREFIX)
+        if not local:
+            reduction_budget = min(23000, reduction_budget)
         while len(reduced) > 1:
             payload["reduced"] = reduced
             new = list(payload.get("reduction_results", []))
             batch, used = [], 0
             reduction_groups = []
             for item in reduced:
-                cost = estimate_tokens(item) + 2
+                cost = counter.count(item) + 2
                 if batch and used + cost > reduction_budget:
                     reduction_groups.append(batch)
                     batch, used = [], 0
@@ -265,9 +271,9 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                         "CONTEXT_LIMIT", "Summary sections cannot fit the reduction budget.", 413
                     )
                 # Bound individual sections so a following round can combine at least two.
-                byte_limit = (reduction_budget - 4) // 2
+                limit = (reduction_budget - 4) // 2
                 for index, item in enumerate(reduced):
-                    if estimate_tokens(item) <= byte_limit:
+                    if counter.count(item) <= limit:
                         continue
                     state = payload.get("compression", {})
                     candidate = (
@@ -275,25 +281,23 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                     )
                     attempts = state.get("attempts", 0) if state.get("index") == index else 0
                     required = {c.chunk_id for c in supported_citations(item, chunks, document_id)}
-                    while estimate_tokens(candidate) > byte_limit:
+                    while counter.count(candidate) > limit:
                         if attempts >= 3:
                             raise LLMError(
                                 "SUMMARY_COMPRESSION_FAILED",
                                 "The model could not fit these sections into the reduction budget.",
                             )
                         attempts += 1
-                        allocation = min(
-                            resources.settings.ollama_max_output_tokens,
-                            max(1, byte_limit // (8 * attempts)),
-                        )
+                        # Output may use half the section limit, shrinking on each attempt.
+                        allocation = min(profile.max_output, max(1, limit // (2 * attempts)))
                         prompt = (
                             f"Compress this complete section into at most "
-                            f"{max(1, allocation // 4)} words and {byte_limit} UTF-8 bytes. "
+                            f"{max(1, allocation // 4)} words. "
                             "Retain every section's main "
                             "finding, methods, numbers and limitations. Preserve every source "
                             "marker verbatim. Do not add claims.\n\n" + candidate
                         )
-                        if estimate_tokens(INSTRUCTIONS + prompt) > input_limit:
+                        if count_prompt(counter, INSTRUCTIONS, prompt) > input_limit:
                             raise LLMError(
                                 "SUMMARY_COMPRESSION_FAILED",
                                 "A generated summary section exceeds the compression input budget.",
@@ -336,7 +340,7 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                 if index < len(new):
                     continue
                 prompt = REDUCE_PREFIX + "\n\n".join(group)
-                if estimate_tokens(prompt) + estimate_tokens(INSTRUCTIONS) > input_limit:
+                if count_prompt(counter, INSTRUCTIONS, prompt) > input_limit:
                     raise LLMError(
                         "CONTEXT_LIMIT", "Summary sections exceed the reduction budget.", 413
                     )

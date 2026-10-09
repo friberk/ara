@@ -18,12 +18,6 @@ def test_given_requested_models_when_selecting_then_reasoning_none_is_explicit()
         assert validate_selection(model, "none").key == model
 
 
-def test_given_utf8_context_when_budgeting_then_bytes_are_conservative():
-    from app.integrations.llm import estimate_tokens
-
-    assert estimate_tokens("漢" * 100) >= 300
-
-
 def test_given_citations_when_model_invents_source_then_reject():
     from app.services.retrieval import validate_citations
 
@@ -35,26 +29,34 @@ def test_given_citations_when_model_invents_source_then_reject():
     assert result[0].excerpt == "Supported text"
 
 
-def test_given_large_document_when_grouping_then_every_chunk_is_covered():
+def test_given_large_document_when_grouping_then_every_chunk_is_covered_in_real_tokens():
+    from app.integrations.tokens import TiktokenCounter
+    from app.services.retrieval import passage
     from app.services.summarization import batches
 
-    chunks = [SimpleNamespace(id=uuid4(), page=i + 1, text="x" * 7000) for i in range(12)]
-    groups = batches(chunks, budget=16000)
-    assert len(groups) > 1
+    counter = TiktokenCounter("o200k_base")
+    # 35,000 bytes but about 7,000 tokens each: two share a 16,000-token batch.
+    chunks = [SimpleNamespace(id=uuid4(), page=i + 1, text=" word" * 7000) for i in range(12)]
+    groups = batches(chunks, budget=16000, counter=counter)
+    assert [len(group) for group in groups] == [2] * 6
+    assert all(sum(counter.count(passage(c)) for c in group) <= 16000 for group in groups)
     assert [chunk.id for group in groups for chunk in group] == [chunk.id for chunk in chunks]
 
 
 def test_given_large_utf8_passage_when_local_batching_then_split_preserves_every_character():
-    from app.integrations.llm import estimate_tokens
+    from app.integrations.tokens import TiktokenCounter
     from app.services.retrieval import passage
     from app.services.summarization import batches
 
+    counter = TiktokenCounter("o200k_base", factor=1.05)
     original = SimpleNamespace(id=uuid4(), document_id=uuid4(), page=7, text="漢字" * 1600)
-    groups = batches([original], budget=1000, split_oversize=True)
+    groups = batches([original], budget=1000, split_oversize=True, counter=counter)
     fragments = [chunk for group in groups for chunk in group]
     assert "".join(chunk.text for chunk in fragments) == original.text
-    assert len(fragments) > 1 and all(chunk.id == original.id for chunk in fragments)
-    assert all(estimate_tokens(passage(chunk)) <= 1000 for chunk in fragments)
+    assert all(chunk.id == original.id for chunk in fragments)
+    assert all(counter.count(passage(chunk)) <= 1000 for chunk in fragments)
+    # About 3,400 counted tokens fill four fragments; 9,600 bytes would need ten.
+    assert len(fragments) == 4
 
 
 def test_given_sse_content_when_framing_then_newlines_are_json_escaped():
@@ -205,7 +207,8 @@ def test_given_over_budget_prompt_when_preparing_request_then_reject():
     adapter = HostedLLM(Settings(openai_api_key="fixture", _env_file=None))
     try:
         with pytest.raises(LLMError, match="context"):
-            adapter.parameters("gpt-5.6-luna", "low", "instructions", "x" * 32000)
+            # Real tokens, not bytes: 64,000 tokens exceed the hosted working cap.
+            adapter.parameters("gpt-5.6-luna", "low", "instructions", " word" * 64000)
     finally:
         asyncio.run(adapter.close())
 
