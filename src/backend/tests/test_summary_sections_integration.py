@@ -130,3 +130,32 @@ async def test_given_sections_when_summarizing_locally_then_batches_keep_whole_s
     ] == [parts[0:3], parts[3:6], parts[6:9]]
     assert within_local_budget(resources, spec, requests)
     assert len(summary.citations) == 9
+
+
+@pytest.mark.parametrize("phase", ["map", "reduction"])
+async def test_given_unsupplied_handle_when_summarizing_then_ungrounded_and_nothing_checkpointed(
+    resources, phase
+):
+    from tests.test_ai_integration import local_fixture, summary_job_fixture
+    from tests.test_citation_markers_integration import generation_fixture
+
+    spec, _ = await local_fixture(resources)
+    # Two 2,100-token passages: each map batch shows only [S1], and reductions show none.
+    identifier, token, payload = await summary_job_fixture(resources, spec, 2)
+
+    def output(body):
+        prompt = body["messages"][-1]["content"]
+        valid = "Supported " + cited_markers(prompt)
+        bad = prompt.startswith("Summarize" if phase == "map" else "Combine")
+        return valid + " and [S2]" if bad else valid
+
+    requests = await generation_fixture(resources, output)
+    await summarization.run_summary_job(resources, identifier, 1, token, payload)
+    async with resources.sessions() as session:
+        job = await session.get(BackgroundJob, identifier)
+        assert job.state == "failed" and job.error_code == "UNGROUNDED_OUTPUT"
+        assert not job.result and not job.payload.get("reduction_results")
+        assert len(job.payload.get("partials", [])) == (0 if phase == "map" else 2)
+    count = len(requests)
+    await summarization.run_summary_job(resources, identifier, 1, token, payload)
+    assert len(requests) == count

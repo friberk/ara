@@ -61,9 +61,12 @@ def canonical_summary_content(content, passages, document_id):
 
 
 def canonical_markers(content: str, handles: HandleMap) -> str:
-    """Map the model's `[S#]` handles to the source markers of the batch it was shown."""
+    """Map the model's `[S#]` handles to source markers; a handle it was not shown fails."""
     transducer = HandleTransducer(handles)
-    return transducer.feed(content) + transducer.flush()
+    mapped = transducer.feed(content) + transducer.flush()
+    if transducer.unknown:
+        raise LLMError("UNGROUNDED_OUTPUT", "The summary cited unavailable source evidence.")
+    return mapped
 
 
 PART_PREFIX = (
@@ -248,9 +251,8 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                 for key in ("input_tokens", "output_tokens", "total_tokens"):
                     total_usage[key] = total_usage.get(key, 0) + result.usage.get(key, 0)
                 payload["usage"] = total_usage
-                content = result.content
-                if handles is not None:
-                    content = canonical_markers(content, handles)
+                # Reductions and compressions show no handles, so any handle there is unknown.
+                content = canonical_markers(result.content, handles or HandleMap(()))
                 content = canonical_summary_content(content, passages, document_id)
                 save_completed(content)
                 payload["paid_call_inflight"] = False
