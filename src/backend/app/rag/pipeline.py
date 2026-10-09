@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
-from app.integrations.embeddings import create_embedder
+from app.integrations.embeddings import cl100k, create_embedder
 from app.integrations.tokens import TokenCounter
 from app.models.research import DocumentChunk
 from app.models.retrieval import RetrievalIndex
@@ -149,6 +149,13 @@ async def neighbour_nodes(
     return found
 
 
+def query_tokens(profile: str, queries: list[str]) -> int:
+    """Input tokens a hosted embedder bills for the queries, as the daily ledger counts them."""
+    if PROFILES[profile].provider != "openai":
+        return 0
+    return sum(len(cl100k().encode(query.replace("\n", " "))) for query in queries)
+
+
 async def retrieve_evidence(
     resources,
     *,
@@ -173,7 +180,7 @@ async def retrieve_evidence(
         index = await ready_index(session, document_id, preferred_profile)
         if index is None:
             summary.note = await keyword_note(session, document_id, chunk_set, preferred_profile)
-    vectors = None
+    vectors, billed = None, {}
     if index is not None:
         clock = time.monotonic()
         try:
@@ -182,6 +189,8 @@ async def retrieve_evidence(
             summary.note = MODEL_DOWN_NOTE
         else:
             summary.mode, summary.profile = "hybrid", index.profile
+            if tokens := query_tokens(index.profile, list(queries)):
+                billed["embedding"] = {"profile": index.profile, "tokens": tokens}
             if index.profile != preferred_profile:
                 summary.note = (
                     f"Searched with {PROFILES[index.profile].display_name} until "
@@ -211,6 +220,8 @@ async def retrieve_evidence(
     if reranked.skipped and reranked.skipped not in QUIET_RERANK_SKIPS:
         skip_note = f"Reranking was unavailable, so results use the {summary.mode} order."
         summary.note = " ".join(filter(None, [summary.note, skip_note]))
+    if reranked.billed_tokens and reranked.reranker:
+        billed["rerank"] = {"profile": reranked.reranker, "tokens": reranked.billed_tokens}
     ranked = reranked.nodes
     if not ranked:
         ranked = await opening_nodes(resources, document_id, chunk_set)
@@ -234,6 +245,7 @@ async def retrieve_evidence(
             "elapsed_ms": reranked.elapsed_ms,
         },
         "timings_ms": timings,
+        "billed": billed,
     }
     result = EvidenceResult([], summary, trace, ranked, neighbours, counter, vectors)
     result.pack(budget)

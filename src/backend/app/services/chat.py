@@ -350,11 +350,19 @@ async def save(
         return Message.model_validate(message).model_dump(mode="json")
 
 
-async def record_evidence(resources, message_id, evidence, usage) -> None:
-    """How the evidence was found, stored before any provider call."""
+async def record_evidence(resources, message_id, evidence, usage, planner=None) -> None:
+    """How the evidence was found, stored before any provider call.
+
+    `billed` keeps the tokens of the calls made for this answer besides the answer itself, which
+    the chat's cost meter prices."""
     async with resources.sessions() as session, session.begin():
         message = await leased(session, message_id)
-        message.retrieval = {**evidence.summary.model_dump(mode="json"), "trace": evidence.trace}
+        billed = {**evidence.trace.get("billed", {}), **({"planner": planner} if planner else {})}
+        message.retrieval = {
+            **evidence.summary.model_dump(mode="json"),
+            "trace": evidence.trace,
+            "billed": billed,
+        }
         message.context = usage.model_dump(mode="json")
         message.lease_expires_at = now() + LEASE
 
@@ -486,7 +494,7 @@ async def stream_answer(
                 question=prepared.question,
                 retrieved_for=plan.standalone_question,
             )
-            await record_evidence(resources, assistant.id, evidence, assembled.usage)
+            await record_evidence(resources, assistant.id, evidence, assembled.usage, plan.billed)
             await queue.put(("evidence", HandleMap(evidence.passages)))
             selection = await validate_model_available(
                 resources, assistant.model, assistant.reasoning_effort
