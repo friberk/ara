@@ -583,9 +583,10 @@ async def test_citation_excerpt_preserves_late_evidence_and_denies_another_docum
             page=7,
             text=text,
             ordinal=0,
-            char_start=0,
-            char_end=len(text),
-            token_estimate=len(text),
+            chunk_set="test",
+            page_end=7,
+            context_text=text,
+            token_count=len(text),
         )
         session.add(chunk)
         await session.flush()

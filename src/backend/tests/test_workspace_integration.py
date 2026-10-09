@@ -39,9 +39,10 @@ async def ready_paper(resources, title):
                 ordinal=0,
                 page=1,
                 text=evidence,
-                char_start=0,
-                char_end=len(evidence),
-                token_estimate=20,
+                chunk_set="test",
+                page_end=1,
+                context_text=evidence,
+                token_count=20,
             )
         )
         return paper.id, document.id

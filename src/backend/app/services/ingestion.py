@@ -258,9 +258,11 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
                         page=page["page"],
                         text=passage,
                         ordinal=ordinal,
-                        char_start=start,
-                        char_end=start + len(passage),
-                        token_estimate=max(1, (len(passage.encode()) + 2) // 3),
+                        # Interim page windows until ARA-071 replaces them with section chunks.
+                        chunk_set="legacy-page-window-v0",
+                        page_end=page["page"],
+                        context_text=passage,
+                        token_count=max(1, (len(passage.encode()) + 2) // 3),
                     )
                 )
                 ordinal += 1

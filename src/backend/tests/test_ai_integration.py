@@ -158,9 +158,10 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
                     ordinal=index,
                     page=index + 1,
                     text=text,
-                    char_start=0,
-                    char_end=len(text),
-                    token_estimate=len(text),
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=text,
+                    token_count=len(text),
                 )
             )
     payload = {
@@ -345,9 +346,10 @@ async def summary_job_fixture(resources, spec, count):
                     ordinal=index,
                     page=index + 1,
                     text=text,
-                    char_start=0,
-                    char_end=len(text),
-                    token_estimate=len(text),
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=text,
+                    token_count=len(text),
                 )
             )
         payload = {
@@ -510,9 +512,10 @@ async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assemb
                     ordinal=index,
                     page=index + 1,
                     text="x" * size,
-                    char_start=0,
-                    char_end=size,
-                    token_estimate=size,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text="x" * size,
+                    token_count=size,
                 )
             )
     body = ChatInput(model=spec.key, reasoning_effort="default", content="?", request_id=uuid4())
@@ -555,9 +558,10 @@ async def paper_fixture(resources):
                     ordinal=index,
                     page=index + 1,
                     text=source,
-                    char_start=0,
-                    char_end=len(source),
-                    token_estimate=20,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=source,
+                    token_count=20,
                 )
             )
         chat = ChatSession(paper_id=paper.id, document_id=document.id, title="Discussion")
@@ -931,9 +935,10 @@ async def test_given_over_budget_document_when_summarized_then_map_reduce_covers
                     ordinal=index,
                     page=index + 1,
                     text=source,
-                    char_start=0,
-                    char_end=len(source),
-                    token_estimate=1700,
+                    chunk_set="test",
+                    page_end=index + 1,
+                    context_text=source,
+                    token_count=1700,
                 )
             )
     seen_inputs = []

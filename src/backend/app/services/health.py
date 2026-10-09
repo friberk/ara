@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy import text
 
-SCHEMA_REVISION = "0005_local_models"
+SCHEMA_REVISION = "0006_retrieval_context"
 
 
 async def readiness(resources) -> dict[str, str]:
