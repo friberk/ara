@@ -424,3 +424,18 @@ async def test_given_local_compaction_on_local_lane_when_executed_then_summary_i
     assert (await load_job(resources, job_id)).result == {"version": 1}
     (memory,) = await memories(resources, chat_id)
     assert memory.model == spec.key and len(local) == 1 and hosted == []
+
+
+async def test_given_pending_compaction_when_boundary_moves_then_no_second_job_until_done(
+    resources, monkeypatch
+):
+    hosted_responses(monkeypatch, resources, lambda body: SUMMARY_V1)
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3))
+    resources.settings.memory_compaction_ratio = 0.01
+    first = await maybe_enqueue(resources, chat_id)
+    await add_turns(resources, chat_id, turns(4, start=3))
+    assert await maybe_enqueue(resources, chat_id) is None
+    await run_job(resources, first)
+    assert await maybe_enqueue(resources, chat_id) is not None
+    assert len(await compact_jobs(resources)) == 2

@@ -545,6 +545,15 @@ async def memory_state(session, chat_id: UUID) -> ChatMemoryState:
     return ChatMemoryState(memory=memory, total_messages=len(ids))
 
 
+def embeds_turn_text(chat_is_local: bool, profile) -> bool:
+    """Whether a turn's question and answer may go to `profile` for recall.
+
+    User decision (spec §4.6): embeddings follow the paper's profile even for local chats,
+    as the paper text and search queries already do; only generation must stay local.
+    """
+    return True
+
+
 async def enqueue_embed_turn(session, message_id: UUID) -> BackgroundJob | None:
     """Queue embedding of a completed answer and its question, once per answer."""
     message = await session.get(ChatMessage, message_id)
@@ -584,7 +593,9 @@ async def run_embed_turn_job(resources, job_id, generation, token, payload) -> N
             # The paper's profile at embedding time, the same one its index will use.
             chat = await session.get(ChatSession, answer.session_id)
             profile, _ = await effective_profile(session, await session.get(Paper, chat.paper_id))
-    if question is None:
+    if question is None or not embeds_turn_text(
+        local_spec(answer.model or "") is not None, embedding_profile(profile)
+    ):
         await settle(resources, job_id, generation, token, result={"skipped": True})
         return
     text = f"Q: {question.content}\nA: {render_history_turn(answer)}"

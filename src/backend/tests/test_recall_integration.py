@@ -222,3 +222,25 @@ async def test_given_embed_turn_job_when_worker_executes_then_turn_is_embedded(
     job = await load_job(resources, job_id)
     assert (job.state, job.result) == ("completed", {"profile": OPENAI})
     assert len(await turn_embeddings(resources, chat_id)) == 1
+
+
+@pytest.mark.parametrize("chat_is_local", [True, False])
+@pytest.mark.parametrize("profile", [OPENAI, QWEN])
+def test_given_turn_embedding_policy_then_every_chat_embeds_its_turn_text(chat_is_local, profile):
+    from app.integrations.embedding_catalog import embedding_profile
+    from app.services.memory import embeds_turn_text
+
+    # User decision (spec §4.6): embeddings follow the paper's profile even for local chats;
+    # only generation must stay local.
+    assert embeds_turn_text(chat_is_local, embedding_profile(profile)) is True
+
+
+async def test_given_local_chat_on_hosted_profile_when_embedding_then_turn_text_is_sent(
+    resources, embedders
+):
+    _, _, chat_id = await seed_chat(resources)
+    (turn,) = await add_turns(resources, chat_id, [DATASETS], model="ifm-k2-horizon-7b")
+    await embed_turn(resources, turn.answer)
+    ((sent,),) = [call["input"] for call in embedders["openai"]]
+    assert sent == f"Q: {DATASETS[0]} A: {DATASETS[1]}"
+    assert [row.profile for row in await turn_embeddings(resources, chat_id)] == [OPENAI]
