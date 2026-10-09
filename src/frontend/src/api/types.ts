@@ -45,6 +45,7 @@ export type PaperRetrieval = Schemas['PaperRetrieval']
 export type PaperRetrievalUpdate = Schemas['PaperRetrievalUpdate']
 export type ChatMemory = Schemas['ChatMemoryOut']
 export type ChatMemoryState = Schemas['ChatMemoryState']
-export type RetrievalStage = 'planning' | 'retrieving' | 'reranking' | 'generating'
+/** `waiting`: background local work holds the runtime; the question waits up to a minute for it. */
+export type RetrievalStage = 'waiting' | 'planning' | 'retrieving' | 'reranking' | 'generating'
 export type Reranker = Schemas['RerankerOut']
 export type RerankerKey = NonNullable<RetrievalSettings['reranker']>
