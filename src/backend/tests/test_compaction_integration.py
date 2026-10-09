@@ -326,6 +326,78 @@ async def test_given_local_summary_cut_at_its_length_limit_then_whole_lines_are_
     assert (await load_job(resources, job_id)).result["truncated"] is True
 
 
+async def test_given_a_cut_summary_that_only_repeats_the_last_one_then_no_version_is_stored(
+    resources, monkeypatch
+):
+    """Live, IFM 7B copied summary v1 verbatim and was cut inside its first new bullet; keeping
+    whole lines stored v1 again as v2 and marked two more turns summarized without them."""
+    from app.integrations.model_catalog import local_spec
+
+    spec = local_spec("ifm-k2-horizon-7b")
+    await install_thinking_model(resources, spec)
+    replies = [
+        ollama_reply(SUMMARY_V1),
+        ollama_reply(SUMMARY_V1.rstrip() + "\n- A new finding about Jeop", "length"),
+    ]
+    await local_runtime(monkeypatch, resources, spec, lambda body: replies.pop(0))
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3), model=spec.key)
+    resources.settings.memory_compaction_ratio = 0.01
+    await run_job(resources, await maybe_enqueue(resources, chat_id, spec.key))
+    await add_turns(resources, chat_id, turns(3, start=3), model=spec.key)
+    second = await maybe_enqueue(resources, chat_id, spec.key)
+    await run_job(resources, second)
+    assert [memory.version for memory in await memories(resources, chat_id)] == [1]
+    job = await load_job(resources, second)
+    assert (job.state, job.error_code) == ("failed", "COMPACTION_TRUNCATED")
+
+
+async def fail_job(resources, job_id, code):
+    from sqlalchemy import update
+
+    async with resources.sessions() as session, session.begin():
+        await session.execute(
+            update(BackgroundJob)
+            .where(BackgroundJob.id == job_id)
+            .values(state="failed", error_code=code)
+        )
+
+
+async def test_given_a_range_whose_summary_failed_when_a_turn_completes_then_it_is_retried(
+    resources,
+):
+    """Live, one MODEL_INCOMPLETE left a local chat unsummarized for six more turns: a failed
+    job counted as covering its range, and the boundary had not moved."""
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(4))
+    resources.settings.memory_compaction_ratio = 0.01
+    first = await maybe_enqueue(resources, chat_id)
+    await fail_job(resources, first, "MODEL_INCOMPLETE")
+    retry = await maybe_enqueue(resources, chat_id)
+    assert retry is not None and retry != first
+    jobs = await compact_jobs(resources)
+    assert jobs[-1].payload["through_message_id"] == jobs[0].payload["through_message_id"]
+
+
+async def test_given_an_unknown_paid_outcome_or_three_failures_then_the_range_is_not_retried(
+    resources,
+):
+    """A paid summary whose outcome is unknown is never repeated; a range that keeps failing
+    stops being retried, and recall still covers its turns."""
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(4))
+    resources.settings.memory_compaction_ratio = 0.01
+    unknown = await maybe_enqueue(resources, chat_id)
+    await fail_job(resources, unknown, "GENERATION_OUTCOME_UNKNOWN")
+    assert await maybe_enqueue(resources, chat_id) is None
+
+    _, _, other = await seed_chat(resources)
+    await add_turns(resources, other, turns(4))
+    for _ in range(3):
+        await fail_job(resources, await maybe_enqueue(resources, other), "MODEL_INCOMPLETE")
+    assert await maybe_enqueue(resources, other) is None
+
+
 async def test_given_busy_local_runtime_when_compacting_then_job_waits_without_attempts(
     resources, monkeypatch
 ):

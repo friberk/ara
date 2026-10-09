@@ -78,6 +78,8 @@ LOCAL_COMPACTION_OUTPUT = 400
 # A local summary holds the local generation slot (a 7B one took 29 s), so it waits until the
 # chat has been idle this long; every question and answer in the chat pushes it back.
 LOCAL_COMPACTION_IDLE_SECONDS = 60
+# A range that failed this often is left to recall instead of being summarized again.
+MAX_COMPACTION_ATTEMPTS = 3
 BUSY_WAIT_SECONDS = 10
 # Under the 2,048-token local embedding context; the start of an answer carries its gist.
 TURN_EMBED_TOKENS = 1800
@@ -412,14 +414,23 @@ async def maybe_enqueue_compaction(
         and waits_for_idle(job)
         and job.payload.get("through_message_id") != through
     ]
-    covered = through and await session.scalar(
-        select(BackgroundJob.id)
-        .where(
-            BackgroundJob.kind == "compact_chat",
-            BackgroundJob.payload["chat_id"].astext == str(chat_id),
-            BackgroundJob.payload["through_message_id"].astext == through,
-        )
-        .limit(1)
+    attempts = (
+        (
+            await session.execute(
+                select(BackgroundJob.state, BackgroundJob.error_code).where(
+                    BackgroundJob.kind == "compact_chat",
+                    BackgroundJob.payload["chat_id"].astext == str(chat_id),
+                    BackgroundJob.payload["through_message_id"].astext == through,
+                )
+            )
+        ).all()
+        if through
+        else []
+    )
+    # A failed range is retried with the next turn, since the boundary can stay put for many
+    # turns. A paid call whose outcome is unknown is never repeated.
+    covered = len(attempts) >= MAX_COMPACTION_ATTEMPTS or any(
+        state != "failed" or code == "GENERATION_OUTCOME_UNKNOWN" for state, code in attempts
     )
     if through is None or covered or len(replaced) < len(pending):
         for job in filter(waits_for_idle, pending):
@@ -589,6 +600,13 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
         summary = result.content.strip()
         if result.truncated:
             summary = summary.rpartition("\n")[0].rstrip()
+            # A cut summary that only repeats the last one would mark turns summarized without
+            # them; the range is retried with a later turn instead.
+            known = {line.strip() for line in (latest.summary if latest else "").splitlines()}
+            if all(not line.strip() or line.strip() in known for line in summary.splitlines()):
+                raise LLMError(
+                    "COMPACTION_TRUNCATED", "The summary stopped before it added the new turns."
+                )
         if not has_content(summary):
             # Storing it would silently drop the turns it claims to cover.
             raise LLMError("COMPACTION_EMPTY", "The model returned an empty conversation summary.")
