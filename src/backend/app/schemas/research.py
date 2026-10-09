@@ -74,6 +74,11 @@ class Citation(BaseModel):
     chunk_id: UUID
     document_id: UUID
     page: int
+    # Structured-chunk provenance, matching app.schemas.ai.Citation (ARA-071).
+    page_end: int | None = None
+    section: str | None = None
+    kind: Literal["front_matter", "text", "table", "references"] | None = None
+    bboxes: list[list[float]] = Field(default_factory=list)
     excerpt: str
 
 

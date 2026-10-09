@@ -15,6 +15,9 @@ from app.integrations.storage import read_object
 from app.jobs.pdf_parser import THREAD_TUNING
 from app.models.jobs import BackgroundJob
 from app.models.research import Document, DocumentChunk, DocumentPage, Paper
+from app.models.retrieval import DocumentSection
+from app.rag import hooks
+from app.rag.chunking import ChunkPlan, build_chunk_plan
 from app.repositories.jobs import fence, now, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
 from app.services.uploads import MAX_UPLOAD_BYTES
@@ -93,6 +96,45 @@ async def parse_in_child(data: bytes, deadline_seconds: float = 120) -> dict:
                     }
                 }
             return parsed
+
+
+async def add_chunk_plan(session, document_id: UUID, plan: ChunkPlan) -> None:
+    sections = {
+        section.ordinal: DocumentSection(
+            document_id=document_id,
+            chunk_set=plan.chunk_set,
+            ordinal=section.ordinal,
+            title=section.title,
+            level=section.level,
+            path=section.path,
+            role=section.role,
+            page=section.page,
+            page_end=section.page_end,
+        )
+        for section in plan.sections
+    }
+    session.add_all(sections.values())
+    await session.flush()
+    session.add_all(
+        DocumentChunk(
+            document_id=document_id,
+            chunk_set=plan.chunk_set,
+            ordinal=chunk.ordinal,
+            section_id=sections[chunk.section_ordinal].id
+            if chunk.section_ordinal is not None
+            else None,
+            section_path=chunk.section_path,
+            heading=chunk.heading,
+            kind=chunk.kind,
+            page=chunk.page,
+            page_end=chunk.page_end,
+            text=chunk.text,
+            context_text=chunk.context_text,
+            bboxes=chunk.bboxes,
+            token_count=chunk.token_count,
+        )
+        for chunk in plan.chunks
+    )
 
 
 async def finish_failure(
@@ -224,6 +266,16 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
             if value and not metadata.get(key):
                 metadata[key] = value
                 enriched_fields.add(key)
+    async with resources.sessions() as session:
+        known_title = await session.scalar(
+            select(Paper.title)
+            .join(Document, Document.paper_id == Paper.id)
+            .where(Document.id == document_id)
+        )
+    # LlamaIndex chunking is CPU-bound; keep it off the event loop and outside row locks.
+    plan = await asyncio.to_thread(
+        build_chunk_plan, parsed["pages"], title=known_title or metadata.get("title")
+    )
     async with resources.sessions() as session, session.begin():
         job = await session.scalar(
             select(BackgroundJob).where(*fence(job_id, generation, lease_token)).with_for_update()
@@ -277,42 +329,29 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         paper.metadata_provenance = provenance
         await session.execute(delete(DocumentPage).where(DocumentPage.document_id == document_id))
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
-        ordinal = 0
-        for page in parsed["pages"]:
-            session.add(
-                DocumentPage(
-                    document_id=document_id,
-                    page=page["page"],
-                    text=page["text"],
-                    printed_label=page["printed_label"],
-                )
+        await session.execute(
+            delete(DocumentSection).where(DocumentSection.document_id == document_id)
+        )
+        session.add_all(
+            DocumentPage(
+                document_id=document_id,
+                page=page["page"],
+                text=page["text"],
+                printed_label=page["printed_label"],
             )
-            text = page["text"]
-            for start in range(0, len(text), 2720):
-                passage = text[start : start + 3200]
-                if not passage.strip():
-                    continue
-                session.add(
-                    DocumentChunk(
-                        document_id=document_id,
-                        page=page["page"],
-                        text=passage,
-                        ordinal=ordinal,
-                        # Interim page windows until ARA-071 replaces them with section chunks.
-                        chunk_set="legacy-page-window-v0",
-                        page_end=page["page"],
-                        context_text=passage,
-                        token_count=max(1, (len(passage.encode()) + 2) // 3),
-                    )
-                )
-                ordinal += 1
+            for page in parsed["pages"]
+        )
+        await add_chunk_plan(session, document_id, plan)
         document.status, document.page_count = "ready", len(parsed["pages"])
         document.warnings, document.extractor_version = (
             parsed["warnings"],
             parsed["extractor_version"],
         )
+        document.parser, document.chunk_set = parsed["parser"], plan.chunk_set
         job.state, job.stage, job.progress = "completed", "completed", 100
         job.result = {"paper_id": str(paper.id), "document_id": str(document.id)}
         job.error_code, job.error_message = None, None
         job.lease_token, job.lease_expires_at = None, None
         job.updated_at = now()
+        await session.flush()
+        await hooks.after_chunks_persisted(session, document_id=document.id)
