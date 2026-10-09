@@ -191,7 +191,7 @@ def test_given_any_conversation_when_assembling_then_tokens_never_exceed_the_bud
 
 
 def test_given_summary_and_recall_when_assembling_then_messages_are_role_separated():
-    from app.services.context import answer_instructions
+    from app.services.context import CITE_REMINDER, answer_instructions
 
     profile = hosted()
     citation = uuid4()
@@ -219,6 +219,9 @@ def test_given_summary_and_recall_when_assembling_then_messages_are_role_separat
     assert result.messages[4].content == "It reached 87% (p. 6)."
     assert result.messages[5].content.startswith("Paper passages")
     assert result.messages[5].content.endswith("Question: And the baseline?")
+    # IFM 7B with reasoning None answered without any handle when the rule sat only in the
+    # system message (live, ARA-073); the rule is restated right before the question.
+    assert result.messages[5].content.endswith(CITE_REMINDER + "\n\nQuestion: And the baseline?")
     assert (result.usage.summary_version, result.usage.recalled_turns) == (2, 1)
     # Only the current turn carries evidence.
     assert all("improved accuracy by" not in m.content for m in result.messages[:-1])

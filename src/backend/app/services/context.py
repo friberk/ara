@@ -39,6 +39,11 @@ RULES = (
     "earlier answers are not handles. If the passages do not support an answer, reply with "
     f"{INSUFFICIENT} and say briefly what is missing. Answer in clear Markdown."
 )
+# Restated beside the question: small local models without reasoning skipped the system rule.
+CITE_REMINDER = (
+    "Answer only from the passages above. Cite each claim with its handle, such as [S1]; "
+    f"if they do not answer the question, reply with {INSUFFICIENT}."
+)
 
 
 @dataclass(frozen=True)
@@ -193,7 +198,7 @@ def assemble_answer_prompt(
     prefix = "Paper passages:\n\n"
     if retrieved_for and retrieved_for != question:
         prefix = f'Paper passages (retrieved for: "{retrieved_for}"):\n\n'
-    suffix = "\n\nQuestion: " + question
+    suffix = "\n\n" + CITE_REMINDER + "\n\nQuestion: " + question
     fixed = (
         cost(counter, instructions)
         + counter.count(prefix)
