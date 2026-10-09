@@ -24,15 +24,21 @@
     "src/backend/tests"
   ],
   "commits": [
+    "4758972",
+    "6054ff8",
     "f2123ce",
     "b7cd44e",
     "380f2fd",
     "e7c3a24",
     "0c599ea",
     "ffe9421",
-    "bfe1287"
+    "422ebb5",
+    "bfe1287",
+    "80a4a69",
+    "4ac4d7d",
+    "86632a8"
   ],
   "pull_requests": [],
-  "verification": "Agent A (feat/rag-ingest), TDD per task.\n- Parsing uses layout to_markdown with tuned child threads, formula boxes and a legacy fallback.\n- One whole-paper LlamaIndex Document with MarkdownNodeParser and SentenceSplitter(512/64), plus page and box offset mapping.\n- Structured persistence and the hook call; reindex; chunk-source provenance contract (red from the old schema: missing fields).\nAgent full run: 454 passed. Lead integration: the chunker raised ValueError on '<|endoftext|>' in paper text (red reproduced), fixed by using the shared TiktokenCounter with disallowed_special=(). Chunking tests 15 passed; merged suite 601 passed.\nLive 2026-10-09: the RAG paper (arXiv 2005.11401) failed ingest because a display formula's clipped text carried NUL, which PostgreSQL text rejects. bfe1287 maps control characters to U+FFFD in page text, Markdown and metadata (red: psycopg.DataError in the ingest test); the paper then ingested with 61 passages in 35 sections.",
+  "verification": "Agent A (feat/rag-ingest), TDD per task.\n- Parsing uses layout to_markdown with tuned child threads, formula boxes and a legacy fallback.\n- One whole-paper LlamaIndex Document with MarkdownNodeParser and SentenceSplitter(512/64), plus page and box offset mapping.\n- Structured persistence and the hook call; reindex; chunk-source provenance contract (red from the old schema: missing fields).\nAgent full run: 454 passed. Lead integration: the chunker raised ValueError on '<|endoftext|>' in paper text (red reproduced), fixed by using the shared TiktokenCounter with disallowed_special=(). Chunking tests 15 passed; merged suite 601 passed.\nLive 2026-10-09: the RAG paper (arXiv 2005.11401) failed ingest because a display formula's clipped text carried NUL, which PostgreSQL text rejects. bfe1287 maps control characters to U+FFFD in page text, Markdown and metadata (red: psycopg.DataError in the ingest test); the paper then ingested with 61 passages in 35 sections.\nReview: documents from before migration 0006 are re-ingested at API startup and questions say the paper is being prepared (4ac4d7d); a layout timeout falls back to the legacy parser (86632a8). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
   "updated_at": "2026-10-09"
 }

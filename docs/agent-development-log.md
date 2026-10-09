@@ -572,3 +572,46 @@ Wave 3 agents built the retrieval pipeline with catalog reranking (F), conversat
 - Frontend: check (449 tests) and build pass.
 - Browser: 12/12 on a fresh stack.
 - Fixtures: the fixture suite passes with PyMuPDF 1.28.2.
+
+### Whole-branch review and fixes (ARA-071–ARA-081)
+
+A read-only reviewer read `6b53fd1..947a0e9` in seven passes. It found no Critical issues and 8 Important ones. Replay safety, job fencing, document isolation, blue/green swaps and token budgets held up.
+
+**Triage:**
+- Two findings were already handled after the reviewed snapshot: stale tracking and contract text (#8), and the misleading context total (a minor item, `d9155cd`).
+- The lead checked #2 against live data before acting. It was real but milder than stated: local compaction first fired after turn 4, not turn 2, and held the slot for 29 s.
+- On #6, the 7B with the Qwen3 8B embedder exceeding 12 GiB, the user chose: "Don't put a note in settings. In README we can explain the limit. Also create an issue ticket for future reference if we ever fix it." The README now gives the measured figures, and ARA-080 tracks memory-aware loading (`1dc6063`).
+
+**Fixes by three parallel agents** (TDD per fix; red and green outputs are in their commits):
+- **Retrieval** (`feat/rag-fixret`, 766 passed):
+  - the reranker judges passages against the standalone question (`a75f6b4`);
+  - searches wait up to 20 s for the local retrieval slot while background embedding yields in batches of 2 (4B) or 1 (8B) (`d29850e`);
+  - local reranking has a 45 s overall deadline (`1650758`).
+- **Index** (`feat/rag-fixidx`, 772 passed, frontend 451):
+  - indexes follow default changes, embedder verification and a newly added key (`18da544`);
+  - documents from before migration 0006 are re-ingested at API startup, and questions about them say the paper "is being prepared" (`4ac4d7d`);
+  - citation previews fall back to the saved excerpt (`a58db13`);
+  - a layout timeout now falls back to the legacy parser (`86632a8`).
+- **Memory** (`feat/rag-fixmem`, 778 passed, frontend 452):
+  - local compaction waits until the chat is idle (`3f04f5b`);
+  - questions wait up to 60 s for background local work, with a `waiting` stage, instead of 429 (`691dd9c`, `3404002`);
+  - the hosted memory model is a stored setting with a Settings choice (`e37dca9`, `4912672`);
+  - the summary and recall are sent as user context (`4bcb136`);
+  - an over-long summary keeps its head (`cbc08bf`);
+  - heading-only summaries fail (`4cad3d6`).
+
+**Integration:**
+- Merging retrieval and index gave 1 failed and 777 passed. The local rerank deadline test found a leftover `ModelUse` row, although it passed 3 of 3 when run alone.
+- The cause: a cancel that lands after a lease row commits, but before the token returns, loses the token. A deterministic test reproduced it. Admission attempts are now shielded, and late leases released (`7b29ae5`, 779 passed).
+- The memory merge conflicted in `repositories/local_models.py`, where both branches had added a function at the same spot; the lead kept both (797 passed).
+
+**Live local-memory checks (`ara-rag-live`, IFM 7B):**
+- The idle deferral worked. A question sent right after an answer got no 429 and pushed the queued summary back.
+- The deferred summary then failed with `MODEL_INCOMPLETE`. The lead first doubled the allowance and phrased the target in words (`f13027b`); the live retry failed again. Replaying the exact request showed the model ignores length requests: asked for 217 words, it wrote 314 and stopped at 580 tokens. Local compaction now keeps a cut summary's complete lines.
+- The lead's next live check was misread. Its "failed" row was the old job: the new question had queued nothing. A diagnostic in the API container showed the boundary pinned at the first unsummarized turn, and the failed job counting as covering that range. The lead's first explanation (that the boundary moves every second turn) was wrong. A failed range is now retried, at most 3 times, and never after an unknown paid outcome.
+- The retry stored v2 byte-identical to v1 (same MD5): the 7B had copied v1 and was cut inside its first new bullet. The whole-line rule the lead had just added caused this silent loss. A cut summary must now add a line, or it fails with `COMPACTION_TRUNCATED` (`671bb9d`).
+- The user chose to ticket better local summaries (ARA-081). Hosted memory is unaffected.
+
+**Lead process errors:** the misread job row and wrong boundary theory above, the silent-loss rule, and a polling loop that compared against a variable it never set (noticed before its result was used).
+
+**Totals at `671bb9d`:** backend 802 passed with Ruff clean; frontend check (454 tests) and build pass; browser 12/12 on a freshly reset stack.

@@ -40,9 +40,17 @@
     "c7e7c2d",
     "bb81e9b",
     "fb5bf0f",
-    "c869233"
+    "c869233",
+    "80a4a69",
+    "4cad3d6",
+    "e157613",
+    "e37dca9",
+    "3f04f5b",
+    "691dd9c",
+    "f13027b",
+    "671bb9d"
   ],
   "pull_requests": [],
-  "verification": "Agent G (feat/rag-memory) built the structured query planner, versioned running summaries (compact_chat) and turn recall, TDD per task.\nTests: test_query_planner.py (17 tests, including first turn without a call, fallback, local planning without hosted calls, and the summary head surviving long answers); test_compaction_integration.py (idempotent ranges, stale jobs skip without a call, local chats never use a hosted model).\nLive: a 20-turn Luna chat built summary versions 1-3 and recalled 2-3 turns per answer. The final question lost the user's goal because the planner kept only the newest 1,500 tokens; c869233 gives the summary head its own share and keeps every recent question (red: the prompt held only long-answer text). The replay cited pages 4 and 18-19. A local IFM 7B chat compacted with the 7B itself (summary v1, 6 of 8 messages).\nFinal: backend 760 passed with Ruff clean. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.",
+  "verification": "Agent G (feat/rag-memory) built the structured query planner, versioned running summaries (compact_chat) and turn recall, TDD per task.\nTests: test_query_planner.py (17 tests, including first turn without a call, fallback, local planning without hosted calls, and the summary head surviving long answers); test_compaction_integration.py (idempotent ranges, stale jobs skip without a call, local chats never use a hosted model).\nLive: a 20-turn Luna chat built summary versions 1-3 and recalled 2-3 turns per answer. The final question lost the user's goal because the planner kept only the newest 1,500 tokens; c869233 gives the summary head its own share and keeps every recent question (red: the prompt held only long-answer text). The replay cited pages 4 and 18-19. A local IFM 7B chat compacted with the 7B itself (summary v1, 6 of 8 messages).\nFinal: backend 760 passed with Ruff clean. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.\nReview and live checks: idle-time local compaction (3f04f5b); bounded wait for background local work (691dd9c); stored memory_model setting (e37dca9); heading-only summaries fail (4cad3d6); cut local summaries keep whole lines (f13027b); failed ranges retry at most three times and a cut summary that adds nothing fails COMPACTION_TRUNCATED (671bb9d). Live: deferral and waiting worked on IFM 7B; better local summaries are tracked in ARA-081. Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
   "updated_at": "2026-10-09"
 }

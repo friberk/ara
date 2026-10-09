@@ -24,9 +24,12 @@
     "f75910c",
     "c1748fa",
     "597cb1b",
-    "d9155cd"
+    "d9155cd",
+    "80a4a69",
+    "3404002",
+    "4912672"
   ],
   "pull_requests": [],
-  "verification": "Agent H: SSE message.status stages shown and announced (ConversationPane.status.test.tsx); the memory footnote opens the current summary and names the model (memory-note.test.tsx).\nLive: answers streamed planning, retrieving, reranking and generating; Details showed 'Context: 5,665 of 1,050,000 tokens' for a request capped at 64,000, so d9155cd adds ContextUsage.input_budget and counts against it (red: AttributeError for input_budget; the Details test lacked 'Context: 2,900 of 3,072 tokens').\nFinal: frontend check 449 passed and build passed; browser 12/12. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.",
+  "verification": "Agent H: SSE message.status stages shown and announced (ConversationPane.status.test.tsx); the memory footnote opens the current summary and names the model (memory-note.test.tsx).\nLive: answers streamed planning, retrieving, reranking and generating; Details showed 'Context: 5,665 of 1,050,000 tokens' for a request capped at 64,000, so d9155cd adds ContextUsage.input_budget and counts against it (red: AttributeError for input_budget; the Details test lacked 'Context: 2,900 of 3,072 tokens').\nFinal: frontend check 449 passed and build passed; browser 12/12. Live (ara-rag-live, real OpenAI key, Attention and RAG papers): see the journal entry 'Wave 3 merge, Wave 4 integration and live verification'.\nReview: 'Waiting for the local model…' stage (3404002) and the Settings choice of the model for summaries and follow-up questions (4912672). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
   "updated_at": "2026-10-09"
 }

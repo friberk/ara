@@ -27,7 +27,6 @@
     "src/backend/app/routes"
   ],
   "commits": [
-    "6054ff8",
     "2dca182",
     "0bb4053",
     "abc8e4c",
@@ -35,9 +34,14 @@
     "d3c0aa4",
     "50993f2",
     "55ad577",
-    "3d1f0dc"
+    "3d1f0dc",
+    "0a5de96",
+    "18da544",
+    "d29850e",
+    "a2041db",
+    "7b29ae5"
   ],
   "pull_requests": [],
-  "verification": "Agent B (feat/rag-index), TDD per task: continue_locked, retrieval admission slot, embedding profiles and adapters, resumable blue/green embed jobs (yield after 240 s), retrieval and paper-index APIs with request-UUID replay, embedding catalog with pinned digests, embedder context-length check (red: DID NOT RAISE x2), embed jobs linked to papers (red: 2 failed). Agent full run: 474 passed with Ruff clean. Accepted deviation: embed jobs run on the default worker queue instead of a separate retrieval queue.",
+  "verification": "Agent B (feat/rag-index), TDD per task: continue_locked, retrieval admission slot, embedding profiles and adapters, resumable blue/green embed jobs (yield after 240 s), retrieval and paper-index APIs with request-UUID replay, embedding catalog with pinned digests, embedder context-length check (red: DID NOT RAISE x2), embed jobs linked to papers (red: 2 failed). Agent full run: 474 passed with Ruff clean. Accepted deviation: embed jobs run on the default worker queue instead of a separate retrieval queue.\nReview: indexes follow default changes, embedder verification and a new key via reconcile_indexes (18da544, a2041db); searches get the local retrieval slot ahead of background embedding (d29850e); a lease committed after its caller was cancelled is released (7b29ae5, found as a full-suite flake after merging). Whole-branch review fixes on 2026-10-09 (journal: 'Whole-branch review and fixes'). Final: backend 802 passed with Ruff clean; frontend check 454 and build pass.",
   "updated_at": "2026-10-09"
 }

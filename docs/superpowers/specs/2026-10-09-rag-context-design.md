@@ -73,7 +73,7 @@ Non-goals:
   - `qwen3-embed-4b` and `qwen3-embed-8b` take the query prefix `Instruct: Given a question about a scientific paper, retrieve passages of the paper that answer it\nQuery: `.
 - **Selection:** the effective profile is the paper's override (`papers.retrieval_profile`) or the global default (Settings).
 - **`embed` job:**
-  - runs on a new `retrieval` queue, in batches (64 for OpenAI, 16 for Ollama);
+  - runs on a new `retrieval` queue, in batches (64 for OpenAI; for Ollama, 2 passages per slot admission with the 4B and 1 with the 8B, so a waiting search gets the slot within about 10 s — revised after the whole-branch review);
   - upserts each batch inside a lease-fenced transaction keyed by (chunk, profile), so duplicate deliveries and resumes are safe;
   - charges OpenAI cost through `reserve()`;
   - allows bounded retries, because embedding is idempotent and cheap. This exception to the generation no-retry rule is documented.
