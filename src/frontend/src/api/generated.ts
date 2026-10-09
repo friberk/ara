@@ -418,6 +418,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chats/{chat_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat Usage
+         * @description Context used by the latest answer against the selected model's input budget, and spend.
+         *
+         *     The budget is computed for `model` and `reasoning_effort` exactly as an answer sizes its
+         *     prompt, so the meter follows the composer's selection; no runtime call is made.
+         */
+        get: operations["chat_usage_api_v1_chats__chat_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chats/{chat_id}/messages/stream": {
         parameters: {
             query?: never;
@@ -604,6 +627,39 @@ export interface components {
              */
             created_at: string;
         };
+        /** ChatContext */
+        ChatContext: {
+            /** Used Tokens */
+            used_tokens: number | null;
+            /** Input Budget */
+            input_budget: number;
+            /** Window */
+            window: number;
+            /** Model */
+            model: string;
+        };
+        /**
+         * ChatCost
+         * @description USD as decimal strings priced from the catalogs. Only recorded calls count.
+         */
+        ChatCost: {
+            /** Total */
+            total: string;
+            /** Answers */
+            answers: string;
+            /** Planning */
+            planning: string;
+            /** Compaction */
+            compaction: string;
+            /** Embeddings */
+            embeddings: string;
+            /** Reranking */
+            reranking: string;
+            /** Local */
+            local: boolean;
+            /** Unrecorded Turns */
+            unrecorded_turns: number;
+        };
         /** ChatCreate */
         ChatCreate: {
             /**
@@ -709,6 +765,11 @@ export interface components {
         ChatSummaryPage: {
             /** Items */
             items: components["schemas"]["ChatSummary"][];
+        };
+        /** ChatUsage */
+        ChatUsage: {
+            context: components["schemas"]["ChatContext"];
+            cost: components["schemas"]["ChatCost"];
         };
         /**
          * ContextUsage
@@ -2517,6 +2578,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_usage_api_v1_chats__chat_id__usage_get: {
+        parameters: {
+            query: {
+                model: string;
+                reasoning_effort: string;
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatUsage"];
                 };
             };
             /** @description Validation Error */
