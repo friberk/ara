@@ -114,12 +114,3 @@ def test_profiles_page_reports_every_reranker_choice():
         "candidates",
     } <= set(schemas["RerankerOut"]["properties"])
     assert schemas["RerankerOut"]["properties"]["key"]["type"] == "string"
-
-
-async def test_rerank_seam_is_a_safe_pass_through_until_rerankers_land():
-    from app.rag.rerank import rerank_candidates
-
-    outcome = await rerank_candidates(
-        None, query="q", nodes=["a", "b"], reranker="openai-gpt-6-luna"
-    )
-    assert outcome.nodes == ["a", "b"] and outcome.reranked is False

@@ -29,8 +29,9 @@ async def test_given_catalog_when_listing_models_then_every_item_has_a_kind(reso
     kinds = {item["key"]: item["kind"] for item in response.json()["items"]}
     assert kinds["gpt-5.6-luna"] == "chat" and kinds["ifm-k2-horizon-7b"] == "chat"
     assert kinds["qwen3-embedding-4b"] == kinds["qwen3-embedding-8b"] == "embedding"
+    assert kinds["qwen3-reranker-0.6b"] == "reranker"
     local = await list_local_models(resources, inspect_runtime=False)
-    assert len(local) == 5
+    assert len(local) == 6
 
 
 async def test_given_verified_local_embedder_when_listing_profiles_then_it_is_available(

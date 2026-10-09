@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import sys
 import threading
 import unittest
 import urllib.error
@@ -229,6 +230,31 @@ class RetrievalFixtureTests(unittest.TestCase):
         relevant_yes, relevant_no = p_yes("BM25 reaches recall 0.61 on the benchmark")
         irrelevant_yes, irrelevant_no = p_yes("Proteins fold in yeast cells")
         self.assertGreater(relevant_yes - relevant_no, irrelevant_yes - irrelevant_no)
+
+    def test_ollama_catalog_reranker_is_pinned_shown_and_scored(self):
+        """The catalog id is mixed case and tagged; the fixture must still treat it as a reranker."""
+        model = "fanyx/Qwen3-Reranker-0.6B-Q8_0:latest"
+        self.assertEqual(
+            sys.modules["ollama_fixture"].MODELS.get(model),
+            ("fd021d86a15e539ac1b4f3bec2d1c6b15a3e158f316adb0d1325c713240103b3", 639152466),
+        )
+        self.module.OLLAMA.installed.add(model)
+        shown = self.post("/api/show", {"model": model})
+        self.assertIn("completion", shown["capabilities"])
+        self.assertNotIn("thinking", shown)
+        result = self.post(
+            "/api/generate",
+            {
+                "model": model,
+                "prompt": "<Query>: BM25 recall\n<Document>: BM25 recall is 0.61<|im_end|>",
+                "raw": True,
+                "stream": False,
+                "logprobs": True,
+                "top_logprobs": 20,
+            },
+        )
+        tops = {item["token"]: item["logprob"] for item in result["logprobs"][0]["top_logprobs"]}
+        self.assertGreater(tops["yes"], tops["no"])
 
 
 class VectorParityTests(unittest.TestCase):
