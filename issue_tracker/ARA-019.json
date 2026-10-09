@@ -37,6 +37,6 @@
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "Implementation authorized; feat/fulltext-access incorporates managed-ollama through 459290d. Isolated baseline: backend 365 passed, frontend 375 passed with strict tsc/ESLint and build. Task 1: 9 metadata/DOI reds, 3 discovery reds and 1 ranking red; full backend now 378 passed in 43.47s. Remaining tasks are in progress.",
+  "verification": "Implementation authorized; feat/fulltext-access incorporates managed-ollama through 459290d. Isolated baseline: backend 365 passed, frontend 375 passed with strict tsc/ESLint and build. Task 1: 9 metadata/DOI reds, 3 discovery reds and 1 ranking red; full backend now 378 passed in 43.47s. Remaining tasks are in progress. Task 2 full backend: 391 passed; migration 0006 preserves local-model state and UUID/access-attempt contracts are implemented.",
   "updated_at": "2026-10-08"
 }

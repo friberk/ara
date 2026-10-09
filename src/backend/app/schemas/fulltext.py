@@ -1,10 +1,13 @@
 """Shared full-text discovery/download values; PDF bytes are never serialized in the API."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.jobs import JobStatus
 from app.schemas.research import FullTextLocation, Provider
 
 FullTextOutcome = Literal[
@@ -39,3 +42,37 @@ class DownloadResult:
     final_url: str | None = None
     reason: str = ""
     retry_after: int | None = None
+
+
+class FullTextInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+
+
+class FullTextAccepted(BaseModel):
+    paper_id: UUID
+    job_id: UUID
+
+
+class FullTextAttemptView(BaseModel):
+    provider: Provider
+    source_label: str
+    version: str | None = None
+    is_oa: bool | None = None
+    license: str | None = None
+    response_status: int | None = None
+    outcome: FullTextOutcome
+    reason: str
+    checked_at: datetime
+
+
+class FullTextStatus(BaseModel):
+    paper_id: UUID
+    availability: Literal["open_copy_reported", "publisher_link_only", "unknown"]
+    locations: list[FullTextLocation] = Field(default_factory=list)
+    retrieval_job: JobStatus | None = None
+    document_id: UUID | None = None
+    ingest_job_id: UUID | None = None
+    last_checked_at: datetime | None = None
+    attempts: list[FullTextAttemptView] = Field(default_factory=list)
+    acquisition: dict | None = None

@@ -74,6 +74,7 @@ class Document(Base):
     page_count: Mapped[int | None]
     warnings: Mapped[list] = mapped_column(JSONB, default=list)
     extractor_version: Mapped[str | None] = mapped_column(String(80))
+    acquisition: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

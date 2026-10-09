@@ -17,6 +17,7 @@ from app.core.resources import Resources
 from app.routes.ai import router as ai_router
 from app.routes.chat import router as chat_router
 from app.routes.documents import router as documents_router
+from app.routes.fulltext import router as fulltext_router
 from app.routes.history import router as history_router
 from app.routes.jobs import router
 from app.routes.local_models import router as local_models_router
@@ -133,6 +134,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(router(settings.app_env == "development"))
     app.include_router(research_router)
+    app.include_router(fulltext_router)
     app.include_router(documents_router)
     app.include_router(ai_router)
     app.include_router(local_models_router)
