@@ -24,11 +24,34 @@ test('Given a strong mark that just landed, Then it pulses; context lines never 
   expect(css).not.toMatch(/\[data-citation-highlight='pulse'\]/)
 })
 
-// After the first browser round: a faint tint on the rest of the 3,200-character chunk still washed most of page 7
-// in stripes, so context lines stay unmarked and the strong lines are the only mark on the page.
-test('Given context lines, Then they carry no tint', () => {
-  expect(css).not.toMatch(/\[data-citation-highlight='context'\][^{]*\{[^}]*background/)
+// ARA-089: the first design left context lines untinted because a background tint on the 3,200-character chunk
+// washed the page in stripes. They now get only a thin dotted underline (text-decoration, not a background), so the
+// excerpt's extent is visible without competing with the strong lines.
+test('Given context lines, Then they carry a thin dotted underline and no background tint', () => {
   expect(css).not.toMatch(/\.textLayer \[data-citation-highlight\][^{]*\{[^}]*background/)
+  expect(css).toMatch(/\[data-citation-highlight='context'\]\s*\{[^}]*text-decoration:\s*underline dotted[^;]*var\(--pdf-evidence-edge\)/)
+})
+
+test('Given a strong mark, Then it is the full evidence tint with an edge line, not a faded mix', () => {
+  const strong = css.match(/\[data-citation-highlight='strong'\]\s*\{[^}]*\}/)?.[0] ?? ''
+  expect(strong).toMatch(/background-color:\s*var\(--pdf-evidence\)/)
+  expect(strong).not.toMatch(/color-mix/)
+  expect(strong).toMatch(/box-shadow:\s*inset 0 -2px 0 var\(--pdf-evidence-edge\)/)
+})
+
+test('Given the edge colour, Then it is one token with one value in both themes, dark enough for 3:1 on white paper', () => {
+  expect(css).toMatch(/--pdf-evidence-edge:\s*var\(--evidence-edge\)/)
+  expect(tokens).toMatch(/^\s*--evidence-edge:\s*oklch\(0\.[3-6]\d*/m)
+  expect(darkBlock).not.toMatch(/--evidence-edge:/)
+})
+
+test('Given a cited region from stored boxes, Then it is an outlined translucent box that pulses once and respects reduced motion', () => {
+  expect(css).toMatch(/\[data-citation-region\]\s*\{[^}]*border:\s*2px solid var\(--pdf-evidence-edge\)/)
+  expect(css).toMatch(/\[data-citation-region\]\s*\{[^}]*background-color:\s*color-mix\(in oklch, var\(--pdf-evidence\)/)
+  expect(css).toMatch(/\[data-citation-region\]\[data-citation-pulse\][^{]*\{[^}]*animation:\s*citation-pulse/)
+  const reduced = css.slice(css.indexOf('prefers-reduced-motion'), css.indexOf('forced-colors'))
+  expect(reduced).toMatch(/\[data-citation-region\]\[data-citation-pulse\]/)
+  expect(css.slice(css.indexOf('forced-colors'))).toMatch(/\[data-citation-region\]/)
 })
 
 // Character-precise marks are <mark> elements inside the transparent text-layer spans; the browser's own mark
