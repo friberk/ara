@@ -6,9 +6,9 @@ from urllib.parse import quote
 import httpx
 
 from app.core.errors import AppError
-from app.schemas.research import SearchHit, SearchPage, SearchResult
+from app.schemas.research import FullTextLocation, SearchHit, SearchPage, SearchResult
 
-FIELDS = "title,authors,year,abstract,externalIds,url,openAccessPdf"
+FIELDS = "title,authors,year,abstract,externalIds,url,openAccessPdf,isOpenAccess"
 
 
 def normalized_doi(doi: str | None) -> str | None:
@@ -20,6 +20,7 @@ def normalized_doi(doi: str | None) -> str | None:
 
 def normalize(provider: str, row: dict) -> SearchResult:
     if provider == "semantic_scholar":
+        pdf = row.get("openAccessPdf") or {}
         return SearchResult(
             provider=provider,
             external_id=row["paperId"],
@@ -29,7 +30,19 @@ def normalize(provider: str, row: dict) -> SearchResult:
             abstract=row.get("abstract"),
             doi=normalized_doi((row.get("externalIds") or {}).get("DOI")),
             external_url=row.get("url"),
-            pdf_url=(row.get("openAccessPdf") or {}).get("url"),
+            pdf_url=pdf.get("url"),
+            is_open_access=row.get("isOpenAccess"),
+            locations=[
+                FullTextLocation(
+                    pdf_url=pdf["url"],
+                    landing_page_url=row.get("url"),
+                    is_oa=True,
+                    license=pdf.get("license"),
+                    oa_status=pdf.get("status"),
+                )
+            ]
+            if pdf.get("url")
+            else [],
         )
     index = row.get("abstract_inverted_index") or {}
     positions = {
@@ -40,9 +53,34 @@ def normalize(provider: str, row: dict) -> SearchResult:
     }
     abstract = " ".join(positions[i] for i in sorted(positions)) or None
     location = row.get("primary_location") or {}
-    pdf = location.get("pdf_url") or next(
-        (x.get("pdf_url") for x in row.get("locations") or [] if x.get("pdf_url")), None
+    pdf = (
+        (row.get("best_oa_location") or {}).get("pdf_url")
+        or location.get("pdf_url")
+        or next((x.get("pdf_url") for x in row.get("locations") or [] if x.get("pdf_url")), None)
     )
+    locations, seen = [], set()
+    for item in [location, row.get("best_oa_location") or {}, *(row.get("locations") or [])]:
+        if not item or not (item.get("pdf_url") or item.get("landing_page_url")):
+            continue
+        key = (item.get("pdf_url"), item.get("landing_page_url"))
+        if key in seen:
+            continue
+        seen.add(key)
+        source_type = (item.get("source") or {}).get("type")
+        locations.append(
+            FullTextLocation(
+                pdf_url=item.get("pdf_url"),
+                landing_page_url=item.get("landing_page_url"),
+                is_oa=item.get("is_oa"),
+                license=item.get("license"),
+                version=item.get("version"),
+                host_type="repository"
+                if source_type == "repository"
+                else "publisher"
+                if source_type in {"journal", "conference"}
+                else "unknown",
+            )
+        )
     return SearchResult(
         provider=provider,
         external_id=row["id"].rsplit("/", 1)[-1],
@@ -57,12 +95,38 @@ def normalize(provider: str, row: dict) -> SearchResult:
         doi=normalized_doi(row.get("doi")),
         external_url=location.get("landing_page_url"),
         pdf_url=pdf,
+        is_open_access=(row.get("open_access") or {}).get("is_oa"),
+        locations=locations,
     )
 
 
 class AcademicSearch:
     def __init__(self, client: httpx.AsyncClient, settings):
         self.client, self.settings = client, settings
+
+    async def by_doi(self, provider: str, doi: str) -> SearchResult | None:
+        identity = normalized_doi(doi)
+        if identity is None:
+            return None
+        try:
+            if provider == "openalex":
+                data = await self.request(
+                    provider, "works", {"filter": f"doi:https://doi.org/{identity}", "per-page": 1}
+                )
+                rows = data.get("results") or []
+                if not rows:
+                    return None
+                row = rows[0]
+            else:
+                row = await self.request(
+                    provider, f"paper/{quote('DOI:' + identity, safe='')}", {"fields": FIELDS}
+                )
+            result = normalize(provider, row)
+        except AppError as error:
+            if error.code == "PAPER_NOT_FOUND":
+                return None
+            raise
+        return result if normalized_doi(result.doi) == identity else None
 
     async def request(self, provider: str, path: str, params: dict) -> dict:
         base = (

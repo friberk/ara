@@ -26,7 +26,7 @@
     "RTL and Playwright Get/Find PDF, institutional/browser guidance, navigation recovery, extraction gating, source versions and mobile/keyboard behavior.",
     "Fresh full regression, contract drift, one Alembic head, current upstream integration and restart persistence; live university entitlement remains a separate actual-network check."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "docs/implementation-plan.md",
     "docs/superpowers/specs/2026-10-08-fulltext-access-design.md",
@@ -37,6 +37,6 @@
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "Design and TDD-first implementation plan prepared in ara-019-fulltext, based on feat/managed-ollama at ddced814df3de60cd05e926b5a91915360ff2470. Local-model uncommitted edits were left with their owner. Application implementation and feature tests have not started; plan review is pending.",
+  "verification": "Implementation authorized; feat/fulltext-access incorporates managed-ollama through 459290d. Isolated baseline: backend 365 passed, frontend 375 passed with strict tsc/ESLint and build. Task 1: 9 metadata/DOI reds, 3 discovery reds and 1 ranking red; full backend now 378 passed in 43.47s. Remaining tasks are in progress.",
   "updated_at": "2026-10-08"
 }

@@ -7,6 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 Provider = Literal["openalex", "semantic_scholar"]
 
 
+class FullTextLocation(BaseModel):
+    pdf_url: str | None = None
+    landing_page_url: str | None = None
+    is_oa: bool | None = None
+    license: str | None = None
+    version: str | None = None
+    host_type: Literal["publisher", "repository", "unknown"] = "unknown"
+    oa_status: str | None = None
+
+
 class SearchResult(BaseModel):
     provider: Provider
     external_id: str
@@ -17,6 +27,8 @@ class SearchResult(BaseModel):
     doi: str | None = None
     external_url: str | None = None
     pdf_url: str | None = None
+    is_open_access: bool | None = None
+    locations: list[FullTextLocation] = Field(default_factory=list)
 
 
 class SearchHit(SearchResult):
