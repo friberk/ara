@@ -96,3 +96,37 @@ async def test_given_structured_paper_when_summarized_then_sections_are_cited_ca
     assert len(sections) >= 2
     titles = {item["section"].rsplit(" > ", 1)[-1] for item in summary.citations}
     assert {"1 Introduction", "2 Method", "3 Results"} <= titles
+
+
+async def test_given_sections_when_summarizing_locally_then_batches_keep_whole_sections_in_budget(
+    resources,
+):
+    from tests.support.evidence import seed_structured
+    from tests.test_ai_integration import local_fixture, within_local_budget
+
+    spec, requests = await local_fixture(resources)
+    headings = ("1 Introduction", "2 Method", "3 Results")
+    # About 650 counted tokens per passage: a section fits the local budget, two sections do
+    # not, and four passages would.
+    sections = [
+        (heading, "text", page, page, f"{heading} part {part}: " + " word" * 600)
+        for page, heading in enumerate(headings, start=1)
+        for part in range(3)
+    ]
+    paper_id, document_id, _ = await seed_structured(
+        resources, sections=sections, profile=None, index_state=None
+    )
+    identifier, token, payload = await summary_job(
+        resources, paper_id, document_id, spec.key, "default"
+    )
+    await summarization.run_summary_job(resources, identifier, 1, token, payload)
+    summary, _ = await finished_summary(resources, identifier)
+    prompts = [body["messages"][-1]["content"] for body in requests]
+    parts = [f"{heading} part {part}:" for heading in headings for part in range(3)]
+    assert [
+        [part for part in parts if part in prompt]
+        for prompt in prompts
+        if prompt.startswith("Summarize")
+    ] == [parts[0:3], parts[3:6], parts[6:9]]
+    assert within_local_budget(resources, spec, requests)
+    assert len(summary.citations) == 9

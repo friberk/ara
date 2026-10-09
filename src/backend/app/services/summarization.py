@@ -5,6 +5,7 @@ Map prompts label passages with short `[S#]` handles; model output is mapped to 
 """
 
 from dataclasses import replace
+from itertools import groupby
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -77,7 +78,10 @@ REDUCE_PREFIX = (
 
 
 def batches(passages, budget=24000, *, split_oversize=False, counter: TokenCounter):
-    """Passages in document order, packed by real tokens; each batch's handles start at S1."""
+    """Whole sections in document order, packed by real tokens; each batch's handles start at S1.
+
+    A section is split, at passage boundaries, only when it alone exceeds the budget.
+    """
     separator = counter.count(SEPARATOR)
 
     def cost(item):
@@ -102,15 +106,20 @@ def batches(passages, budget=24000, *, split_oversize=False, counter: TokenCount
                 remaining = remaining[len(text) :]
         else:
             pending.append(item)
-    for item in pending:
-        size = cost(item)
-        if size > budget:
-            raise LLMError("CONTEXT_LIMIT", "A source passage exceeds the summary budget.", 413)
-        if current and used + size > budget:
+    for _, section in groupby(pending, key=lambda item: item.section):
+        costed = [(item, cost(item)) for item in section]
+        # A section that does not fit the open batch starts a new one instead of splitting.
+        if current and used + sum(size for _, size in costed) > budget:
             groups.append(current)
             current, used = [], 0
-        current.append(item)
-        used += size
+        for item, size in costed:
+            if size > budget:
+                raise LLMError("CONTEXT_LIMIT", "A source passage exceeds the summary budget.", 413)
+            if current and used + size > budget:
+                groups.append(current)
+                current, used = [], 0
+            current.append(item)
+            used += size
     if current:
         groups.append(current)
     return [[replace(item, handle=f"S{n}") for n, item in enumerate(g, 1)] for g in groups]

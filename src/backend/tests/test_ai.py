@@ -90,6 +90,32 @@ def test_given_batches_when_labelling_then_each_batch_numbers_its_passages_from_
     ]
 
 
+def test_given_sections_when_batching_then_only_a_section_over_the_budget_is_split():
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.packing import render_evidence
+    from app.services.summarization import batches
+
+    counter = TiktokenCounter("o200k_base")
+    layout = [("Abstract", 2), ("Method", 3), ("Results", 6), ("Conclusion", 1)]
+    # About 1,000 tokens each: a 4,200-token batch holds four passages, not five.
+    passages = [
+        summary_passage(" word" * 1000, section=section)
+        for section, count in layout
+        for _ in range(count)
+    ]
+    groups = batches(passages, budget=4200, counter=counter)
+    assert [[item.section for item in group] for group in groups] == [
+        ["Abstract"] * 2,
+        ["Method"] * 3,
+        ["Results"] * 4,
+        ["Results"] * 2 + ["Conclusion"],
+    ]
+    assert [item.chunk_id for group in groups for item in group] == [
+        item.chunk_id for item in passages
+    ]
+    assert all(counter.count(render_evidence(group)) <= 4200 for group in groups)
+
+
 def test_given_sse_content_when_framing_then_newlines_are_json_escaped():
     import json
 
