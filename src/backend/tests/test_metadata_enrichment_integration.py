@@ -490,3 +490,43 @@ async def test_an_untitled_paper_reports_its_file_name_while_processing(resource
     )
     paper = await detail(resources, accepted.paper_id)
     assert paper.title is None and paper.file_name == "sec18-han.pdf"
+
+
+async def test_a_rejected_artifact_title_asks_the_saved_default_model_and_seeds_the_lookup(resources):
+    """paper.dvi with no printed title counts as missing, so the existing LLM fallback runs with
+    the saved default model and effort, and its title becomes the catalog lookup's clue."""
+    import pymupdf
+
+    from app.models.research import ModelConfiguration
+    from support.llm_server import metadata_model
+
+    async with resources.sessions() as session, session.begin():
+        session.add(
+            ModelConfiguration(
+                key="defaults",
+                value={"default_model": "gpt-5.6-terra", "reasoning_effort": "high"},
+            )
+        )
+    document = pymupdf.open()
+    document.set_metadata({"title": "paper.dvi", "creator": "dvips(k) 5.997"})
+    document.new_page().insert_text(
+        (72, 72), "Quiet Lattice Scheduling\nAda Researcher\nEvidence about lattices."
+    )
+    data = document.tobytes()
+    document.close()
+    llm_answer = {
+        "title": "Quiet Lattice Scheduling",
+        "authors": ["Ada Researcher"],
+        "year": None,
+        "abstract": None,
+        "doi": None,
+    }
+    async with metadata_model(resources, llm_answer) as calls:
+        accepted = await ingested(resources, data)
+    assert len(calls) == 1
+    assert calls[0]["model"] == "gpt-5.6-terra" and calls[0]["reasoning"]["effort"] == "high"
+    paper = await detail(resources, accepted.paper_id)
+    assert paper.title == "Quiet Lattice Scheduling"
+    assert paper.metadata_provenance["title"]["source"] == "llm"
+    job = await lookup_job(resources, accepted.paper_id)
+    assert job.payload["clues"]["title"] == "Quiet Lattice Scheduling"
