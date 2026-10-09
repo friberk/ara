@@ -1,6 +1,6 @@
 # Retrieval and conversation context overhaul — design
 
-Status: draft for Gate G0, which will record the Phase 0 measurements. Issues: ARA-021 (epic: ARA-070 to ARA-075) and ARA-043 (epic: ARA-076 to ARA-079). Branch `feat/rag-context`, based on `feat/managed-ollama` at `6b53fd1`.
+Status: Gate G0 measurements recorded (2026-10-09); implementation in progress. Issues: ARA-021 (epic: ARA-070 to ARA-075) and ARA-043 (epic: ARA-076 to ARA-079). Branch `feat/rag-context`, based on `feat/managed-ollama` at `6b53fd1`.
 
 ## 1. Problem
 
@@ -198,9 +198,33 @@ Setup: a throwaway backend-image container limited to 2 GB and 2 CPUs, on OrbSta
   - HNSW is impossible above 4,000 dimensions and is not used by per-document queries.
   - Weighted full-text search: 0.3–0.4 ms. 196 of 300 queries had zero AND-matches, so an OR fallback is required.
 
-### S1: models and Ollama
+### S1: models and Ollama (2026-10-09)
 
-Pending at this revision.
+Setup: `ara-ollama:0.40.1-ara.2` with 4 CPUs and a 12 GiB cap, on OrbStack arm64.
+
+- **Embedders:**
+  - Qwen3 Embedding 4B indexes at 51 tok/s and 8B at 29 tok/s; a 60k-token paper takes about 20 minutes on the 4B. Warm queries take 0.22 s and 0.40 s.
+  - Both ranked all 12 probe pairs correctly.
+  - `num_thread` must always be sent: without it a batch took 515 s instead of 153 s.
+  - Pinned digests: 4B `df5bd2e3…`, 8B `64b93349…`.
+- **OpenAI `text-embedding-3-large`:** 64 passages in 2.1 s, 3072 dimensions. `usage` equals the cl100k token count.
+- **Reranker through Ollama:**
+  - It works: this build returns log-probabilities in raw `/api/generate` mode.
+  - `dengcao/Qwen3-Reranker-0.6B:Q8_0` is broken (uniform logits, also on stock Ollama).
+  - The 0.6B F16 tag ranked 12/12 correctly, but 30 candidates took 54 s. The 4B took 180 s, and parallel requests gave no gain.
+  - ARA-074 is deferred, and `reranker_enabled` defaults to false.
+- **Co-residency (one container):**
+  - With `MAX_LOADED_MODELS=3`, the chat model, the 4B embedder and the 0.6B reranker stay resident: 8.3 GiB with the 3.7B chat model, 10.6 GiB with the 7B.
+  - 7B plus the 8B embedder does not fit: it swapped 7.7 GiB, or was OOM-killed with swap off.
+  - `MAX_LOADED_MODELS=1` reloads the chat model after every retrieval call (+5–18 s).
+  - Weights are not memory-mapped on CPU.
+  - The llama-server prompt cache grows about 265 MiB per new prompt; `LLAMA_ARG_CACHE_RAM=0` disables it.
+  - Compose now sets `MAX_LOADED_MODELS=3`, `LLAMA_ARG_CACHE_RAM=0` and `memswap_limit = mem_limit`.
+- **Local context:**
+  - An 11.5k-token prompt took 432–543 s to process at 16k or 32k context (21–27 tok/s), and generation ran at about 4 tok/s. Larger local windows are therefore not interactive, and `OLLAMA_CONTEXT_WINDOW` stays 8192.
+  - Flash attention is already enabled. A q8_0 KV cache halves KV memory but more than doubles prefill time.
+  - The local input budget is capped at 3,072 tokens.
+- **Token calibration** (2,000 words): o200k 2,650; OpenAI 2,650 + 6 framing tokens; cl100k 2,685; IFM 2,582; Qwen3 2,698. o200k with a 1.05 factor is used for local models.
 
 ## 7. Testing
 

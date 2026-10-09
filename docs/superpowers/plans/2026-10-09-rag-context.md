@@ -36,14 +36,14 @@
 | `PGVECTOR_IMAGE` | `pgvector/pgvector:0.8.7-pg17-bookworm@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d` (PostgreSQL 17.11, pgvector 0.8.7) | S2 Part B |
 | Child parser `RLIMIT_AS` / `RLIMIT_CPU` | 1.5 GiB / 150 s, with tuned threads (mandatory) | S2 Part A |
 | Worker `mem_limit` | 2g (unchanged), one parse child at a time | S2 Part A |
-| `OLLAMA_MAX_LOADED_MODELS` default | `<n>` | S1 §3 |
-| `OLLAMA_CONTEXT_WINDOW` default | `<tokens>` | S1 §4 |
-| `OLLAMA_FLASH_ATTENTION` / `OLLAMA_KV_CACHE_TYPE` | `<on/off>` / `<type>` | S1 §4 |
-| Local chars-per-token (IFM) | `<ratio>` | S1 §5 |
-| Hosted tiktoken encoding | `<o200k_base?>` | S1 §6 |
-| Qwen3 embed 4B / 8B digests | `<sha256>` / `<sha256>` | S1 §1 |
-| Reranker model id + digest, go/no-go | `<id>`, `<sha256>`, `<go/no-go>` | S1 §2 |
-| Reranker 30-candidate latency budget | `<s>` | S1 §2 |
+| `OLLAMA_MAX_LOADED_MODELS` default | 3, plus `LLAMA_ARG_CACHE_RAM=0` and `memswap_limit = mem_limit` (done in Wave 1) | S1 §3 |
+| `OLLAMA_CONTEXT_WINDOW` default | 8192 (unchanged); `local_input_budget_tokens` 3072 | S1 §4 |
+| `OLLAMA_FLASH_ATTENTION` / `OLLAMA_KV_CACHE_TYPE` | default (already enabled) / unchanged f16 (q8_0 doubles prefill) | S1 §4 |
+| Local token estimate | o200k_base × 1.05 (IFM 0.974×, Qwen3 1.018× of o200k) | S1 §5 |
+| Hosted tiktoken encoding | o200k_base (exact; +6 framing tokens per request) | S1 §6 |
+| Qwen3 embed 4B / 8B digests | `df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907` / `64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b`; embedder `num_ctx` 2048, `keep_alive` 10m | S1 §1 |
+| Reranker model id + digest, go/no-go | `dengcao/Qwen3-Reranker-0.6B:F16`, `d9cf33bea10fd318434af5b09425a3b7d1b9988b130899612bf3836aed13c013`; **deferred** (54 s / 30 candidates) | S1 §2 |
+| Reranker 30-candidate latency budget | n/a while deferred (10–15 candidates ≈ 18–27 s) | S1 §2 |
 
 ## Review Focus
 
