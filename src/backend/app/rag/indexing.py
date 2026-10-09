@@ -157,12 +157,8 @@ class Run:
     """One fenced attempt of an embed job over one index row."""
 
     def __init__(self, resources, job_id, generation, token, index: RetrievalIndex):
-        self.resources, self.job_id, self.generation, self.token = (
-            resources,
-            job_id,
-            generation,
-            token,
-        )
+        self.resources, self.job_id = resources, job_id
+        self.generation, self.token = generation, token
         self.index_id, self.document_id, self.profile = index.id, index.document_id, index.profile
         self.rebuild = index.chunk_set.endswith(REBUILD)
         self.chunk_set = index.chunk_set.removesuffix(REBUILD)
@@ -249,16 +245,20 @@ class Run:
             job = await fenced_job(session, self.job_id, self.generation, self.token)
             if job is None:
                 return
+            # Lock the serving row before the rebuild row, in the same order as ensure_index.
+            serving = (
+                await locked_index(session, self.document_id, self.profile, self.chunk_set)
+                if self.rebuild
+                else None
+            )
             index = await session.get(RetrievalIndex, self.index_id, with_for_update=True)
             if index is None:
                 complete_locked(job, {"index_id": str(self.index_id), "skipped": True})
                 return
             embedded = await session.scalar(self.embedded_count())
-            serving = index
-            if self.rebuild:
-                serving = await locked_index(
-                    session, self.document_id, self.profile, self.chunk_set
-                )
+            if serving is None:
+                serving = index
+            else:
                 # Swap atomically: readers see either every old vector or every new one.
                 await session.execute(
                     delete(ChunkEmbedding).where(
