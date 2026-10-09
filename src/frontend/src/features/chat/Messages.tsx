@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Markdown, pageLabel, SourceList } from '@/features/content'
 import { GenerationMeta } from '@/features/summary'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
+import { AnswerDetails } from './AnswerDetails'
 
 const sourceMarker = /\s?\[source:([0-9a-fA-F-]{36})\]/g
 /** Copied answers keep their evidence as readable page references instead of transport markers. */
@@ -77,11 +78,13 @@ export function AssistantMessage({ message, documentId, progress }: { message: M
       ) : (
         <p className="text-sm text-muted-foreground">No answer was saved.</p>
       )}
+      {!writing && message.grounding === 'insufficient' && <p className="text-sm text-muted-foreground">The paper doesn’t contain enough evidence for this.</p>}
       {message.citations.length > 0 && <SourceList citations={message.citations} documentId={documentId} context={message.content} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />}
       {!writing && (
         <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {message.content && <CopyAnswer message={message} />}
           <GenerationMeta model={message.model} effort={message.reasoning_effort} />
+          {message.retrieval && <AnswerDetails retrieval={message.retrieval} context={message.context} model={message.model} />}
           {message.state === 'interrupted' && <Badge variant="secondary" className="bg-warning-muted font-normal text-warning">Interrupted</Badge>}
           {message.state === 'failed' && <Badge variant="destructive" className="font-normal">Failed</Badge>}
         </div>
