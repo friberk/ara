@@ -262,3 +262,23 @@ def test_given_a_thinking_planner_when_timing_it_then_the_limit_outlasts_a_cpu_m
     assert planner_timeout(settings, local=False, thinks=True) > PLANNER_TIMEOUT_SECONDS
     assert planner_timeout(settings, local=True, thinks=True) >= 300
     assert planner_timeout(settings, local=True, thinks=False) == PLANNER_TIMEOUT_SECONDS
+
+
+async def test_given_a_compaction_job_without_an_effort_when_it_runs_then_it_fails_normally(
+    resources, monkeypatch
+):
+    from app.models.jobs import BackgroundJob
+
+    requests = hosted_responses(monkeypatch, resources, lambda body: SUMMARY_V1)
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3), model="gpt-5.6-terra")
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id, "gpt-5.6-terra", "low")
+    async with resources.sessions() as session, session.begin():
+        job = await session.get(BackgroundJob, job_id)
+        job.payload = {key: value for key, value in job.payload.items() if key != "effort"}
+    await run_job(resources, job_id)
+    async with resources.sessions() as session:
+        job = await session.get(BackgroundJob, job_id)
+    assert job.state == "failed" and job.error_code == "COMPACTION_FAILED"
+    assert requests == [] and await memories(resources, chat_id) == []

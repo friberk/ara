@@ -29,7 +29,6 @@ from app.integrations.context_registry import (
 from app.integrations.embedding_catalog import embedding_profile
 from app.integrations.embeddings import create_embedder
 from app.integrations.llm import (
-    HOSTED_REASONING_EFFORTS,
     LLMError,
     create_llm,
     generation_slots,
@@ -150,21 +149,10 @@ async def local_selection(resources, model: str):
     return model_dto(local_spec(model), row, context_window=window)
 
 
-def quiet_effort(efforts: list[str]) -> str:
-    """Thinking off when verified, else the lowest named level, else the model's default."""
-    if "none" in efforts:
-        return "none"
-    levels = [effort for effort in efforts if effort not in {"default", "on"}]
-    return levels[0] if levels else "default"
-
-
-async def memory_model(resources, chat_model: str, effort: str | None):
-    """The model and effort that plan and compact for a chat: the turn's own. A job queued
-    before efforts were recorded (`effort` None) keeps the earlier quietest-effort behavior."""
-    if local_spec(chat_model):
-        selection = await local_selection(resources, chat_model)
-        return chat_model, effort or quiet_effort(selection.reasoning_efforts), selection
-    return chat_model, effort or quiet_effort(list(HOSTED_REASONING_EFFORTS[chat_model])), None
+async def memory_model(resources, chat_model: str, effort: str):
+    """The model, effort and local selection (None when hosted) a chat plans and compacts with."""
+    selection = await local_selection(resources, chat_model) if local_spec(chat_model) else None
+    return chat_model, effort, selection
 
 
 def planner_timeout(settings, *, local: bool, thinks: bool) -> float:
@@ -581,7 +569,7 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
             await settle(resources, job_id, generation, token, result={"skipped": True})
             return
         compactor, effort, selection = await memory_model(
-            resources, payload["model"], payload.get("effort")
+            resources, payload["model"], payload["effort"]
         )
         profile = context_profile(
             resources, compactor, effort, thinking=thinking_controls(selection)
