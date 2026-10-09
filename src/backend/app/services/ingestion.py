@@ -351,6 +351,7 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
             for page in parsed["pages"]
         )
         await add_chunk_plan(session, document_id, plan)
+        became_ready = document.status != "ready"
         document.status, document.page_count = "ready", len(parsed["pages"])
         document.warnings, document.extractor_version = (
             parsed["warnings"],
@@ -364,3 +365,7 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         job.updated_at = now()
         await session.flush()
         await hooks.after_chunks_persisted(session, document_id=document.id)
+        if became_ready:
+            from app.services.summarization import queue_automatic_summary
+
+            await queue_automatic_summary(session, resources, document)

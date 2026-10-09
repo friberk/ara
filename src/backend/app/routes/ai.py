@@ -26,6 +26,7 @@ from app.schemas.ai import (
     SummaryPage,
 )
 from app.services.local_models import list_local_models, model_dto
+from app.services.summarization import summary_block
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
 
@@ -190,8 +191,10 @@ async def create_summary(paper_id: UUID, body: GenerationInput, request: Request
 
 @router.get("/papers/{paper_id}/summaries", response_model=SummaryPage)
 async def summaries(paper_id: UUID, request: Request):
-    async with request.app.state.resources.sessions() as session:
-        if await session.get(Paper, paper_id) is None:
+    resources = request.app.state.resources
+    async with resources.sessions() as session:
+        paper = await session.get(Paper, paper_id)
+        if paper is None:
             raise HTTPException(404, "Paper not found")
         items = (
             await session.scalars(
@@ -200,4 +203,7 @@ async def summaries(paper_id: UUID, request: Request):
                 .order_by(PaperSummary.created_at.desc())
             )
         ).all()
-        return SummaryPage(items=[Summary.model_validate(item) for item in items])
+        return SummaryPage(
+            items=[Summary.model_validate(item) for item in items],
+            blocked=await summary_block(session, resources, paper),
+        )
