@@ -46,3 +46,16 @@ test('Given the appearance setting, When Dark is chosen, Then the dark theme app
   await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
   expect(window.localStorage.getItem('theme')).toBe('dark')
 })
+
+
+test('Given local boolean and named thinking controls, When saved in Settings, Then the exact selection persists', async () => {
+  const local = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'] }
+  const { calls } = mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' }, 'PUT /settings': { default_model: local.key, reasoning_effort: 'on' } })
+  const { user } = renderApp('/settings')
+  const effort = await screen.findByRole('radiogroup', { name: 'Reasoning effort' })
+  await waitFor(() => expect(within(effort).getAllByRole('radio').map((item) => item.textContent)).toEqual(['Model default', 'None', 'On', 'Low', 'Medium', 'High']))
+  await user.click(within(effort).getByRole('radio', { name: 'On' }))
+  await user.click(screen.getByRole('button', { name: 'Save defaults' }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: local.key, reasoning_effort: 'on' }))
+  expect(await screen.findByText('Model defaults saved.')).toBeVisible()
+})

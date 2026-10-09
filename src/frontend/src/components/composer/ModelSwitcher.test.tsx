@@ -107,3 +107,36 @@ test('Given saving the default fails, Then the menu stays open and explains the 
   const menu = await screen.findByRole('menu')
   expect(await within(menu).findByRole('alert')).toHaveTextContent('Settings could not be saved. Try again.')
 })
+
+
+test('Given a verified local thinking model, When choosing On or a named level, Then exact native selection IDs are kept', async () => {
+  const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high', 'research'], unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
+  mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: 'Model: K2 Horizon 7B, Model default reasoning' }))
+  await chooseEffort(user, 'On')
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/on')
+  await user.click(screen.getByRole('button', { name: 'Model: K2 Horizon 7B, On reasoning' }))
+  await chooseEffort(user, 'research')
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/research')
+})
+
+
+test('Given local and hosted models, When switching between them, Then their reasoning options remain separate', async () => {
+  const hosted = { ...luna, reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }
+  const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
+  mockApi({ 'GET /models': { items: [hosted, local] }, 'GET /settings': { default_model: hosted.key, reasoning_effort: 'xhigh' } })
+  const { user } = mount()
+  await user.click(await screen.findByRole('button', { name: 'Model: GPT-5.6 Luna, Extra high reasoning' }))
+  await chooseEffort(user, 'Max')
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/max')
+  await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, Max reasoning' }))
+  await user.click(screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ }))
+  expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/default')
+  await user.click(screen.getByRole('button', { name: 'Model: K2 Horizon 7B, Model default reasoning' }))
+  screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus()
+  await user.keyboard('{ArrowRight}')
+  expect(await screen.findByRole('menuitemradio', { name: 'On' })).toBeVisible()
+  expect(screen.queryByRole('menuitemradio', { name: 'Extra high' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('menuitemradio', { name: 'Max' })).not.toBeInTheDocument()
+})
