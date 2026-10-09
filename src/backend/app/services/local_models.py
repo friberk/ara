@@ -347,6 +347,36 @@ async def retrieval_inference_slot(resources, key: str, *, background: bool = Fa
         yield
 
 
+# Lease work that must finish even if its caller is cancelled; referenced here until done.
+DETACHED: set[asyncio.Task] = set()
+
+
+def detach(work) -> asyncio.Task:
+    task = asyncio.create_task(work)
+    DETACHED.add(task)
+    task.add_done_callback(DETACHED.discard)
+    return task
+
+
+async def acquire_once(sessions, key: str, **options) -> UUID:
+    """One admission whose lease is released if its caller is cancelled after it commits.
+
+    A rerank deadline or a closed browser can cancel between the commit and the return; the
+    lost lease would otherwise block the slot until it expires.
+    """
+    attempt = detach(acquire_use(sessions, key, **options))
+    try:
+        return await asyncio.shield(attempt)
+    except asyncio.CancelledError:
+
+        def orphaned(done: asyncio.Task) -> None:
+            if not done.cancelled() and done.exception() is None:
+                detach(release_use(sessions, done.result()))
+
+        attempt.add_done_callback(orphaned)
+        raise
+
+
 async def acquire_waiting(
     sessions, key: str, *, slot: str, lease_seconds: int, wait_seconds: float, background: bool
 ):
@@ -354,7 +384,7 @@ async def acquire_waiting(
     deadline = time.monotonic() + wait_seconds
     while True:
         try:
-            return await acquire_use(
+            return await acquire_once(
                 sessions, key, slot=slot, lease_seconds=lease_seconds, background=background
             )
         except SlotBusy:
@@ -413,7 +443,8 @@ async def admitted_use(
         heartbeat.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat
-        await release_use(resources.sessions, token)
+        # A second cancel must not interrupt the release either.
+        await asyncio.shield(detach(release_use(resources.sessions, token)))
 
 
 async def replay(session, request_id, key, action, *, job_id=None):

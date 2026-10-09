@@ -160,3 +160,36 @@ async def test_given_no_waiting_search_when_background_admits_then_it_holds_the_
         async with resources.sessions() as session:
             uses = (await session.scalars(select(ModelUse))).all()
         assert [(use.slot, use.model_key) for use in uses] == [("retrieval", RETRIEVAL)]
+
+
+async def test_given_cancel_after_admission_commits_then_the_lease_is_released(
+    resources, monkeypatch
+):
+    """A rerank deadline or a closed browser can cancel the caller just after the lease row
+    commits, before the token returns; that lease must not block the slot until it expires."""
+    from app.services import local_models
+    from app.services.local_models import retrieval_inference_slot
+
+    await ready_models(resources, RETRIEVAL)
+    committed, real = asyncio.Event(), local_models.acquire_use
+
+    async def slow_close(*args, **options):
+        token = await real(*args, **options)
+        committed.set()
+        await asyncio.sleep(0.2)  # the session is still closing when the cancel arrives
+        return token
+
+    monkeypatch.setattr(local_models, "acquire_use", slow_close)
+
+    async def search():
+        async with retrieval_inference_slot(resources, RETRIEVAL):
+            await asyncio.sleep(5)
+
+    task = asyncio.create_task(search())
+    await committed.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0.5)
+    async with resources.sessions() as session:
+        assert (await session.scalars(select(ModelUse))).all() == []
