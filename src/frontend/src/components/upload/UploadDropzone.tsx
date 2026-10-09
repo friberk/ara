@@ -15,7 +15,7 @@ function formatSize(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1,
  * Drop or choose one PDF, then confirm with Upload PDF. The file input stays in the DOM (visually hidden)
  * so keyboard, screen-reader and automation users get the native picker.
  */
-export function UploadDropzone({ paperId, onAccepted, onSettled, title, description, className }: { paperId?: string; onAccepted?: (accepted: UploadAccepted) => void; onSettled?: () => void; title?: string; description?: string; className?: string }) {
+export function UploadDropzone({ paperId, onAccepted, onSettled, title, description, className, chooseLabel }: { paperId?: string; onAccepted?: (accepted: UploadAccepted) => void; onSettled?: () => void; title?: string; description?: string; className?: string; chooseLabel?: string }) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -50,6 +50,7 @@ export function UploadDropzone({ paperId, onAccepted, onSettled, title, descript
         <span className="max-w-xs text-xs text-muted-foreground">{description ?? 'Text-based PDF, up to 25 MB. The original stays available for reading and citations.'}</span>
         <input ref={input} id={`${id}-file`} aria-label="PDF file" type="file" accept="application/pdf,.pdf" className="sr-only" disabled={upload.isPending} onChange={(event) => choose(event.target.files?.[0] ?? null)} />
       </label>
+      {!file && chooseLabel && <Button variant="outline" size="sm" className="justify-self-start" onClick={() => input.current?.click()}>{chooseLabel}</Button>}
       {file && (
         <div className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2">
           <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

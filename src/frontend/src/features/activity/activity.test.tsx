@@ -8,6 +8,25 @@ const summary = { ...base, id: 'j2', kind: 'summary', state: 'completed', stage:
 const running = { ...base, id: 'j3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 55, paper_id: null, paper_title: null }
 afterEach(() => vi.unstubAllGlobals())
 
+test('Given a failed retrieval, When Retry download is pressed, Then a fresh full-text request targets its paper', async () => {
+  const job = { ...failed, kind: 'fulltext', error: { code: 'FULLTEXT_BLOCKED', message: 'This site blocked the download.' } }
+  const { calls } = mockApi({ 'GET /jobs': { items: [job] }, 'POST /papers/p1/retrieve-fulltext': { paper_id: 'p1', job_id: 'j-new' } })
+  const { user } = renderApp('/activity')
+  const row = (await screen.findByRole('heading', { name: 'PDF retrieval' })).closest('li') as HTMLElement
+  expect(within(row).getByRole('link', { name: failed.paper_title })).toHaveAttribute('href', '/papers/p1')
+  await user.click(within(row).getByRole('button', { name: 'Retry download' }))
+  await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1))
+  expect(calls.find((call) => call.method === 'POST')).toMatchObject({ path: '/papers/p1/retrieve-fulltext', body: { request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) } })
+  expect(calls.some((call) => call.path.endsWith('/retry'))).toBe(false)
+})
+
+test('Given a rate-limited retrieval in Activity, Then its retry respects the reported wait', async () => {
+  mockApi({ 'GET /jobs': { items: [{ ...failed, kind: 'fulltext', updated_at: new Date().toISOString(), result: { outcome: 'rate_limited', retry_after: 60 } }] } })
+  renderApp('/activity')
+  expect(await screen.findByRole('button', { name: 'Retry download' })).toBeDisabled()
+  expect(screen.getByText(/Try again in/)).toBeVisible()
+})
+
 test.each(['queued', 'verifying'])('Given a %s verification-only job, Then Activity names preparation and shows background status without transfer percentages', async (stage) => {
   const model = { key: 'ifm-k2-horizon-7b', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'] }
   mockApi({ 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: model.key, state: stage === 'queued' ? 'queued' : 'processing', stage, progress: 80, completed_bytes: 5592218900, total_bytes: 5592218900 }] } })

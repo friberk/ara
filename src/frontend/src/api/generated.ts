@@ -176,6 +176,40 @@ export interface paths {
         patch: operations["edit_api_v1_papers__paper_id__patch"];
         trace?: never;
     };
+    "/api/v1/papers/{paper_id}/fulltext": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Fulltext */
+        get: operations["get_fulltext_api_v1_papers__paper_id__fulltext_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/retrieve-fulltext": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retrieve Fulltext */
+        post: operations["retrieve_fulltext_api_v1_papers__paper_id__retrieve_fulltext_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents": {
         parameters: {
             query?: never;
@@ -580,6 +614,106 @@ export interface components {
              */
             reasoning_effort: string;
         };
+        /** FullTextAccepted */
+        FullTextAccepted: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** FullTextAttemptView */
+        FullTextAttemptView: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openalex" | "semantic_scholar";
+            /** Source Label */
+            source_label: string;
+            /** Version */
+            version?: string | null;
+            /** Is Oa */
+            is_oa?: boolean | null;
+            /** License */
+            license?: string | null;
+            /** Response Status */
+            response_status?: number | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "downloaded" | "access_required" | "blocked" | "not_found" | "rate_limited" | "unavailable" | "invalid_pdf" | "unsafe_url" | "unsupported_source" | "no_pdf_link" | "already_attached" | "superseded";
+            /** Reason */
+            reason: string;
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+        };
+        /** FullTextInput */
+        FullTextInput: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** FullTextLocation */
+        FullTextLocation: {
+            /** Pdf Url */
+            pdf_url?: string | null;
+            /** Landing Page Url */
+            landing_page_url?: string | null;
+            /** Is Oa */
+            is_oa?: boolean | null;
+            /** License */
+            license?: string | null;
+            /** Version */
+            version?: string | null;
+            /**
+             * Host Type
+             * @default unknown
+             * @enum {string}
+             */
+            host_type: "publisher" | "repository" | "unknown";
+            /** Oa Status */
+            oa_status?: string | null;
+        };
+        /** FullTextStatus */
+        FullTextStatus: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "open_copy_reported" | "publisher_link_only" | "unknown";
+            /** Locations */
+            locations?: components["schemas"]["FullTextLocation"][];
+            retrieval_job?: components["schemas"]["JobStatus"] | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Ingest Job Id */
+            ingest_job_id?: string | null;
+            /** Last Checked At */
+            last_checked_at?: string | null;
+            /** Attempts */
+            attempts?: components["schemas"]["FullTextAttemptView"][];
+            /** Acquisition */
+            acquisition?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** GenerationInput */
         GenerationInput: {
             /**
@@ -644,6 +778,11 @@ export interface components {
         JobPage: {
             /** Items */
             items: components["schemas"]["JobStatus"][];
+        };
+        /** JobRetryInput */
+        JobRetryInput: {
+            /** Request Id */
+            request_id?: string | null;
         };
         /** JobStatus */
         JobStatus: {
@@ -924,6 +1063,10 @@ export interface components {
             external_url?: string | null;
             /** Pdf Url */
             pdf_url?: string | null;
+            /** Is Open Access */
+            is_open_access?: boolean | null;
+            /** Locations */
+            locations?: components["schemas"]["FullTextLocation"][];
             /** Saved Paper Id */
             saved_paper_id?: string | null;
         };
@@ -964,6 +1107,10 @@ export interface components {
             external_url?: string | null;
             /** Pdf Url */
             pdf_url?: string | null;
+            /** Is Open Access */
+            is_open_access?: boolean | null;
+            /** Locations */
+            locations?: components["schemas"]["FullTextLocation"][];
         };
         /** Summary */
         Summary: {
@@ -1137,7 +1284,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 paper_id?: string | null;
-                kind?: ("ingest" | "summary" | "model_download" | "model_delete") | null;
+                kind?: ("ingest" | "summary" | "fulltext" | "model_download" | "model_delete") | null;
                 active?: boolean | null;
             };
             header?: never;
@@ -1177,7 +1324,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["ModelOperationInput"] | null;
+                "application/json": components["schemas"]["JobRetryInput"] | null;
             };
         };
         responses: {
@@ -1455,6 +1602,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fulltext_api_v1_papers__paper_id__fulltext_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FullTextStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retrieve_fulltext_api_v1_papers__paper_id__retrieve_fulltext_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FullTextInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FullTextAccepted"];
                 };
             };
             /** @description Validation Error */

@@ -94,6 +94,7 @@ export function PaperCard({ hit }: { hit: SearchHit }) {
         {savedId ? <Link to={`/papers/${savedId}`} className="rounded-sm underline-offset-4 hover:underline">{title}</Link> : title}
       </h2>
       <PaperByline authors={hit.authors} year={hit.year} className="mt-1.5" />
+      {(hit.is_open_access === true || hit.locations?.some((location) => location.is_oa === true)) && <p className="mt-1.5 text-xs text-muted-foreground">Open copy reported</p>}
       {hit.abstract?.trim() ? <Abstract text={hit.abstract.trim()} /> : <p className="mt-2.5 text-sm text-muted-foreground">{providerLabels[hit.provider]} has no abstract for this paper.</p>}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <PaperLinks hit={hit} />

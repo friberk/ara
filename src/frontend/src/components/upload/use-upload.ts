@@ -21,6 +21,7 @@ export function useUploadPdf(paperId?: string) {
       void client.invalidateQueries({ queryKey: queryKeys.papers.all })
       void client.invalidateQueries({ queryKey: queryKeys.jobs.all })
       void client.invalidateQueries({ queryKey: queryKeys.papers.detail(accepted.paper_id) })
+      void client.invalidateQueries({ queryKey: queryKeys.fulltext(accepted.paper_id) })
     },
   })
 }
