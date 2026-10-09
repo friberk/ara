@@ -176,7 +176,7 @@ async def test_given_unsupported_effort_or_context_when_generating_then_no_http_
             await llm.complete("ifm-k2-horizon-7b", "low", "System", "Paper")
         assert failure.value.code == "INVALID_REASONING"
         with pytest.raises(LLMError) as failure:
-            # Real tokens, not bytes: 6,000 tokens exceed the 5,632-token local input budget.
+            # Real tokens, not bytes: 6,000 tokens exceed the 3,072-token local input budget.
             await llm.complete("ifm-k2-horizon-7b", "default", "System", " word" * 6000)
         assert failure.value.code == "CONTEXT_LIMIT"
         assert requests == []
@@ -223,7 +223,7 @@ def test_given_local_model_when_budgeting_then_output_and_safety_are_reserved():
     from app.integrations.llm import model_limits, validate_selection
 
     resources = SimpleNamespace(settings=Settings(_env_file=None))
-    assert model_limits(resources, "ifm-k2-horizon-7b") == (5632, 2048)
+    assert model_limits(resources, "ifm-k2-horizon-7b") == (3072, 2048)
     assert model_limits(resources, "gpt-5.6-luna") == (64000, 4000)
     assert validate_selection("ifm-k2-horizon-7b", "default").provider == "ollama"
 

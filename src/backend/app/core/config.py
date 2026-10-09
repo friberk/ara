@@ -29,8 +29,9 @@ class Settings(BaseSettings):
     ollama_max_output_tokens: int = Field(default=2048, ge=1, le=32768)
     # Ollama counts thinking against num_predict, so thinking efforts get their own allowance.
     ollama_thinking_tokens: int = Field(default=1024, ge=0, le=32768)
-    # Interactive cap on local prompts: CPU prefill of long prompts takes minutes (ARA-070 S1).
-    local_input_budget_tokens: int = Field(default=5632, ge=256, le=131072)
+    # Interactive cap on local prompts: CPU prefill runs at tens of tokens per second, so
+    # 3,072 tokens keep a local answer near one minute (ARA-070 S1).
+    local_input_budget_tokens: int = Field(default=3072, ge=256, le=131072)
     # Local tokenizers measured 0.974-1.018x o200k (ARA-070 S1); counts round up from o200k.
     local_token_factor: float = Field(default=1.05, ge=1, le=2)
     hosted_working_context_tokens: int = Field(default=64000, ge=1024, le=1_000_000)

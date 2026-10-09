@@ -43,7 +43,8 @@ def test_given_local_model_without_thinking_when_profiling_then_output_and_safet
     assert profile.thinking_allowance == 0
     assert profile.input_budget == 16384 - 2048 - 512
     capped = context_profile(resources(ollama_context_window=16384), "ifm-k2-horizon-7b", "none")
-    assert capped.input_budget == 5632
+    # Interactive default: CPU prefill runs at tens of tokens per second (ARA-070 S1).
+    assert capped.input_budget == 3072
 
 
 def test_given_local_thinking_effort_when_profiling_then_thinking_has_its_own_allowance():
@@ -81,7 +82,7 @@ def test_given_local_model_when_counting_then_calibrated_factor_is_applied():
 def test_given_registry_when_limiting_then_model_limits_delegates():
     from app.integrations.llm import model_limits
 
-    assert model_limits(resources(), "ifm-k2-horizon-7b") == (5632, 2048)
+    assert model_limits(resources(), "ifm-k2-horizon-7b") == (3072, 2048)
     assert model_limits(resources(), "gpt-5.6-luna") == (64000, 4000)
 
 
@@ -125,11 +126,13 @@ async def test_given_hosted_model_when_recording_configuration_then_budget_is_ex
     }
 
 
-def local_adapter(client, *, efforts=("default", "none", "on"), thinking=THINKING_OFF_BY_DEFAULT):
+def local_adapter(
+    client, *, efforts=("default", "none", "on"), thinking=THINKING_OFF_BY_DEFAULT, **settings
+):
     from app.integrations.ollama_llm import OllamaLLM
 
     return OllamaLLM(
-        Settings(openai_api_key=None, _env_file=None),
+        Settings(openai_api_key=None, _env_file=None, **settings),
         "hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M",
         http_client=client,
         reasoning_efforts=efforts,
@@ -175,17 +178,27 @@ async def test_given_local_prompt_when_budgeting_then_real_tokens_decide_the_lim
         await local_adapter(client).complete("ifm-k2-horizon-7b", "none", "System", "x" * 12000)
         assert len(requests) == 1
         with pytest.raises(LLMError) as failure:
+            # About 3,150 counted tokens exceed the 3,072-token interactive default.
             await local_adapter(client).complete(
+                "ifm-k2-horizon-7b", "none", "System", " word" * 3000
+            )
+        assert failure.value.code == "CONTEXT_LIMIT" and len(requests) == 1
+        # Without the interactive cap, the window decides: 5,632 tokens, or 4,608 with thinking.
+        wide = {"local_input_budget_tokens": 8192}
+        with pytest.raises(LLMError) as failure:
+            await local_adapter(client, **wide).complete(
                 "ifm-k2-horizon-7b", "none", "System", " word" * 6000
             )
         assert failure.value.code == "CONTEXT_LIMIT" and len(requests) == 1
         with pytest.raises(LLMError) as failure:
             # Fits without thinking, but not once thinking takes its allowance.
-            await local_adapter(client).complete(
+            await local_adapter(client, **wide).complete(
                 "ifm-k2-horizon-7b", "on", "System", " word" * 5000
             )
         assert failure.value.code == "CONTEXT_LIMIT" and len(requests) == 1
-        await local_adapter(client).complete("ifm-k2-horizon-7b", "none", "System", " word" * 5000)
+        await local_adapter(client, **wide).complete(
+            "ifm-k2-horizon-7b", "none", "System", " word" * 5000
+        )
         assert len(requests) == 2
 
 

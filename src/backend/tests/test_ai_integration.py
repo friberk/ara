@@ -155,7 +155,7 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
             "window": 8192,
             "max_output": 2048,
             "thinking_allowance": 0,
-            "input_budget": 5632,
+            "input_budget": 3072,
             "tokenizer": "o200k_base",
             "token_factor": 1.05,
         }
@@ -367,7 +367,8 @@ async def summary_job_fixture(resources, spec, count):
     async with resources.sessions() as session, session.begin():
         await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         for index in range(count):
-            text = f"Section {index}: " + " word" * 3000
+            # About 2,100 tokens: each section needs its own map batch under the 3,072 budget.
+            text = f"Section {index}: " + " word" * 2000
             session.add(
                 DocumentChunk(
                     document_id=document_id,
@@ -430,7 +431,8 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
         if busy_kind == "http" and len(prompts) == 6:
             return httpx.Response(503, json={"error": "busy"})
         markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        content = markers + " word" * 2000
+        # About 1,200 tokens: two outputs share a reduction batch, three do not.
+        content = markers + " word" * 1100
         return httpx.Response(
             200,
             json={
@@ -480,7 +482,8 @@ async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compressi
         calls.append(body)
         prompt = body["messages"][-1]["content"]
         markers = " ".join(dict.fromkeys(re.findall(r"\[source:[0-9a-f-]+\]", prompt)))
-        words = 1000 if prompt.startswith("Compress") and compression == "short" else 3000
+        # 2,000-word outputs cannot pair in a reduction; 500-word compressions can.
+        words = 500 if prompt.startswith("Compress") and compression == "short" else 2000
         content = markers + " word" * words
         return httpx.Response(
             200,
@@ -570,7 +573,7 @@ async def test_given_prose_evidence_when_preparing_local_chat_then_tokens_fit_mo
     _, prompt, chunks, _ = await chat.prepare(resources, chat_id, body)
     profile = context_profile(resources, spec.key, "default")
     assert len(chunks) == 10
-    # Byte counting could never fit these passages in the 5,632-token local budget.
+    # Byte counting could never fit these passages in the 3,072-token local budget.
     assert sum(len(passage(chunk).encode()) for chunk in chunks) > profile.input_budget
     assert answer_tokens(profile.counter, prompt) <= profile.input_budget
 
@@ -619,7 +622,7 @@ async def test_given_exact_local_evidence_budget_when_preparing_chat_then_assemb
     )
 
 
-@pytest.mark.parametrize(("words", "whole"), [(4000, True), (12000, False)])
+@pytest.mark.parametrize(("words", "whole"), [(2000, True), (12000, False)])
 async def test_given_local_metadata_evidence_when_extracting_then_real_tokens_bound_it(
     resources, words, whole
 ):
@@ -652,7 +655,7 @@ async def test_given_local_metadata_evidence_when_extracting_then_real_tokens_bo
     evidence = "Traceable Research\nAda Example\n2024\n" + " word" * words
     await extract_metadata(resources, evidence)
     sent = requests[0]["messages"]
-    # 4,000 words are about 20 KB: byte counting cut them near 5 KB.
+    # 2,000 words are about 10 KB: byte counting cut them near 2.8 KB.
     assert (sent[-1]["content"] == evidence) is whole
     assert evidence.startswith(sent[-1]["content"])
     profile = context_profile(resources, spec.key, "default")
