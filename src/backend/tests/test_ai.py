@@ -205,7 +205,8 @@ def test_given_over_budget_prompt_when_preparing_request_then_reject():
     adapter = HostedLLM(Settings(openai_api_key="fixture", _env_file=None))
     try:
         with pytest.raises(LLMError, match="context"):
-            adapter.parameters("gpt-5.6-luna", "low", "instructions", "x" * 32000)
+            # Real tokens, not bytes: 64,000 tokens exceed the hosted working cap.
+            adapter.parameters("gpt-5.6-luna", "low", "instructions", " word" * 64000)
     finally:
         asyncio.run(adapter.close())
 

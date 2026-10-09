@@ -9,10 +9,15 @@ from typing import Any
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from sqlalchemy import func, select, text
 
+from app.integrations.context_registry import (
+    HOSTED_OUTPUT_TOKENS,
+    context_profile,
+    hosted_profile,
+)
+from app.integrations.tokens import PromptMessage, count_messages
 from app.schemas.ai import Model
 
-INPUT_LIMIT = 32000
-OUTPUT_LIMIT = 4000
+OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
 LOCAL_TEMPERATURE = 0.0
 # Each model owns its controls, even where their current documented sets match.
 # Source: https://developers.openai.com/api/docs/models/gpt-5.6-{sol,terra,luna}
@@ -68,16 +73,15 @@ def validate_selection(model: str, effort: str) -> Model:
     )
 
 
-def model_limits(resources, model: str) -> tuple[int, int]:
-    from app.integrations.model_catalog import local_spec
+def thinking_controls(selection: Model | None) -> dict | None:
+    return selection.thinking.model_dump() if selection and selection.thinking else None
 
-    if local_spec(model):
-        settings = resources.settings
-        return (
-            settings.ollama_context_window - settings.ollama_max_output_tokens - 512,
-            settings.ollama_max_output_tokens,
-        )
-    return INPUT_LIMIT, OUTPUT_LIMIT
+
+def model_limits(
+    resources, model: str, effort: str = "default", *, thinking: dict | None = None
+) -> tuple[int, int]:
+    profile = context_profile(resources, model, effort, thinking=thinking)
+    return profile.input_budget, profile.max_output
 
 
 async def validate_model_available(resources, model: str, effort: str) -> Model:
@@ -113,7 +117,7 @@ def create_llm(resources, model: str, *, selection: Model | None = None):
             spec.model_id,
             http_client=resources.ollama_generation_http,
             reasoning_efforts=selection.reasoning_efforts if selection else ["default"],
-            thinking=selection.thinking.model_dump() if selection and selection.thinking else None,
+            thinking=thinking_controls(selection),
         )
     validate_selection(model, "low")
     return HostedLLM(resources.settings)
@@ -141,25 +145,33 @@ async def generation_slots(resources, model: str):
 async def generation_configuration(resources, model: str, effort: str) -> dict:
     from app.integrations.model_catalog import local_spec
 
-    input_limit, output_limit = model_limits(resources, model)
     configuration = {
         "provider": "openai",
         "prompt_version": "1",
         "model": model,
-        "input_limit": input_limit,
-        "output_limit": output_limit,
         "reasoning_effort": effort,
     }
+    thinking = None
     if local_spec(model):
         from app.services.local_models import local_generation_provenance
 
-        configuration.update(await local_generation_provenance(resources, model, effort))
+        provenance = await local_generation_provenance(resources, model, effort)
+        thinking = provenance["thinking"]
+        configuration.update(provenance)
         configuration.update(
-            context_window=resources.settings.ollama_context_window,
             num_thread=resources.settings.ollama_num_threads,
-            safety_tokens=512,
             temperature=LOCAL_TEMPERATURE,
         )
+    profile = context_profile(resources, model, effort, thinking=thinking)
+    configuration.update(
+        window=profile.window,
+        max_output=profile.max_output,
+        thinking_allowance=profile.thinking_allowance,
+        safety_tokens=profile.safety,
+        input_budget=profile.input_budget,
+        tokenizer=profile.counter.encoding.name,
+        token_factor=profile.counter.factor,
+    )
     return configuration
 
 
@@ -209,6 +221,7 @@ class Completion:
 class HostedLLM:
     def __init__(self, settings, *, http_client=None):
         ensure_configured(settings)
+        self.settings = settings
         self.client = AsyncOpenAI(
             api_key=settings.openai_api_key.get_secret_value(),
             base_url=settings.openai_base_url,
@@ -225,7 +238,9 @@ class HostedLLM:
         if model not in PRICES:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
-        if estimate_tokens(instructions) + estimate_tokens(prompt) > INPUT_LIMIT:
+        profile = hosted_profile(self.settings, model)
+        messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
+        if count_messages(profile.counter, messages) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413
             )
@@ -235,7 +250,7 @@ class HostedLLM:
             "instructions": instructions,
             "input": prompt,
             "store": False,
-            "max_output_tokens": OUTPUT_LIMIT,
+            "max_output_tokens": profile.max_output,
         }
 
     async def complete(self, model, effort, instructions, prompt, *, schema=None) -> Completion:

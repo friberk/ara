@@ -127,10 +127,24 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
         )
         assert saved.configuration["runtime_version"] == "0.40.1-ara.fixture"
         assert saved.configuration["temperature"] == 0.0
-        assert (
-            saved.configuration["input_limit"] == 5632
-            and saved.configuration["output_limit"] == 2048
-        )
+        assert {
+            key: saved.configuration[key]
+            for key in (
+                "window",
+                "max_output",
+                "thinking_allowance",
+                "input_budget",
+                "tokenizer",
+                "token_factor",
+            )
+        } == {
+            "window": 8192,
+            "max_output": 2048,
+            "thinking_allowance": 0,
+            "input_budget": 5632,
+            "tokenizer": "o200k_base",
+            "token_factor": 1.05,
+        }
         assert saved.citations and all(
             c["document_id"] == str(document_id) for c in saved.citations
         )

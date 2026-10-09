@@ -6,7 +6,9 @@ from collections.abc import AsyncIterator, Sequence
 
 import httpx
 
-from app.integrations.llm import LOCAL_TEMPERATURE, Completion, LLMError, estimate_tokens
+from app.integrations.context_registry import local_profile
+from app.integrations.llm import LOCAL_TEMPERATURE, Completion, LLMError
+from app.integrations.tokens import PromptMessage, count_messages
 
 
 class OllamaLLM:
@@ -23,6 +25,7 @@ class OllamaLLM:
         self.reasoning_efforts = tuple(reasoning_efforts)
         from app.integrations.ollama import local_think_mapping
 
+        self.thinking = thinking
         self.think_mapping = local_think_mapping(thinking)
         self._owns_client = http_client is None
         self.client = http_client or httpx.AsyncClient(
@@ -50,8 +53,8 @@ class OllamaLLM:
             raise LLMError(
                 "INVALID_REASONING", "This local model does not support that reasoning effort.", 422
             )
-        limit = self.settings.ollama_context_window - self.settings.ollama_max_output_tokens - 512
-        output_limit = self.settings.ollama_max_output_tokens
+        profile = local_profile(self.settings, model, effort, thinking=self.thinking)
+        output_limit = profile.max_output
         if max_output_tokens is not None:
             if (
                 not isinstance(max_output_tokens, int)
@@ -62,7 +65,8 @@ class OllamaLLM:
                     "CONTEXT_LIMIT", "Intermediate output exceeds the configured allocation.", 413
                 )
             output_limit = max_output_tokens
-        if estimate_tokens(instructions) + estimate_tokens(prompt) > limit:
+        messages = [PromptMessage("system", instructions), PromptMessage("user", prompt)]
+        if count_messages(profile.counter, messages) > profile.input_budget:
             raise LLMError(
                 "CONTEXT_LIMIT", "This request exceeds the application context budget.", 413
             )
@@ -74,8 +78,9 @@ class OllamaLLM:
             ],
             "stream": stream,
             "options": {
-                "num_ctx": self.settings.ollama_context_window,
-                "num_predict": output_limit,
+                "num_ctx": profile.window,
+                # Thinking shares num_predict, so it never consumes the answer's allowance.
+                "num_predict": output_limit + profile.thinking_allowance,
                 "num_thread": self.settings.ollama_num_threads,
                 "temperature": LOCAL_TEMPERATURE,
             },
