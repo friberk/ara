@@ -24,6 +24,7 @@ from app.routes.research import router as research_router
 from app.routes.retrieval import router as retrieval_router
 from app.services.dispatcher import dispatcher_loop
 from app.services.health import readiness
+from app.services.reindex import prepare_search
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 local_publish=execute_local_summary.send,
             )
         )
+        search = asyncio.create_task(prepare_search(resources))
         try:
             yield
         finally:
-            dispatcher.cancel()
-            with suppress(asyncio.CancelledError):
-                await dispatcher
+            for task in (search, dispatcher):
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
             await resources.close()
 
     app = FastAPI(title="AI Research Assistant", version="0.1.0", lifespan=lifespan)

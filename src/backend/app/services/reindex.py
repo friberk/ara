@@ -4,13 +4,18 @@ Run with `docker compose exec api python -m app.services.reindex`. Documents kee
 their previous chunks until the new ingest job replaces them in one transaction.
 """
 
+import asyncio
+import logging
+
 from sqlalchemy import or_, select
 
 from app.models.jobs import BackgroundJob
 from app.models.research import Document
 from app.rag.chunking import CHUNK_SET
+from app.rag.indexing import reconcile_indexes
 from app.repositories.jobs import enqueue
 
+logger = logging.getLogger(__name__)
 # Reuse the original job's metadata inference so re-ingestion never repeats a paid call.
 CARRIED_PAYLOAD = ("metadata_attempted", "metadata_result")
 
@@ -56,6 +61,20 @@ async def enqueue_reindex(resources) -> int:
             document.ingest_job_id = job.id
             queued += 1
         return queued
+
+
+async def prepare_search(resources) -> None:
+    """API startup: queue the indexes that were missing or waiting for a key (ARA-072).
+
+    Retries until the database answers; every step is idempotent under concurrent runs.
+    """
+    while True:
+        try:
+            await reconcile_indexes(resources)
+            return
+        except Exception:
+            logger.warning("Search preparation unavailable; retrying later")
+            await asyncio.sleep(resources.settings.recovery_interval_seconds)
 
 
 async def main() -> None:

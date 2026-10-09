@@ -603,6 +603,7 @@ async def run_model_job(resources, job_id, generation, token):
         row = await session.get(ModelInstallation, job.model_key)
         desired_state = row.desired_state
     spec, control = checked_spec(job.model_key), runtime(resources)
+    finished = False
     try:
         async with asyncio.timeout(min(resources.settings.ollama_pull_timeout_seconds, 21_600)):
             if desired_state == "paused":
@@ -711,7 +712,7 @@ async def run_model_job(resources, job_id, generation, token):
                     resources.sessions, job_id, generation, token, validation=validation
                 ):
                     return
-            await finish_model_job(resources.sessions, job_id, generation, token)
+            finished = await finish_model_job(resources.sessions, job_id, generation, token)
     except TimeoutError:
         await settle_model_failure(
             resources,
@@ -724,6 +725,14 @@ async def run_model_job(resources, job_id, generation, token):
         )
     except AppError as error:
         await settle_model_failure(resources, job_id, generation, token, error)
+    if finished and spec.kind == "embedding" and job.kind == "model_download":
+        # Papers waiting for this embedder get their indexes; it is gated on availability.
+        from app.rag.indexing import reconcile_indexes
+
+        try:
+            await reconcile_indexes(resources)
+        except Exception:
+            logger.warning("Search indexes deferred to the next API start after verification")
 
 
 async def settle_model_failure(resources, job_id, generation, token, error):

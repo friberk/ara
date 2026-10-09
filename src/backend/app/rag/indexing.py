@@ -62,6 +62,29 @@ async def effective_profile(session, paper: Paper) -> tuple[str, Literal["defaul
     return await default_profile(session), "default"
 
 
+async def profile_status(session, settings, profile) -> tuple[str, str | None]:
+    """Embedding and reranker profiles: a hosted key, or a ready, verified local install."""
+    from app.integrations.llm import configured
+    from app.integrations.model_catalog import local_spec
+    from app.services.local_models import model_dto
+
+    if profile.provider == "openai":
+        if configured(settings):
+            return "available", None
+        return "unavailable", "Add an OpenAI API key on the server."
+    spec = local_spec(profile.local_model_key)
+    if spec is None:
+        return "unavailable", f"Download {profile.display_name} in Settings."
+    download = f"Download {spec.display_name} in Settings."
+    row = await session.get(ModelInstallation, spec.key)
+    model = model_dto(spec, row, context_window=settings.ollama_context_window)
+    if model.status == "available":
+        return "available", None
+    if row is None or row.state == "missing":
+        return "unavailable", download
+    return "unavailable", model.unavailable_reason
+
+
 async def locked_index(session, document_id: UUID, profile: str, chunk_set: str):
     await session.execute(
         insert(RetrievalIndex)
@@ -121,6 +144,71 @@ async def ensure_index(
     target.error_code = target.error_message = None
     target.updated_at = now()
     return target
+
+
+async def reconcile_document(session, document_id: UUID, available: set[str]) -> bool:
+    """Queue the effective profile's index when it is missing or was unavailable."""
+    # Lock first, then look for a re-ingest, so concurrent runs queue each index once.
+    document = await session.scalar(
+        select(Document).where(Document.id == document_id).with_for_update()
+    )
+    if document is None or document.status != "ready" or document.chunk_set is None:
+        return False
+    # A queued re-ingest replaces the chunks and queues their index itself.
+    if await session.scalar(
+        select(BackgroundJob.id)
+        .where(
+            BackgroundJob.kind == "ingest",
+            BackgroundJob.state.in_(("queued", "processing")),
+            BackgroundJob.payload["document_id"].astext == str(document_id),
+        )
+        .limit(1)
+    ):
+        return False
+    profile, _ = await effective_profile(session, await session.get(Paper, document.paper_id))
+    if profile not in available:
+        return False
+    index = await session.scalar(
+        select(RetrievalIndex).where(
+            RetrievalIndex.document_id == document_id,
+            RetrievalIndex.profile == profile,
+            RetrievalIndex.chunk_set == document.chunk_set,
+        )
+    )
+    if index is not None and (
+        index.state == "ready" or (index.state == "failed" and index.error_code not in UNAVAILABLE)
+    ):
+        return False  # Provider failures are rebuilt from the paper's Details, not on every boot.
+    owner = index.job_id if index else None
+    return (await ensure_index(session, document_id, profile)).job_id != owner
+
+
+async def reconcile_indexes(resources) -> int:
+    """Queue missing or unavailable indexes whose effective profile can embed now.
+
+    Runs at API startup (a key arrives with a restart), after the default profile changes and
+    after a local embedding model verifies. Returns the number of embed jobs queued.
+    """
+    async with resources.sessions() as session:
+        available = {
+            key
+            for key, profile in PROFILES.items()
+            if (await profile_status(session, resources.settings, profile))[0] == "available"
+        }
+        documents = (
+            await session.scalars(
+                select(Document.id)
+                .where(Document.status == "ready", Document.chunk_set.is_not(None))
+                .order_by(Document.created_at, Document.id)
+            )
+        ).all()
+    if not available:
+        return 0
+    queued = 0
+    for document_id in documents:
+        async with resources.sessions() as session, session.begin():
+            queued += await reconcile_document(session, document_id, available)
+    return queued
 
 
 async def ready_index(session, document_id: UUID, preferred: str) -> RetrievalIndex | None:
