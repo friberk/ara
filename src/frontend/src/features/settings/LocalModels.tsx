@@ -14,7 +14,7 @@ import { modelBytes } from '@/lib/format-bytes'
 const labels: Record<ModelInstallation['state'], string> = { missing: 'Weights not downloaded', queued: 'Queued', downloading: 'Downloading', pausing: 'Pausing', paused: 'Paused', verifying: 'Preparing model', ready: 'Installed', deleting: 'Deleting', failed: 'Failed' }
 const inProgress = new Set<ModelInstallation['state']>(['queued', 'downloading', 'pausing', 'verifying', 'deleting'])
 // Chat models need no label; the others serve search rather than answers.
-const kindLabels: Partial<Record<Model['kind'], string>> = { embedding: 'Search', reranker: 'Ranking' }
+const kindLabels: Partial<Record<Model['kind'], string>> = { embedding: 'Search', reranker: 'Reranker' }
 
 function LocalModelRow({ model, isDefault }: { model: Model & { installation: ModelInstallation }; isDefault: boolean }) {
   const operation = useModelAction()

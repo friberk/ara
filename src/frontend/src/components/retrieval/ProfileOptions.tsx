@@ -25,8 +25,8 @@ function OptionRow({ name, value, checked, onSelect, title, badge, children }: {
   )
 }
 
-/** A local model's reason and a way to install it; shared by the Settings list and a paper's index panel. */
-export function UnavailableReason({ profile }: { profile: EmbeddingProfile }) {
+/** A local model's reason and a way to install it; shared by the Settings lists and a paper's index panel. */
+export function UnavailableReason({ profile }: { profile: Pick<EmbeddingProfile, 'unavailable_reason' | 'local_model_key'> }) {
   return (
     <span className="flex flex-wrap gap-x-2">
       <span>{profile.unavailable_reason ?? 'Not available on the server right now.'}</span>
