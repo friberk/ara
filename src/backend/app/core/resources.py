@@ -9,12 +9,13 @@ from minio import Minio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import Settings
+from app.integrations.pdf_download import PDFDownloader
 
 
 class Resources:
     """Created and closed on the owning API/worker event loop; sessions are never shared."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, pdf_downloader=None):
         self.settings = settings
         self.engine = create_async_engine(
             settings.database_url.get_secret_value(),
@@ -25,6 +26,7 @@ class Resources:
         )
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.http = httpx.AsyncClient(timeout=httpx.Timeout(20, connect=5), follow_redirects=False)
+        self.pdf_downloader = pdf_downloader or PDFDownloader(settings.fulltext_allowed_hosts)
         self.ollama_http = httpx.AsyncClient(
             base_url=settings.ollama_base_url,
             timeout=httpx.Timeout(20, connect=5, pool=5),
@@ -60,6 +62,7 @@ class Resources:
             return await asyncio.to_thread(function, *args, **kwargs)
 
     async def close(self) -> None:
+        await self.pdf_downloader.aclose()
         await self.http.aclose()
         await self.ollama_http.aclose()
         await self.ollama_generation_http.aclose()
