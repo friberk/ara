@@ -39,7 +39,7 @@ def providers(resources, monkeypatch):
         return embeddings.create_embedder(resources, profile, transport=transport)
 
     @asynccontextmanager
-    async def slot(resources, key):
+    async def slot(resources, key, **options):
         yield
 
     monkeypatch.setattr(indexing, "create_embedder", fixture_embedder)
@@ -284,16 +284,14 @@ async def test_given_busy_local_runtime_when_embedding_then_job_waits_without_at
     resources, providers, monkeypatch
 ):
     from app.core.errors import AppError
-    from app.integrations import embeddings
     from app.services import local_models
 
     @asynccontextmanager
-    async def busy(resources, key):
-        raise AppError(409, "LOCAL_MODEL_BUSY", "A local search request is already running.")
+    async def busy(resources, key, **options):
+        raise AppError(409, "LOCAL_MODEL_BUSY", "A search is waiting for the local runtime.")
         yield
 
     monkeypatch.setattr(local_models, "retrieval_inference_slot", busy)
-    monkeypatch.setattr(embeddings, "BUSY_RETRY_SECONDS", 0)
     _, document_id = await seed_paper(resources)
     index_id, job_id = await ensure(resources, document_id, QWEN)
     await run_job(resources, job_id)
@@ -312,6 +310,35 @@ async def test_given_busy_local_runtime_when_embedding_then_job_waits_without_at
         )
     assert outbox.available_at == job.available_at
     assert (await load(resources, RetrievalIndex, index_id)).state == "queued"
+
+
+async def test_given_local_profile_when_indexing_then_each_admission_embeds_few_passages(
+    resources, providers, monkeypatch
+):
+    """Regression: a 16-passage batch held the search slot for about 1.5 minutes on CPU."""
+    from app.integrations.embedding_catalog import embedding_profile
+    from app.rag import indexing
+    from app.services import local_models
+
+    held = []
+
+    @asynccontextmanager
+    async def slot(resources, key, **options):
+        before = len(providers["ollama"])
+        yield
+        sent = [call["input"] for call in providers["ollama"][before:]]
+        passages = sum(1 if isinstance(texts, str) else len(texts) for texts in sent)
+        held.append((options.get("background"), passages))
+
+    # The catalog's own batches, not the fixture's small ones.
+    monkeypatch.setattr(indexing, "embedding_profile", embedding_profile)
+    monkeypatch.setattr(local_models, "retrieval_inference_slot", slot)
+    _, document_id = await seed_paper(resources)
+    index_id, job_id = await ensure(resources, document_id, QWEN)
+    await run_job(resources, job_id)
+    assert (await load(resources, RetrievalIndex, index_id)).state == "ready"
+    # Background admissions of two passages yield the slot to a waiting search between them.
+    assert held == [(True, 2), (True, 2), (True, 1)]
 
 
 async def test_given_provider_failure_when_attempts_run_out_then_index_fails(

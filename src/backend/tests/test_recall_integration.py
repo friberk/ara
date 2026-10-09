@@ -38,7 +38,7 @@ def embedders(resources, monkeypatch):
         return embeddings.create_embedder(resources, profile, transport=transport)
 
     @asynccontextmanager
-    async def slot(resources, key):
+    async def slot(resources, key, **options):
         yield
 
     monkeypatch.setattr(memory, "create_embedder", fixture_embedder)
