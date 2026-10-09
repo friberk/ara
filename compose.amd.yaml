@@ -1,0 +1,16 @@
+# Native AMD Linux host only; requires a supported ROCm GPU/driver.
+# docker compose -f compose.yaml -f compose.amd.yaml up --build
+services:
+  ollama:
+    image: ara-ollama:0.40.1-ara.2-amd
+    platform: linux/amd64
+    build:
+      target: amd
+      args:
+        AMDGPU_TARGETS: ${OLLAMA_AMDGPU_TARGETS:-gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201}
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${OLLAMA_VIDEO_GID:-44}"
+      - "${OLLAMA_RENDER_GID:-109}"

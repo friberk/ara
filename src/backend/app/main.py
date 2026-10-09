@@ -19,6 +19,7 @@ from app.routes.chat import router as chat_router
 from app.routes.documents import router as documents_router
 from app.routes.history import router as history_router
 from app.routes.jobs import router
+from app.routes.local_models import router as local_models_router
 from app.routes.research import router as research_router
 from app.services.dispatcher import dispatcher_loop
 from app.services.health import readiness
@@ -35,8 +36,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resources = Resources(settings)
         app.state.resources = resources
         from app.jobs.actors import execute_job
+        from app.jobs.model_actors import execute_local_summary, execute_model_job
 
-        dispatcher = asyncio.create_task(dispatcher_loop(resources, execute_job.send))
+        dispatcher = asyncio.create_task(
+            dispatcher_loop(
+                resources,
+                execute_job.send,
+                model_publish=execute_model_job.send,
+                local_publish=execute_local_summary.send,
+            )
+        )
         try:
             yield
         finally:
@@ -50,7 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
-        allow_headers=["Content-Type", "X-Request-ID"],
+        allow_headers=["Content-Type", "X-Request-ID", "Idempotency-Key"],
     )
 
     @app.middleware("http")
@@ -126,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(research_router)
     app.include_router(documents_router)
     app.include_router(ai_router)
+    app.include_router(local_models_router)
     app.include_router(chat_router)
     app.include_router(history_router)
     return app

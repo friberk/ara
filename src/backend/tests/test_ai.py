@@ -44,6 +44,19 @@ def test_given_large_document_when_grouping_then_every_chunk_is_covered():
     assert [chunk.id for group in groups for chunk in group] == [chunk.id for chunk in chunks]
 
 
+def test_given_large_utf8_passage_when_local_batching_then_split_preserves_every_character():
+    from app.integrations.llm import estimate_tokens
+    from app.services.retrieval import passage
+    from app.services.summarization import batches
+
+    original = SimpleNamespace(id=uuid4(), document_id=uuid4(), page=7, text="漢字" * 1600)
+    groups = batches([original], budget=1000, split_oversize=True)
+    fragments = [chunk for group in groups for chunk in group]
+    assert "".join(chunk.text for chunk in fragments) == original.text
+    assert len(fragments) > 1 and all(chunk.id == original.id for chunk in fragments)
+    assert all(estimate_tokens(passage(chunk)) <= 1000 for chunk in fragments)
+
+
 def test_given_sse_content_when_framing_then_newlines_are_json_escaped():
     import json
 
@@ -235,9 +248,13 @@ async def test_given_asgi_disconnect_when_anyio_cancels_then_provider_closes_and
         saved.append((message_id, content, kwargs.get("state", "processing")))
         return {}
 
-    monkeypatch.setattr(chat, "HostedLLM", lambda settings: Provider())
+    monkeypatch.setattr(chat, "create_llm", lambda resources, model, **kwargs: Provider())
     monkeypatch.setattr(chat, "save", save_partial)
-    resources = SimpleNamespace(settings=None, llm_slots=asyncio.Semaphore(2))
+    from app.core.config import Settings
+
+    resources = SimpleNamespace(
+        settings=Settings(openai_api_key="fixture", _env_file=None), llm_slots=asyncio.Semaphore(2)
+    )
     assistant = SimpleNamespace(id=uuid4(), model="gpt-5.6-luna", reasoning_effort="low")
     request = SimpleNamespace(is_disconnected=lambda: asyncio.sleep(0, result=False))
     response = StreamingResponse(chat.stream_answer(resources, request, assistant, "evidence", []))

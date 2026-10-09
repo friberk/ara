@@ -7,6 +7,26 @@ import { paperChatsKey } from './use-paper-chats'
 
 afterEach(() => vi.unstubAllGlobals())
 
+test.each(['default', 'on'])('Given saved native %s aliases High, When a new message is sent, Then it requests high and past aliases keep historical labels', async (reasoning) => {
+  const local = { ...luna, key: 'native', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } }
+  const legacy = [assistantMessage('old-preset', 'Earlier runtime preset response.', { model: local.key, reasoning_effort: 'default' }), assistantMessage('old-enabled', 'Earlier enabled response.', { model: local.key, reasoning_effort: 'on' })]
+  const answer = assistantMessage('new-high', 'New explicit response.', { model: local.key, reasoning_effort: 'high' })
+  let answered = false
+  const { calls } = mockApi({
+    'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning },
+    'GET /chats': { items: [chatRow('c1')] },
+    'GET /chats/c1/messages': () => json({ items: answered ? [...legacy, userMessage('new-question', 'What changed?'), answer] : legacy }),
+    'POST /chats/c1/messages/stream': () => { answered = true; return sse([['message.started', { message_id: answer.id }], ['message.completed', answer]]) },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  await ask(user, 'What changed?')
+  await screen.findByText('New explicit response.')
+  expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ model: local.key, reasoning_effort: 'high' })
+  expect(screen.getByText('Runtime preset')).toBeVisible()
+  expect(screen.getByText('Reasoning enabled')).toBeVisible()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+})
+
 test('Given a ready chat, When a question streams, Then the answer cites page 2 and its chips open the source in the reader', async () => {
   const answer = assistantMessage('m1', `The measured result is grounded.${marker}`, { citations: [citation] })
   let answered = false

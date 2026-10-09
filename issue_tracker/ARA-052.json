@@ -1,0 +1,38 @@
+{
+  "id": "ARA-052",
+  "title": "Normalize observed Unicode citation markers without weakening provenance",
+  "type": "bug",
+  "priority": "P1",
+  "description": "The real 7B medium-effort app chat returned a correct paper answer with a known chunk ID wrapped as \u3010source:UUID\u3011. The ASCII-only validator rejected it with UNGROUNDED_OUTPUT. Normalize this observed formatter variation before validation and final persistence; preserve strict supplied-document evidence checks.",
+  "dependencies": [
+    "ARA-046"
+  ],
+  "acceptance_criteria": [
+    "Given valid supplied evidence in the observed Unicode citation wrapper, when a chat or summary completes, then its content uses canonical [source:UUID] markers and its source/page citations persist.",
+    "Given unknown, malformed or foreign-document evidence, when its wrapper is normalized, then it cannot become a valid citation, including mixed valid and invalid markers.",
+    "Given streamed Unicode markers, when the final event arrives, then canonical persisted content replaces the partial stream and citation navigation works after refresh.",
+    "Existing failed generations remain failed; normalization does not replay model requests or fabricate source IDs."
+  ],
+  "test_cases": [
+    "Unit tests for canonical/Unicode/mixed wrappers and malformed/foreign IDs.",
+    "Isolated real PostgreSQL chat SSE/final persistence and summary/checkpoint tests.",
+    "Real retained 7B medium chat with page references; fixture browser regression."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/retrieval.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/summarization.py",
+    "docs/agent-development-log.md",
+    "src/backend/tests/test_citation_markers.py",
+    "src/backend/tests/test_citation_markers_integration.py",
+    "tests/fixtures/ollama_fixture.py",
+    "src/frontend/e2e/local-models.spec.ts"
+  ],
+  "commits": [
+    "55962c4"
+  ],
+  "pull_requests": [],
+  "verification": "Unit RED: 12 failed/6 passed; real DB RED: 13 failed/1 passed; resumed-cache RED: four failed. Final full backend 279 passed in 39.54s; independent 36 citation targets passed. Browser fixture emits Unicode medium markers; deletion/default and low-summary/medium-chat scenarios passed in 48.7s. Real retained 7B low summary completed in 44.39s, medium chat in 14.73s with 54 SSE events and canonical page citations. Strict document/chunk membership, checkpoint configuration, zero hosted reservations and original failed-message preservation verified in PostgreSQL. All persisted outputs/defaults/controls and original PDF survived six-service restart.",
+  "updated_at": "2026-10-08"
+}

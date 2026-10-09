@@ -1,0 +1,45 @@
+{
+  "id": "ARA-053",
+  "title": "Prepare installed local models automatically after runtime changes",
+  "type": "bug",
+  "priority": "P1",
+  "description": "The user reported that installed IFM weights become unselectable until clicking Verify again after a runtime upgrade. Refresh stale capabilities through durable background verification and show preparation status without requiring Settings to remain open.",
+  "dependencies": [
+    "ARA-045",
+    "ARA-047",
+    "ARA-051"
+  ],
+  "acceptance_criteria": [
+    "Given an installed desired-ready model with stale runtime/schema/context validation, when the application starts or reconciliation runs, then one verification-only job is scheduled automatically.",
+    "Given a queued verification, when the user navigates away or closes the browser, then preparation continues and selection becomes available after successful verification.",
+    "Given missing, deleted, paused or failed installations, when reconciliation runs, then user intent is preserved and no weights are downloaded automatically.",
+    "Given concurrent reconcilers, active inference or interrupted jobs, when preparation runs, then existing admission, fencing, retry and recovery rules remain enforced.",
+    "Given automatic preparation, when viewing Settings or a model picker, then status explains background preparation without a routine Verify again button; a genuine failure offers retry."
+  ],
+  "test_cases": [
+    "Real PostgreSQL reconciliation deduplication, runtime/config freshness, admission and user-intent regressions.",
+    "Verification-only jobs never pull even after missing artifacts, retry or interrupted recovery.",
+    "Frontend preparation status, absence of manual Verify, failure retry and automatic selector polling.",
+    "Retained 7B live runtime automatic upgrade recovery without posting any model download/verification request."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/services/local_models.py",
+    "src/backend/app/services/dispatcher.py",
+    "src/backend/app/repositories/local_models.py",
+    "src/frontend/src/features/settings/LocalModels.tsx",
+    "src/frontend/src/hooks/queries/models.ts",
+    "src/backend/tests/test_automatic_model_readiness.py",
+    "src/backend/tests/test_automatic_readiness_dispatcher.py",
+    "src/frontend/src/features/settings/SettingsPage.tsx",
+    "src/frontend/src/features/activity/ActivityPage.tsx",
+    "src/frontend/src/api/generated.ts"
+  ],
+  "commits": [
+    "a2d1861",
+    "0b312f4"
+  ],
+  "pull_requests": [],
+  "verification": "Final backend suite passed 365 tests plus Ruff; frontend TypeScript/ESLint, 375 tests and production build passed; full Playwright passed 12 scenarios in 1.9 minutes. Retained real 7B scheduled exactly one verification-only job after stale schema, continued after browser closure/API restart, restored six controls without pull, hosted reservation or OOM, and preserved digest/default/history counts. User-installed 3.7B automatically became ready and selectable with six controls; missing siblings and saved defaults were unchanged. Related ARA-054 passed focused cross-review. Generated TypeScript matches final source OpenAPI. Feature branch only; no merge, push or new weights.",
+  "updated_at": "2026-10-08"
+}

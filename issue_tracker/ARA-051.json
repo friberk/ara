@@ -1,0 +1,43 @@
+{
+  "id": "ARA-051",
+  "title": "Correct Ollama thinking discovery and investigate IFM controls",
+  "type": "bug",
+  "priority": "P1",
+  "description": "Correct canonical Ollama thinking discovery, model-specific hosted/native capabilities and exact IFM runtime controls, including the real medium-mode closing-token parser defect. The final retained 7B paper workflow is verified after the related ARA-052 citation-format fix.",
+  "dependencies": [
+    "ARA-044",
+    "ARA-045",
+    "ARA-046",
+    "ARA-047"
+  ],
+  "acceptance_criteria": [
+    "Given canonical thinking metadata, when capabilities are normalized, then documented boolean and named controls/defaults are represented accurately.",
+    "Given absent or malformed metadata, when verification runs, then unsupported controls are never inferred from successful fallback alone.",
+    "Given the exact IFM 7B artifact, when runtime controls are investigated, then accepted requests and actual template behavior are distinguished from model-family claims.",
+    "Given different model capabilities, when selecting an effort, then the UI and backend use that model only; the three GPT-5.6 models retain their documented xhigh/max settings while IFM rejects unsupported levels."
+  ],
+  "test_cases": [
+    "Modern metadata, boolean controls, named values, omission/malformed responses and explicit default semantics.",
+    "Opt-in 7B runtime verification; no additional weights downloaded without authorization.",
+    "Per-model hosted capability isolation; xhigh/max hosted payloads and local/hosted switching."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/ollama.py",
+    "src/backend/app/integrations/ollama_llm.py",
+    "src/backend/tests/test_local_models_runtime.py",
+    "docker/ollama/README.md",
+    "docker/ollama/004-ifm-thinking.patch",
+    "docker/ollama/005-ifm-thinking-close.patch",
+    "src/backend/tests/test_hosted_reasoning.py"
+  ],
+  "commits": [
+    "6e3bb42",
+    "6b0b5c9",
+    "a8f3238",
+    "c220415"
+  ],
+  "pull_requests": [],
+  "verification": "279 final backend tests passed after related citation work; 359 frontend tests, strict TypeScript/ESLint/build passed; full stable 12-scenario browser run passed, then two refreshed local-model scenarios passed again. Canonical per-model controls and hosted xhigh/max isolation verified. Final .2 ARM64 CPU image 6bc3fbbc passed all six retained 7B modes, named-level schemas, 24 C++ cases, full upstream chat and Go/race suites. Real low summary and medium cited chat passed; exact provenance and six-service persistence verified. User 3.7B read-only metadata advertises controls; its weights preserved, no inference claim. No new weights/paid hosted calls, merge or push.",
+  "updated_at": "2026-10-08"
+}

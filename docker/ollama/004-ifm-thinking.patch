@@ -1,0 +1,150 @@
+--- a/server/routes.go
++++ b/server/routes.go
+@@ -509,6 +509,15 @@
+ 		return
+ 	}
+ 
++	if m.nativeIFMThinking() != nil && req.Think != nil && req.Think.IsString() &&
++		(req.Raw || req.Template != "" || req.Suffix != "") {
++		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "named thinking controls require the model chat template"})
++		return
++	}
++	if err := m.validateNativeIFMThinking(req.Think); err != nil {
++		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
++		return
++	}
+ 	thinking := m.genericThinking()
+ 	if thinking == nil {
+ 		if err := api.ValidateLegacyThinking(req.Think); err != nil {
+@@ -731,10 +740,16 @@
+ 	var thinkTagParser *thinkingparser.Parser
+ 	if builtinParser == nil {
+ 		openingTag, closingTag := thinkingparser.InferTags(m.Template.Template)
++		if !req.Raw && req.Template == "" && req.Suffix == "" {
++			openingTag, closingTag = m.thinkingTags(req.Think)
++		}
+ 		if req.Think != nil && req.Think.Bool() && openingTag != "" && closingTag != "" {
+ 			thinkTagParser = &thinkingparser.Parser{
+ 				OpeningTag: openingTag,
+ 				ClosingTag: closingTag,
++			}
++			if m.nativeIFMThinking() != nil && !req.Raw && req.Template == "" && req.Suffix == "" {
++				thinkTagParser.ClosingTags = []string{"</ifm|think>", "</ifm|think_fast>", "</ifm|think_faster>"}
+ 			}
+ 			if strings.HasSuffix(strings.TrimSpace(prompt), openingTag) {
+ 				thinkTagParser.AddContent(openingTag)
+@@ -2803,6 +2818,9 @@
+ 		return builtinParser.ThinkingClose()
+ 	}
+ 	if thinkTagParser != nil {
++		if len(thinkTagParser.ClosingTags) > 0 {
++			return slices.Clone(thinkTagParser.ClosingTags)
++		}
+ 		return []string{thinkTagParser.ClosingTag}
+ 	}
+ 	return nil
+@@ -3115,6 +3133,10 @@
+ 		return
+ 	}
+ 
++	if err := m.validateNativeIFMThinking(req.Think); err != nil {
++		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
++		return
++	}
+ 	thinking := m.genericThinking()
+ 	if thinking == nil {
+ 		if err := api.ValidateLegacyThinking(req.Think); err != nil {
+--- a/server/model_thinking.go
++++ b/server/model_thinking.go
+@@ -64,6 +64,9 @@
+ 	if m == nil || m.Config.RemoteHost != "" {
+ 		return nil
+ 	}
++	if thinking := m.nativeIFMThinking(); thinking != nil {
++		return thinking
++	}
+ 	if shouldUseHarmony(m) {
+ 		return renderers.ThinkingForRenderer("harmony")
+ 	}
+@@ -94,8 +97,12 @@
+ 	return nil
+ }
+ 
+-// genericThinking excludes Harmony and template-only paths from new fallback rules.
++// genericThinking includes generic renderers and the verified native IFM path.
++// Harmony and unverified template-only paths preserve their historical handling.
+ func (m *Model) genericThinking() *model.Thinking {
++	if thinking := m.nativeIFMThinking(); thinking != nil {
++		return thinking
++	}
+ 	if m == nil || m.Config.Renderer == "" || shouldUseHarmony(m) {
+ 		return nil
+ 	}
+--- a/server/images.go
++++ b/server/images.go
+@@ -209,6 +209,9 @@
+ 	case templateCapabilitySelected:
+ 		if !usesOllamaRenderedChat(m) {
+ 			capabilities = chatTemplateCapabilities(capabilities, m.metadata.String("tokenizer.chat_template"))
++			if m.nativeIFMThinking() != nil {
++				capabilities = appendCapability(capabilities, model.CapabilityThinking)
++			}
+ 		}
+ 	case templateCapabilityChat:
+ 		capabilities = chatTemplateCapabilities(capabilities, m.metadata.String("tokenizer.chat_template"))
+--- a/thinking/parser.go
++++ b/thinking/parser.go
+@@ -48,7 +48,10 @@
+ 	state      thinkingState
+ 	OpeningTag string
+ 	ClosingTag string
+-	acc        strings.Builder
++	// ClosingTags optionally accepts aliases within an active reasoning block.
++	// Omission preserves the single ClosingTag contract used by existing models.
++	ClosingTags []string
++	acc         strings.Builder
+ }
+ 
+ // AddContent returns the thinking content and the non-thinking content that
+@@ -119,10 +122,28 @@
+ 		}
+ 	case thinkingState_Thinking:
+ 		acc := s.acc.String()
+-		if strings.Contains(acc, s.ClosingTag) {
+-			split := strings.Split(acc, s.ClosingTag)
+-			thinking := split[0]
+-			remaining := strings.Join(split[1:], s.ClosingTag)
++		tags := s.ClosingTags
++		if len(tags) == 0 {
++			tags = []string{s.ClosingTag}
++		}
++		closingPos, closingTag := -1, ""
++		for _, tag := range tags {
++			if tag == "" {
++				continue
++			}
++			if pos := strings.Index(acc, tag); pos >= 0 && (closingPos < 0 || pos < closingPos) {
++				closingPos, closingTag = pos, tag
++			}
++		}
++		overlapLen := 0
++		for _, tag := range tags {
++			if tag != "" {
++				overlapLen = max(overlapLen, overlap(acc, tag))
++			}
++		}
++		if closingPos >= 0 {
++			thinking := acc[:closingPos]
++			remaining := acc[closingPos+len(closingTag):]
+ 			remaining = strings.TrimLeftFunc(remaining, unicode.IsSpace)
+ 			s.acc.Reset()
+ 			if remaining == "" {
+@@ -131,7 +152,7 @@
+ 				s.state = thinkingState_ThinkingDone
+ 			}
+ 			return thinking, remaining, false
+-		} else if overlapLen := overlap(acc, s.ClosingTag); overlapLen > 0 {
++		} else if overlapLen > 0 {
+ 			thinking := acc[:len(acc)-overlapLen]
+ 			remaining := acc[len(acc)-overlapLen:]
+ 			s.acc.Reset()

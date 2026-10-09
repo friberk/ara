@@ -1,0 +1,10 @@
+# Native NVIDIA Linux host only; requires NVIDIA Container Toolkit.
+# docker compose -f compose.yaml -f compose.nvidia.yaml up --build
+services:
+  ollama:
+    image: ara-ollama:0.40.1-ara.2-nvidia
+    build:
+      target: nvidia
+      args:
+        CUDA_ARCHITECTURES: ${OLLAMA_CUDA_ARCHITECTURES:-75;80;86;89;90}
+    gpus: all

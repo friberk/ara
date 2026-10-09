@@ -1,0 +1,19 @@
+diff --git a/common/parsers/k2-horizon.cpp b/common/parsers/k2-horizon.cpp
+index 687a893..84096c4 100644
+--- a/common/parsers/k2-horizon.cpp
++++ b/common/parsers/k2-horizon.cpp
+@@ -47,6 +47,14 @@ common_chat_params common_chat_params_init_k2_horizon(const common_chat_template
+ 
+     data.thinking_start_tag = THINK_START;
+     data.thinking_end_tags  = { THINK_END };
++    // Retained IFM weights can close a medium/low prefill with the high tag.
++    // Keep the requested opening/prefill, but terminate an active reasoning
++    // block on any legitimate IFM close so the final answer is not swallowed.
++    for (const auto & close : { "</ifm|think>", "</ifm|think_fast>", "</ifm|think_faster>" }) {
++        if (close != THINK_END) {
++            data.thinking_end_tags.emplace_back(close);
++        }
++    }
+ 
+     data.preserved_tokens = data.thinking_end_tags;
+     data.preserved_tokens.insert(data.preserved_tokens.end(), {

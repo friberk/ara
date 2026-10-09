@@ -10,6 +10,11 @@ class CanaryInput(BaseModel):
     message: str = Field(default="pipeline-ok", max_length=200)
 
 
+class ModelOperationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+
+
 class JobError(BaseModel):
     code: str
     message: str
@@ -19,7 +24,7 @@ class JobStatus(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     kind: str
-    state: Literal["queued", "processing", "completed", "failed"]
+    state: Literal["queued", "processing", "paused", "completed", "failed"]
     stage: str
     progress: int
     attempts: int
@@ -30,6 +35,10 @@ class JobStatus(BaseModel):
     available_at: datetime
     created_at: datetime
     updated_at: datetime
+    model_operation: Literal["download", "verify", "delete"] | None = None
+    model_key: str | None = None
+    completed_bytes: int | None = None
+    total_bytes: int | None = None
     paper_id: UUID | None = None
     paper_title: str | None = None
 

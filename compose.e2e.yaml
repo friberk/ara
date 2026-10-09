@@ -17,6 +17,7 @@ services:
       APP_ENV: test
       OPENAI_API_KEY: fixture-test-key
       OPENAI_BASE_URL: http://external-fixtures:8080/v1
+      OLLAMA_BASE_URL: http://external-fixtures:8080
       OPENALEX_BASE_URL: http://external-fixtures:8080
       SEMANTIC_SCHOLAR_BASE_URL: http://external-fixtures:8080/graph/v1
       CORS_ORIGINS: '["http://localhost:5180","http://127.0.0.1:5180"]'
@@ -27,7 +28,12 @@ services:
       external-fixtures:
         condition: service_healthy
   worker:
+    command: ["uv", "run", "--frozen", "dramatiq", "app.jobs.actors", "--queues", "default", "--processes", "1", "--threads", "2"]
     environment: *fixture-env
   frontend:
     ports: !override
       - "127.0.0.1:5180:5173"
+  model-worker:
+    command: ["uv", "run", "--frozen", "dramatiq", "app.jobs.model_actors", "--queues", "local-models", "local-generation", "--processes", "1", "--threads", "2"]
+    profiles: !reset []
+    environment: *fixture-env

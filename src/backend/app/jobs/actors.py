@@ -104,3 +104,6 @@ async def execute_job(job_id: str, generation: int) -> None:
         heartbeats.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeats
+
+# Register dedicated actors when Dramatiq imports this module as its worker entrypoint.
+from app.jobs import model_actors  # noqa: E402,F401

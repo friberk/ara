@@ -1,0 +1,44 @@
+{
+  "id": "ARA-046",
+  "title": "Provider-aware local generation and context budgets",
+  "type": "feature",
+  "priority": "P1",
+  "description": "Provider-aware local generation and context budgets for the approved ARA-022 plan.",
+  "dependencies": [
+    "ARA-012",
+    "ARA-013",
+    "ARA-014",
+    "ARA-045"
+  ],
+  "acceptance_criteria": [
+    "Given a verified local selection without a hosted key, when generating, then native Ollama runs without dollar reservation or provider fallback and persists provenance.",
+    "Given a smaller local context, when chat/retrieval or a whole-document summary is assembled, then actual input fits while complete source coverage and citations remain.",
+    "Given busy local admission after a completed summary group, when resumed, then the completed output is checkpointed and never replayed.",
+    "Given oversized intermediate summaries, when reduction cannot progress, then bounded whole-section compression preserves source markers or fails explicitly.",
+    "Given thinking, malformed NDJSON or truncated output, when handled, then thinking stays separate and incomplete generations fail safely."
+  ],
+  "test_cases": [
+    "Native adapter/settings/selection/context and hosted-regression reds then greens; owned units: 61 passed.",
+    "Owned PostgreSQL generation integration: 22 passed, including no-key/no-cost chat, metadata default, summary coverage, busy and replay.",
+    "Independent reduction/checkpoint/compression/chat-boundary reproductions fixed and scoped re-review approved; full integrated: 169 passed before reload follow-up."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/ollama_llm.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/summarization.py",
+    "src/backend/app/services/ingestion.py",
+    "src/backend/app/core/config.py",
+    "src/backend/app/core/resources.py",
+    "src/backend/tests/test_ollama_llm.py",
+    "src/backend/tests/test_ai_integration.py"
+  ],
+  "commits": [
+    "0b31c2339e666fea57d80ce5f163dce413ad4806",
+    "9185663835010cfc26aa8f0bd27351332f2d0fd6"
+  ],
+  "pull_requests": [],
+  "verification": "Lead full backend 185 passed, including 25 AI integration tests and 38 native adapter tests. Independent reviews cleared reduction checkpoint, context boundary, compression and mutable-provenance defects. Exact 5,632-byte boundary honored; complete source coverage and citations preserved. Temperature 0.0 explicitly sent/stored; unknown/changed summary provenance rejected. Real 7B final summary in 38.32 seconds and cited chat in 10.41 seconds with 49 SSE events, all three chunks covered, zero hosted reservations and durable snapshot matching saved configuration. Uncited prior output rejected without automatic replay.",
+  "updated_at": "2026-10-08"
+}

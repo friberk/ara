@@ -1,27 +1,44 @@
 {
   "id": "ARA-022",
-  "title": "Optional local model serving",
+  "title": "Managed local model serving",
   "type": "infrastructure",
-  "priority": "P2",
-  "description": "Verify requested local model artifacts, licenses, engine/quantization compatibility and actual memory/context limits. Add optional OpenAI-compatible local generation, capability-aware selection and streaming; support an appropriate Mac host or NVIDIA profile without making default startup depend on weights.",
+  "priority": "P1",
+  "description": "User-approved managed Ollama CPU service, curated IFM K2 Horizon 3.7B/7B and Qwen3.8 27B Q4_K_M artifacts, persistent installation controls and content-grounded local generation. No automatic weight download/load or paid fallback.",
   "dependencies": [
     "ARA-012"
   ],
   "acceptance_criteria": [
-    "Exact artifacts/engine/license/code reviewed; streaming/context/memory verified before enablement."
+    "Given no hosted key or local weights, when Compose starts, then the core app is ready and all local catalog choices remain visible but unavailable.",
+    "Given a model transfer, when the browser closes or services restart, then durable job/progress state survives; manual pause stays paused until explicit resume.",
+    "Given verified local weights, when summaries or Q&A run, then the native provider preserves document citations, context limits, histories and request UUID safety without hosted charges.",
+    "Given a saved local default, when weights are deleted, then default/history survive and generation is blocked until reinstall or explicit selection change.",
+    "Given the exact 7B artifact, when the reviewed engine runs on the authorized host, then real streaming, structured output, hashes, reasoning and resource behavior are measured."
   ],
   "test_cases": [
-    "Exact artifacts/engine/license/code reviewed; streaming/context/memory verified before enablement."
+    "ARA-044 runtime protocol/race/server and opt-in 7B checks.",
+    "ARA-045/046 isolated real-service SQL/API and provider/context regression tests.",
+    "ARA-047 RTL and ARA-048 fixture browser journeys for durable controls/default/history."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
+    "docs/plans/ARA-022-managed-local-models.md",
+    "docker/ollama/README.md",
+    "README.md",
+    "docs/api-contract.md",
     "docs/implementation-plan.md",
-    "docs/ai-report.md"
+    "docs/agent-development-log.md"
   ],
   "commits": [
-    "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
+    "4164b07d30b51b0c5a1547342b70ceb5626a2a15",
+    "0b31c2339e666fea57d80ce5f163dce413ad4806",
+    "ee4e3168de97eab0d88ba2f35a57294bc76985d4",
+    "7574aed449c5d9fe53610608236a97aff63fa80c",
+    "5a8aac74c7a1f35a5e3c7090e9e50941d4be1a89",
+    "9185663835010cfc26aa8f0bd27351332f2d0fd6",
+    "f32e15d48da2154bae8182b5e5217776b0db184e",
+    "eac4f22ec4466b2b335e6d95b9630b09331f6b1d"
   ],
   "pull_requests": [],
-  "verification": "Reopened planning. Exact runtime feasibility remains a technical validation gate; no weights downloaded or local service implemented.",
+  "verification": "Implemented and independently reviewed on feat/managed-ollama; main unchanged, no GitHub push. Lead final backend 185 passed in 38.77 seconds with Ruff/build/migration/bucket init; frontend 356 across 54 files plus strict TypeScript/ESLint/build; fresh full Playwright 12 passed in 2.0 minutes, then two deletion/local-generation tests passed after the sampling correction. Real ARM64 CPU 7B app summary/Q&A with no OpenAI key and zero hosted reservations, exact provenance snapshot, retained original PDF/history/default/weights after six-service restart. Default startup: 20.91 MiB Ollama, no installed/loaded weights. Only 7B/ARM64 CPU tested; other catalog models/hardware require their own validation.",
   "updated_at": "2026-10-08"
 }

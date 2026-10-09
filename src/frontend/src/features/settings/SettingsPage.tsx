@@ -6,13 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Toggle } from '@/components/ui/toggle'
 import { effortLabel } from '@/components/composer/effort'
+import { normaliseSettings, reasoningControls } from '@/components/composer/reasoning'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useTheme } from '@/components/theme/theme-context'
-import { useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
+import { unavailableReason, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
+import { LocalModels } from './LocalModels'
 
 const statusBadges: Record<Model['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -26,7 +29,7 @@ const themes = [
 ] as const
 
 function capabilityNote(model: Model) {
-  if (model.status === 'unavailable') return 'Not configured on the server. Ask the server administrator to enable access.'
+  if (model.status === 'unavailable') return model.unavailable_reason ?? (model.installation ? 'Download weights in Local models below to enable this model.' : 'Not configured on the server. Ask the server administrator to enable access.')
   if (model.supports_streaming && model.supports_structured_output) return 'Streams answers and writes summaries.'
   return [model.supports_streaming ? 'Streams answers.' : 'Cannot stream answers.', model.supports_structured_output ? 'Writes summaries.' : 'Cannot write summaries.'].join(' ')
 }
@@ -52,20 +55,17 @@ function ModelOption({ model, name, checked, onSelect }: { model: Model; name: s
   )
 }
 
-function normalise(models: Model[], value: GenerationSettings): GenerationSettings {
-  const model = models.find((item) => item.key === value.model)
-  if (!model || model.reasoning_efforts.includes(value.reasoning_effort)) return value
-  return { model: model.key, reasoning_effort: model.reasoning_efforts[0] ?? 'none' }
-}
-
 function ModelDefaults({ models, saved, labelledBy }: { models: Model[]; saved: Settings; labelledBy: string }) {
   const effortId = useId()
   const save = useSaveDefaults()
-  const [draft, setDraft] = useState<GenerationSettings>(() => normalise(models, { model: saved.default_model, reasoning_effort: saved.reasoning_effort }))
+  const [preference, setPreference] = useState<GenerationSettings>(() => ({ model: saved.default_model, reasoning_effort: saved.reasoning_effort }))
+  const draft = normaliseSettings(models, preference)
+  const savedDefault = normaliseSettings(models, { model: saved.default_model, reasoning_effort: saved.reasoning_effort })
   const selected = models.find((model) => model.key === draft.model)
+  const controls = reasoningControls(selected)
   const valid = !!selected && selected.status !== 'unavailable' && selected.reasoning_efforts.includes(draft.reasoning_effort)
-  const dirty = draft.model !== saved.default_model || draft.reasoning_effort !== saved.reasoning_effort
-  const change = (next: GenerationSettings) => { save.reset(); setDraft(normalise(models, next)) }
+  const dirty = draft.model !== savedDefault.model || draft.reasoning_effort !== savedDefault.reasoning_effort
+  const change = (next: GenerationSettings) => { save.reset(); setPreference(normaliseSettings(models, next)) }
   return (
     <form className="grid gap-8" onSubmit={(event) => { event.preventDefault(); if (valid && dirty) save.mutate(draft) }}>
       <div role="radiogroup" aria-labelledby={labelledBy} className="divide-y overflow-hidden rounded-xl border">
@@ -73,15 +73,17 @@ function ModelDefaults({ models, saved, labelledBy }: { models: Model[]; saved: 
       </div>
       <div className="grid gap-3">
         <div className="grid gap-1">
-          <h3 id={effortId} className="text-sm font-medium">Reasoning effort</h3>
-          <p className="text-sm text-muted-foreground">More effort can help with harder questions, but answers take longer.</p>
+          <h3 id={effortId} className="text-sm font-medium">{controls.kind === 'levels' ? 'Reasoning effort' : 'Reasoning'}</h3>
+          {controls.kind === 'levels' && <p className="text-sm text-muted-foreground">More effort can help with harder questions, but answers take longer.</p>}
         </div>
-        {selected?.reasoning_efforts.length ? (
+        {controls.kind === 'levels' && controls.options.length ? (
           <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-labelledby={effortId} value={draft.reasoning_effort} onValueChange={(value) => { if (value) change({ model: draft.model, reasoning_effort: value }) }} className={segmentedGroup}>
-            {selected.reasoning_efforts.map((effort) => <ToggleGroupItem key={effort} value={effort} className={segmentedItem}>{effortLabel(effort)}</ToggleGroupItem>)}
+            {controls.options.map((effort) => <ToggleGroupItem key={effort} value={effort} className={segmentedItem}>{effortLabel(effort)}</ToggleGroupItem>)}
           </ToggleGroup>
+        ) : controls.kind === 'boolean' ? (
+          <Toggle variant="outline" size="sm" aria-labelledby={effortId} pressed={draft.reasoning_effort === 'on'} onPressedChange={(enabled) => change({ model: draft.model, reasoning_effort: enabled ? 'on' : 'none' })} className="w-fit">{draft.reasoning_effort === 'on' ? 'Enabled' : 'Disabled'}</Toggle>
         ) : (
-          <p className="text-sm text-muted-foreground">{selected ? 'This model has no reasoning effort settings.' : 'Choose a model to see its reasoning options.'}</p>
+          <p className="text-sm text-muted-foreground">{selected?.status === 'unavailable' ? unavailableReason(selected) : selected ? 'Reasoning is controlled by this model.' : 'Choose a model to see its reasoning options.'}</p>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -134,6 +136,7 @@ export default function SettingsPage() {
           ))}
         </section>
         <Separator />
+        {models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
         <Appearance />
         <Separator />
         <p className="text-sm text-pretty text-muted-foreground">API keys are managed on the server and never reach this browser. A model shows as unavailable until the server has access to it.</p>

@@ -1,3 +1,6 @@
+import re
+from urllib.parse import urlsplit
+
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,6 +24,14 @@ class Settings(BaseSettings):
     semantic_scholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
     openalex_base_url: str = "https://api.openalex.org"
     openai_base_url: str = "https://api.openai.com/v1"
+    ollama_base_url: str = "http://ollama:11434"
+    ollama_context_window: int = Field(default=8192, ge=1024, le=131072)
+    ollama_max_output_tokens: int = Field(default=2048, ge=1, le=32768)
+    ollama_num_threads: int = Field(default=4, ge=1, le=64)
+    ollama_request_timeout_seconds: float = Field(default=900, gt=0, le=21600)
+    ollama_pull_timeout_seconds: float = Field(default=21600, gt=0, le=21600)
+    ollama_stall_seconds: float = Field(default=120, gt=0, le=3600)
+    ollama_memory_limit: str = "12g"
     default_model: str = "gpt-5.6-luna"
     default_reasoning_effort: str = "low"
     llm_daily_budget_usd: float = Field(default=5, gt=0)
@@ -28,6 +39,39 @@ class Settings(BaseSettings):
     recovery_interval_seconds: float = Field(default=30, ge=1)
     lease_seconds: int = Field(default=60, ge=30)
     heartbeat_seconds: int = Field(default=10, ge=1)
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def local_http_endpoint(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.hostname
+            or parts.username
+            or parts.password
+            or parts.query
+            or parts.fragment
+            or parts.path not in {"", "/"}
+        ):
+            raise ValueError("OLLAMA_BASE_URL must be an HTTP endpoint without credentials or path")
+        try:
+            _ = parts.port
+        except ValueError as exc:
+            raise ValueError("OLLAMA_BASE_URL has an invalid port") from exc
+        return value.rstrip("/")
+
+    @field_validator("ollama_memory_limit")
+    @classmethod
+    def memory_limit(cls, value: str) -> str:
+        if not re.fullmatch(r"[1-9]\d*(?:[kKmMgG](?:[bB])?)?", value):
+            raise ValueError("OLLAMA_MEMORY_LIMIT must be a positive Docker memory limit")
+        return value
+
+    @model_validator(mode="after")
+    def local_context_reserves_output(self):
+        if self.ollama_context_window <= self.ollama_max_output_tokens + 512:
+            raise ValueError("Local context must reserve output tokens and 512 safety tokens")
+        return self
 
     @field_validator("database_url")
     @classmethod

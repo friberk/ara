@@ -1,0 +1,41 @@
+{
+  "id": "ARA-044",
+  "title": "Managed Ollama runtime and verified model controls",
+  "type": "infrastructure",
+  "priority": "P1",
+  "description": "Managed Ollama runtime and verified model controls for the approved ARA-022 plan.",
+  "dependencies": [
+    "ARA-003"
+  ],
+  "acceptance_criteria": [
+    "Given an empty named store, when the default runtime starts, then no weights are downloaded/loaded and core API readiness remains independent.",
+    "Given a pull attempt, when pause acknowledges, then its transfer/checkpoints have settled, unrelated digest/inference work continues and retained ranges can resume.",
+    "Given a fresh daemon and unknown valid attempt UUID, when pause establishes a stop barrier, then late same-UUID pull is rejected before model I/O.",
+    "Given stock K2 architecture failure, when the reviewed patched source runs the exact 7B artifact, then native streaming/schema/thinking and resource evidence are recorded."
+  ],
+  "test_cases": [
+    "Observed protocol routes 404 red; actual slow-registry transfer/range, retry cancellation and duplicate UUID green.",
+    "Observed unrelated HEAD/backpressured response cancellation reds and draining-client EOF correction; final ten controls repeated three times with race detector.",
+    "Observed unknown-pause tombstone/race/capacity reds then green; full Ollama server suite and final CPU image build.",
+    "Opt-in isolated exact-7B real pause/resume, stock architecture failure, patched engine and independent-pull/inference measurements."
+  ],
+  "status": "completed",
+  "related_files": [
+    "docker/ollama.Dockerfile",
+    "docker/ollama/002-clef-b11454.patch",
+    "docker/ollama/003-pull-control.patch",
+    "docker/ollama/ara_pull.go",
+    "docker/ollama/ara_pull_test.go",
+    "docker/ollama/README.md",
+    "compose.yaml",
+    "compose.nvidia.yaml",
+    "compose.amd.yaml",
+    "scripts/test-local-models.py"
+  ],
+  "commits": [
+    "5a8aac74c7a1f35a5e3c7090e9e50941d4be1a89"
+  ],
+  "pull_requests": [],
+  "verification": "Independent runtime review cleared cancellation/initialization/backpressure/tombstone fixes. Reviewed CPU image f0c8e95243f7acbe5fdbc510830e1dd5622ae054a4fce1979db692cd80db14a5 passed ten control tests in repeated race runs and full server suite. Real 7B range resume/hash/stream/schema/thinking and app checks passed. Fresh ordinary Compose build/start passed with empty inventory/loaded-model lists and20.91MiB Ollama; CPU/NVIDIA/AMD Compose syntax validated. Actual source burst produced one restart per worker. Native amd64/GPU, 3.7B/27B untested.",
+  "updated_at": "2026-10-08"
+}

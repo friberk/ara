@@ -72,6 +72,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Job */
+        post: operations["pause_job_api_v1_jobs__job_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Job */
+        post: operations["resume_job_api_v1_jobs__job_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -241,6 +275,40 @@ export interface paths {
         /** Create Summary */
         post: operations["create_summary_api_v1_papers__paper_id__summaries_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{key}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download */
+        post: operations["download_api_v1_models__key__download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{key}/installation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Installation */
+        delete: operations["delete_installation_api_v1_models__key__installation_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -535,6 +603,36 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** Installation */
+        Installation: {
+            /** Operation */
+            operation?: ("download" | "verify" | "delete") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "missing" | "queued" | "downloading" | "pausing" | "paused" | "verifying" | "ready" | "deleting" | "failed";
+            /** Weights Present */
+            weights_present: boolean;
+            /** Quantization */
+            quantization: string;
+            /** Download Bytes */
+            download_bytes: number;
+            /**
+             * Completed Bytes
+             * @default 0
+             */
+            completed_bytes: number;
+            /** Total Bytes */
+            total_bytes?: number | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Digest */
+            digest?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            error?: components["schemas"]["JobError"] | null;
+        };
         /** JobError */
         JobError: {
             /** Code */
@@ -560,7 +658,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "queued" | "processing" | "completed" | "failed";
+            state: "queued" | "processing" | "paused" | "completed" | "failed";
             /** Stage */
             stage: string;
             /** Progress */
@@ -592,6 +690,14 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Model Operation */
+            model_operation?: ("download" | "verify" | "delete") | null;
+            /** Model Key */
+            model_key?: string | null;
+            /** Completed Bytes */
+            completed_bytes?: number | null;
+            /** Total Bytes */
+            total_bytes?: number | null;
             /** Paper Id */
             paper_id?: string | null;
             /** Paper Title */
@@ -636,6 +742,16 @@ export interface components {
         };
         /** Model */
         Model: {
+            /** Reasoning Aliases */
+            reasoning_aliases?: {
+                [key: string]: string;
+            };
+            thinking?: components["schemas"]["ThinkingControls"] | null;
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /** Unavailable Code */
+            unavailable_code?: string | null;
+            installation?: components["schemas"]["Installation"] | null;
             /** Key */
             key: string;
             /**
@@ -669,6 +785,14 @@ export interface components {
              * @default 1050000
              */
             context_window: number;
+        };
+        /** ModelOperationInput */
+        ModelOperationInput: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
         };
         /** ModelPage */
         ModelPage: {
@@ -887,6 +1011,13 @@ export interface components {
             /** Items */
             items: components["schemas"]["Summary"][];
         };
+        /** ThinkingControls */
+        ThinkingControls: {
+            /** Values */
+            values: (boolean | string)[];
+            /** Default */
+            default: boolean | string;
+        };
         /** UploadAccepted */
         UploadAccepted: {
             /**
@@ -1006,7 +1137,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 paper_id?: string | null;
-                kind?: ("ingest" | "summary") | null;
+                kind?: ("ingest" | "summary" | "model_download" | "model_delete") | null;
                 active?: boolean | null;
             };
             header?: never;
@@ -1044,7 +1175,81 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ModelOperationInput"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_job_api_v1_jobs__job_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelOperationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_job_api_v1_jobs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelOperationInput"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -1485,6 +1690,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SummaryAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_api_v1_models__key__download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelOperationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_installation_api_v1_models__key__installation_delete: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatus"];
                 };
             };
             /** @description Validation Error */

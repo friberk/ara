@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -20,13 +21,19 @@ from app.models.base import Base
 class BackgroundJob(Base):
     __tablename__ = "background_jobs"
     __table_args__ = (
-        CheckConstraint("state IN ('queued','processing','completed','failed')", name="job_state"),
+        CheckConstraint(
+            "state IN ('queued','processing','paused','completed','failed')", name="job_state"
+        ),
         CheckConstraint("attempts BETWEEN 0 AND 3", name="job_attempts"),
         CheckConstraint("generation >= 1", name="job_generation"),
         CheckConstraint("progress BETWEEN 0 AND 100", name="job_progress"),
         Index("ix_job_recovery", "state", "lease_expires_at", "available_at"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    model_key: Mapped[str | None] = mapped_column(String(80))
+    completed_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    total_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    runtime_operation_id: Mapped[UUID | None] = mapped_column(unique=True)
     kind: Mapped[str] = mapped_column(String(40))
     state: Mapped[str] = mapped_column(String(20), default="queued")
     stage: Mapped[str] = mapped_column(String(80), default="queued")
@@ -44,6 +51,14 @@ class BackgroundJob(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def model_operation(self) -> str | None:
+        if self.kind == "model_delete":
+            return "delete"
+        if self.kind == "model_download":
+            return "verify" if self.payload.get("verify_only") is True else "download"
+        return None
 
 
 class JobOutbox(Base):

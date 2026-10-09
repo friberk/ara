@@ -1,6 +1,6 @@
 # Final application verification
 
-Observed October 8, 2026, on macOS/M3 Pro with OrbStack ARM64. These results concern the implemented core application. Optional OCR, semantic embeddings, local inference and automatic PDF downloads are deferred. GitHub publishing is deferred by the user; CI is prepared but has not run remotely.
+Observed October 8–9, 2026, on macOS/M3 Pro with OrbStack ARM64. The first results below concern the earlier core application. Later sections record newer feature verification. OCR, semantic embeddings and automatic PDF downloads remain separate backlog items; local inference is now verified on its feature branch. GitHub publishing is deferred by the user; CI is prepared but has not run remotely.
 
 ## Automated checks
 
@@ -69,3 +69,68 @@ The user requested focused Conventional Commits after the first oversized local 
 - `8b7dd79` — feat(skills): add the locked local PyMuPDF parser.
 - `1390f9c` — test(e2e): exercise homework workflows with HTTP fixtures.
 - `0e64197` — ci(checks): enforce builds integration and API contract consistency.
+
+## Managed local models — ARA-022, October 8
+
+Verified on `feat/managed-ollama`, based on `main` at `c403662`. No merge or GitHub push was performed.
+
+| Check | Executed result | Scope |
+| --- | --- | --- |
+| Lead `python3 scripts/test-stack.py test` | 185 passed in 38.77s; Ruff/build/migrate/bucket init passed | Isolated real PostgreSQL, Redis and MinIO; deterministic external models |
+| Frontend `npm run check` / `npm run build` | 356 passed across 54 files; strict TypeScript/ESLint and build passed | Settings, guarded models/defaults, progress, status, chat and existing interface regressions |
+| Final Playwright run | 12 passed in 2.0 minutes | Fresh isolated fixture stack; mandatory workflows plus four managed-model journeys |
+| Infrastructure / external-fixture unittest | 4 / 3 passed | Bootstrap/reset/Compose configuration and actual fixture HTTP interfaces |
+| Generated API contract | Live OpenAPI regenerated and byte-matched | Checked against API8002; no schema changes in the subsequent sampling correction |
+| CPU/GPU Compose configuration | All three configurations validated | GPU configurations were not hardware-tested |
+| Fresh ordinary Compose startup | Gates/readiness passed; no installed/loaded models; Ollama 20.91 MiB | Isolated `ara-feature`, alternate ports with matching CORS; no automatic weights |
+| Actual worker reload | Six rapid writes produced one restart per worker | Default debounced development wrapper; temporary probe removed |
+| Runtime source review/tests | Ten control tests, repeated race checks and full server suite passed | Pinned Ollama 0.40.1 plus llama.cpp b11454, reviewed cancellation/control patch |
+| Real 7B engine/application | Streaming/schema/default/disabled thinking, exact hashes, range resume, summary/Q&A and restart persistence passed | ARM64 CPU; only 7B weights; empty OpenAI key for application checks |
+
+The final application sampling check stored a summary covering all three chunks in 38.32 seconds and streamed a cited answer in 10.41 seconds (49 SSE events). Both used temperature 0.0 and recorded the pinned artifact, runtime, context/output/thread/reasoning settings. The saved summary exactly matched its durable provenance snapshot, and hosted reservations remained zero. One preceding default-sampling summary was rejected for missing usable source markers; it was not stored as a valid summary or automatically replayed. Temperature 0 reduces sampling variability, not the need to validate citations or inspect factual support.
+
+Restarting PostgreSQL, MinIO, Ollama, API and both workers preserved histories, local defaults, the byte-identical original PDF and verified weights. The measured full application peak was 11.85 GiB under a 12 GiB ceiling, steady usage about 6.65 GiB, and OOM counters were zero. Leave memory for other services; weights, loaded tensors, KV cache and filesystem cache have different lifetimes. See [runtime evidence](../docker/ollama/README.md).
+
+Independent runtime, backend, generation, frontend and whole-branch reviews reproduced defects before correction. Final probes cleared all findings; the latest whole-branch review also passed 38 native adapter tests and a deletion-race provenance probe after the temperature correction. Native amd64, NVIDIA/AMD hardware and live 3.7B/27B inference were not tested. ARA-050 separately tracks seven baseline development-tool dependency advisories; they were not introduced or force-remediated by this feature.
+
+After the sampling correction, refreshed fixture workers passed E2E-11 and E2E-12 again: two tests in 43.8 seconds. The feature preview runs on localhost:5191 with an empty model store; its ignored worktree configuration uses the separate `ara-feature` project and leaves the original development data intact.
+
+## Automatic readiness and protocol failures — ARA-053–054, October 8
+
+The user's installed-but-unselectable IFM report was reproduced in `ara-feature`. Its 3.7B weights were present, but the old capability record required a manual refresh. Readiness now refreshes automatically with durable verification-only jobs. Settings and Activity show preparation, preserve saved preferences and offer explicit recovery only when needed. No migration or new endpoint was required.
+
+| Check | Executed result | Scope |
+| --- | --- | --- |
+| Backend full suite / Ruff | 365 passed in 44.08s; lint and whitespace checks passed | Isolated real PostgreSQL/Redis/MinIO; deterministic external responses |
+| Frontend check / production build | 375 passed across 54 files; strict TypeScript/ESLint and build passed | Readiness polling/status, operation labels, failure recovery, saved-effort preservation; existing warning output retained |
+| Full Playwright | 12 passed in 1.9 minutes | Fresh `ara-e2e` fixture stack; mandatory workflows and managed-model journeys |
+| Protocol cross-review | Independently 38 unit + 10 SQL cases passed | Malformed shape errors terminate safely without lease/pull/recovery loops; original P1 cleared |
+| Final generated contract | Byte-identical after regeneration from source OpenAPI | Nullable installation/job operation enums; no handwritten TypeScript duplication |
+| Real automatic 7B readiness | Exactly one verification-only job; six controls available | Retained weights, browser navigation/closure, API restart; default/history counts and digest preserved, hosted reservations zero, no pull/OOM |
+| Updated protocol boundary with real 7B | Six controls, streaming and structured output passed | Retained ARM64 CPU runtime under inference admission, hosted key empty; no new installation job |
+| Actual feature 3.7B | Automatic preparation completed; Settings selection and six controls verified | Existing user-installed weights; saved defaults unchanged, no browser mutation/verification request; 7B/27B siblings remained missing |
+| Preparation layouts | No horizontal overflow at 1440px and 390px in both themes | Existing shadcn/Geist design; native theme controls and browser closure tested |
+
+The first readiness regressions failed 30 backend cases plus two lifecycle tests. Offline/freshness review added four failing cases before correction. Protocol regressions failed 41 and passed seven before the boundary fix. These are actual observed test results; test-harness timing/locator corrections are distinguished from product failures in the [development journal](agent-development-log.md).
+
+The preview now contains the user's ready 3.7B installation; the older empty-store statement above describes its initial ARA-022 startup. Tests use 7B fixtures and retained 7B inference; the 3.7B check establishes background installation readiness, without a full paper-quality benchmark. Native amd64/GPU and 27B remain untested. No new weights, paid generation, main merge or GitHub push occurred. Focused code commits: `a2d1861`, `0b312f4`, `459290d`.
+
+## Explicit reasoning choices — ARA-055, October 9
+
+The user's UX correction removed redundant Model default/On entries from IFM effort pickers. Settings and the composer show None/Low/Medium/High. Backend aliases use verified controls and an explicit pinned IFM equivalence; binary-only models use a Reasoning toggle and hosted levels remain model-specific. Raw requests and stored history remain compatible. No migration or capability-schema bump was required.
+
+| Check | Executed result | Scope |
+| --- | --- | --- |
+| Final full backend / Ruff | 409 passed in 43.86s; lint and whitespace checks passed | Isolated PostgreSQL/Redis/MinIO; aliases, raw preference/request/provenance and UUID replay compatibility |
+| Final frontend check / build | 392 tests across 54 files in 61.84s; strict TypeScript/ESLint passed; build 922ms | Explicit choices, legacy aliases without false dirty state, unavailable preferences, Boolean controls, historical labels; existing unrelated warnings retained |
+| Full Playwright | 12 passed in 1.9 minutes | Fresh isolated fixture stack, before the final two-line alias-producer correction |
+| Final E2E-12 confirmation | 1 passed in 24.5s after API/model-worker restart | Final producer snapshot; 7B fixtures, four choices in both surfaces, Low summary/Medium cited chat and persisted histories |
+| Independent backend cross-review | 39 unit + 5 isolated SQL cases passed | Final correction closes the reproduced Boolean-default alias-chain case; original raw typed descriptor remains intact |
+| Independent frontend cross-review | 53 focused tests passed in 10.38s | Final explicit-choice setters and request/history behavior; no unresolved finding in reviewed scope |
+| Actual feature 3.7B browser check | Four choices; default/on display High, Low remains Low; zero mutation requests | Real ready model metadata; only legacy preference GET responses substituted in the browser; persisted user defaults unchanged |
+| Responsive/theme inspection | No horizontal overflow at 1440px/390px in Light/Dark | Existing shadcn/Geist controls; native theme state and screenshots checked |
+| Generated API types | Regenerated from final source OpenAPI; byte-identical | Optional `reasoning_aliases` string mapping; no handwritten contracts |
+
+The backend's first RED was 32 failures/4 passes, and the frontend's complete initial RED was 18 failures/33 passes. Review exposed two further issues before correction: an explicit model switch could follow a later preset change, and a verified Boolean IFM preset produced an intermediate On alias. Both had failing regressions before the narrow fixes. The journal separates product defects from test locator/output-path corrections. No new weights, local/paid inference, preference writes, main merge or GitHub push occurred during ARA-055. Earlier six-control evidence describes raw API support and the UI before this correction.
+
+Focused commits: `3c3e0d6` (verified aliases/contracts) and `6b721fd` (explicit UI levels). Final root Ruff formatting corrected one test signature; all 39 alias unit tests then passed in 1.28 seconds. Original API8000 and feature API8003 both returned ready HTTP200. Main remains at `c403662`; development data and retained weights are preserved.

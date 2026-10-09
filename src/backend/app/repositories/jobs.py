@@ -91,6 +91,27 @@ async def complete(sessions, job_id, generation, token, result: dict) -> bool:
 
 
 def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> None:
+    if job.kind in {"model_download", "model_delete"}:
+        # Process restarts and lost dispatches do not spend transfer retry attempts.
+        from app.repositories.local_models import recovery_operations
+
+        pending = recovery_operations(job.payload)
+        if job.runtime_operation_id and job.stage in {"downloading", "pausing"}:
+            pending.append(str(job.runtime_operation_id))
+        pending = list(dict.fromkeys(pending))
+        job.payload = {
+            **job.payload,
+            "_recovery_operation_ids": pending,
+            "recovery_operation_id": pending[0] if pending else None,
+        }
+        job.lease_token = job.lease_expires_at = None
+        job.state, job.stage = "queued", "recovering"
+        job.generation += 1
+        job.available_at = job.updated_at = now()
+        session.add(
+            JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at)
+        )
+        return
     job.lease_token = None
     job.lease_expires_at = None
     job.updated_at = now()
@@ -157,6 +178,17 @@ async def recover(sessions) -> None:
             retry_locked(
                 session, job, code="LEASE_EXPIRED", message="Worker lease expired; recovering."
             )
+            if job.kind in {"model_download", "model_delete"}:
+                from app.models.local_models import ModelInstallation
+
+                installation = await session.get(
+                    ModelInstallation, job.model_key, with_for_update=True
+                )
+                if installation and installation.active_job_id == job.id:
+                    installation.state = (
+                        "pausing" if installation.desired_state == "paused" else "queued"
+                    )
+                    installation.updated_at = now()
             await mark_terminal_document(session, job)
         # Delivered events can be lost in Redis or remain unclaimed after a worker crash.
         # Redelivery preserves generation and attempts; an atomic claim defeats duplicates.

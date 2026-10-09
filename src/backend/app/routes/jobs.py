@@ -8,7 +8,8 @@ from app.core.errors import AppError
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Document
 from app.repositories.jobs import enqueue, job_statuses, now
-from app.schemas.jobs import CanaryInput, JobPage, JobStatus
+from app.schemas.jobs import CanaryInput, JobPage, JobStatus, ModelOperationInput
+from app.services.local_models import transition_job
 
 
 def router(development: bool) -> APIRouter:
@@ -19,7 +20,7 @@ def router(development: bool) -> APIRouter:
         request: Request,
         limit: int = Query(default=50, ge=1, le=100),
         paper_id: UUID | None = None,
-        kind: Literal["ingest", "summary"] | None = None,
+        kind: Literal["ingest", "summary", "model_download", "model_delete"] | None = None,
         active: bool | None = None,
     ):
         statement = select(BackgroundJob).order_by(BackgroundJob.created_at.desc()).limit(limit)
@@ -27,7 +28,7 @@ def router(development: bool) -> APIRouter:
             statement = statement.where(BackgroundJob.kind == kind)
         if active is not None:
             # retry_wait is a stage of the queued state, so active jobs include it.
-            states = ["queued", "processing"] if active else ["completed", "failed"]
+            states = ["queued", "processing", "paused"] if active else ["completed", "failed"]
             statement = statement.where(BackgroundJob.state.in_(states))
         if paper_id is not None:
             documents = select(cast(Document.id, String)).where(Document.paper_id == paper_id)
@@ -62,7 +63,19 @@ def router(development: bool) -> APIRouter:
             raise HTTPException(status_code=404, detail="Not found")
 
     @routes.post("/{job_id}/retry", response_model=JobStatus, status_code=202)
-    async def retry_job(job_id: UUID, request: Request):
+    async def retry_job(job_id: UUID, request: Request, body: ModelOperationInput | None = None):
+        async with request.app.state.resources.sessions() as lookup:
+            local_job = await lookup.get(BackgroundJob, job_id)
+            if local_job and local_job.kind in {"model_download", "model_delete"}:
+                if body is None:
+                    raise AppError(
+                        422,
+                        "MODEL_REQUEST_ID_REQUIRED",
+                        "Local model retries require a request UUID.",
+                    )
+                return await transition_job(
+                    request.app.state.resources, job_id, "retry", body.request_id
+                )
         async with request.app.state.resources.sessions() as session, session.begin():
             job = await session.scalar(
                 select(BackgroundJob).where(BackgroundJob.id == job_id).with_for_update()
@@ -103,6 +116,14 @@ def router(development: bool) -> APIRouter:
                     document.status, document.warnings = "processing", []
             await session.flush()
             return (await job_statuses(session, [job]))[0]
+
+    @routes.post("/{job_id}/pause", response_model=JobStatus, status_code=202)
+    async def pause_job(job_id: UUID, body: ModelOperationInput, request: Request):
+        return await transition_job(request.app.state.resources, job_id, "pause", body.request_id)
+
+    @routes.post("/{job_id}/resume", response_model=JobStatus, status_code=202)
+    async def resume_job(job_id: UUID, body: ModelOperationInput, request: Request):
+        return await transition_job(request.app.state.resources, job_id, "resume", body.request_id)
 
     @routes.get("/{job_id}", response_model=JobStatus)
     async def get_job(job_id: UUID, request: Request):

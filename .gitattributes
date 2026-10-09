@@ -1,0 +1,2 @@
+# Unified patch context prefixes are literal data, including blank lines and Go tabs.
+docker/ollama/*.patch -whitespace

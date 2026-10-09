@@ -146,10 +146,10 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         return
     metadata = parsed["metadata"]
     enriched_fields = set()
-    if (
-        resources.settings.openai_api_key
-        and resources.settings.openai_api_key.get_secret_value()
-        and (not metadata.get("title") or not metadata.get("authors"))
+    from app.integrations.llm import metadata_available
+
+    if (not metadata.get("title") or not metadata.get("authors")) and await metadata_available(
+        resources
     ):
         enrichment = payload.get("metadata_result") or {}
         if not payload.get("metadata_attempted"):
@@ -172,7 +172,7 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
                 payload["metadata_result"] = enrichment
             except Exception:
                 parsed["warnings"].append(
-                    "Hosted metadata enrichment was unavailable; extracted text was retained."
+                    "Model metadata enrichment was unavailable; extracted text was retained."
                 )
             async with resources.sessions() as session, session.begin():
                 saved = await session.scalar(
