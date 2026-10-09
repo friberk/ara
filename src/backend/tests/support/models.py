@@ -65,13 +65,13 @@ async def install_thinking_model(resources, spec):
         )
 
 
-def ollama_reply(content: str) -> httpx.Response:
+def ollama_reply(content: str, done_reason: str = "stop") -> httpx.Response:
     return httpx.Response(
         200,
         json={
             "message": {"role": "assistant", "content": content},
             "done": True,
-            "done_reason": "stop",
+            "done_reason": done_reason,
             "prompt_eval_count": 90,
             "eval_count": 30,
         },

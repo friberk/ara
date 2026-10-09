@@ -240,6 +240,8 @@ async def reserve_amount(resources, model: str, amount: Decimal) -> None:
 class Completion:
     content: str
     usage: dict[str, Any]
+    # The model stopped at its output limit; only callers that opted in receive this.
+    truncated: bool = False
 
 
 class HostedLLM:

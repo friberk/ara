@@ -440,3 +440,30 @@ async def test_given_local_answer_when_streaming_then_native_provider_completes_
         )
     assert "event: message.completed" in output and "private" not in output
     assert "Evidence is insufficient." in output and "insufficient-evidence" not in output
+
+
+async def test_given_length_limited_reply_then_only_an_opt_in_caller_accepts_it_as_truncated():
+    """Answers must finish; a running summary may keep the lines it completed (ARA-077)."""
+    from app.integrations.llm import LLMError
+    from app.integrations.tokens import PromptMessage
+
+    body = {
+        "message": {"role": "assistant", "content": "## User goals\n- Partial"},
+        "done": True,
+        "done_reason": "length",
+        "prompt_eval_count": 90,
+        "eval_count": 400,
+    }
+    messages = [PromptMessage("system", "Summarize."), PromptMessage("user", "Turns.")]
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))
+    ) as client:
+        local = adapter(client)
+        with pytest.raises(LLMError) as strict:
+            await local.complete_messages("ifm-k2-horizon-7b", "default", messages)
+        accepted = await local.complete_messages(
+            "ifm-k2-horizon-7b", "default", messages, accept_truncated=True
+        )
+    assert strict.value.code == "MODEL_INCOMPLETE"
+    assert (accepted.content, accepted.truncated) == ("## User goals\n- Partial", True)
+    assert accepted.usage["output_tokens"] == 400

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from uuid import uuid4
 
 import httpx
@@ -168,7 +169,9 @@ async def test_given_compaction_when_delivered_twice_then_one_version_and_messag
     (memory,) = await memories(resources, chat_id)
     assert (memory.version, memory.through_message_id) == (1, added[0].answer)
     assert memory.summary == SUMMARY_V1 and memory.model == "gpt-5.6-luna"
-    assert memory.prompt_version == "1" and memory.token_count > 0
+    from app.services.memory import COMPACTION_PROMPT_VERSION
+
+    assert memory.prompt_version == COMPACTION_PROMPT_VERSION and memory.token_count > 0
     assert len(requests) == 1
     (body,) = requests
     assert body["model"] == "gpt-5.6-luna" and body["reasoning"] == {"effort": "none"}
@@ -290,9 +293,37 @@ async def test_given_local_chat_when_compacting_then_local_model_and_no_hosted_c
     assert hosted == []
     (body,) = local
     assert body["model"] == spec.model_id and body["think"] is False
-    # A short local summary keeps the runtime free for the next question.
-    assert body["options"]["num_predict"] == 400
+    # Live, IFM 7B overran "Stay under 300 tokens" with a 400-token allowance (MODEL_INCOMPLETE)
+    # when merging summary v1. Small models follow word counts, and need room to overshoot.
+    system = body["messages"][0]["content"]
+    assert "tokens" not in system
+    words = int(re.search(r"Stay under (\d+) words", system).group(1))
+    assert body["options"]["num_predict"] >= 2 * words * 4 // 3
     assert "Turn 0 finding" in json.dumps(body["messages"])
+
+
+async def test_given_local_summary_cut_at_its_length_limit_then_whole_lines_are_kept(
+    resources, monkeypatch
+):
+    """Live, IFM 7B ignored "Stay under 217 words", wrote 314 and stopped at its 580-token cap
+    (done_reason "length"), so every later summary failed MODEL_INCOMPLETE. Answers only read a
+    summary's head, so its complete lines are worth keeping."""
+    from app.integrations.model_catalog import local_spec
+
+    spec = local_spec("ifm-k2-horizon-7b")
+    await install_thinking_model(resources, spec)
+    cut = "## User goals\n- Compare RAG with DPR.\n\n## Established facts (with pages)\n"
+    cut += "- RAG indexes 21M passages (p. 4).\n- RAG-Token beats RAG-Seq on Jeop"
+    await local_runtime(monkeypatch, resources, spec, lambda body: ollama_reply(cut, "length"))
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3), model=spec.key)
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id, spec.key)
+    await run_job(resources, job_id)
+    (memory,) = await memories(resources, chat_id)
+    assert memory.summary.endswith("- RAG indexes 21M passages (p. 4).")
+    assert "Jeop" not in memory.summary
+    assert (await load_job(resources, job_id)).result["truncated"] is True
 
 
 async def test_given_busy_local_runtime_when_compacting_then_job_waits_without_attempts(

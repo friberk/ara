@@ -33,6 +33,7 @@ class OllamaLLM:
             follow_redirects=False,
         )
         self.usage: dict = {}
+        self.truncated = False
 
     async def close(self) -> None:
         if self._owns_client:
@@ -93,7 +94,7 @@ class OllamaLLM:
             max_output_tokens=max_output_tokens,
         )
 
-    def parse(self, data: dict) -> tuple[str, bool]:
+    def parse(self, data: dict, *, accept_truncated: bool = False) -> tuple[str, bool]:
         if not isinstance(data, dict):
             raise LLMError(
                 "MODEL_RESPONSE_INVALID", "The local model returned an invalid response."
@@ -112,7 +113,8 @@ class OllamaLLM:
                 "MODEL_RESPONSE_INVALID", "The local model returned an invalid response."
             )
         if data["done"]:
-            if data.get("done_reason") != "stop":
+            self.truncated = accept_truncated and data.get("done_reason") == "length"
+            if data.get("done_reason") != "stop" and not self.truncated:
                 raise LLMError("MODEL_INCOMPLETE", "The local model did not complete its answer.")
             counts = [data.get("prompt_eval_count", 0), data.get("eval_count", 0)]
             if any(not isinstance(x, int) or isinstance(x, bool) or x < 0 for x in counts):
@@ -152,27 +154,36 @@ class OllamaLLM:
         )
 
     async def complete_messages(
-        self, model, effort, messages, *, schema=None, max_output_tokens=None
+        self,
+        model,
+        effort,
+        messages,
+        *,
+        schema=None,
+        max_output_tokens=None,
+        accept_truncated=False,
     ) -> Completion:
+        """`accept_truncated` returns output cut at the length limit, marked, instead of failing."""
         return await self.complete_request(
             self.request(
                 model, effort, messages, schema=schema, max_output_tokens=max_output_tokens
-            )
+            ),
+            accept_truncated=accept_truncated,
         )
 
-    async def complete_request(self, arguments) -> Completion:
+    async def complete_request(self, arguments, *, accept_truncated=False) -> Completion:
         try:
             async with asyncio.timeout(self.settings.ollama_request_timeout_seconds):
                 response = await self.client.post(
                     self.settings.ollama_base_url + "/api/chat", json=arguments
                 )
                 self.check_http(response)
-                content, done = self.parse(response.json())
+                content, done = self.parse(response.json(), accept_truncated=accept_truncated)
                 if not done or not content.strip():
                     raise LLMError(
                         "MODEL_INCOMPLETE", "The local model did not complete its answer."
                     )
-                return Completion(content, self.usage)
+                return Completion(content, self.usage, truncated=self.truncated)
         except (ValueError, UnicodeError) as exc:
             raise LLMError(
                 "MODEL_RESPONSE_INVALID", "The local model returned an invalid response."
