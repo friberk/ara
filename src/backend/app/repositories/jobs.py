@@ -125,6 +125,16 @@ def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> Non
     session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
 
 
+def continue_locked(session, job: BackgroundJob, *, stage: str, progress: int) -> None:
+    """Yield a long job's lease to the next generation without spending a retry attempt."""
+    job.lease_token = job.lease_expires_at = None
+    job.state, job.stage, job.progress = "queued", stage, progress
+    job.attempts = 0
+    job.generation += 1
+    job.available_at = job.updated_at = now()
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
+
+
 async def mark_terminal_document(session, job: BackgroundJob) -> None:
     if job.kind != "ingest" or job.state != "failed":
         return
