@@ -1,4 +1,4 @@
-const fields: Record<string, string> = { title: 'Title', authors: 'Authors', year: 'Year', abstract: 'Abstract', doi: 'DOI' }
+const fields: Record<string, string> = { title: 'Title', authors: 'Authors', year: 'Year', venue: 'Venue', abstract: 'Abstract', doi: 'DOI' }
 const sources: Record<string, string> = { manual: 'edited by you', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', pdf: 'PDF metadata', pdf_metadata: 'PDF metadata', extraction: 'PDF text', llm: 'PDF text analysis' }
 
 /** Where each bibliographic field came from, so corrected and extracted values can be told apart. */

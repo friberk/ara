@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FileUp, History, Plus } from 'lucide-react'
+import { FileText, FileUp, History, Plus, X } from 'lucide-react'
+import { toast } from 'sonner'
 import type { Paper, Provider } from '@/api/types'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Composer } from '@/components/composer/Composer'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
@@ -12,7 +12,11 @@ import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { searchHref } from '@/components/shell/recent-items'
-import { UploadDropzone } from '@/components/upload/UploadDropzone'
+import { Progress } from '@/components/ui/progress'
+import { UploadFailure } from '@/components/upload/UploadDropzone'
+import { DropOverlay } from '@/components/upload/DropOverlay'
+import { usePageDrop } from '@/components/upload/use-page-drop'
+import { useUploads } from '@/components/upload/use-upload'
 import { useCreateChat } from '@/hooks/queries/chats'
 import { useRecordSearch, useSearchHistory } from '@/hooks/queries/search'
 import { queueQuestion } from '@/lib/pending-questions'
@@ -27,7 +31,21 @@ export default function HomePage() {
   const [text, setText] = useState('')
   const [provider, setProvider] = useState<Provider>('openalex')
   const [paper, setPaper] = useState<Paper | null>(null)
-  const [uploadOpen, setUploadOpen] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
+  // A PDF chosen or dropped here uploads at once and opens its paper, where the same steps continue.
+  const uploads = useUploads({
+    onAccepted: (accepted) => {
+      if (accepted.duplicate) toast('This PDF is already in your library, so its paper opened.')
+      navigate(`/papers/${accepted.paper_id}`, { state: { upload: { jobId: accepted.job_id } } })
+    },
+  })
+  const upload = uploads.items.at(-1)
+  const startUpload = (files: File[]) => {
+    if (!files[0]) return
+    for (const item of uploads.items) uploads.remove(item.id)
+    uploads.add([files[0]])
+  }
+  const dragging = usePageDrop(startUpload)
   const record = useRecordSearch()
   // Same query as the sidebar's recent list, so both share one request. Missing history just leaves the examples.
   const history = useSearchHistory(20)
@@ -76,7 +94,7 @@ export default function HomePage() {
                   <Button type="button" variant="ghost" size="icon-sm" className="rounded-full text-muted-foreground hover:text-foreground" aria-label="Add a paper"><Plus aria-hidden="true" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuItem onSelect={() => setUploadOpen(true)}><FileUp aria-hidden="true" />Upload a PDF</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => picker.current?.click()}><FileUp aria-hidden="true" />Upload a PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <PaperPicker onSelect={setPaper} />
@@ -87,6 +105,19 @@ export default function HomePage() {
           footnote={asking ? 'Answers come from this paper’s PDF and cite their pages. Check important claims against the source.' : undefined}
         />
         <ErrorNotice error={createChat.error} className="w-full" />
+        <input ref={picker} type="file" accept="application/pdf,.pdf" aria-label="PDF file" tabIndex={-1} className="sr-only" onChange={(event) => { startUpload(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+        {upload?.state === 'uploading' && (
+          <div className="grid w-full gap-2 rounded-xl border bg-card px-4 py-3">
+            <div className="flex items-center gap-3">
+              <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <p className="min-w-0 flex-1 truncate text-sm font-medium">{upload.file.name}</p>
+              <span className="tabular text-xs text-muted-foreground">Uploading {Math.round(upload.progress * 100)}%</span>
+              <Button type="button" size="icon-sm" variant="ghost" aria-label="Cancel upload" onClick={() => uploads.remove(upload.id)}><X /></Button>
+            </div>
+            <Progress value={Math.round(upload.progress * 100)} aria-label="Upload progress" />
+          </div>
+        )}
+        {upload?.state === 'failed' && <UploadFailure item={upload} onRetry={() => uploads.retry(upload)} className="w-full" />}
         {!asking && (
           <ul aria-label="Suggestions" className="flex max-w-full flex-wrap justify-center gap-2">
             {recent.map((item) => (
@@ -101,19 +132,11 @@ export default function HomePage() {
                 <Button type="button" variant="outline" size="sm" className={chip} onClick={() => search(topic)}><span className="sr-only">Example topic:</span> <span className="truncate">{topic}</span></Button>
               </li>
             ))}
-            <li><Button type="button" variant="outline" size="sm" className={chip} onClick={() => setUploadOpen(true)}><FileUp aria-hidden="true" />Upload a PDF</Button></li>
+            <li><Button type="button" variant="outline" size="sm" className={chip} onClick={() => picker.current?.click()}><FileUp aria-hidden="true" />Upload a PDF</Button></li>
           </ul>
         )}
       </div>
-      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Upload a paper</DialogTitle>
-            <DialogDescription>We read the title, authors, year and abstract from the PDF, then prepare it for summaries and questions.</DialogDescription>
-          </DialogHeader>
-          <UploadDropzone onAccepted={(accepted) => { setUploadOpen(false); navigate(`/papers/${accepted.paper_id}`) }} />
-        </DialogContent>
-      </Dialog>
+      <DropOverlay show={dragging} label="Drop a PDF to open it as a paper" />
     </div>
   )
 }

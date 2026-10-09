@@ -92,7 +92,9 @@ async def complete(sessions, job_id, generation, token, result: dict) -> bool:
         return saved is not None
 
 
-def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> None:
+def retry_locked(
+    session, job: BackgroundJob, *, code: str, message: str, delay_seconds: float | None = None
+) -> None:
     if job.kind in {"model_download", "model_delete"}:
         # Process restarts and lost dispatches do not spend transfer retry attempts.
         from app.repositories.local_models import recovery_operations
@@ -123,7 +125,9 @@ def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> Non
         return
     job.state, job.stage = "queued", "retry_wait"
     job.generation += 1
-    job.available_at = now() + timedelta(seconds=2**job.attempts + random.uniform(0, 1))
+    if delay_seconds is None:
+        delay_seconds = 2**job.attempts + random.uniform(0, 1)
+    job.available_at = now() + timedelta(seconds=delay_seconds)
     session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
 
 
@@ -268,7 +272,7 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     )
 
     def linked_paper(job: BackgroundJob) -> UUID | None:
-        if job.kind in {"summary", "fulltext", "embed"}:
+        if job.kind in {"summary", "fulltext", "embed", "metadata"}:
             return payload_uuid(job.payload, "paper_id")
         if job.kind == "ingest":
             return document_papers.get(payload_uuid(job.payload, "document_id"))

@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import { FetchBackedXhr } from './fake-xhr'
 
 // Whole-app tests load lazy routes (Markdown, KaTeX, pdf.js) on first use; under a parallel run that can exceed 1s.
 configure({ asyncUtilTimeout: 3000 })
@@ -24,3 +25,7 @@ if (!Element.prototype.hasPointerCapture) {
   Element.prototype.setPointerCapture = () => {}
   Element.prototype.releasePointerCapture = () => {}
 }
+
+// Uploads report real progress through XMLHttpRequest; in tests it goes through the stubbed fetch (ARA-086).
+// Assigned directly, not with vi.stubGlobal, so a test's vi.unstubAllGlobals() keeps it.
+Object.defineProperty(window, 'XMLHttpRequest', { writable: true, value: FetchBackedXhr })

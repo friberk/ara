@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
 import { LocalModels } from './LocalModels'
 import { RetrievalSettingsSection } from './RetrievalSettingsSection'
+import { MetadataSettingsSection } from './MetadataSettingsSection'
 
 const statusBadges: Record<Model['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -140,6 +141,7 @@ export default function SettingsPage() {
         <Separator />
         <RetrievalSettingsSection />
         <Separator />
+        <MetadataSettingsSection /><Separator />
         {models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
         <Appearance />
         <Separator />

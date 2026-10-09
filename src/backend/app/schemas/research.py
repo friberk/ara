@@ -29,6 +29,8 @@ class SearchResult(BaseModel):
     pdf_url: str | None = None
     is_open_access: bool | None = None
     locations: list[FullTextLocation] = Field(default_factory=list)
+    # Journal or conference name; older stored snapshots have none (ARA-086).
+    venue: str | None = None
 
 
 class SearchHit(SearchResult):
@@ -57,10 +59,14 @@ class PaperDetail(BaseModel):
     year: int | None
     abstract: str | None
     doi: str | None
+    # From the linked provider record; papers have no venue column (ARA-086).
+    venue: str | None = None
     sources: list[SearchResult]
     document_status: Literal["metadata_only", "processing", "ready", "failed"]
     active_document_id: UUID | None
     metadata_provenance: dict
+    # The active PDF's file name, so an untitled paper can be named while it is read (ARA-086).
+    file_name: str | None = None
 
 
 class PaperPage(BaseModel):
@@ -80,6 +86,8 @@ class UploadAccepted(BaseModel):
     paper_id: UUID
     document_id: UUID
     job_id: UUID
+    # True when a new request matched a PDF the library already holds (ARA-086).
+    duplicate: bool = False
 
 
 class Citation(BaseModel):

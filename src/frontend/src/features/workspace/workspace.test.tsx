@@ -111,24 +111,64 @@ test('Given a metadata-only paper, Then the reader offers the PDF dropzone and k
   expect(screen.queryByRole('link', { name: 'Open original PDF' })).not.toBeInTheDocument()
 })
 
-test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then the upload is followed until the PDF opens', async () => {
+test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then one stage list follows it until the PDF opens', async () => {
   let stored: object = metadataOnly
   let job = { id: 'job-1', kind: 'ingest', state: 'processing', stage: 'processing', progress: 20, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: paper.title }
   mockApi({
-    'POST /documents': () => { stored = { ...metadataOnly, document_status: 'processing', active_document_id: 'doc-1' }; return json({ paper_id: 'p1', document_id: 'doc-1', job_id: 'job-1' }) },
+    'POST /documents': () => { stored = { ...metadataOnly, document_status: 'processing', active_document_id: 'doc-1' }; return json({ paper_id: 'p1', document_id: 'doc-1', job_id: 'job-1', duplicate: false }) },
     'GET /papers/p1': () => json(stored),
     'GET /jobs/job-1': () => json(job),
   })
   const { user } = renderApp('/papers/p1')
   const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
   await user.upload(within(reader).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'paper.pdf', { type: 'application/pdf' }))
-  await user.click(within(reader).getByRole('button', { name: 'Upload PDF' }))
   expect(await screen.findByText('Processing PDF')).toBeVisible()
-  expect(within(reader).getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
-  expect(within(reader).getByRole('progressbar', { name: 'PDF processing progress' })).toBeVisible()
+  const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
+  expect(within(steps).getByText('Uploaded')).toBeVisible()
+  await waitFor(() => expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step'))
+  expect(within(reader).getByRole('heading', { name: 'Preparing the PDF' })).toBeVisible()
+  expect(within(reader).queryByText(/in the background/i)).not.toBeInTheDocument()
   stored = paper
   job = { ...job, state: 'completed', stage: 'completed', progress: 100 }
   expect(await within(reader).findByText('Showing doc-1', {}, { timeout: 4000 })).toBeVisible()
+})
+
+test('Given a PDF that arrived without an upload here, Then the processing view never claims it was uploaded', async () => {
+  const job = { id: 'job-3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 50, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: null }
+  mockApi({ 'GET /papers/p1': { ...metadataOnly, title: null, file_name: 'retrieved-paper.pdf', document_status: 'processing', active_document_id: 'doc-1' }, 'GET /jobs': { items: [job] }, 'GET /jobs/job-3': job })
+  renderApp('/papers/p1')
+  const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
+  const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
+  await waitFor(() => expect(within(steps).getByText('Finding paper details').closest('li')).toHaveAttribute('aria-current', 'step'))
+  expect(within(steps).queryByText(/Upload/)).not.toBeInTheDocument()
+  expect(within(reader).queryByText(/uploaded/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('heading', { level: 1, name: 'retrieved-paper.pdf' })).toBeVisible()
+})
+
+test('Given a ready paper whose catalog lookup is running, When it finishes, Then the title updates without a reload', async () => {
+  let stored = { ...paper, title: 'Printed title from the PDF', metadata_provenance: { title: { source: 'pdf' } } }
+  let lookup = { id: 'lookup-1', kind: 'metadata', state: 'processing', stage: 'finding_metadata', progress: 50, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: stored.title, created_at: '2026-10-09T00:00:00Z' }
+  mockApi({ 'GET /papers/p1': () => json(stored), 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? [lookup] : [] }) })
+  renderApp('/papers/p1')
+  expect(await screen.findByRole('heading', { level: 1, name: 'Printed title from the PDF' })).toBeVisible()
+  // The PDF is readable meanwhile, so the status says so and the lookup is a quiet note beside it.
+  expect(await screen.findByText('Finding paper details')).toBeVisible()
+  expect(screen.getByText('Ready to read')).toBeVisible()
+  stored = { ...stored, title: 'Catalog title from OpenAlex', metadata_provenance: { title: { source: 'openalex' } } }
+  lookup = { ...lookup, state: 'completed', stage: 'completed', progress: 100 }
+  expect(await screen.findByRole('heading', { level: 1, name: 'Catalog title from OpenAlex' }, { timeout: 5000 })).toBeVisible()
+  expect(screen.getByText('Ready to read')).toBeVisible()
+})
+
+test('Given the catalog lookup ran out of attempts, Then Details explains it and can look the paper up again', async () => {
+  const failed = { id: 'lookup-2', kind: 'metadata', state: 'failed', stage: 'failed', progress: 50, error: { code: 'PROVIDER_RATE_LIMITED', message: 'The metadata sources are rate limited, so the details read from the PDF were kept. Retry the lookup later.' }, result: null, attempts: 3, paper_id: 'p1', paper_title: paper.title, created_at: '2026-10-09T00:00:00Z' }
+  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? [failed] : [] }), 'POST /jobs/lookup-2/retry': { ...failed, state: 'queued', stage: 'queued', error: null } })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('tab', { name: 'Details' }))
+  const details = screen.getByRole('tabpanel', { name: 'Details' })
+  expect(await within(details).findByText(/the details read from the PDF were kept/)).toBeVisible()
+  await user.click(within(details).getByRole('button', { name: 'Look up again' }))
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/jobs/lookup-2/retry')).toBe(true))
 })
 
 test('Given field provenance, Then the details show the bibliography and where each field came from', async () => {
@@ -162,11 +202,11 @@ test('Given provider metadata, When only the title is edited, Then only the titl
   expect(screen.getByText('Authors: OpenAlex')).toBeVisible()
 })
 
-test('Given a ready paper, When a new PDF version is uploaded from Details, Then its progress stays while the paper processes', async () => {
+test('Given a ready paper, When a new PDF version is uploaded from Details, Then its stages stay there while the paper processes', async () => {
   let stored = paper
   const job = { id: 'job-2', kind: 'ingest', state: 'processing', stage: 'processing', progress: 10, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: paper.title }
   mockApi({
-    'POST /documents': () => { stored = { ...paper, document_status: 'processing', active_document_id: 'doc-2' }; return json({ paper_id: 'p1', document_id: 'doc-2', job_id: 'job-2' }) },
+    'POST /documents': () => { stored = { ...paper, document_status: 'processing', active_document_id: 'doc-2' }; return json({ paper_id: 'p1', document_id: 'doc-2', job_id: 'job-2', duplicate: false }) },
     'GET /papers/p1': () => json(stored),
     'GET /jobs/job-2': job,
   })
@@ -174,9 +214,10 @@ test('Given a ready paper, When a new PDF version is uploaded from Details, Then
   await user.click(await screen.findByRole('tab', { name: 'Details' }))
   const details = screen.getByRole('tabpanel', { name: 'Details' })
   await user.upload(within(details).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'new-version.pdf', { type: 'application/pdf' }))
-  await user.click(within(details).getByRole('button', { name: 'Upload PDF' }))
   expect(await screen.findByText('Processing PDF')).toBeVisible()
-  expect(within(details).getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
+  const steps = await within(details).findByRole('list', { name: 'Preparation steps' })
+  await waitFor(() => expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step'))
+  expect(within(details).queryByText(/in the background/i)).not.toBeInTheDocument()
 })
 
 test('Given a narrow screen, Then Chat, PDF and Details are tabs that follow ?view=', async () => {
@@ -251,16 +292,18 @@ test('Given a processing paper, Then the reader follows its ingest job', async (
   const job = { id: 'job-1', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 40, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: paper.title }
   const { calls } = mockApi({ 'GET /papers/p1': { ...paper, document_status: 'processing' }, 'GET /jobs': { items: [job] }, 'GET /jobs/job-1': job })
   renderApp('/papers/p1')
-  expect(await screen.findByText('Extracting title, authors and abstract')).toBeVisible()
-  expect(screen.getByRole('progressbar', { name: 'PDF processing progress' })).toBeVisible()
-  const jobsQuery = calls.find((call) => call.path === '/jobs')?.url.searchParams
+  const steps = await screen.findByRole('list', { name: 'Preparation steps' })
+  await waitFor(() => expect(within(steps).getByText('Finding paper details').closest('li')).toHaveAttribute('aria-current', 'step'))
+  expect(within(steps).getByText('Reading pages').closest('li')).toHaveTextContent('Done')
+  const jobsQuery = calls.find((call) => call.path === '/jobs' && call.url.searchParams.get('kind') === 'ingest')?.url.searchParams
   expect(Object.fromEntries(jobsQuery ?? [])).toEqual({ paper_id: 'p1', kind: 'ingest', active: 'true' })
 })
 
 test('Given job filtering is unavailable, When a paper is processing, Then a generic processing state is shown', async () => {
   mockApi({ 'GET /papers/p1': { ...paper, document_status: 'processing' }, 'GET /jobs': () => json({ code: 'NOT_FOUND', message: 'Not found.' }, 404) })
   renderApp('/papers/p1')
-  expect(await screen.findByText('Processing the PDF')).toBeVisible()
+  expect(await screen.findByRole('heading', { name: 'Preparing the PDF' })).toBeVisible()
+  expect(within(screen.getByRole('list', { name: 'Preparation steps' })).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step')
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 

@@ -8,7 +8,8 @@ export type SearchPage = Schemas['SearchPage']
 export type Paper = Schemas['PaperDetail']
 export type PaperPatch = Schemas['PaperPatch']
 export type SavePaper = Schemas['SavePaper']
-export type UploadAccepted = Schemas['UploadAccepted']
+/** `duplicate` is set by uploads; a retrieval hand-off to processing leaves it out (ARA-086). */
+export type UploadAccepted = Omit<Schemas['UploadAccepted'], 'duplicate'> & { duplicate?: boolean }
 export type FullTextStatus = Schemas['FullTextStatus']
 export type FullTextAccepted = Schemas['FullTextAccepted']
 export type FullTextInput = Schemas['FullTextInput']
@@ -59,3 +60,7 @@ export type ChatCost = Schemas['ChatCost']
 export type RetrievalStage = 'waiting' | 'planning' | 'retrieving' | 'reranking' | 'generating'
 export type Reranker = Schemas['RerankerOut']
 export type RerankerKey = NonNullable<RetrievalSettings['reranker']>
+
+// Uploaded-paper metadata lookups (ARA-086, docs/api-contract.md).
+export type MetadataSettings = Schemas['MetadataSettings']
+export type MetadataSource = MetadataSettings['source']

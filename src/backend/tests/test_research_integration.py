@@ -214,7 +214,9 @@ async def test_duplicate_pdf_request_uuid_cannot_be_reused_for_different_origina
             files={"file": ("original.pdf", original, "application/pdf")},
             data={"request_id": duplicate_id},
         )
-        assert duplicate.status_code == 202 and duplicate.json() == first.json()
+        # Same bytes under a new request open the stored paper and say so (ARA-086).
+        assert duplicate.status_code == 202
+        assert duplicate.json() == {**first.json(), "duplicate": True}
         conflicting = await client.post(
             "/api/v1/documents",
             files={"file": ("other.pdf", other, "application/pdf")},
