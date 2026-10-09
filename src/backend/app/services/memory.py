@@ -69,6 +69,8 @@ SUMMARY_SECTIONS = (
 # The hosted summary share is far larger than a useful summary.
 SUMMARY_TOKEN_LIMIT = 2000
 COMPACTION_MIN_OUTPUT = 1024
+# A short local summary keeps the CPU runtime free for the user's next question.
+LOCAL_COMPACTION_OUTPUT = 400
 BUSY_WAIT_SECONDS = 10
 # Under the 2,048-token local embedding context; the start of an answer carries its gist.
 TURN_EMBED_TOKENS = 1800
@@ -458,7 +460,12 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
             SUMMARY_TOKEN_LIMIT,
             memory_shares(answer_profile(resources.settings, payload["model"])).summary,
         )
-        output = min(profile.max_output, max(COMPACTION_MIN_OUTPUT, 2 * target))
+        output = min(
+            profile.max_output,
+            LOCAL_COMPACTION_OUTPUT if selection else max(COMPACTION_MIN_OUTPUT, 2 * target),
+        )
+        # Ask for less than the allowance so a slightly long summary still completes.
+        target = min(target, output * 3 // 4)
         prompt = compaction_prompt(
             profile.counter, profile.input_budget, latest and latest.summary, pairs, target
         )

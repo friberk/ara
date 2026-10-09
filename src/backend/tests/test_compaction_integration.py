@@ -273,6 +273,8 @@ async def test_given_local_chat_when_compacting_then_local_model_and_no_hosted_c
     assert hosted == []
     (body,) = local
     assert body["model"] == spec.model_id and body["think"] is False
+    # A short local summary keeps the runtime free for the next question.
+    assert body["options"]["num_predict"] == 400
     assert "Turn 0 finding" in json.dumps(body["messages"])
 
 
@@ -381,3 +383,44 @@ async def test_given_compact_chat_job_when_worker_executes_then_summary_is_writt
     await actors.execute_job.fn.__wrapped__(str(job_id), 1)
     assert (await load_job(resources, job_id)).result == {"version": 1}
     assert [memory.version for memory in await memories(resources, chat_id)] == [1]
+
+
+async def test_given_memory_jobs_when_dispatching_then_local_compaction_uses_local_lane(
+    resources,
+):
+    from app.services.dispatcher import dispatch_once
+
+    async with resources.sessions() as session, session.begin():
+        local = await enqueue(session, kind="compact_chat", payload={"model": "ifm-k2-horizon-7b"})
+        hosted = await enqueue(session, kind="compact_chat", payload={"model": "gpt-5.6-sol"})
+        turn = await enqueue(session, kind="embed_turn", payload={"message_id": str(uuid4())})
+    ordinary, generations = [], []
+    await dispatch_once(
+        resources.sessions,
+        lambda *args: ordinary.append(args),
+        local_publish=lambda *args: generations.append(args),
+    )
+    assert generations == [(str(local.id), 1)]
+    assert sorted(ordinary) == sorted([(str(hosted.id), 1), (str(turn.id), 1)])
+
+
+async def test_given_local_compaction_on_local_lane_when_executed_then_summary_is_written(
+    resources, monkeypatch
+):
+    from app.integrations.model_catalog import local_spec
+    from app.jobs import model_actors
+
+    spec = local_spec("ifm-k2-horizon-7b")
+    await install_thinking_model(resources, spec)
+    local, hosted = await local_runtime(
+        monkeypatch, resources, spec, lambda body: ollama_reply(SUMMARY_V1)
+    )
+    monkeypatch.setattr(model_actors, "worker_resources", lambda: resources)
+    _, _, chat_id = await seed_chat(resources)
+    await add_turns(resources, chat_id, turns(3), model=spec.key)
+    resources.settings.memory_compaction_ratio = 0.01
+    job_id = await maybe_enqueue(resources, chat_id, spec.key)
+    await model_actors.execute_local_summary.fn.__wrapped__(str(job_id), 1)
+    assert (await load_job(resources, job_id)).result == {"version": 1}
+    (memory,) = await memories(resources, chat_id)
+    assert memory.model == spec.key and len(local) == 1 and hosted == []
