@@ -36,7 +36,7 @@ test('Given models cannot load, Then the error is shown inline and Try again rel
   expect(alert).toHaveTextContent('Model list is unavailable right now.')
   failing = false
   await user.click(within(alert).getByRole('button', { name: 'Try again' }))
-  expect(await within(main).findByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked()
+  expect(await within(await within(main).findByRole('radiogroup', { name: 'Default model' })).findByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked()
   expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
   expect(calls.filter((call) => call.path === '/models').length).toBeGreaterThanOrEqual(2)
 })

@@ -148,3 +148,36 @@ test('Given local chat, search and ranking models, Then Default model lists chat
   expect(within(chatRow).queryByText('Search')).not.toBeInTheDocument()
   expect(within(chatRow).queryByText('Ranking')).not.toBeInTheDocument()
 })
+
+const memoryLabel = 'Model for summaries and follow-up questions'
+
+test('Given hosted and local chat models, Then the summaries and follow-up model lists the hosted chat models with their availability', async () => {
+  const sol = { ...luna, key: 'gpt-5.6-sol', model_id: 'gpt-5.6-sol', display_name: 'GPT-5.6 Sol', status: 'unavailable', unavailable_reason: 'Not configured on the server' }
+  const local = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B', reasoning_efforts: ['default'] }
+  const search = { ...local, kind: 'embedding', key: 'qwen3-embedding-4b', display_name: 'Qwen3 Embedding 4B' }
+  mockApi({ 'GET /models': { items: [luna, terra, sol, local, search] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default', memory_model: terra.key } })
+  renderApp('/settings')
+  const memory = await screen.findByRole('radiogroup', { name: memoryLabel })
+  await waitFor(() => expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Terra' })).toBeChecked())
+  // The server's catalog decides the choices; local chats keep their own model.
+  expect(within(memory).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([luna.key, terra.key, sol.key])
+  expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Sol' })).toBeDisabled()
+  expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Sol' })).toHaveAccessibleDescription(/Not configured on the server/)
+  expect(within(memory).getByText('Available')).toBeVisible()
+  expect(within(memory).getByText('Configured')).toBeVisible()
+  expect(screen.getByText(/Local chats use their own model/)).toBeVisible()
+})
+
+test('Given a saved summaries model, When another hosted model is chosen and saved, Then PUT sends it with the chat defaults', async () => {
+  const { calls } = mockApi({ 'GET /models': { items: [luna, terra] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low', memory_model: luna.key }, 'PUT /settings': { default_model: luna.key, reasoning_effort: 'low', memory_model: terra.key } })
+  const { user } = renderApp('/settings')
+  const save = await screen.findByRole('button', { name: 'Save defaults' })
+  const memory = await screen.findByRole('radiogroup', { name: memoryLabel })
+  await waitFor(() => expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked())
+  expect(save).toBeDisabled()
+  await user.click(within(memory).getByRole('radio', { name: 'GPT-5.6 Terra' }))
+  await user.click(save)
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: luna.key, reasoning_effort: 'low', memory_model: terra.key }))
+  expect(await screen.findByText('Model defaults saved.')).toBeVisible()
+  expect(within(memory).getByRole('radio', { name: 'GPT-5.6 Terra' })).toBeChecked()
+})

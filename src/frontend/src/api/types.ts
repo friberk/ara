@@ -18,6 +18,8 @@ export type Message = Schemas['Message']
 export type Model = Schemas['Model']
 export type ModelInstallation = Schemas['Installation']
 export type Settings = Schemas['Defaults']
+/** PUT /settings without memory_model keeps the saved one, as the composer's "set as default" does. */
+export type SettingsUpdate = Omit<Settings, 'memory_model'> & { memory_model?: Settings['memory_model'] }
 export type GenerationInput = Schemas['GenerationInput']
 export type ChatInput = Schemas['ChatInput']
 export type GenerationSettings = Pick<GenerationInput, 'model' | 'reasoning_effort'>
