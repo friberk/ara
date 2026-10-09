@@ -160,8 +160,12 @@ async def test_given_forty_local_turns_when_asking_about_turn_two_then_memory_ca
     for body in local:
         prompt = [PromptMessage(m["role"], m["content"]) for m in body["messages"]]
         assert count_messages(limits.counter, prompt) <= limits.input_budget
+    # Summarized turns are not resent verbatim, so the unsummarized recent turns fit whole.
+    resent = [m["content"] for m in messages if m["role"] == "user"][:-1]
+    assert resent and "Question 3:" not in " ".join(resent) and FACT_QUESTION not in resent
     context = completed["context"]
     assert context["summary_version"] >= 1 and context["recalled_turns"] >= 1
+    assert context["truncated"] is False
     assert context["recent_turns"] >= 1 and context["input_tokens"] <= 3072
     assert hosted == []
     # Compaction and recall never alter the stored conversation.
