@@ -1,11 +1,34 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { renderApp } from '@/test/render'
-import { mockApi } from '@/test/fetch-routes'
+import type { Model } from '@/api/types'
+import { json, mockApi } from '@/test/fetch-routes'
+import { queryKeys } from '@/lib/query-keys'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const terra = { ...luna, key: 'gpt-5.6-terra', model_id: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', status: 'configured', reasoning_efforts: ['none', 'low', 'medium', 'high'], supports_structured_output: false }
 const unavailable = { ...luna, key: 'unavailable-exact', model_id: 'unavailable-exact', display_name: 'Unavailable model', status: 'unavailable', reasoning_efforts: [], supports_streaming: false, supports_structured_output: false }
 afterEach(() => vi.unstubAllGlobals())
+
+test('Given saved local Low reasoning and pending readiness, When verified capabilities return, Then Low is preserved without making defaults dirty', async () => {
+  let local: Model = {
+    ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', model_id: 'hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M', display_name: 'K2 Horizon 7B',
+    status: 'unavailable', reasoning_efforts: ['default'], unavailable_code: 'LOCAL_MODEL_NOT_READY', unavailable_reason: 'Preparing model automatically.',
+    installation: { state: 'queued', operation: 'verify', weights_present: true, quantization: 'Q4_K_M', download_bytes: 5592218900, completed_bytes: 5592218900, total_bytes: 5592218900, job_id: 'prepare-job', digest: null, updated_at: null, error: null },
+  }
+  const { calls } = mockApi({ 'GET /models': () => json({ items: [luna, local] }), 'GET /settings': { default_model: local.key, reasoning_effort: 'low' } })
+  const { client } = renderApp('/settings')
+  const choice = await screen.findByRole('radio', { name: 'K2 Horizon 7B' })
+  const save = screen.getByRole('button', { name: 'Save defaults' })
+  expect(choice).toBeChecked()
+  expect(choice).toBeDisabled()
+  expect(save).toBeDisabled()
+  local = { ...local, status: 'available', unavailable_code: null, unavailable_reason: null, reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], installation: { ...local.installation!, state: 'ready', operation: null, job_id: null } }
+  await client.invalidateQueries({ queryKey: queryKeys.models })
+  await waitFor(() => expect(screen.getByRole('radio', { name: 'Low' })).toHaveAttribute('aria-checked', 'true'))
+  expect(choice).toBeEnabled()
+  expect(save).toBeDisabled()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+})
 
 test('Given unavailable and supported models, Then exact IDs and reasoning capabilities govern selection', async () => {
   mockApi({ 'GET /models': { items: [luna, terra, unavailable] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })

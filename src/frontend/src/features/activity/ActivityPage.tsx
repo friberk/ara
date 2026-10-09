@@ -50,7 +50,8 @@ function JobTime({ job, now }: { job: JobView; now: number }) {
 
 function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?: string }) {
   const retry = useRetryJob()
-  const label = kindLabel(job.kind)
+  const preparation = job.model_operation === 'verify'
+  const label = preparation ? 'Model preparation' : kindLabel(job.kind)
   const active = isActiveJob(job)
   const state = states[job.state]
   const canRetry = job.state === 'failed' && job.kind === 'ingest'
@@ -70,7 +71,13 @@ function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?
         </div>
         <Badge variant="secondary" className={cn('shrink-0 font-normal', state.tone)}>{state.label}</Badge>
       </div>
-      {active && (
+      {active && preparation && (
+        <div className="grid gap-1 pt-1 text-sm text-muted-foreground">
+          <p role="status">{job.stage === 'verifying' ? 'Checking model readiness.' : 'Waiting to check model readiness.'}</p>
+          <p className="text-xs">Preparation continues in the background. You can leave this page.</p>
+        </div>
+      )}
+      {active && !preparation && (
         <div className="grid gap-1.5 pt-1">
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span>{jobStageLabel(job)}</span>
