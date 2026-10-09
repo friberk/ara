@@ -1,27 +1,42 @@
 {
   "id": "ARA-019",
-  "title": "Safe accessible full-text retrieval",
+  "title": "PDF retrieval, access information and institutional retries",
   "type": "improvement",
   "priority": "P1",
-  "description": "Fetch a saved paper's accessible full-text PDF from canonical provider candidates. Validate public destinations and redirects, enforce PDF signature/size/time limits, retain original bytes in MinIO, and reuse durable ingestion/status/error handling without accepting arbitrary browser URLs.",
+  "description": "Retrieve supported provider-supplied PDFs for saved OpenAlex and Semantic Scholar papers, prefer reported open copies, discover exact-DOI alternatives, and show observed access barriers with campus/VPN retry and browser/upload fallback. Reuse durable ingestion with UUID deduplication, lease fencing and document-version provenance. Browser institutional sessions are not inherited by the backend.",
   "dependencies": [
     "ARA-006",
     "ARA-010"
   ],
   "acceptance_criteria": [
-    "Stored public candidate download validates redirects/signature/limits and uses ingestion."
+    "Given either provider with a supported PDF, when retrieval is requested, then original storage and page-grounded ingestion complete on the same saved paper.",
+    "Given no Semantic Scholar open PDF and an exact DOI alternative, when discovery runs, then the other provider copy is used without a duplicate paper or manual metadata overwrite.",
+    "Given authentication, generic blocking, HTML, rate limiting or missing links, when retrieval stops, then the observed reason and useful retry/browser/upload actions are shown without an unsupported paywall claim.",
+    "Given access denial, when a fresh UUID retries after the network permits access, then retrieval succeeds while the old UUID still replays its original job.",
+    "Given duplicate deliveries, crash recovery, stale leases or concurrent upload, when retrieval continues, then document/ingest state is deduplicated and newer attachments and historical citations are preserved.",
+    "Given unsafe destinations, redirect/DNS changes, oversized bytes or timeouts, when downloading is attempted, then defined bounds and public-destination checks are enforced.",
+    "Given the local-model WIP base, when verification runs, then its model/readiness workflows and the core paper workflows remain covered in isolated test services.",
+    "Given every behavior change, when implementation proceeds, then an actual failing behavior assertion precedes production code and relevant green regressions are recorded."
   ],
   "test_cases": [
-    "Stored public candidate download validates redirects/signature/limits and uses ingestion."
+    "Provider location/OA/license/version normalization, old snapshots, exact DOI discovery, identity conflict and provider-error fallback.",
+    "Real isolated PostgreSQL/MinIO request replay, concurrent coalescing, attempt fencing, migration preservation and paper-linked jobs.",
+    "DNS pinning/TLS hostname, redirect validation, private/mixed addresses, size/decompression/time bounds and honest HTTP outcome classification.",
+    "Denial then success, stable attachment checkpoint recovery, duplicate delivery, lease loss, storage recovery and manual-upload race.",
+    "RTL and Playwright Get/Find PDF, institutional/browser guidance, navigation recovery, extraction gating, source versions and mobile/keyboard behavior.",
+    "Fresh full regression, contract drift, one Alembic head, current upstream integration and restart persistence; live university entitlement remains a separate actual-network check."
   ],
   "status": "planned",
   "related_files": [
-    "docs/implementation-plan.md"
+    "docs/implementation-plan.md",
+    "docs/superpowers/specs/2026-10-08-fulltext-access-design.md",
+    "docs/superpowers/plans/2026-10-08-fulltext-access.md",
+    "docs/agent-development-log.md"
   ],
   "commits": [
     "4164b07d30b51b0c5a1547342b70ceb5626a2a15"
   ],
   "pull_requests": [],
-  "verification": "Reopened for continued iteration after user feedback. Download/ingestion is not implemented yet.",
+  "verification": "Design and TDD-first implementation plan prepared in ara-019-fulltext, based on feat/managed-ollama at ddced814df3de60cd05e926b5a91915360ff2470. Local-model uncommitted edits were left with their owner. Application implementation and feature tests have not started; plan review is pending.",
   "updated_at": "2026-10-08"
 }
