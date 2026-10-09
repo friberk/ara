@@ -201,3 +201,68 @@ async def test_reindex_module_runs_as_a_command(resources):
     stdout, _ = await process.communicate()
     assert process.returncode == 0
     assert stdout.decode().strip() == "Queued 1 document(s) for re-indexing."
+
+
+async def embedded_documents(resources) -> list[str]:
+    from app.models.jobs import BackgroundJob
+
+    async with resources.sessions() as session:
+        return sorted(
+            (
+                await session.scalars(
+                    select(BackgroundJob.payload["document_id"].astext).where(
+                        BackgroundJob.kind == "embed"
+                    )
+                )
+            ).all()
+        )
+
+
+async def test_given_documents_from_before_the_upgrade_when_the_api_starts_then_they_reingest(
+    resources,
+):
+    """Migration 0006 dropped every chunk; startup queues re-ingestion without a manual step."""
+    from pydantic import SecretStr
+
+    from app.rag.chunking import CHUNK_SET
+    from app.services.reindex import prepare_search
+
+    resources.settings.openai_api_key = SecretStr("http-fixture-only")
+    stale = await ready_documents(resources, [None, "legacy-page-window-v0"])
+    [current] = await ready_documents(resources, [CHUNK_SET])
+    for _ in range(2):
+        await prepare_search(resources)
+    jobs, outbox = await queued_ingest_jobs(resources)
+    assert sorted(UUID(job.payload["document_id"]) for job in jobs) == sorted(stale)
+    assert outbox == 2
+    # Re-ingested documents queue their own index once their new chunks exist.
+    assert await embedded_documents(resources) == [str(current)]
+
+
+async def test_given_a_paper_awaiting_reindexing_when_asking_then_the_error_says_so(
+    resources, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from app.models.research import ChatSession, Document
+    from app.schemas.ai import ChatInput
+    from app.services import chat
+    from tests.support.answers import use_hosted
+
+    use_hosted(monkeypatch, resources, [], lambda body: "unused")
+    [waiting] = await ready_documents(resources, [None])
+    [processing] = await ready_documents(resources, ["legacy-page-window-v0"], status="processing")
+    for document_id, message in (
+        (waiting, "This paper is being prepared for the new search. Try again in a minute."),
+        (processing, "The selected document is not ready"),
+    ):
+        async with resources.sessions() as session, session.begin():
+            document = await session.get(Document, document_id)
+            discussion = ChatSession(
+                paper_id=document.paper_id, document_id=document_id, title="Discussion"
+            )
+            session.add(discussion)
+        body = ChatInput(content="What is new?", request_id=uuid4())
+        with pytest.raises(HTTPException) as refused:
+            await chat.prepare(resources, discussion.id, body)
+        assert (refused.value.status_code, refused.value.detail) == (409, message)

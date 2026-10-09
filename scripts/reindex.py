@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Queue re-ingestion of ready documents whose chunks predate the current chunk set.
 
-Runs `python -m app.services.reindex` in the running api service. It only enqueues ingest jobs
-(idempotent while they are queued) and never resets data; papers keep serving their previous
-chunks until each job replaces them.
+Runs `python -m app.services.reindex` in the running api service; the API also does this at
+startup. It only enqueues ingest jobs (idempotent while they are queued) and never resets data.
+Papers with older chunks serve them until each job replaces them; papers from before migration
+0006 have no chunks and cannot be asked about until their job finishes.
 """
 
 import argparse

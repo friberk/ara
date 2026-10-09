@@ -5,13 +5,14 @@ import asyncio
 import httpx
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.integrations.model_catalog import local_spec
 from app.models.jobs import BackgroundJob
 from app.models.local_models import ModelInstallation
-from app.models.research import Document
+from app.models.research import Document, DocumentChunk
 from app.models.retrieval import RetrievalIndex
+from app.rag.chunking import CHUNK_SET as CURRENT
 from app.repositories.jobs import enqueue
 from tests.support.papers import CHUNK_SET, OPENAI, QWEN, seed_paper
 
@@ -239,6 +240,14 @@ async def test_given_a_paper_without_an_index_when_the_api_starts_then_its_index
     monkeypatch.setattr(main, "prepare_search", prepare)
     resources.settings.openai_api_key = SecretStr("http-fixture-only")
     _, document_id = await seed_paper(resources)
+    async with resources.sessions() as session, session.begin():
+        # At the current chunk set the document needs no re-ingest, only its index.
+        (await session.get(Document, document_id)).chunk_set = CURRENT
+        await session.execute(
+            update(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .values(chunk_set=CURRENT)
+        )
     app = main.create_app(resources.settings)
     async with app.router.lifespan_context(app):
         await asyncio.wait_for(prepared.wait(), 10)

@@ -178,7 +178,12 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             raise HTTPException(409, "Another answer is already processing in this chat")
         document = await session.get(Document, chat.document_id)
         if document is None or document.status != "ready" or document.chunk_set is None:
-            raise HTTPException(409, "The selected document is not ready")
+            raise HTTPException(
+                409,
+                "This paper is being prepared for the new search. Try again in a minute."
+                if document is not None and document.status == "ready"
+                else "The selected document is not ready",
+            )
         history = list(
             (
                 await session.scalars(

@@ -149,6 +149,21 @@ async def test_given_unready_document_when_reading_then_note_names_the_pdf_state
     assert body["chunk_count"] == 0 and body["indexes"] == []
 
 
+async def test_given_a_paper_awaiting_reindexing_when_reading_then_the_note_says_so(
+    resources, client
+):
+    from app.models.research import Document
+
+    paper_id, document_id = await seed_paper(resources)
+    async with resources.sessions() as session, session.begin():
+        (await session.get(Document, document_id)).chunk_set = None
+    body = (await client.get(f"/api/v1/papers/{paper_id}/retrieval")).json()
+    assert (body["mode"], body["mode_note"]) == (
+        "unavailable",
+        "This paper is being prepared for the new search.",
+    )
+
+
 @pytest.mark.parametrize(
     ("index", "mode", "note"),
     [

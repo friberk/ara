@@ -152,6 +152,9 @@ async def paper_retrieval(session, paper_id: UUID) -> PaperRetrieval:
         result.mode_note = "The PDF is still being processed."
     elif document is not None and document.status == "failed":
         result.mode_note = "The PDF could not be processed, so it cannot be searched."
+    elif document is not None and document.chunk_set is None:
+        # Ready before migration 0006: the startup re-ingest rebuilds its passages.
+        result.mode_note = "This paper is being prepared for the new search."
     if document is None or document.status != "ready" or document.chunk_set is None:
         return result
     chunk_set = document.chunk_set

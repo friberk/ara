@@ -1,7 +1,9 @@
 """Re-ingest ready documents whose chunks predate the current chunk set (ARA-071).
 
-Run with `docker compose exec api python -m app.services.reindex`. Documents keep serving
-their previous chunks until the new ingest job replaces them in one transaction.
+The API queues this at startup; `docker compose exec api python -m app.services.reindex` does
+the same by hand. A document with older chunks serves them until its ingest job replaces them
+in one transaction. A document from before migration 0006 has no chunks (`chunk_set` is NULL),
+so questions about it are refused until its re-ingest finishes.
 """
 
 import asyncio
@@ -64,12 +66,13 @@ async def enqueue_reindex(resources) -> int:
 
 
 async def prepare_search(resources) -> None:
-    """API startup: queue the indexes that were missing or waiting for a key (ARA-072).
+    """API startup: re-ingest outdated documents, then queue missing or unavailable indexes.
 
     Retries until the database answers; every step is idempotent under concurrent runs.
     """
     while True:
         try:
+            await enqueue_reindex(resources)
             await reconcile_indexes(resources)
             return
         except Exception:
