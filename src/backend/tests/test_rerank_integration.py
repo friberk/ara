@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.integrations.model_catalog import local_spec
-from app.integrations.reranker_catalog import RELEVANCE_INSTRUCTIONS, reranker_profile
+from app.integrations.reranker_catalog import RELEVANCE_INSTRUCTIONS, RERANKERS
 from app.models.local_models import ModelInstallation, ModelUse
 from app.models.research import GenerationReservation
 from tests.support.nodes import node
@@ -19,6 +19,8 @@ from tests.support.providers import decisions_fixture, overlap_relevance
 
 pytestmark = pytest.mark.integration
 OPENAI, LOCAL = "openai-gpt-6-luna", "qwen3-rerank-0.6b"
+# Windows and concurrency are catalog data; tests read them rather than pinning numbers.
+HOSTED, ON_DEVICE = RERANKERS[OPENAI], RERANKERS[LOCAL]
 QUERY = "What recall does BM25 reach on the benchmark?"
 IRRELEVANT = "Proteins fold in yeast cells under heat stress."
 RELEVANT = "BM25 reaches recall 0.61 on the benchmark."  # 0.74 by word overlap
@@ -89,8 +91,7 @@ async def test_given_more_fused_nodes_than_candidates_when_reranking_then_the_ta
 ):
     from app.rag.rerank import rerank_candidates
 
-    requests = []
-    window = reranker_profile(OPENAI).candidates  # catalog value, never hardcoded
+    requests, window = [], HOSTED.candidates
     nodes = [node(index, f"{IRRELEVANT} Sample {index}.") for index in range(1, window + 1)]
     nodes[4] = node(5, RELEVANT)
     nodes += [node(window + 1, RELEVANT), node(window + 2, RELEVANT)]
@@ -176,11 +177,11 @@ async def test_given_many_candidates_when_reranking_then_concurrency_is_bounded(
     from app.rag.rerank import rerank_candidates
 
     requests, peak = [], [0]
-    nodes = [node(index, f"{PARTIAL} {index}") for index in range(1, 21)]
+    nodes = [node(index, f"{PARTIAL} {index}") for index in range(1, HOSTED.candidates + 1)]
     await hosted(resources, requests, delay=0.02, peak=peak)
     outcome = await rerank_candidates(resources, query=QUERY, nodes=nodes, reranker=OPENAI)
-    assert len(requests) == 20 and len(outcome.scores) == 20
-    assert peak[0] == 8
+    assert len(requests) == HOSTED.candidates and len(outcome.scores) == HOSTED.candidates
+    assert peak[0] == min(HOSTED.concurrency, HOSTED.candidates)
 
 
 def logprobs(p_yes: float) -> dict:
@@ -262,15 +263,17 @@ async def test_given_local_reranker_when_reranking_then_scoring_is_sequential_an
     requests, held, peak = [], [], [0]
     spec = await local_runtime(resources, requests, held=held, peak=peak)
     await install(resources, spec)
+    window = ON_DEVICE.candidates
     nodes = [node(1, IRRELEVANT), node(2, RELEVANT), node(3, PARTIAL)]
-    nodes += [node(index, f"{IRRELEVANT} Sample {index}.") for index in range(4, 13)]
-    nodes += [node(13, RELEVANT), node(14, RELEVANT)]
+    nodes += [node(index, f"{IRRELEVANT} Sample {index}.") for index in range(4, window + 1)]
+    nodes += [node(window + 1, RELEVANT), node(window + 2, RELEVANT)]
     outcome = await rerank_candidates(resources, query=QUERY, nodes=nodes, reranker=LOCAL)
     assert ids(outcome.nodes) == ids([nodes[1], nodes[2], nodes[0], *nodes[3:]])
     assert (outcome.reranked, outcome.reranker, outcome.skipped) == (True, LOCAL, None)
     assert math.isclose(outcome.scores[nodes[1].node.node_id], 0.74)
-    assert len(requests) == 12 and len(outcome.scores) == 12 and peak[0] == 1
-    assert held == [[("retrieval", spec.key)]] * 12
+    assert len(requests) == window and len(outcome.scores) == window
+    assert peak[0] == 1  # local scoring is sequential whatever the catalog says
+    assert held == [[("retrieval", spec.key)]] * window
     for request in requests:
         body = json.loads(request.content)
         assert body["model"] == spec.model_id
@@ -365,7 +368,7 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
         "status": "unavailable",
         "unavailable_reason": "Add an OpenAI API key on the server.",
         "local_model_key": None,
-        "candidates": reranker_profile(OPENAI).candidates,
+        "candidates": HOSTED.candidates,
     }
     assert items[LOCAL] == {
         "key": LOCAL,
@@ -375,7 +378,7 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
         "status": "unavailable",
         "unavailable_reason": "Download Qwen3 Reranker 0.6B in Settings.",
         "local_model_key": "qwen3-reranker-0.6b",
-        "candidates": reranker_profile(LOCAL).candidates,
+        "candidates": ON_DEVICE.candidates,
     }
 
 
