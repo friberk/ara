@@ -52,7 +52,7 @@ Non-goals:
 - **Each chunk stores:**
   - `text`, the Markdown shown to users;
   - `context_text`, the title plus heading path plus text, used for embeddings and keyword search;
-  - `page_start` and `page_end`;
+  - `page` (first page) and `page_end`;
   - `kind`, one of `front_matter`, `text`, `table` or `references`;
   - `token_count`.
 
@@ -93,8 +93,7 @@ The existing `ollama` service and `ollama-models` volume serve chat, embedding a
 2. **Retrieve:** `PgLexicalRetriever` and `PgVectorRetriever` are LlamaIndex `BaseRetriever` subclasses over our AsyncSession, always filtered by the chat's immutable `document_id`. Their results are fused with reciprocal rank fusion (k = 60).
 3. **Rerank** (ARA-074, if the Phase 0 gate passes): `OllamaQwenRerank`, a LlamaIndex `BaseNodePostprocessor`, scores the top ~30 using Qwen3-Reranker's template and the next-token P(yes) against P(no).
 4. **Expand:** neighbour and section expansion while budget remains.
-5. **Compress:** optional; `SentenceEmbeddingOptimizer` runs when the budget is tight.
-6. **Pack:** passages are added in document order up to the evidence budget, labelled `[S1]…[Sn]` with section path and page.
+5. **Pack:** passages are added in document order up to the evidence budget, labelled `[S1]…[Sn]` with section path and page.
 
 `prepare()` is split in two:
 - **Inside the transaction:** replay and UUID checks, inserting the user message and the leased assistant message, and the budget reservation.
@@ -156,19 +155,19 @@ The PDF file, other papers and the full paper on normal questions are never sent
 
 - **New tables:**
   - `document_sections`
-  - `document_chunks`, recreated with `chunk_set`, `section_id`, `section_path`, `kind`, `text`, `context_text`, `page_start`/`page_end`, `bboxes`, `token_count`, a weighted tsvector with GIN, and a btree on `document_id`
+  - `document_chunks`, recreated with `chunk_set`, `section_id`, `section_path`, `heading`, `kind`, `text`, `context_text`, `page`/`page_end`, `bboxes`, `token_count`, a weighted tsvector with GIN, and a btree on `document_id`
   - `chunk_embeddings` (PK chunk and profile, `halfvec`)
   - `retrieval_indexes`
   - `chat_memories`
   - `chat_turn_embeddings`
-- **New columns:** `papers.retrieval_profile`; `documents.parser` and `documents.chunk_set`; `chat_messages.retrieval` and `chat_messages.context` (JSONB).
+- **New columns:** `papers.retrieval_profile`; `documents.parser` and `documents.chunk_set`; `chat_messages.retrieval` and `chat_messages.context` (JSONB) and `chat_messages.grounding`.
 - **Extension:** `CREATE EXTENSION vector`.
 - **API:**
   - `GET /retrieval/profiles`
-  - `embedding_profile` and `reranker_enabled` added to `GET`/`PUT /settings`
+  - `GET`/`PUT /retrieval/settings` (`embedding_profile`, `reranker_enabled`), kept separate from the model defaults in `/settings`
   - `GET`/`PUT /papers/{id}/retrieval` (request-UUID idempotent) and `POST /papers/{id}/retrieval/rebuild`
   - `GET /chats/{id}/memory`
-  - `Message.retrieval` and `Message.context`
+  - `Message.retrieval`, `Message.context` and `Message.grounding`; `Model.kind`
   - `Citation` gains `section`, `page_end`, `bboxes` and `kind`
   - SSE `message.status`
 
