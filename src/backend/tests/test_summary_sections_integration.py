@@ -227,3 +227,31 @@ async def test_given_unsupplied_handle_when_summarizing_then_ungrounded_and_noth
     count = len(requests)
     await summarization.run_summary_job(resources, identifier, 1, token, payload)
     assert len(requests) == count
+
+
+async def test_given_reduction_citing_a_real_handle_it_was_not_shown_then_ungrounded(resources):
+    from tests.test_ai_integration import local_fixture, summary_job_fixture
+    from tests.test_citation_markers_integration import generation_fixture
+
+    spec, _ = await local_fixture(resources)
+    identifier, token, payload = await summary_job_fixture(resources, spec, 3)
+
+    def output(body):
+        prompt = body["messages"][-1]["content"]
+        if prompt.startswith("Summarize"):
+            # About 1,160 counted tokens per section: two share a reduction, three do not.
+            return "Supported " + cited_markers(prompt) + " word" * 1100
+        # A short handle is easy to guess: [S3] is a real passage this reduction never saw.
+        return "Supported " + cited_markers(prompt) + ("" if "[S3]" in prompt else " and [S3]")
+
+    requests = await generation_fixture(resources, output)
+    await summarization.run_summary_job(resources, identifier, 1, token, payload)
+    reduction = requests[3]["messages"][-1]["content"]
+    assert reduction.startswith("Combine") and re.findall(r"\[S\d+\]", reduction) == [
+        "[S1]",
+        "[S2]",
+    ]
+    async with resources.sessions() as session:
+        job = await session.get(BackgroundJob, identifier)
+        assert job.state == "failed" and job.error_code == "UNGROUNDED_OUTPUT"
+        assert len(job.payload["partials"]) == 3 and not job.payload.get("reduction_results")

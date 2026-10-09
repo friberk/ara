@@ -66,6 +66,12 @@ def short_markers(content: str, handles: Mapping[str, str]) -> str:
     return SOURCE.sub(lambda match: f"[{handles[match[1]]}]", content)
 
 
+def shown_handles(contents, passages) -> HandleMap:
+    """A reduction may cite only the passages its canonical sections cite, not any guessable one."""
+    cited = {identifier for content in contents for identifier in SOURCE.findall(content)}
+    return HandleMap([item for item in passages if str(item.chunk_id) in cited])
+
+
 def canonical_markers(content: str, handles: HandleMap) -> str:
     """Map the model's `[S#]` handles to source markers; any other handle fails."""
     transducer = HandleTransducer(handles)
@@ -381,6 +387,7 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                             "compressing",
                             90,
                             save_completed=save_compression,
+                            # save_compression requires exactly the section's own sources.
                             handles=document_handles,
                             max_output_tokens=allocation,
                         )
@@ -410,7 +417,7 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                     "combining",
                     90,
                     save_completed=save_reduction,
-                    handles=document_handles,
+                    handles=shown_handles(group, passages),
                 )
             reduced = new
             payload["reduced"] = reduced
