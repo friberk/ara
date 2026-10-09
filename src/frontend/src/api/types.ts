@@ -50,6 +50,9 @@ export type PaperRetrieval = Schemas['PaperRetrieval']
 export type PaperRetrievalUpdate = Schemas['PaperRetrievalUpdate']
 export type ChatMemory = Schemas['ChatMemoryOut']
 export type ChatMemoryState = Schemas['ChatMemoryState']
+// The composer's context and cost meter (ARA-085).
+export type ChatUsage = Schemas['ChatUsage']
+export type ChatCost = Schemas['ChatCost']
 /** `waiting`: background local work holds the runtime; the question waits up to a minute for it. */
 export type RetrievalStage = 'waiting' | 'planning' | 'retrieving' | 'reranking' | 'generating'
 export type Reranker = Schemas['RerankerOut']

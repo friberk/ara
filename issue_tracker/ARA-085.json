@@ -21,16 +21,33 @@
     "Frontend: ring percentage, tooltip text, keyboard focus, model switch, post-stream refresh, empty chat.",
     "Generated OpenAPI contract matches the backend."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
+    "src/backend/app/services/costs.py",
+    "src/backend/app/schemas/usage.py",
     "src/backend/app/routes/chat.py",
     "src/backend/app/repositories/chats.py",
-    "src/backend/app/integrations/llm.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/memory.py",
+    "src/backend/app/rag/pipeline.py",
+    "src/backend/app/rag/rerank.py",
+    "src/backend/tests/test_chat_cost.py",
+    "src/backend/tests/test_chat_usage_integration.py",
+    "docs/api-contract.md",
+    "src/frontend/src/api/generated.ts",
+    "src/frontend/src/features/chat/ContextMeter.tsx",
     "src/frontend/src/features/chat/ConversationComposer.tsx",
-    "src/frontend/src/components/composer/Composer.tsx"
+    "src/frontend/src/features/chat/use-chat-stream.ts",
+    "src/frontend/src/hooks/queries/usage.ts",
+    "src/frontend/src/lib/usage-format.ts"
   ],
-  "commits": [],
+  "commits": [
+    "c096435",
+    "4f4b502",
+    "01a2528",
+    "fbdc6e3"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09 from user feedback. Branch feat/ara-085-context-meter.",
+  "verification": "2026-10-09 on feat/ara-085-context-meter: backend 917 passed in 146.21 s with Ruff clean (905 before; 12 new in test_chat_cost.py and test_chat_usage_integration.py) in project ara-meter-test; frontend typecheck, ESLint and 494 Vitest tests passed (479 before; 15 new across usage-format, ContextMeter and ConversationPane.usage), build passed. Not run: Playwright browser suite and a visual check of the ring (the lead runs browser regression at integration). Limits: only recorded calls are priced (failed compaction attempts, turn embeddings and answers from before this change are not); reranker and query-embedding tokens are the same input-size estimates the daily ledger reserves, not provider-reported usage.",
   "updated_at": "2026-10-09"
 }

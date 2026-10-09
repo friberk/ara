@@ -38,6 +38,8 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
   const saved = history.data?.items ?? []
   const processing = saved.some((message) => message.state === 'processing')
   const busy = streaming || processing
+  // Context used and cost change with every answer, finished or not: planning and search are billed first.
+  const refreshUsage = () => void client.invalidateQueries({ queryKey: queryKeys.usage.chat(chat.id) })
   const refreshChats = () => void client.invalidateQueries({ queryKey: queryKeys.chats.all })
   // A completed answer may have moved earlier messages into the chat's summary.
   const refreshMemory = () => void client.invalidateQueries({ queryKey: queryKeys.retrieval.memory(chat.id) })
@@ -100,6 +102,7 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
           setDraft((previous) => previous && items.some((message) => message.id === previous.id) ? null : previous)
         }
         refreshChats()
+        refreshUsage()
         if (completed) refreshMemory()
       }
     }

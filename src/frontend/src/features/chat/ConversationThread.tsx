@@ -82,6 +82,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
       onLatest={toLatest}
       composer={
         <ConversationComposer
+          chatId={chat.id}
           value={text}
           onValueChange={setText}
           onSubmit={() => { if (ready) ask(text) }}

@@ -742,3 +742,32 @@ No migrations and no new dependencies are allowed.
   - rely only on deterministic local extraction plus the OpenAlex or Semantic Scholar lookup.
 
 **Metadata decision revised.** After hearing what the lead's no-LLM instruction would remove, the user reversed it: "Let's keep the LLM based metadata extraction intact then. I think it makes sense." The ARA-086 agent was told to keep `extract_metadata`, with its existing gating, stage and payload handling, and to restore any removal with forward commits. A title rejected by the junk filter counts as missing, so the existing LLM fallback still runs for it. The LLM's title and DOI may also seed the registry lookup. When values conflict, user edits win over registry values, and registry values win over LLM and local values. XMP reading stays in scope and GROBID stays out.
+
+## 2026-10-09 — Context and cost meter in the composer (ARA-085)
+
+The user asked for a hollow progress ring at the bottom left of the chat input showing used and total context and the chat's cost so far. Built on `feat/ara-085-context-meter` in an isolated worktree and Compose project `ara-meter-test`; the running `ara` stack was not touched.
+
+**Definitions.**
+- *Used* is the `input_tokens` that the latest completed answer recorded in its `context` JSON when its prompt was assembled (tiktoken count of what it sent). A latest answer without that record reports no usage and the ring stays empty rather than guessing.
+- *Total* is the selected model's effective input budget in this app (`context_profile(...).input_budget`: 64,000 hosted by `HOSTED_WORKING_CONTEXT_TOKENS`, 3,072 local by default), with the model's full window as secondary text when it differs. The chat's own history is what that budget bounds; the 1.05M window would make every ring look empty.
+- *Cost* is the sum of recorded calls priced through the catalogs: answers (`ChatMessage.usage`), follow-up planning, query embeddings and reranking (new `retrieval.billed` on each answer) and compaction (`ChatMemory.usage`). Local calls are $0.00. The shared paper summary and the daily budget ledger are not part of it.
+
+**Decisions.**
+- The budget follows the composer through query parameters `model` and `reasoning_effort` on `GET /chats/{id}/usage`, computed exactly as `prepare()` sizes a prompt, with local thinking controls read from the database (`list_local_models(inspect_runtime=False)`), so no runtime call happens. A `/models` DTO field would be instant but cannot reflect the effort, which changes a local model's thinking allowance. The cost of that choice is one small request on a switch; the previous numbers stay (dimmed) until it returns (`keepPreviousData`).
+- Planner, embedding and rerank usage was not recorded per chat before. It is now stored in the existing `retrieval` JSONB under `billed`, with no migration: `QueryPlan.billed` (model and tokens from the planner call), the query-embedding input tokens counted the way the ledger reserves them, and `RerankOutcome.billed_tokens` from the Decisions reserve. These two are estimates of the input size; the provider's own usage is not returned by those clients. Older answers have no such record, and the API reports `unrecorded_turns` (completed answers with no usage) instead of inventing numbers. Turn-embedding jobs, failed compaction attempts and a failed answer's partial generation are not attributed.
+- UI: a controlled Popover anchored to a plain button, because Radix Tooltip does not open on tap and HoverCard ignores touch. Hover (mouse and pen), keyboard focus and click or tap open it; a click pins it, and Escape closes it without moving focus. The ring turns destructive at 90 percent and above. The new-conversation start has no chat, so it shows no ring and makes no request.
+
+**Red then green.**
+- `tests/test_chat_cost.py`: 4 failed with `ModuleNotFoundError: No module named 'app.services.costs'`; then 4 passed.
+- `tests/test_chat_usage_integration.py`: 7 failed and 1 passed before the route existed (`assert 404 == 200`, `KeyError: 'cost'`, `KeyError: 'context'`, `KeyError: 'billed'`); the unknown-chat 404 test passed vacuously because the route itself was missing. After the route and recording, 12 passed together with the pricing tests on the first run.
+- Frontend: `usage-format.test.ts` and `ContextMeter.test.tsx` failed with `Failed to resolve import "./usage-format"` / `"./ContextMeter"`. The component tests passed on the first run except one whose expected name was my arithmetic slip (12.4k of 3.1k is 404 percent, not 100). `ConversationPane.usage.test.tsx`: 2 of 3 failed (`Unable to find role="button" and name "Context 0% used of 32k tokens. $0.00 this chat."`).
+
+**Errors and corrections.**
+- The pane test then showed the first usage request carrying no model, because settings were still loading; the query is now disabled until the selection exists.
+- The new-conversation test caught a request to `/chats/undefined/usage`: `NewConversation` also uses `ConversationComposer`. `chatId` became optional and the ring renders only with a chat.
+- A formatting expectation of mine (`$0.0000` for $0.00001) contradicted the rule I wrote next to it (`<$0.0001`); the test was corrected before the first run of the helper.
+- `ruff format` on the whole tree reformatted two unrelated files; they were restored and only my files were formatted. macOS `sed -i` calls failed twice; the edits were made with Python instead.
+
+**Results.** Backend 917 passed in 146.21 s with Ruff clean (905 before). Frontend typecheck, ESLint and 494 tests passed (479 before) and the build passed. The Playwright suite and a visual check of the ring were not run.
+
+**Touched outside the new files.** `services/memory.py` (a `billed` field on `QueryPlan` and a small helper), `rag/pipeline.py` and `rag/rerank.py` (record billed tokens), `services/chat.py` (`record_evidence` stores `billed`), `use-chat-stream.ts` (invalidate usage after each stream), `ConversationThread.tsx` (passes `chatId`), `lib/query-keys.ts`, `api/types.ts` and the generated API types.

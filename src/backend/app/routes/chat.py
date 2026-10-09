@@ -7,10 +7,16 @@ from sqlalchemy import select
 from starlette.background import BackgroundTask
 
 from app.core.errors import AppError
-from app.integrations.llm import LLMError, generation_slots, validate_selection
+from app.integrations.context_registry import context_profile
+from app.integrations.llm import (
+    LLMError,
+    generation_slots,
+    thinking_controls,
+    validate_selection,
+)
 from app.integrations.model_catalog import local_spec
 from app.models.research import ChatMessage, ChatSession, Document, Paper
-from app.repositories.chats import chat_summaries
+from app.repositories.chats import chat_spend, chat_summaries
 from app.schemas.ai import (
     Chat,
     ChatCreate,
@@ -21,7 +27,9 @@ from app.schemas.ai import (
     Message,
     MessagePage,
 )
+from app.schemas.usage import ChatContext, ChatUsage
 from app.services.chat import expire, held_by_background, prepare, stream_answer
+from app.services.local_models import list_local_models
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
@@ -134,6 +142,42 @@ async def list_messages(chat_id: UUID, request: Request):
             )
         ).all()
         return MessagePage(items=[Message.model_validate(item) for item in items])
+
+
+@router.get("/chats/{chat_id}/usage", response_model=ChatUsage)
+async def chat_usage(chat_id: UUID, model: str, reasoning_effort: str, request: Request):
+    """Context used by the latest answer against the selected model's input budget, and spend.
+
+    The budget is computed for `model` and `reasoning_effort` exactly as an answer sizes its
+    prompt, so the meter follows the composer's selection; no runtime call is made.
+    """
+    resources = request.app.state.resources
+    try:
+        selection = validate_selection(model, reasoning_effort)
+    except LLMError as exc:
+        raise AppError(exc.status, exc.code, exc.message) from None
+    if local_spec(model):
+        selection = next(
+            item
+            for item in await list_local_models(resources, inspect_runtime=False)
+            if item.key == model
+        )
+    profile = context_profile(
+        resources, model, reasoning_effort, thinking=thinking_controls(selection)
+    )
+    async with resources.sessions() as session:
+        if await session.get(ChatSession, chat_id) is None:
+            raise AppError(404, "CHAT_NOT_FOUND", "Chat not found.")
+        cost, used = await chat_spend(session, chat_id)
+    return ChatUsage(
+        context=ChatContext(
+            used_tokens=used,
+            input_budget=profile.input_budget,
+            window=profile.window,
+            model=model,
+        ),
+        cost=cost,
+    )
 
 
 @router.post("/chats/{chat_id}/messages/stream", response_class=StreamingResponse)

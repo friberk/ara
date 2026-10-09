@@ -127,6 +127,8 @@ class QueryPlan:
     search_queries: list[str]
     needs_paper_evidence: bool
     source: Literal["model", "fallback", "first_turn"]
+    # The planner call's model and tokens when a hosted or local model ran, for the chat meter.
+    billed: dict | None = None
 
 
 class PlannerOutput(BaseModel):
@@ -261,6 +263,7 @@ async def plan_query(
             output.search_queries,
             output.needs_paper_evidence,
             "model",
+            {"model": planner, **billed_tokens(result.usage)},
         )
     except Exception as exc:
         logger.warning("Query planning fell back", extra={"error": type(exc).__name__})
@@ -269,6 +272,10 @@ async def plan_query(
     finally:
         if client is not None:
             await client.close()
+
+
+def billed_tokens(usage: dict) -> dict:
+    return {key: usage[key] for key in ("input_tokens", "output_tokens") if key in usage}
 
 
 def answer_profile(settings, model: str):
