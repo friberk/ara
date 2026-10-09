@@ -84,7 +84,11 @@ def structured_value(schema, root, field=""):
             for name, value in schema.get("properties", {}).items()
         }
     if schema.get("type") == "array":
-        return ["Ada Researcher"] if field == "authors" else []
+        if field == "authors":
+            return ["Ada Researcher"]
+        # Honour minItems so schemas such as query plans (search_queries >= 1) validate.
+        items = schema.get("items", {"type": "string"})
+        return [structured_value(items, root, field) for _ in range(schema.get("minItems", 0))]
     if schema.get("type") == "integer":
         return 2024 if field in ("year", "publication_year") else 1
     if schema.get("type") == "number":

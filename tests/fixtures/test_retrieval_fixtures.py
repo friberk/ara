@@ -121,6 +121,33 @@ class RetrievalFixtureTests(unittest.TestCase):
         text = result["output"][0]["content"][0]["text"]
         self.assertTrue(text.startswith("[insufficient-evidence]"))
 
+    def test_structured_arrays_honour_min_items_for_query_plans(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "standalone_question": {"type": "string"},
+                "search_queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 3,
+                },
+                "needs_paper_evidence": {"type": "boolean"},
+            },
+            "required": ["standalone_question", "search_queries", "needs_paper_evidence"],
+        }
+        result = self.post(
+            "/v1/responses",
+            {
+                "model": "gpt-5.6-luna",
+                "input": "Plan the search",
+                "text": {"format": {"type": "json_schema", "name": "plan", "schema": schema}},
+            },
+        )
+        plan = json.loads(result["output"][0]["content"][0]["text"])
+        self.assertGreaterEqual(len(plan["search_queries"]), 1)
+        self.assertTrue(all(isinstance(q, str) and q for q in plan["search_queries"]))
+
     def test_ollama_embed_returns_model_dimensions_and_ignores_query_instruction(self):
         self.module.OLLAMA.installed.add("qwen3-embedding:4b-q4_K_M")
         result = self.post(
