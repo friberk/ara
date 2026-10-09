@@ -12,6 +12,20 @@ HOSTED_OUTPUT_TOKENS = 4000
 HOSTED_ENCODING = "o200k_base"
 LOCAL_ENCODING = "o200k_base"
 SAFETY_TOKENS = 512
+# Hosted reasoning tokens count against max_output_tokens, so an intermediate call that asks
+# for a short answer at a high effort needs room above it or it ends incomplete.
+HOSTED_REASONING_HEADROOM = {
+    "none": 0,
+    "low": 1024,
+    "medium": 2048,
+    "high": 4096,
+    "xhigh": 8192,
+    "max": 16384,
+}
+
+
+def hosted_reasoning_headroom(effort: str) -> int:
+    return HOSTED_REASONING_HEADROOM.get(effort, 0)
 
 
 @dataclass(frozen=True)

@@ -123,7 +123,7 @@ async def test_given_follow_up_on_hosted_chat_when_planning_then_sol_names_the_s
     assert plan.search_queries == ["RAG baselines comparison", "RAG results"]
     assert plan.needs_paper_evidence is True
     (body,) = requests
-    assert body["model"] == "gpt-5.6-sol" and body["reasoning"] == {"effort": "none"}
+    assert body["model"] == "gpt-5.6-sol" and body["reasoning"] == {"effort": "high"}
     schema = body["text"]["format"]["schema"]
     assert schema["properties"]["search_queries"]["maxItems"] == 3
     assert schema["required"] == ["standalone_question", "search_queries", "needs_paper_evidence"]
@@ -196,7 +196,7 @@ async def test_given_exhausted_budget_when_planning_then_fallback_without_a_call
 
 
 @pytest.mark.integration
-async def test_given_local_chat_when_planning_then_same_model_without_thinking_and_no_hosted(
+async def test_given_local_chat_when_planning_then_same_model_and_effort_and_no_hosted(
     resources, monkeypatch
 ):
     from app.integrations.model_catalog import local_spec
@@ -218,7 +218,7 @@ async def test_given_local_chat_when_planning_then_same_model_without_thinking_a
     assert plan.source == "model" and plan.search_queries == ["RAG baselines comparison"]
     assert hosted == []
     (body,) = local
-    assert body["model"] == spec.model_id and body["think"] is False and body["stream"] is False
+    assert body["model"] == spec.model_id and body["think"] is True and body["stream"] is False
     assert body["format"]["properties"]["search_queries"]["minItems"] == 1
     assert "Sparse Retrieval Revisited" in json.dumps(body["messages"])
     async with resources.sessions() as session:
@@ -284,7 +284,7 @@ async def test_given_slow_planner_when_planning_then_fallback_after_the_time_lim
     plan = await memory.plan_query(
         resources,
         model="gpt-5.6-luna",
-        effort="low",
+        effort="none",
         history=rag_history(),
         memory_summary=None,
         question=FOLLOW_UP,

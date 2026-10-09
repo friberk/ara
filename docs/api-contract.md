@@ -28,7 +28,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /chats/{id}/messages → `{items:Message[]}`.
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
 - GET /models → `{items:Model[]}`; GET/PUT /settings → Settings.
-  - The defaults are `{default_model, reasoning_effort}`. A stored row or PUT body that still carries `memory_model` (ARA-077) is accepted and the field ignored; it is never returned. Follow-up planning and conversation summaries use the chat's own model at its quietest verified effort (ARA-083).
+  - The defaults are `{default_model, reasoning_effort}`. A stored row or PUT body that still carries `memory_model` (ARA-077) is accepted and the field ignored; it is never returned. Follow-up planning and conversation summaries use the chat's own model and the effort active in that turn (ARA-083).
 - GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
 ## PDF retrieval and access information (ARA-019)

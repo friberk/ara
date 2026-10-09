@@ -557,7 +557,13 @@ async def stream_answer(
             grounding=grounding,
         )
         completed = True
-        await memory.remember_turn(resources, assistant.session_id, assistant.id, assistant.model)
+        await memory.remember_turn(
+            resources,
+            assistant.session_id,
+            assistant.id,
+            assistant.model,
+            assistant.reasoning_effort,
+        )
         yield event("message.completed", final)
     except Exception as exc:
         safe = (

@@ -44,11 +44,13 @@ def turns(count: int, start: int = 0):
     return result
 
 
-async def maybe_enqueue(resources, chat_id, model="gpt-5.6-luna"):
+async def maybe_enqueue(resources, chat_id, model="gpt-5.6-luna", effort="none"):
     from app.services.memory import maybe_enqueue_compaction
 
     async with resources.sessions() as session, session.begin():
-        job = await maybe_enqueue_compaction(session, chat_id, model, settings=resources.settings)
+        job = await maybe_enqueue_compaction(
+            session, chat_id, model, effort=effort, settings=resources.settings
+        )
         return job.id if job else None
 
 
@@ -140,6 +142,7 @@ async def test_given_turns_over_threshold_when_turn_completes_then_one_job_for_o
         "chat_id": str(chat_id),
         "through_message_id": str(added[0].answer),
         "model": "gpt-5.6-luna",
+        "effort": "none",
     }
     assert await maybe_enqueue(resources, chat_id) is None
     assert [job.id for job in await compact_jobs(resources)] == [job_id]
