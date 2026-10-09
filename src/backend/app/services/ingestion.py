@@ -154,7 +154,8 @@ async def finish_failure(
             job.updated_at = now()
         else:
             retry_locked(session, job, code=code, message=message)
-        if document and job.state == "failed":
+        # A failed re-ingest leaves a ready document serving its previous chunks.
+        if document and job.state == "failed" and document.status != "ready":
             document.status = "failed"
             document.warnings = [message]
 
