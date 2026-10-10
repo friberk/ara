@@ -33,13 +33,14 @@ export function useCreateChat() {
 
 /**
  * Removes a paper; the response names the chat's new first paper. Papers join a chat with the question whose pills
- * mention them (ARA-096), so the client no longer adds them on their own.
+ * mention them (ARA-096); the only paper the client adds on its own is one just removed, which Undo puts back (ARA-110).
  */
 export function useChatPapers(chatId: string) {
   const client = useQueryClient()
   const settled = () => void client.invalidateQueries({ queryKey: queryKeys.chats.all })
   const remove = useMutation({ mutationFn: (paperId: string) => api<Chat>(`/chats/${chatId}/papers/${paperId}`, { method: 'DELETE' }), onSuccess: settled })
-  return { remove }
+  const restore = useMutation({ mutationFn: (paperId: string) => api<Chat>(`/chats/${chatId}/papers`, json('POST', { paper_id: paperId })), onSuccess: settled })
+  return { remove, restore }
 }
 
 export function useRenameChat() {

@@ -1,11 +1,14 @@
 // Chats over several library papers (ARA-088): the paper row of pills (ARA-110), the @ picker, routing and paper-named citations.
+import { toast } from 'sonner'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import type { Citation, Paper } from '@/api/types'
 import { deletePill, isEditable, textIn } from '@/test/editor'
 import { json, mockApi } from '@/test/fetch-routes'
 import { assistantMessage, chatRow, included, luna, mount, paper, paper2, settings, userMessage } from './pane-test-kit'
 
-afterEach(() => vi.unstubAllGlobals())
+vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
+
+afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 const paper3: Paper = { ...paper2, id: 'p3', title: 'Late interaction retrieval', authors: ['Omar Khattab'], year: 2020, active_document_id: 'd3' }
 const both = { paper_id: 'p1', papers: [included(paper), included(paper2)] }
@@ -16,7 +19,7 @@ function chips() { return screen.findByRole('list', { name: 'Papers in this conv
 async function removePill(user: ReturnType<typeof mount>['user'], list: HTMLElement, title: string) {
   await user.hover(within(list).getByRole('button', { name: title }))
   // user.click would first move the pointer onto the button, which user-event reports to React as leaving the pill.
-  fireEvent.click(within(list).getByRole('button', { name: `Remove ${title}` }))
+  fireEvent.click(within(list).getByRole('button', { name: `Remove ${title} from this chat` }))
 }
 
 test('Given a chat over two papers, Then each shows as a composer pill, a click opens its reader tab, and no summary dialog or card appears (ARA-110)', async () => {
@@ -306,4 +309,74 @@ test('Given the chat composer, When the @ button is used, Then the paper becomes
   await waitFor(() => expect(input).toHaveFocus())
   expect(calls.some((call) => call.method !== 'GET')).toBe(false)
   expect(within(await chips()).getAllByRole('listitem')).toHaveLength(2)
+})
+
+describe('removing a paper from the row (ARA-110)', () => {
+  function removable(extra: Record<string, unknown> = {}) {
+    let papers = [included(paper), included(paper2)]
+    return mockApi({
+      ...settings,
+      'GET /chats': () => json({ items: [chatRow('c1', { papers })] }),
+      'GET /chats/c1/messages': { items: [] },
+      'GET /papers/p1': paper,
+      'GET /papers/p2': paper2,
+      'DELETE /chats/c1/papers/p2': () => { papers = papers.filter((item) => item.paper_id !== 'p2'); return json(chatRow('c1', { papers })) },
+      'POST /chats/c1/papers': () => { papers = [...papers, included(paper2)]; return json(chatRow('c1', { papers })) },
+      ...extra,
+    })
+  }
+  const undoOf = () => (vi.mocked(toast).mock.calls[0]![1] as { action: { label: string; onClick: () => void } }).action
+
+  test('Given a pill in the row, Then its × says it removes the paper from the chat', async () => {
+    removable()
+    const { user } = mount('/papers/p1/chats/c1')
+    const list = await chips()
+    await user.hover(within(list).getByRole('button', { name: 'Dense passage retrieval' }))
+    expect(within(list).getByRole('button', { name: 'Remove Dense passage retrieval from this chat' })).toBeVisible()
+  })
+
+  test('Given a removal succeeds, Then a toast says so with an Undo action, and focus moves to the next pill', async () => {
+    removable()
+    const { user } = mount('/papers/p1/chats/c1')
+    const list = await chips()
+    await removePill(user, list, 'Dense passage retrieval')
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Removed from this chat', expect.objectContaining({ action: expect.objectContaining({ label: 'Undo' }) })))
+  })
+
+  test('Given the removed paper had a pill before another, Then focus lands on the pill that follows', async () => {
+    const three = Array.from({ length: 3 }, (_, n) => included({ ...paper2, id: `t${n}`, title: `Third ${n}`, active_document_id: `td${n}` }))
+    let papers = three
+    mockApi({
+      ...settings,
+      'GET /chats': () => json({ items: [chatRow('c1', { paper_id: 't0', papers })] }),
+      'GET /chats/c1/messages': { items: [] },
+      ...Object.fromEntries(three.map((item) => [`GET /papers/${item.paper_id}`, { ...paper2, id: item.paper_id, title: item.title }])),
+      'DELETE /chats/c1/papers/t1': () => { papers = papers.filter((item) => item.paper_id !== 't1'); return json(chatRow('c1', { paper_id: 't0', papers })) },
+    })
+    const { user } = mount('/papers/t0/chats/c1', { value: { ...paper2, id: 't0' } })
+    const list = await chips()
+    await removePill(user, list, 'Third 1')
+    await waitFor(() => expect(within(list).getByRole('button', { name: 'Third 2' })).toHaveFocus())
+  })
+
+  test('Given Undo is pressed, Then the paper is added back through the chat and its pill returns', async () => {
+    const { calls } = removable()
+    const { user } = mount('/papers/p1/chats/c1')
+    const list = await chips()
+    await removePill(user, list, 'Dense passage retrieval')
+    await waitFor(() => expect(toast).toHaveBeenCalled())
+    undoOf().onClick()
+    await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/chats/c1/papers')?.body).toEqual({ paper_id: 'p2' }))
+    expect(await within(await chips()).findByRole('button', { name: 'Dense passage retrieval' })).toBeVisible()
+  })
+
+  test('Given Undo fails, Then an error toast says the paper could not be added back', async () => {
+    removable({ 'POST /chats/c1/papers': () => json({ detail: 'The PDF is not ready.' }, 409) })
+    const { user } = mount('/papers/p1/chats/c1')
+    await removePill(user, await chips(), 'Dense passage retrieval')
+    await waitFor(() => expect(toast).toHaveBeenCalled())
+    undoOf().onClick()
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Dense passage retrieval')))
+    expect(vi.mocked(toast.error).mock.calls[0]![0]).toMatch(/back in this chat/)
+  })
 })

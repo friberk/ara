@@ -120,3 +120,11 @@ test('Given a pill whose paper is being removed, Then its remove button is disab
   await user.hover(screen.getByRole('button', { name: title }))
   expect(screen.getByRole('button', { name: `Remove ${title}` })).toBeDisabled()
 })
+
+test('Given a pill with its own remove label, Then the remove button carries it instead of "Remove <title>" (ARA-110)', async () => {
+  const user = userEvent.setup()
+  pill({ onActivate: vi.fn(), onRemove: vi.fn(), removeLabel: `Remove ${title} from this chat` })
+  await user.hover(screen.getByRole('button', { name: title }))
+  expect(screen.getByRole('button', { name: `Remove ${title} from this chat` })).toBeVisible()
+  expect(screen.queryByRole('button', { name: `Remove ${title}` })).not.toBeInTheDocument()
+})

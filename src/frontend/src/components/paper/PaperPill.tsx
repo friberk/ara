@@ -29,9 +29,10 @@ function Wrapper({ title, description, onActivate, children }: { title: string; 
  * the pill sits on the paper tone instead (surface="paper").
  *
  * A pill with onActivate (the row above a multi-paper chat, ARA-110) is one button named by the title; keyboard focus
- * darkens it and shows the remove button like hover does, and Tab reaches that button next.
+ * darkens it and shows the remove button like hover does, and Tab reaches that button next. A pill whose × does more
+ * than drop a mention names it in removeLabel ("Remove <title> from this chat").
  */
-export function PaperPill({ title, paper, selected = false, onRemove, onActivate, removeDisabled = false, surface = 'muted' }: { title: string; paper?: PillPaper | null; selected?: boolean; onRemove?: () => void; onActivate?: () => void; removeDisabled?: boolean; surface?: 'muted' | 'paper' }) {
+export function PaperPill({ title, paper, selected = false, onRemove, onActivate, removeDisabled = false, removeLabel, surface = 'muted' }: { title: string; paper?: PillPaper | null; selected?: boolean; onRemove?: () => void; onActivate?: () => void; removeDisabled?: boolean; removeLabel?: string; surface?: 'muted' | 'paper' }) {
   const description = useId()
   const label = useRef<HTMLSpanElement>(null)
   const [hovered, setHovered] = useState(false)
@@ -78,7 +79,7 @@ export function PaperPill({ title, paper, selected = false, onRemove, onActivate
               type="button"
               tabIndex={onActivate ? 0 : -1}
               disabled={removeDisabled}
-              aria-label={`Remove ${title}`}
+              aria-label={removeLabel ?? `Remove ${title}`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={(event) => { event.stopPropagation(); onRemove() }}
               className="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-background text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.16)] ring-1 ring-border transition-colors outline-none after:absolute after:-inset-1.5 hover:bg-muted"

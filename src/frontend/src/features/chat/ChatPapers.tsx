@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { IncludedPaper } from '@/api/types'
 import { PaperPill, type PillPaper } from '@/components/paper/PaperPill'
@@ -18,11 +19,27 @@ export function ChatPapers({ papers, onRemove, removing }: ChatPapersProps) {
   const workspace = useOptionalWorkspace()
   const navigate = useNavigate()
   const several = papers.length > 1
+  const row = useRef<HTMLUListElement>(null)
+  // Where focus goes once the paper being removed is gone: the pill after it (or before it), else the pane.
+  const refocus = useRef<{ paperId: string | null; pane: HTMLElement | null } | null>(null)
+  useEffect(() => {
+    const target = refocus.current
+    if (!target) return
+    refocus.current = null
+    const next = target.paperId ? document.querySelector<HTMLElement>(`[data-paper-id="${target.paperId}"] button`) : null
+    if (next) next.focus()
+    else if (target.pane) { target.pane.tabIndex = -1; target.pane.focus() }
+  }, [papers])
   // The same queries name the cited papers (useChatSources), so each paper loads once.
   const details = new Map(usePaperList(several ? papers.map((paper) => paper.paper_id) : []).map((paper) => [paper.id, paper]))
   if (!several) return null
   const hidden = papers.slice(VISIBLE_PAPER_CHIPS)
   const open = (paperId: string) => (workspace ? workspace.showPaper(paperId) : navigate(`/papers/${paperId}`))
+  const remove = (paper: IncludedPaper) => {
+    const index = papers.indexOf(paper)
+    refocus.current = { paperId: (papers[index + 1] ?? papers[index - 1])?.paper_id ?? null, pane: row.current?.parentElement ?? null }
+    onRemove(paper.paper_id)
+  }
   const pill = (paper: IncludedPaper) => {
     const detail: PillPaper = details.get(paper.paper_id) ?? { authors: paper.first_author ? [paper.first_author] : [], year: paper.year }
     return (
@@ -30,15 +47,16 @@ export function ChatPapers({ papers, onRemove, removing }: ChatPapersProps) {
         title={paper.title?.trim() || 'Untitled paper'}
         paper={detail}
         onActivate={() => open(paper.paper_id)}
-        onRemove={() => onRemove(paper.paper_id)}
+        onRemove={() => remove(paper)}
+        removeLabel={`Remove ${paper.title?.trim() || 'Untitled paper'} from this chat`}
         removeDisabled={removing === paper.paper_id}
       />
     )
   }
   return (
     // Opaque, so the thread scrolling beneath never shows through; the thread draws the hairline (ARA-097).
-    <ul aria-label="Papers in this conversation" className="flex flex-wrap items-center gap-x-2 gap-y-2.5 bg-background px-4 pt-2 pb-2.5">
-      {papers.slice(0, VISIBLE_PAPER_CHIPS).map((paper) => <li key={paper.paper_id} className="flex max-w-full min-w-0">{pill(paper)}</li>)}
+    <ul ref={row} aria-label="Papers in this conversation" className="flex flex-wrap items-center gap-x-2 gap-y-2.5 bg-background px-4 pt-2 pb-2.5">
+      {papers.slice(0, VISIBLE_PAPER_CHIPS).map((paper) => <li key={paper.paper_id} data-paper-id={paper.paper_id} className="flex max-w-full min-w-0">{pill(paper)}</li>)}
       {hidden.length > 0 && (
         <li className="flex">
           <Popover>
@@ -49,7 +67,7 @@ export function ChatPapers({ papers, onRemove, removing }: ChatPapersProps) {
             </PopoverTrigger>
             <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] p-3">
               <ul aria-label="More papers in this conversation" className="flex max-h-80 flex-col items-start gap-2.5 overflow-y-auto p-1">
-                {hidden.map((paper) => <li key={paper.paper_id} className="flex max-w-full min-w-0">{pill(paper)}</li>)}
+                {hidden.map((paper) => <li key={paper.paper_id} data-paper-id={paper.paper_id} className="flex max-w-full min-w-0">{pill(paper)}</li>)}
               </ul>
             </PopoverContent>
           </Popover>
