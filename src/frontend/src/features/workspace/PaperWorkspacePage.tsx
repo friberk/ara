@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { FileQuestion, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { ApiError } from '@/api/client'
 import type { Citation, Paper } from '@/api/types'
@@ -9,11 +9,11 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ShellHeader } from '@/components/shell/shell-header'
 import { MatchDecision } from '@/components/upload/MatchDecision'
 import { ConversationPane } from '@/features/chat'
+import { PaperActions } from '@/features/library/PaperActions'
 import { paperName } from '@/features/research/paper-format'
 import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -39,6 +39,7 @@ function PaperTitle({ paper }: { paper: Paper }) {
 /** Reader and conversation for one paper; owns the workspace contract the conversation pane talks to. */
 function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const view = parseView(searchParams.get('view'))
   const [readerTab, setReaderTab] = useState<'pdf' | 'details'>('pdf')
@@ -97,16 +98,20 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
     <WorkspaceContext.Provider value={context}>
       <ShellHeader>
         <PaperTitle paper={paper} />
-        {!isMobile && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="ml-auto text-muted-foreground" aria-label={readerCollapsed ? 'Show reader' : 'Hide reader'} onClick={() => (readerCollapsed ? readerPanel.current?.expand() : readerPanel.current?.collapse())}>
-                {readerCollapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{readerCollapsed ? 'Show reader' : 'Hide reader'}</TooltipContent>
-          </Tooltip>
-        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {!isMobile && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={readerCollapsed ? 'Show reader' : 'Hide reader'} onClick={() => (readerCollapsed ? readerPanel.current?.expand() : readerPanel.current?.collapse())}>
+                  {readerCollapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{readerCollapsed ? 'Show reader' : 'Hide reader'}</TooltipContent>
+            </Tooltip>
+          )}
+          {/* Edit, look up and delete, as on the paper's Library row (ARA-095). */}
+          <PaperActions paper={paper} onDeleted={() => navigate('/library', { replace: true })} />
+        </div>
       </ShellHeader>
       {paper.upload_match && paper.document_status === 'ready' && <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} variant="banner" />}
       {isMobile ? (
@@ -163,9 +168,8 @@ export default function PaperWorkspacePage() {
   const query = usePaper(paperId)
   if (query.data && paperId && query.data.id !== paperId) return <JoinedRedirect paper={query.data} />
   if (query.data) return <Workspace key={query.data.id} paper={query.data} chatId={chatId} />
-  if (query.error instanceof ApiError && query.error.status === 404) {
-    return <EmptyState icon={FileQuestion} title="Paper not found" action={<Button asChild><Link to="/library">Open library</Link></Button>}>This paper isn’t in your library. It may have been removed.</EmptyState>
-  }
+  // A deleted paper's link returns to the Library, which says why (ARA-095).
+  if (query.error instanceof ApiError && query.error.status === 404) return <Navigate to="/library" replace state={{ missingPaper: true }} />
   if (query.error) return <div className="mx-auto w-full max-w-3xl p-6"><ErrorNotice error={query.error} retry={() => void query.refetch()} /></div>
   return <WorkspaceSkeleton />
 }

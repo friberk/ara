@@ -9,6 +9,8 @@ export const queryKeys = {
     list: (filter: string) => ['papers', 'list', filter] as const,
     detail: (id: string) => ['papers', 'detail', id] as const,
   },
+  // Outside the papers prefix, so refreshing papers never re-reads a preview of deleted ones.
+  deletionPreview: (ids: readonly string[]) => ['deletion-preview', ...ids] as const,
   chats: {
     all: ['chats'] as const,
     list: (filters: { paperId?: string | null; limit?: number }) => ['chats', 'list', filters] as const,

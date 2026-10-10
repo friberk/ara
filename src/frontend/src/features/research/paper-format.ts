@@ -13,6 +13,11 @@ export function paperName(paper: { title: string | null; file_name?: string | nu
   return displayText(paper.title) || displayText(paper.file_name) || 'Untitled paper'
 }
 
+/** A paper can be looked up again by its title, DOI or a provider record (ARA-095). */
+export function canLookUp(paper: { title: string | null; doi: string | null; sources: unknown[] }): boolean {
+  return !!(displayText(paper.title) || paper.doi || paper.sources.length)
+}
+
 /** First `max` authors, then "et al."; the full list stays available for a tooltip and screen readers. */
 export function authorLine(authors: string[] | null | undefined, max = 3): AuthorLine | null {
   const names = (authors ?? []).map(displayText).filter(Boolean)
