@@ -1,0 +1,35 @@
+{
+  "id": "ARA-112",
+  "title": "README overhaul: a plain-language project page with the logo, a feature walkthrough and diagrams",
+  "type": "documentation",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: overhaul README.md to look like the READMEs of popular GitHub projects, with the logo centred on top. It should look professional, address hw1.md, explain the technical details without confusing readers with specific numbers or thresholds, use Mermaid flow diagrams, note that open models are supported only to some extent and not tested extensively (limited GPU access, developed on a MacBook), present the OpenAI, OpenAlex and Semantic Scholar keys as the main way to run the app, and sound human and a bit blog-like. Follow-up: \"also walkthrough the features of our application at some point. You don't have to include screenshots for all of them now, but we need to enumarate the main features\".",
+  "dependencies": [
+    "ARA-107",
+    "ARA-090"
+  ],
+  "acceptance_criteria": [
+    "Given the repository page on GitHub, when it renders, then the ara. wordmark is centred on top and readable in both light and dark themes.",
+    "Given hw1.md's submission list, when a reader follows the README, then they find setup and execution instructions, a description of the major features and how the application is structured.",
+    "Given the README, when it explains search, PDF processing and question answering, then it uses Mermaid diagrams and prose without specific thresholds or numeric limits.",
+    "Given the detailed operational material from the previous README, when the README is replaced, then that material survives in docs/reference.md with working relative links.",
+    "Given the open-model support, when the README describes it, then it says the support is experimental, off by default and not extensively tested, and why."
+  ],
+  "test_cases": [
+    "Render each Mermaid block with mermaid-cli and inspect the images.",
+    "Check that every relative link and anchor in README.md and docs/reference.md resolves."
+  ],
+  "status": "completed",
+  "related_files": [
+    "README.md",
+    "docs/reference.md",
+    "branding/ara-wordmark-light.svg",
+    "branding/ara-wordmark-dark.svg",
+    "branding/README.md",
+    "AGENTS.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "mermaid-cli 11.4.2 rendered all three diagrams. The first architecture diagram had five crossing edges to the external services and the PDF flow had a redundant upload node; both were simplified and re-rendered cleanly. A link checker resolved every relative path and anchor in README.md and docs/reference.md. Claims were checked against the code and the report (Regenerate summary button, suggested questions, npm run check, sidebar rename covers chats only, budget is .env-only).",
+  "updated_at": "2026-10-10"
+}

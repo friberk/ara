@@ -1,0 +1,260 @@
+# ara. technical reference
+
+This is the detailed companion to the [README](../README.md): every setting, limit and edge case, written for whoever maintains or grades the system. ara is a local research workspace for CS 59300. Search Semantic Scholar or OpenAlex, save papers, retrieve or upload PDFs, and use paper content for summaries and questions. The architecture is a React SPA and a modular FastAPI backend with durable workers and persistent storage.
+
+## Features
+
+The interface is a chat-centred workspace built with shadcn components, using the default neutral black-and-white theme in light and dark (it follows your system setting; switch it in Settings → General or with the ⌘K palette).
+
+- **Search.** The home screen is one composer. Type a topic and choose OpenAlex or Semantic Scholar. Results show title, authors, year, abstract and DOI or PDF links. Each result can be saved to the library, and papers already saved show "In library".
+- **Library.** Saved and uploaded papers persist across restarts. Filter by title, and see each paper's PDF status.
+  - Each row's menu can **Edit details** (title, authors, year, venue, DOI, abstract), **Look up details again**, or **Delete** the paper. In a paper's workspace, Edit details is in the paper header and Look up again and Delete are behind its **ⓘ**.
+  - Tick several rows, or Select all, to delete them together.
+  - Deleting asks first. The dialog lists what goes: the PDFs with their text and search index, summaries, and conversations about only those papers. Conversations that also cover other papers keep them, and their earlier answers stay readable. The button names what it does, such as "Delete 3 papers".
+  - Deletion waits while a conversation is still writing an answer. Background work for a deleted paper stops, and the stored PDFs are removed by a background cleanup. If storage is down the cleanup retries with backoff, and recovery queues it again every ten minutes (at most 48 times) once its attempts run out, so no page needs to offer a retry. A refused request, such as bad credentials, is not queued again.
+  - An old link to a deleted paper opens the Library with a short note.
+- **Upload.**
+  - Choose or drop a PDF (up to 25 MB) on the home page, in the library or in a paper. The upload starts at once and shows its real progress.
+  - You land in the paper's workspace, where one step list runs from Uploading through Reading pages and Finding paper details to Ready.
+  - The library accepts several PDFs at once. Each becomes its own paper with its own progress row.
+  - A PDF already in the library opens that paper with a note instead of an error.
+  - If an upload turns out to be a paper already in your library (same DOI or arXiv ID, or a strictly matched title), it joins that paper instead of creating a duplicate:
+    - If that paper has no PDF, the upload is attached and you land on it.
+    - If it has one, you choose Replace PDF or Cancel. Nothing paid starts while the choice waits.
+    - Library rows carry their own choice, and earlier undecided uploads are listed under "Needs your choice".
+    - An upload into a specific paper stays there, and its paper header names any other paper that owns its DOI.
+  - While a saved paper's PDF is being retrieved automatically, the header says "Getting PDF", the composer says questions open once it is ready, and uploading your own copy becomes the secondary option.
+  - While a paper is being read, it is shown by its file name.
+- **Accurate metadata.**
+  - Titles come from the first page when the PDF's built-in title is a file name or tool output, such as `paper.dvi` or `Microsoft Word - draft.docx`.
+  - The PDF's XMP metadata (title, creators, DOI, venue, publication date) ranks above its Info dictionary.
+  - The existing model step still fills a missing title or authors, with the saved default model and effort.
+  - After the PDF is readable, the app looks the paper up in OpenAlex, or in Semantic Scholar if you choose it under Settings → Library and search → Paper details. It searches by DOI or arXiv ID first, then by title.
+  - A title match is used only when an author or the year also agrees.
+  - The catalog's title, authors, year, venue and abstract replace the values read from the PDF, which stay as the fallback. Details you edited are never replaced.
+  - If both catalogs are rate limited, reading is not blocked. The lookup retries in the background, honouring Retry-After, at most three times.
+  - **Look up again**, behind the paper header's **ⓘ** or in a Library row's menu, runs the lookup at any time for a paper with a title, DOI or catalog record. It reads the paper's saved record first, or reads an uploaded PDF again when there is none, and trusts a DOI you typed. It refreshes values that came from the PDF or a catalog; details you edited stay.
+  - Papers from before venues were stored are refreshed once, in the background after the next start: saved papers read their catalog record again, and uploads read their PDF again, which also fixes titles such as `paper.dvi`. Missing details are filled and edits stay. It never repeats.
+- **Get or find a PDF.** Saved papers offer retrieval in the reader. The app checks both providers, including exact DOI alternatives, and tries reported open copies first. Retrieval continues in the background, then hands the original to PDF processing. Reported open access does not guarantee a working download.
+- **Paper workspace.** The PDF reader sits beside the conversation. The latest summary is the first card. Ask your own questions or use the suggested ones; answers stream in with inline page citations. Clicking a citation scrolls the PDF to the cited passage and highlights it. The supporting sentences get a strong highlight, the rest of the cited excerpt a dotted underline. If the text cannot be matched, the reader outlines the passage from the citation's stored layout boxes instead, and only then falls back to showing the page. On phones, the workspace switches between Chat and PDF.
+  - The reader has no tabs. Without a PDF it shows the ways to get one (retrieval progress, the DOI link, upload, preparation steps, or a failure with Retry) above the abstract.
+  - The reader opens with the paper's bibliography: title, every author, year and venue, DOI and catalog links, and the abstract with Show more, plus **Edit details**. Above a PDF it scrolls away with the first page while the PDF controls stay; above the ways to get a PDF it leads them. A reader tab for another paper shows that paper's.
+  - The header's **ⓘ** opens a small dialog with what lies behind it: where each detail came from, with **Look up again**, the identifiers with copy buttons, the search index with **Rebuild**, and **Delete paper**.
+  - The reader's **PDF menu** (⋮) shows the file name, pages, size and whether it was uploaded or downloaded from OpenAlex, and offers **Open original**, **Download**, **Replace PDF…** and **Remove PDF…**. A replacement becomes the PDF you read and ask about; earlier answers keep citing the PDF they used.
+  - **Remove PDF** asks first and lists what happens. The reader goes back to uploading, and new conversations need a new PDF. Existing conversations keep using this PDF: they read, cite and take new questions as before, and the summary card shows its summaries as an earlier PDF. Versions no conversation uses are deleted with their summaries, background work on them stops, and the stored files are removed by the same background cleanup as paper deletion. A kept PDF is deleted once no conversation uses it (its last conversation is deleted or drops the paper). Uploading the same file again makes the kept PDF current again.
+- **Chats over several papers.** Mention library papers with a processed PDF in a question to bring them into a conversation, as many as you like (see @ mentions below). A paper the question names is always used in that answer. Once a chat covers more than one paper, they show as the same pills as in the composer above the chat, and beyond three they collapse into a "+N" pill that lists the rest. A pill opens that paper's PDF in a reader tab, hovering it shows its short citation, and its corner × removes the paper (a single paper has no row, so the last one is never removed); earlier answers keep their citations to it. A chat appears under every paper it includes and lives at its first paper's address. Answers search all the papers at once, keep the papers your question names, give each paper at least two passages while they fit and otherwise use the most relevant papers, and split a comparison into at most five questions, one per paper. Citations name their paper in APA 7 form, as in "Karpukhin et al., 2020, p. 4" (a single-paper chat just says "p. 4"), and a citation to another paper opens its PDF in a new reader tab. Multi-paper chats use hosted models only.
+- **@ mentions.** Type @ at the start of a word, or use the @ button, to pick a library paper; it becomes a pill in the question showing the paper's title (cut to fit) after a file icon. The pills are the question's papers: there is no separate list of chips above the question. Hovering a pill, or selecting it with the arrow keys or a tap, highlights it, shows a small × at its corner and, after a moment, a card with its short citation and full title. The ×, Backspace, Delete or a selection removes the whole pill, and a paper leaves when its last pill does. Screen readers hear the title, then the citation. In an existing chat, a mentioned paper that is not in the chat yet joins it when you send the question; deleting its pill first changes nothing. A pill for a paper already in the chat only points the question at it and never removes it; the chat's own paper row above the conversation removes papers, and removing one there takes its pills out of the question you are writing. Sent questions keep their pills, without the ×.
+- **Context and cost ring.** In an open chat, a hollow ring at the bottom left of the question box shows how much of the selected model's input budget the latest answer used. Hover, focus or tap it for a card with two headed sections. Context gives used and total tokens, the percentage as its own value and a thin meter that turns red from 90%. Cost gives the total so far in USD, split into answers, follow-up planning, conversation summaries, query embeddings and reranking. Costs come from the model catalogs at the tokens each call recorded; the shared paper summary is not part of a chat's cost, and answers from before this was recorded are noted as untracked rather than estimated. The total follows the model selected in the composer.
+- **Retrieval.** Each PDF is split into section-aware passages. Questions and summaries use the passages that best match the question, found by keyword and embedding search, reranked, and packed to fit the model's context. Settings → Library and search explains this in three sentences, then chooses one search index (embedding) model for the whole library (OpenAI `text-embedding-3-large` by default at $0.13 per million tokens, or `text-embedding-3-small` at $0.02) and turns Reordering by relevance (reranking) on or off (on by default, with OpenAI GPT-6 Luna, which adds about 2 to 3 seconds and $0.004 to a question). Each model's name and line there come from its catalog entry. Vectors from different models cannot be compared, so switching asks first, then rebuilds every paper's index in the background; questions keep using each paper's current index until its new one is ready, and the old vectors are removed afterwards. The paper header's **ⓘ** shows the state of the paper's search index and rebuilds it.
+- **Relevance-driven evidence.** Answers always use retrieved passages, never whole papers. After reranking, passages scoring below half the best one are left out rather than padding the prompt, and a first answer uses at most 24 passages and 16,000 tokens (or less when the model's evidence budget is smaller). Broad questions take whole sections around the best passages. Each top-level section of a paper also gets a short cited summary, written once by the saved default model when the PDF is ready (existing PDFs are summarized once at startup); summaries are searched beside the passages, and a summary that is used brings up to four of the passages it cites, so the model reads and cites those passages themselves and every citation opens a real page. When an answer reports that the passages are not enough, the app searches once more widely and the new answer replaces the first; the reader sees "Searching more widely…". Both calls are counted in the chat's cost. These thresholds follow published practice (see `docs/plans/retrieval-orchestration.md`) but are not measured on your papers.
+- **Long conversations.** Recent turns are sent verbatim; older turns fold into a running summary, and relevant earlier turns are recalled. Follow-up questions are rewritten into standalone searches. The composer notes when earlier messages are summarized. Chats summarize and plan with the model chosen in Settings (GPT-5.6 Luna by default).
+- **Models.** A compact switcher chooses the model and reasoning effort for the next request; it offers only models and reasoning effort. Settings → Models is the one place that stores defaults: each hosted model shows what it is for (from its OpenAI model page, kept in the hosted catalog), its input and output price per million tokens and its context window, and a choice saves at once. Each answer records the model that produced it, though the chat does not show it. Open (local) models are experimental and off by default; see [Experimental: open models](#experimental-open-models-frozen).
+- **Settings.** Settings opens as a dialog over the current page, from the sidebar or ⌘K, with the categories General, Models, Library and search, and Open models when open models are on. The URL names the open category (`?settings=models`), so it can be linked; Back, Esc or the close button closes it. Old `/settings` links open it over the home page. On a phone it fills the screen and opens each category from a list. Choices save as you make them; only switching the search index model asks first.
+- **History.** The sidebar lists recent papers, searches and conversations. Conversations are titled from their first question and can be renamed or deleted. Press ⌘K (Ctrl+K) to find papers and chats.
+
+## Start locally
+
+Requirements: Docker with Compose and Python3 for the environment bootstrap. Compose runs the core services; the experimental open-model runtime and its worker start only when enabled.
+
+```bash
+python3 scripts/bootstrap.py
+```
+
+This creates an ignored, private `.env` with random internal credentials and preserves existing configuration. Set `OPENAI_API_KEY` there for hosted summaries/questions. Academic credentials are optional; Semantic Scholar can rate-limit anonymous access. Never paste keys into the application or commit `.env`.
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:5173>. API documentation is at <http://localhost:8000/docs>. Change `FRONTEND_PORT`, `API_PORT` and `CORS_ORIGINS` together when using different local ports. Browser calls use the Vite `/api` proxy; credentials remain on the backend. PostgreSQL, Redis and MinIO have no host ports by default.
+
+Default startup initializes the private PDF bucket and runs Alembic before starting the API/workers. It works without LLM credentials. Analysis reports unavailable model access until a hosted key is configured. Core API readiness never depends on the open-model runtime.
+
+Source edits use Vite HMR, Uvicorn reload and a debounced worker subprocess wrapper. The wrapper stops the previous worker process tree before starting its replacement. Rebuild images after dependency or Dockerfile changes. PostgreSQL, Redis, MinIO and model-weight named volumes survive normal shutdown:
+
+```bash
+docker compose down
+docker compose up
+docker compose logs --tail 100 api worker
+docker compose run --rm migrate
+```
+
+Redis is job transport; PostgreSQL stores durable execution state and outbox records. Dispatch/recovery runs in API lifespan, so pending work resumes when the API returns. PDF parsing runs in an isolated child process. MinIO stores original bytes; PostgreSQL stores bibliographic data, pages/chunks, jobs and analysis history.
+
+PDFs come only from OpenAlex's stored copies. Saving a paper with an OpenAlex record or a DOI starts retrieval without a click, and a paper saved earlier starts once when its workspace opens. Retrieval looks the work up by its OpenAlex ID or DOI (free) and, when OpenAlex reports a stored PDF, downloads it from `content.openalex.org` (about $0.01 each against the API key's daily allowance; a free key gives $1 a day). Set `OPENALEX_API_KEY` to enable this; without a key nothing is downloaded. When OpenAlex has no copy (not stored, paywalled or no matching work), has no key or cannot be reached, no other host is contacted: the workspace links the DOI (`https://doi.org/<doi>`) and asks you to download and upload the PDF; a paper without a DOI shows only the upload. A refused request (HTTP 429, or a spent daily allowance) reports OpenAlex's own wait, up to a day, before Try again. A failed retrieval is never retried automatically.
+
+When any PDF (downloaded or uploaded) first becomes ready, one summary starts with the saved default model and effort. If that model is local and not ready, hosted generation is unconfigured or today's budget is spent, nothing starts and the summary card shows Generate summary with the reason; there is no fallback to another model. Automatic summaries with a hosted default use the daily budget.
+
+The content endpoint redirects to a temporary signed link in OpenAlex's Cloudflare R2 storage; redirects may only reach `content.openalex.org` and the R2 hosts that OpenAlex documents for its PDF bucket. The key goes only to OpenAlex, and neither the key nor a signed link is logged or stored. Downloads are capped at 25 MiB, four redirects and 45 seconds; the job has a 420-second deadline. Encoded or non-PDF responses are rejected, and the downloader checks public DNS destinations and TLS names on every hop.
+
+## Verify
+
+```bash
+python3 scripts/test-stack.py test
+docker compose exec frontend npm run check
+docker compose exec frontend npm run build
+python3 -m unittest discover -s tests/infrastructure -v
+uv run --with pymupdf==1.28.2 python -m unittest discover -s tests/fixtures -v
+```
+
+The backend helper forces a separate `ara-test` Compose project/database/buckets; `--project-name ara-<name>-test` runs a second isolated copy beside it. An autouse test guard refuses any request to a real external host, so a test that silently fell back from an unreachable provider still fails. It runs Ruff and pytest against real PostgreSQL, Redis and MinIO. HTTP fixtures replace academic and LLM providers. These commands do not build the inference runtime or download weights. Fixtures demonstrate deterministic behavior; live provider/model checks are separate.
+
+Browser test environment:
+
+```bash
+uv run --with pymupdf==1.26.7 python tests/fixtures/create_pdf.py /tmp/ara-fixtures/research.pdf
+uv run --with pymupdf==1.26.7 python tests/fixtures/create_pdf.py --second /tmp/ara-fixtures/second.pdf
+docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml up --build -d
+cd src/frontend
+npx playwright install chromium
+npx playwright test
+```
+
+The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. PDF fixtures cover OpenAlex's content endpoint and signed storage: stored copies by work ID and DOI, a temporary limit followed by a retry, a spent allowance, HTML and unsafe redirects, and the DOI fallback with 390px keyboard upload. Upload journeys cover a home upload into the workspace, several library uploads with a repeat, and the metadata-source setting. The multi-paper journey uploads the second synthetic PDF (`E2E_SECOND_PDF_PATH`, default `/tmp/ara-fixtures/second.pdf`) as its own paper and compares it with the fixture paper. Compose mounts the generated synthetic PDF from `/tmp/ara-fixtures/research.pdf`; set `E2E_PDF_PATH` for a different absolute path in both Compose and Playwright. The test-only resource factory relays OpenAlex's content and storage hosts to the fixture server without weakening production public-host checks. Fixtures prove deterministic behavior; a live download needs a real OpenAlex key. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
+
+Test data reset is explicit and affects only `ara-test`:
+
+```bash
+python3 scripts/test-stack.py reset --reset-data
+```
+
+For development data reset, inspect the project and back up original PDFs/database first; `docker compose down --volumes` deliberately deletes the project's persistent volumes, including downloaded model weights. Ordinary shutdown uses `down` without that flag.
+
+## Deploy the demo
+
+The demo runs on one Ubuntu VM: the same Compose stack plus `compose.deploy.yaml`. The backend services run the image code without reload or source mounts. Caddy (`docker/caddy.Dockerfile`, `docker/Caddyfile`) replaces the Vite dev server: it serves the built frontend, proxies `/api` and `/health` to the API on `127.0.0.1:8000`, obtains the TLS certificate and lets clients on Purdue's network straight in. The allow-list is Purdue's AS17 address prefixes. Purdue's VPN is split-tunnel (only Purdue destinations go through it), so remote users, including those on the VPN, arrive from their home addresses and sign in with the demo username and password instead. Caddy uses host networking so it sees each client's real IPv4 or IPv6 address. PostgreSQL, Redis, MinIO and the API publish no public ports.
+
+The demo URL is <https://vps-eb56b28c.vps.ovh.us>: no password on campus, the demo login everywhere else.
+
+One-time server setup: Docker CE with the Compose plugin, an `ara-deploy` user in the `docker` group without sudo, and `/opt/ara/.env` created by `scripts/bootstrap.py` with these additions:
+
+```bash
+APP_ENV=production
+CORS_ORIGINS=["https://vps-eb56b28c.vps.ovh.us"]
+COMPOSE_FILE=compose.yaml:compose.deploy.yaml
+SITE_ADDRESS=vps-eb56b28c.vps.ovh.us
+DEMO_USERNAME=<username>
+DEMO_PASSWORD_HASH='<output of caddy hash-password, single-quoted>'
+OPENAI_API_KEY=<key>
+```
+
+CI deploys `main` after the `verify` job passes. The `deploy` job runs `scripts/deploy.sh`, which ships the committed tree with `git archive`, syncs it into `/opt/ara` without touching `.env`, rebuilds with `docker compose up -d --build --wait`, and checks `/health/ready` through Caddy on the server. The job then checks that the runner, which is outside Purdue, is asked to sign in (401). It needs the `production` environment secrets `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` and `DEPLOY_TARGET` (`ara-deploy@<server>`) and the repository variable `SITE_HOST`. CI runs on `main`, pull requests and manual dispatch only.
+
+Deploy a checkout by hand, roll back by deploying an older commit the same way, and inspect the server:
+
+```bash
+SITE_HOST=vps-eb56b28c.vps.ovh.us scripts/deploy.sh ara-deploy@15.204.210.41
+ssh ara-deploy@15.204.210.41 'cd /opt/ara && cat REVISION && docker compose ps'
+ssh ara-deploy@15.204.210.41 'cd /opt/ara && docker compose logs --tail 100 api worker caddy'
+```
+
+`docker compose down` on the server stops the demo and keeps its data; never add `--volumes` there.
+
+## Models and source grounding
+
+Hosted IDs: `gpt-5.6-luna` (default), `gpt-5.6-terra`, `gpt-5.6-sol`. Supported reasoning controls come from backend capabilities; the GPT-5.6 catalog records `none`, `low`, `medium`, `high`, `xhigh` and `max` separately for Sol, Terra and Luna. Missing keys, provider outages and unavailable models are reported. Metadata-only papers require a processed PDF before analysis.
+
+Retrieval stays within the selected document and preserves page references. PyMuPDF4LLM's layout model turns each PDF into Markdown in the isolated child process, and LlamaIndex parsers split it into passages of at most 512 tokens that keep their section path, pages and layout boxes. Search fuses PostgreSQL full-text ranking with pgvector embeddings (exact scans within the paper) by reciprocal rank fusion, over passages and, beside them, section summaries; the selected reranker then orders the leading 40 candidates. Candidates scoring below half the best reranker score are pruned, never padded; at least two passages always remain. The first pass uses at most 24 passages and min(16K, E) tokens, close to OpenAI file search's 20 chunks and 16K budget and Anthropic's rerank-to-20; several papers keep a floor of two passages each, so up to 12 papers answer. Selected passages grow to their neighbours (a lookup) or their whole section (a broad question, as the planner classifies it), each paper within an equal share. Paper groups are ordered with the strongest first and the next strongest last (Jin et al., ICLR 2025; Lost in the Middle). An answer that reports insufficient evidence is retried once with half the prune bar, twice the passages and whole sections, up to the evidence ceiling E (adapting Self-Route, Li et al., EMNLP 2024); a small window reads each paper in its own call when a comparison or the retry needs more than E. A section summary routes and its passages ground: a selected summary brings up to four of its cited passages as evidence with their own handles, has no handle of its own, and drops markers to passages that did not fit. When an embedding index or the reranker is unavailable, answers fall back to keyword search or fused order and report why. The model sees short passage handles that the server maps back to stored passages; a handle outside the supplied passages fails the answer with `UNGROUNDED_OUTPUT`, and the model can answer that the passages do not contain the evidence. Budgets count tokens with tiktoken against each model's context window: each hosted model's catalog entry (`integrations/hosted_catalog.py`) holds its window, output allowance, prices, price-tier boundary and reasoning levels. The working budget is W = min(window − answer reserve − reasoning reserve − safety, price-tier boundary), which is 272,000 tokens for every GPT-5.6 model because input above 272K is billed at a higher tier. Conversation history is capped at H = min(32,000, 25% of W) and evidence takes the rest, so a small window summarizes sooner and a large one keeps up to 32K tokens of turns word for word. Older turns are summarized once they pass `MEMORY_COMPACTION_RATIO` (0.6) of the recent-turns budget, which is a share of H. Cached input tokens that OpenAI reports are priced at the catalog's cached-input rate in the chat cost meter.
+
+After an upgrade, the API re-ingests documents from an older chunk set at startup, including every document from before the retrieval overhaul; questions about a paper say it is being prepared until its re-ingest finishes. Missing search indexes are queued at startup and when the library embedding model changes, so adding an OpenAI key (with a restart) also indexes existing papers. The same re-ingest can be queued by hand:
+
+```bash
+docker compose exec api python -m app.services.reindex
+``` Conversation history and summaries persist locally. Each assistant response records its model and reasoning effort. Model text is generated; citation controls show source passages and link to the original PDF page. Citation validation checks source identity; readers should verify factual support. Prompt instructions embedded in PDFs are treated as untrusted source text.
+
+## Experimental: open models (frozen)
+
+Open (local) models are the Ollama runtime with its IFM K2 Horizon and Qwen chat models, the Qwen3 embedding models and the Qwen3 reranker. They are experimental, and their development is frozen as of 2026-10-09 (ARA-090). Their code and tests stay, and the tests run with the flag on, but nothing new is built on them unless the freeze is lifted.
+
+They are off by default. The app then offers only hosted OpenAI chat, embedding and reranking; Settings has no Open models category; and `docker compose up --build` starts neither `ollama` nor `model-worker`. To turn them on, add both lines to `.env` and restart:
+
+```bash
+EXPERIMENTAL_OPEN_MODELS=true
+COMPOSE_PROFILES=open-models
+```
+
+`EXPERIMENTAL_OPEN_MODELS` switches the API and workers; the `open-models` Compose profile (or `docker compose --profile open-models up --build`) starts the runtime and its worker. Downloaded weights stay in the `ollama-models` volume while the flag is off; `docker compose down` without `--volumes` keeps them. After upgrading a stack that ran open models before, `docker compose stop ollama model-worker` stops their old containers.
+
+With the flag off, stored open-model state stays readable and never switches to a paid model:
+
+- Answers and summaries from local models keep their stored model name.
+- A saved local default model shows as unavailable; the composer and summaries ask for a hosted model instead of choosing one.
+- A saved local library search model shows as unavailable in Settings, which offers the hosted models. Until one is chosen, papers are searched by keywords and the search index behind the paper header's **ⓘ** says why.
+- A saved local reranker means no reranking, and Settings shows it as unavailable.
+- Unsettled model downloads, deletions and local summaries wait untouched until the flag is on again.
+
+### Tests
+
+The backend and frontend suites run with open models off, as shipped. Open-model tests turn them on: backend tests through the `open_models` pytest marker, frontend tests through a mocked `/features` reply. Test Compose pins `EXPERIMENTAL_OPEN_MODELS=false`, uses an empty offline Ollama fixture and disables the model worker; `python3 scripts/test-stack.py config` checks that Ollama and the model worker run only under the `open-models` profile. Browser Compose turns open models on and runs the model worker against a deterministic model provider; its model tests cover background progress, navigation, pause/reload/resume and default preservation after deletion.
+
+Everything below applies only while open models are on.
+
+### Runtime and budgets
+
+The runtime starts without weights; generating locally needs additional disk and memory. The verified local-model host is Linux ARM64 in OrbStack on an M3 Pro. Native x86_64 CPU and NVIDIA/AMD configurations are provided; their hardware validation remains separate. Ollama starts without downloading or loading weights, and core API readiness does not depend on it. Logs: `docker compose logs --tail 100 model-worker ollama`.
+
+Local prompts use at most `LOCAL_INPUT_BUDGET_TOKENS` (3,072), with o200k counts scaled by `LOCAL_TOKEN_FACTOR` (1.05). Local conversations are summarized by their own local model, only once the chat has been idle for a minute, and are never sent to a hosted model for summarization. Local models cost $0.00 in the context and cost ring. Settings can choose Qwen3 Embedding 4B or 8B as the search model and the local Qwen3 reranker, which orders the leading 12 candidates; a local embedding model that finishes verifying also queues the missing indexes it serves.
+
+### Managed local models
+
+Open **Settings → Open models** to download an exact curated Q4_K_M artifact:
+
+| Model | Runtime reference | Catalog download bytes |
+| --- | --- | ---: |
+| IFM K2 Horizon 3.7B | `hf.co/IFM/K2-Horizon-3.7B-GGUF:Q4_K_M` | 3,156,599,066 |
+| IFM K2 Horizon 7B | `hf.co/IFM/K2-Horizon-7B-GGUF:Q4_K_M` | 5,592,218,900 |
+| Qwen 3.8 27B | `qwen3.8:27b-q4_K_M` | 17,741,872,132 |
+| Qwen3 Embedding 4B | `qwen3-embedding:4b-q4_K_M` | 2,496,704,041 |
+| Qwen3 Embedding 8B | `qwen3-embedding:8b-q4_K_M` | 4,676,805,193 |
+| Qwen3 Reranker 0.6B (Q8_0) | `fanyx/Qwen3-Reranker-0.6B-Q8_0:latest` | 639,152,466 |
+
+Downloads continue when you leave Settings or close the browser. Pause remains pending while the runtime settles its transfer and checkpoints; **Paused** appears after acknowledgment. A manually paused job stays paused across restart. Resume uses retained partial files when the registry supports ranges. Bytes may decrease after a restart if the runtime reports an earlier durable checkpoint. A finished transfer must also pass artifact, streaming and structured-output verification before selection becomes available. Download completion does not change your selection or saved default.
+
+Installed models prepare automatically after a runtime, capability-schema or context change. **Preparing model** runs in the background using retained weights; leave Settings and return later. Selection becomes available after the check succeeds, with your saved model and reasoning preference preserved. Failed operations offer **Retry download**, **Retry preparation** or **Retry deletion**. If previously installed weights disappeared, **Download** starts a new transfer only when you request it. **Delete weights** confirms removal and preserves conversations, summaries and the saved default. Generation with a deleted default stays blocked until you reinstall it or choose another model. The app never switches a local request to a paid provider. Shared blobs and retained partial files mean deletion does not promise to reclaim the full catalog size. `OLLAMA_NOPRUNE=true` retains partials for recovery; the app does not perform broad orphan cleanup.
+
+The default runtime uses a Linux CPU container on supported Docker hosts; it also works without GPU passthrough on macOS. It limits context to 8,192 tokens, output to 2,048 tokens, concurrent local generation to one and idle keep-alive to two minutes. Up to three models stay loaded (`OLLAMA_MAX_LOADED_MODELS`), so a chat model, an embedder and the reranker can serve one question without reloading; thinking efforts get a separate `OLLAMA_THINKING_TOKENS` (1,024) allowance. The `12g` memory ceiling is a limit, not memory reserved or consumed at startup. Configure `OLLAMA_MEMORY_LIMIT`, `OLLAMA_CPUS`, `OLLAMA_CONTEXT_WINDOW`, `OLLAMA_MAX_OUTPUT_TOKENS` and `OLLAMA_NUM_THREADS` in `.env`; the default four threads match the four-CPU quota. Context changes require revalidation. Local requests use temperature 0.0 and retain the applied settings with their responses; citation checks still reject unsupported output. A busy interactive local request returns a retryable message; background local summaries wait on their separate queue.
+
+The 7B artifact passed live engine checks under the 12 GiB ceiling: roughly 6.52 GiB steady container usage and 10.30 GiB peak in the retained-weight run. Full application checks reached up to 11.85 GiB peak and about 6.65 GiB steady usage, with zero OOM events; leave additional host/VM memory for the other services. Those readings include cache and do not predict every workload. Qwen's approximately 17.74 GB download exceeds the default ceiling before KV cache and other overhead; raise the container and host/VM limits before attempting it. Each installed artifact must pass its own readiness checks. The final `0.40.1-ara.2` runtime passed six raw 7B controls: `default`, `none`, `on`, `low`, `medium` and `high`. Settings and the composer show **None**, **Low**, **Medium** and **High**. Earlier stock-runtime rejection of named controls is documented in the development journal.
+
+Retrieval models share this runtime. With three models loaded, a chat model, Qwen3 Embedding 4B and the reranker measured 8.3 GiB with the 3.7B and 10.6 GiB with the 7B. **IFM K2 Horizon 7B and Qwen3 Embedding 8B do not fit together under the default 12 GiB limit.** In Phase 0 the pair swapped 7.7 GiB; Compose now disables swap (`memswap_limit` equals the memory limit), so the kernel kills the Ollama container instead, failing the answer and any running local jobs. The app does not prevent this combination. With the 7B, use Qwen3 Embedding 4B or the default OpenAI embeddings, or raise `OLLAMA_MEMORY_LIMIT` together with the host/VM memory. Memory-aware model loading is tracked in ARA-080.
+
+Automatic preparation was verified with retained 7B weights through application restart and browser closure, without a download request. The user's installed 3.7B also passed background readiness and became selectable with the same verified raw controls and four displayed effort levels; this establishes installation compatibility, rather than a full 3.7B paper-quality evaluation. No 27B or GPU inference is claimed. Malformed runtime metadata produces a visible failed preparation with safe error text and explicit recovery.
+
+Native Linux GPU overrides:
+
+```bash
+EXPERIMENTAL_OPEN_MODELS=true docker compose --profile open-models -f compose.yaml -f compose.nvidia.yaml up --build
+EXPERIMENTAL_OPEN_MODELS=true docker compose --profile open-models -f compose.yaml -f compose.amd.yaml up --build
+```
+
+NVIDIA requires NVIDIA Container Toolkit. AMD requires supported ROCm hardware/drivers and the host's `OLLAMA_VIDEO_GID`/`OLLAMA_RENDER_GID`; set `OLLAMA_AMDGPU_TARGETS` for the device. Both overrides build the patched runtime. GPU acceleration and native amd64 execution are provided configurations, with no hardware test claim.
+
+The managed image pins Ollama 0.40.1 and llama.cpp b11454. Stock 0.40.1 rejected the real 7B artifact with `unknown model architecture: 'k2-horizon'`. The custom build uses upstream architecture support, reviewed Ollama hook/CLEF adaptations and operation-scoped pull controls. See [runtime provenance, licenses and measured evidence](../docker/ollama/README.md). An external `OLLAMA_BASE_URL` must provide the reviewed control protocol for acknowledged pause; stock endpoints cannot promise it.
+
+Reasoning controls belong to each model. IFM offers **None**, **Low**, **Medium** and **High**; None disables thinking. Its native preset and Boolean enabled control both resolve to High, so old `default`/`on` preferences display as High and future UI requests use that explicit level. Displaying the preference does not save a change. Models that only support Boolean reasoning use a **Reasoning** toggle. Past responses retain their original settings: older `default` and `on` records read **Runtime preset** and **Reasoning enabled**. Automatic preparation refreshes stale controls without downloading weights or changing your saved default, conversations or summaries. Missing models are never downloaded automatically; manually paused or failed operations require their explicit resume or retry action.
+
+Opt-in live engine validation downloads only 7B into a labeled isolated volume and preserves that volume:
+
+```bash
+python3 scripts/test-local-models.py --resume --volume ara-ollama-validation-new-run --output /tmp/ara-local-model-result.json
+```
+
+Use a fresh validation volume to exercise a real resumed transfer. This engine check is separate from the fixture-based browser suite and full application summary/Q&A checks. OCR remains optional.
+
+To check an existing labeled validation volume without making any pull request, use `--retained-only` instead of `--resume`. The command fails if the retained 7B artifact is missing:
+
+```bash
+python3 scripts/test-local-models.py --retained-only --volume ara-ollama-validation-existing --output /tmp/ara-local-thinking-result.json
+```
+
+## Agent skill and project records
+
+The installed local skill is `.agents/skills/pymupdf-pdf/SKILL.md`. Its executable parser supports Markdown, JSON, images and rough ruled-table output. It is independent of the application's parser. Generated output is ignored; the script has a pinned uv lockfile. Run the skill command from its directory or use `uv run --locked --script` with the parser path.
+
+Architecture, traceability, priorities and milestones: [implementation plan](implementation-plan.md). Exact API shapes: [API contract](api-contract.md). Actual development observations: [agent journal](agent-development-log.md). Stable issues: `issue_tracker/ARA-*.json`. Current delivery status and verification: [execution progress](execution-progress.md) and [verification record](verification-final.md).
+
+A live five-workflow recording is available locally at `docs/evidence/generated/live-demo/live-demo.webm`; generated evidence is ignored by Git. The [submission checklist](submission-checklist.md) supports the student's own reflection and final submission. The source lives in the private GitHub repository `friberk/ara`; `.github/workflows/ci.yaml` verifies every push to `main` and deploys it to the demo server when verification passes.
+
+## License and third-party dependencies
+
+Project source is licensed under AGPL-3.0; see LICENSE. MinIO community is archived and source-only. Its custom image builds pinned upstream source and retains license/source references. PyMuPDF, PyMuPDF4LLM and pymupdf-layout have AGPL/commercial licensing. LlamaIndex, tiktoken and pgvector-python use MIT; the pgvector extension uses the PostgreSQL License. Ollama and llama.cpp use MIT; curated model artifacts, including the Qwen3 embedding and reranker models, have separate Apache-2.0 licenses and are downloaded only at the user's request. See [third-party notices](third-party-notices.md) and [runtime provenance](../docker/ollama/README.md). Credentials, original uploaded papers, weights and generated private data are excluded from version control.

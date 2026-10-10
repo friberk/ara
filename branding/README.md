@@ -16,3 +16,12 @@ Do not commit the font file. After regenerating, update the inlined paths in `Ar
 ## PNG fallbacks
 
 `src/frontend/public/favicon-32.png` (32x32, light tile with rounded corners) and `apple-touch-icon.png` (180x180, opaque, square corners because iOS and Android apply their own mask) are rendered from `favicon.svg` with the frontend's Playwright Chromium. After `npm ci` in `src/frontend`, run `node branding/render_icons.mjs`. Commit the PNGs; no new dependencies.
+
+## README logo
+
+GitHub renders an SVG in `<img>` without the page's text colour, so `currentColor` would come out black on the dark theme. `ara-wordmark-light.svg` (near-black ink) and `ara-wordmark-dark.svg` (near-white ink) are copies of `ara-wordmark.svg` with a fixed fill, and the README picks one with `<picture>` and `prefers-color-scheme`. Regenerate them after changing the wordmark:
+
+```sh
+sed 's/fill="currentColor"/fill="#0a0a0a"/' branding/ara-wordmark.svg > branding/ara-wordmark-light.svg
+sed 's/fill="currentColor"/fill="#fafafa"/' branding/ara-wordmark.svg > branding/ara-wordmark-dark.svg
+```
