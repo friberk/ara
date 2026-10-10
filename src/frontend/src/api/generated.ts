@@ -260,6 +260,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/papers/{paper_id}/pdf/removal-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Pdf Removal
+         * @description What removing the paper's PDF changes; nothing changes (ARA-097).
+         */
+        get: operations["preview_pdf_removal_api_v1_papers__paper_id__pdf_removal_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Pdf
+         * @description Remove every PDF of the paper (services/pdf_removal.py); a repeat changes nothing.
+         */
+        delete: operations["remove_pdf_api_v1_papers__paper_id__pdf_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/papers/{paper_id}/fulltext": {
         parameters: {
             query?: never;
@@ -326,6 +366,26 @@ export interface paths {
         put?: never;
         /** Upload Pdf */
         post: operations["upload_pdf_api_v1_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facts
+         * @description The file facts the reader's PDF menu shows (ARA-097).
+         */
+        get: operations["facts_api_v1_documents__document_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1110,6 +1170,42 @@ export interface components {
             /** Answering */
             answering: boolean;
         };
+        /**
+         * DocumentDetail
+         * @description One PDF's file facts, for the reader's PDF menu (ARA-097).
+         */
+        DocumentDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** File Name */
+            file_name: string;
+            /** Page Count */
+            page_count: number | null;
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "uploading" | "processing" | "ready" | "failed";
+            /** Acquisition */
+            acquisition: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** EmbeddingProfileOut */
         EmbeddingProfileOut: {
             /** Key */
@@ -1267,6 +1363,11 @@ export interface components {
              * Format: date-time
              */
             added_at: string;
+            /**
+             * Pdf Removed
+             * @default false
+             */
+            pdf_removed: boolean;
         };
         /** Installation */
         Installation: {
@@ -1597,6 +1698,22 @@ export interface components {
             mode_note?: string | null;
             /** Indexes */
             indexes: components["schemas"]["RetrievalIndexOut"][];
+        };
+        /**
+         * PdfRemovalPreview
+         * @description What removing the paper's PDF changes; reading it changes nothing (ARA-097).
+         */
+        PdfRemovalPreview: {
+            /** Pdfs */
+            pdfs: number;
+            /** Summaries */
+            summaries: number;
+            /** Chats */
+            chats: components["schemas"]["ChatLink"][];
+            /** Active Jobs */
+            active_jobs: number;
+            /** Answering */
+            answering: boolean;
         };
         /** RebuildInput */
         RebuildInput: {
@@ -2570,6 +2687,66 @@ export interface operations {
             };
         };
     };
+    preview_pdf_removal_api_v1_papers__paper_id__pdf_removal_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PdfRemovalPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_pdf_api_v1_papers__paper_id__pdf_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_fulltext_api_v1_papers__paper_id__fulltext_get: {
         parameters: {
             query?: never;
@@ -2687,6 +2864,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    facts_api_v1_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetail"];
                 };
             };
             /** @description Validation Error */
