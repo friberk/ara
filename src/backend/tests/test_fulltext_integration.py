@@ -4,11 +4,20 @@ import asyncio
 from uuid import uuid4
 
 import httpx
+import pytest
+from pydantic import SecretStr
 from sqlalchemy import func, select
 
 from app.main import create_app
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Paper
+
+
+@pytest.fixture(autouse=True)
+def openalex_key(request):
+    # Retrieval requests need an OpenAlex key (ARA-087); tests without services skip it.
+    if "resources" in request.fixturenames:
+        request.getfixturevalue("resources").settings.openalex_api_key = SecretStr("fixture-key")
 
 
 async def seed_paper(resources):
@@ -115,9 +124,8 @@ async def test_fulltext_reads_saved_state_without_provider_requests(resources):
     async with app_client(resources) as client:
         response = await client.get(f"/api/v1/papers/{paper_id}/fulltext")
     assert response.status_code == 200
-    assert response.json()["availability"] == "unknown"
+    assert response.json()["api_key_configured"] is True
     assert response.json()["retrieval_job"] is None
-    assert response.json()["attempts"] == []
 
 
 async def test_fulltext_rejects_browser_url_and_unknown_paper(resources):
@@ -163,88 +171,6 @@ async def test_generic_retry_requires_new_fulltext_request(resources):
         response = await client.post(f"/api/v1/jobs/{job_id}/retry", json={})
     assert response.status_code == 409
     assert response.json()["code"] == "NEW_FULLTEXT_REQUEST_REQUIRED"
-
-
-async def test_fulltext_attempt_rejects_expired_lease(resources):
-    from datetime import timedelta
-
-    from app.models.fulltext import FullTextAttempt
-    from app.repositories.fulltext import record_attempt
-    from app.repositories.jobs import claim, now
-    from app.schemas.fulltext import DownloadResult, FullTextCandidate
-    from app.schemas.research import FullTextLocation
-
-    paper_id = await seed_paper(resources)
-    async with app_client(resources) as client:
-        accepted = (
-            await client.post(
-                f"/api/v1/papers/{paper_id}/retrieve-fulltext", json={"request_id": str(uuid4())}
-            )
-        ).json()
-    job_id = accepted["job_id"]
-    token = await claim(resources.sessions, job_id, 1)
-    async with resources.sessions() as session, session.begin():
-        job = await session.get(BackgroundJob, job_id)
-        job.lease_expires_at = now() - timedelta(seconds=1)
-    async with resources.sessions() as session, session.begin():
-        saved = await record_attempt(
-            session,
-            job_id=job_id,
-            generation=1,
-            lease_token=token,
-            ordinal=0,
-            candidate=FullTextCandidate(
-                provider="openalex",
-                external_id="W123",
-                source_label="OpenAlex",
-                url="https://arxiv.org/pdf/1",
-                location=FullTextLocation(),
-            ),
-            result=DownloadResult("blocked", response_status=403, reason="Download blocked."),
-        )
-        assert saved is False
-        assert await session.scalar(select(func.count()).select_from(FullTextAttempt)) == 0
-
-
-async def test_fulltext_attempt_persists_once_and_returns_safe_status(resources):
-    from app.models.fulltext import FullTextAttempt
-    from app.repositories.fulltext import record_attempt
-    from app.repositories.jobs import claim
-    from app.schemas.fulltext import DownloadResult, FullTextCandidate
-    from app.schemas.research import FullTextLocation
-
-    paper_id = await seed_paper(resources)
-    async with app_client(resources) as client:
-        accepted = (
-            await client.post(
-                f"/api/v1/papers/{paper_id}/retrieve-fulltext", json={"request_id": str(uuid4())}
-            )
-        ).json()
-        token = await claim(resources.sessions, accepted["job_id"], 1)
-        values = dict(
-            job_id=accepted["job_id"],
-            generation=1,
-            lease_token=token,
-            ordinal=0,
-            candidate=FullTextCandidate(
-                provider="semantic_scholar",
-                external_id="s2",
-                source_label="Semantic Scholar",
-                url="https://arxiv.org/pdf/1",
-                location=FullTextLocation(version="acceptedVersion"),
-            ),
-            result=DownloadResult("blocked", response_status=403, reason="Download blocked."),
-        )
-        for _ in range(2):
-            async with resources.sessions() as session, session.begin():
-                assert await record_attempt(session, **values)
-        status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
-        assert len(status["attempts"]) == 1
-        assert status["attempts"][0]["outcome"] == "blocked"
-        assert status["attempts"][0]["version"] == "acceptedVersion"
-        assert "url" not in status["attempts"][0]
-    async with resources.sessions() as session:
-        assert await session.scalar(select(func.count()).select_from(FullTextAttempt)) == 1
 
 
 async def test_readiness_rejects_previous_schema(resources):

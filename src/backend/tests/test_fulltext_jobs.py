@@ -1,6 +1,10 @@
-"""Retrieval executes against real isolated storage/database and the real child parser."""
+"""Retrieval executes against real isolated storage/database and the real child parser.
+
+PDFs come only from OpenAlex's content endpoint (ARA-087); the transport is mocked.
+"""
 
 import asyncio
+import json
 import subprocess
 import sys
 from datetime import timedelta
@@ -8,15 +12,22 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import func, select
 from test_fulltext_integration import app_client
 
-from app.integrations.pdf_download import PDFDownloader
+from app.integrations.openalex_content import ContentDownloader
 from app.models.jobs import BackgroundJob
 from app.models.research import ChatSession, Document, DocumentUploadRequest
 from app.repositories.jobs import claim, now
 from app.repositories.papers import save_canonical
-from app.schemas.research import FullTextLocation, SearchResult
+from app.schemas.research import SearchResult
+
+KEY = "fixture-openalex-key"
+SIGNED = (
+    "https://a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com"
+    "/openalex-pdfs/W123.pdf?X-Amz-Signature=fixture-signature"
+)
 
 
 @pytest.fixture
@@ -33,56 +44,59 @@ def original_pdf():
     )
 
 
-async def prepare(resources, original_pdf, *, urls=None, response=None):
-    urls = ["https://arxiv.org/pdf/one"] if urls is None else urls
+def stored_copy(original_pdf):
+    """OpenAlex's documented answer: a redirect from the content endpoint to signed storage."""
+
+    async def respond(request):
+        if request.headers["Host"] == "content.openalex.org":
+            return httpx.Response(302, headers={"Location": SIGNED})
+        return httpx.Response(200, stream=httpx.ByteStream(original_pdf))
+
+    return respond
+
+
+class Resolver:
+    async def resolve(self, _host, _port):
+        return ("8.8.8.8",)
+
+
+async def prepare(resources, original_pdf, *, stored=True, response=None, key=KEY, source=None):
+    """A saved paper, OpenAlex's free lookup and its content endpoint.
+
+    Returns the paper and the content-endpoint requests, one per download attempt.
+    """
+    resources.settings.openalex_api_key = SecretStr(key) if key else None
     async with resources.sessions() as session, session.begin():
         paper, _ = await save_canonical(
             session,
-            SearchResult(
-                provider="openalex",
-                external_id="W123",
-                title="Download fixture",
-                locations=[
-                    FullTextLocation(pdf_url=url, is_oa=True, version="acceptedVersion")
-                    for url in urls
-                ],
-            ),
+            source
+            or SearchResult(provider="openalex", external_id="W123", title="Download fixture"),
         )
         paper_id = paper.id
-    await resources.http.aclose()
-    resources.http = httpx.AsyncClient(
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(
-                200,
-                json={
-                    "id": "https://openalex.org/W123",
-                    "display_name": "Download fixture",
-                    "locations": [
-                        {"pdf_url": url, "is_oa": True, "version": "acceptedVersion"}
-                        for url in urls
-                    ],
-                },
-            )
+    lookups = []
+
+    def lookup(request):
+        lookups.append(request)
+        return httpx.Response(
+            200, json={"id": "https://openalex.org/W123", "has_content": {"pdf": stored}}
         )
-    )
 
-    class Resolver:
-        async def resolve(self, _host, _port):
-            return ("8.8.8.8",)
-
-    requests = []
+    await resources.http.aclose()
+    resources.http = httpx.AsyncClient(transport=httpx.MockTransport(lookup))
+    downloads = []
+    answer = response or stored_copy(original_pdf)
 
     async def respond(request):
-        requests.append(request)
-        if response:
-            return await response(request)
-        return httpx.Response(200, stream=httpx.ByteStream(original_pdf))
+        if request.headers["Host"] == "content.openalex.org":
+            downloads.append(request)
+        return await answer(request)
 
     await resources.pdf_downloader.aclose()
-    resources.pdf_downloader = PDFDownloader(
-        ["arxiv.org"], resolver=Resolver(), transport_factory=lambda: httpx.MockTransport(respond)
+    resources.pdf_downloader = ContentDownloader(
+        resolver=Resolver(), transport_factory=lambda: httpx.MockTransport(respond)
     )
-    return paper_id, requests
+    resources.lookups = lookups
+    return paper_id, downloads
 
 
 async def enqueue_and_claim(resources, paper_id, request_id=None):
@@ -105,21 +119,26 @@ async def state(resources, job_id):
         return await session.get(BackgroundJob, job_id)
 
 
-async def test_fulltext_pdf_creates_one_ingest_job(resources, original_pdf):
+async def test_a_stored_openalex_pdf_creates_one_ingest_job(resources, original_pdf):
     from app.integrations.storage import read_object
     from app.services.fulltext import run_fulltext_job
     from app.services.ingestion import run_ingest_job
 
-    paper_id, requests = await prepare(resources, original_pdf)
+    paper_id, downloads = await prepare(resources, original_pdf)
     args = await enqueue_and_claim(resources, paper_id)
     await run_fulltext_job(resources, *args)
     job = await state(resources, args[0])
     assert job.state == "completed" and job.result["outcome"] == "downloaded"
     async with resources.sessions() as session:
         document = await session.get(Document, job.result["document_id"])
-        assert document.acquisition["version"] == "acceptedVersion"
         assert await session.scalar(select(func.count()).select_from(Document)) == 1
         ingest = await session.get(BackgroundJob, job.result["ingest_job_id"])
+    assert document.acquisition["provider"] == "openalex"
+    assert document.acquisition["source"] == "content"
+    assert document.acquisition["work_id"] == "W123"
+    # Neither the API key nor the signed storage link is persisted anywhere.
+    persisted = json.dumps([document.acquisition, job.payload, job.result])
+    assert KEY not in persisted and "fixture-signature" not in persisted
     assert (
         await resources.storage_call(
             read_object,
@@ -136,27 +155,93 @@ async def test_fulltext_pdf_creates_one_ingest_job(resources, original_pdf):
     async with app_client(resources) as client:
         paper = (await client.get(f"/api/v1/papers/{paper_id}")).json()
         assert paper["document_status"] == "ready"
-    assert len(requests) == 1
+    assert len(downloads) == 1
+    assert [request.url.path for request in resources.lookups] == ["/works/W123"]
+
+
+async def test_a_semantic_scholar_paper_resolves_its_openalex_work_by_doi(resources, original_pdf):
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, downloads = await prepare(
+        resources,
+        original_pdf,
+        source=SearchResult(
+            provider="semantic_scholar", external_id="s2-paper", doi="10.1000/doi-only"
+        ),
+    )
+    args = await enqueue_and_claim(resources, paper_id)
+    await run_fulltext_job(resources, *args)
+    assert (await state(resources, args[0])).result["outcome"] == "downloaded"
+    assert [request.url.path for request in resources.lookups] == ["/works/doi:10.1000/doi-only"]
+    assert downloads[0].url.path == "/works/W123.pdf"
+
+
+async def test_no_stored_copy_contacts_no_other_host(resources, original_pdf):
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, downloads = await prepare(resources, original_pdf, stored=False)
+    args = await enqueue_and_claim(resources, paper_id)
+    await run_fulltext_job(resources, *args)
+    job = await state(resources, args[0])
+    assert job.state == "failed" and job.result["outcome"] == "not_stored"
+    assert downloads == []
+    async with resources.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(Document)) == 0
+
+
+async def test_a_job_without_a_key_downloads_nothing(resources, original_pdf):
+    """Given a queued job whose key was since removed, when it runs, then it stops at once."""
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, downloads = await prepare(resources, original_pdf)
+    args = await enqueue_and_claim(resources, paper_id)
+    resources.settings.openalex_api_key = None
+    await run_fulltext_job(resources, *args)
+    job = await state(resources, args[0])
+    assert job.state == "failed" and job.result["outcome"] == "api_key_required"
+    assert downloads == [] and resources.lookups == []
+
+
+@pytest.mark.parametrize(
+    ("status", "headers", "wait"),
+    [(429, {"Retry-After": "40"}, 40), (500, {}, None)],
+)
+async def test_lookup_refusals_finish_once_without_a_retry_loop(
+    resources, original_pdf, status, headers, wait
+):
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, downloads = await prepare(resources, original_pdf)
+    await resources.http.aclose()
+    resources.http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(status, headers=headers))
+    )
+    args = await enqueue_and_claim(resources, paper_id)
+    await run_fulltext_job(resources, *args)
+    job = await state(resources, args[0])
+    assert job.state == "failed" and job.generation == 1
+    assert job.result == {
+        "outcome": "rate_limited" if status == 429 else "unavailable",
+        "retry_after": wait,
+    }
+    assert downloads == []
 
 
 async def test_old_uuid_replays_denial_new_uuid_succeeds(resources, original_pdf):
     from app.services.fulltext import run_fulltext_job
 
     granted = False
+    stored = stored_copy(original_pdf)
 
-    async def respond(_request):
-        return (
-            httpx.Response(200, stream=httpx.ByteStream(original_pdf))
-            if granted
-            else httpx.Response(403)
-        )
+    async def respond(request):
+        return await stored(request) if granted else httpx.Response(503)
 
     paper_id, requests = await prepare(resources, original_pdf, response=respond)
     old_id = uuid4()
     args = await enqueue_and_claim(resources, paper_id, old_id)
     await run_fulltext_job(resources, *args)
     first = await state(resources, args[0])
-    assert first.state == "failed" and first.result["outcome"] == "blocked"
+    assert first.state == "failed" and first.result["outcome"] == "unavailable"
     granted = True
     new_args = await enqueue_and_claim(resources, paper_id)
     await run_fulltext_job(resources, *new_args)
@@ -169,37 +254,15 @@ async def test_old_uuid_replays_denial_new_uuid_succeeds(resources, original_pdf
     assert len(requests) == 2
 
 
-async def test_denied_candidate_falls_back_and_preserves_attempts(resources, original_pdf):
-    from app.services.fulltext import run_fulltext_job
-
-    async def respond(request):
-        return (
-            httpx.Response(401)
-            if request.url.path.endswith("first")
-            else httpx.Response(200, stream=httpx.ByteStream(original_pdf))
-        )
-
-    paper_id, _ = await prepare(
-        resources,
-        original_pdf,
-        urls=["https://arxiv.org/pdf/first", "https://arxiv.org/pdf/second"],
-        response=respond,
-    )
-    args = await enqueue_and_claim(resources, paper_id)
-    await run_fulltext_job(resources, *args)
-    async with app_client(resources) as client:
-        status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
-    assert status["retrieval_job"]["result"]["outcome"] == "downloaded"
-    assert [item["outcome"] for item in status["attempts"]] == ["access_required", "downloaded"]
-
-
 @pytest.mark.parametrize(("status", "outcome"), [(429, "rate_limited"), (200, "invalid_pdf")])
 async def test_access_failure_never_creates_invalid_document(
     resources, original_pdf, status, outcome
 ):
     from app.services.fulltext import run_fulltext_job
 
-    async def respond(_request):
+    async def respond(request):
+        if status == 200 and request.headers["Host"] == "content.openalex.org":
+            return httpx.Response(302, headers={"Location": SIGNED})
         return httpx.Response(
             status,
             headers={"Retry-After": "60", "Content-Type": "text/html"},
@@ -215,17 +278,6 @@ async def test_access_failure_never_creates_invalid_document(
         assert job.result["retry_after"] == 60
     async with resources.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(Document)) == 0
-
-
-async def test_missing_direct_link_finishes_without_ingestion(resources, original_pdf):
-    from app.services.fulltext import run_fulltext_job
-
-    paper_id, requests = await prepare(resources, original_pdf, urls=[])
-    args = await enqueue_and_claim(resources, paper_id)
-    await run_fulltext_job(resources, *args)
-    job = await state(resources, args[0])
-    assert job.state == "failed" and job.result["outcome"] == "no_pdf_link"
-    assert requests == []
 
 
 async def test_existing_ready_pdf_skips_network_and_preserves_history(resources, original_pdf):
@@ -258,10 +310,12 @@ async def test_manual_upload_supersedes_download(resources, original_pdf):
 
     started, release = asyncio.Event(), asyncio.Event()
 
-    async def respond(_request):
+    stored = stored_copy(original_pdf)
+
+    async def respond(request):
         started.set()
         await release.wait()
-        return httpx.Response(200, stream=httpx.ByteStream(original_pdf))
+        return await stored(request)
 
     paper_id, _ = await prepare(resources, original_pdf, response=respond)
     args = await enqueue_and_claim(resources, paper_id)
@@ -551,7 +605,7 @@ async def test_exhausted_recovery_finishes_and_retains_metadata(resources, origi
     assert requests == []
 
 
-async def test_overall_deadline_stops_slow_discovery(resources, original_pdf, monkeypatch):
+async def test_overall_deadline_stops_a_slow_lookup(resources, original_pdf, monkeypatch):
     from app.services import fulltext
 
     paper_id, requests = await prepare(resources, original_pdf)
@@ -638,67 +692,3 @@ async def test_retrieval_can_reuse_older_document_after_failed_replacement(resou
     assert (
         paper["active_document_id"] == str(good.document_id) and paper["document_status"] == "ready"
     )
-
-
-async def test_rate_limited_lookup_reports_the_providers_wait_not_an_outage(
-    resources, original_pdf
-):
-    """Given no listed PDF and a rate-limited Semantic Scholar lookup, when retrieval ends,
-    then it reports that provider's wait instead of a generic outage (ARA-084)."""
-    from app.services.fulltext import run_fulltext_job
-
-    paper_id, requests = await prepare(resources, original_pdf, urls=[])
-    async with resources.sessions() as session, session.begin():
-        from app.models.research import Paper
-
-        paper = await session.get(Paper, paper_id)
-        paper.doi = paper.normalized_doi = "10.1000/limited"
-
-    def respond(request):
-        if request.url.host == "api.semanticscholar.org":
-            return httpx.Response(429, headers={"Retry-After": "45"})
-        return httpx.Response(
-            200,
-            json={
-                "id": "https://openalex.org/W123",
-                "display_name": "Download fixture",
-                "doi": "https://doi.org/10.1000/limited",
-            },
-        )
-
-    await resources.http.aclose()
-    resources.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
-    args = await enqueue_and_claim(resources, paper_id)
-    await run_fulltext_job(resources, *args)
-    job = await state(resources, args[0])
-    assert job.state == "failed"
-    assert job.result == {"outcome": "rate_limited", "retry_after": 45}
-    assert "Semantic Scholar" in job.error_message
-    assert job.payload["discovery_warnings"], "lookup warnings must survive a no-candidate finish"
-    assert requests == []
-
-
-async def test_status_names_the_host_a_download_is_coming_from(resources, original_pdf):
-    """Given a download in progress, when status is read, then it names the source host so
-    the workspace can say where the PDF is coming from (ARA-084)."""
-    from app.services.fulltext import run_fulltext_job
-
-    started, release = asyncio.Event(), asyncio.Event()
-
-    async def respond(_request):
-        started.set()
-        await release.wait()
-        return httpx.Response(200, stream=httpx.ByteStream(original_pdf))
-
-    paper_id, _ = await prepare(resources, original_pdf, response=respond)
-    args = await enqueue_and_claim(resources, paper_id)
-    task = asyncio.create_task(run_fulltext_job(resources, *args))
-    try:
-        await asyncio.wait_for(started.wait(), 2)
-        async with app_client(resources) as client:
-            status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
-        assert status["retrieval_job"]["stage"] == "fetching_pdf"
-        assert status["source_host"] == "arxiv.org"
-    finally:
-        release.set()
-        await task

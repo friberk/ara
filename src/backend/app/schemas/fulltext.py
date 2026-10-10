@@ -1,37 +1,24 @@
-"""Shared full-text discovery/download values; PDF bytes are never serialized in the API."""
+"""Full-text retrieval values (OpenAlex content, ARA-087); PDF bytes never reach the API."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.jobs import JobStatus
-from app.schemas.research import FullTextLocation, Provider
 
 FullTextOutcome = Literal[
     "downloaded",
-    "access_required",
-    "blocked",
-    "not_found",
+    "not_stored",
+    "api_key_required",
     "rate_limited",
     "unavailable",
     "invalid_pdf",
     "unsafe_url",
-    "unsupported_source",
-    "no_pdf_link",
     "already_attached",
     "superseded",
 ]
-
-
-class FullTextCandidate(BaseModel):
-    provider: Provider
-    external_id: str
-    source_label: str
-    url: str
-    location: FullTextLocation
 
 
 @dataclass
@@ -39,7 +26,6 @@ class DownloadResult:
     outcome: FullTextOutcome
     data: bytes | None = None
     response_status: int | None = None
-    final_url: str | None = None
     reason: str = ""
     retry_after: int | None = None
 
@@ -60,27 +46,11 @@ class AutomaticFullText(BaseModel):
     job_id: UUID | None = None
 
 
-class FullTextAttemptView(BaseModel):
-    provider: Provider
-    source_label: str
-    version: str | None = None
-    is_oa: bool | None = None
-    license: str | None = None
-    response_status: int | None = None
-    outcome: FullTextOutcome
-    reason: str
-    checked_at: datetime
-
-
 class FullTextStatus(BaseModel):
     paper_id: UUID
-    availability: Literal["open_copy_reported", "publisher_link_only", "unknown"]
-    locations: list[FullTextLocation] = Field(default_factory=list)
+    # Without an OpenAlex API key nothing is downloaded; the workspace asks for an upload.
+    api_key_configured: bool
     retrieval_job: JobStatus | None = None
-    # Host of the copy the latest retrieval tried, so progress can name its source.
-    source_host: str | None = None
     document_id: UUID | None = None
     ingest_job_id: UUID | None = None
-    last_checked_at: datetime | None = None
-    attempts: list[FullTextAttemptView] = Field(default_factory=list)
     acquisition: dict | None = None
