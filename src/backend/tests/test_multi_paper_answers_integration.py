@@ -192,3 +192,55 @@ async def test_given_several_papers_when_asking_a_local_model_then_hosted_models
         await chat.prepare(resources, chat_id, body)
     assert (refused.value.code, refused.value.status) == ("MULTI_PAPER_LOCAL", 409)
     assert "hosted model" in refused.value.message
+
+
+async def test_given_papers_indexed_by_different_models_when_retrieving_then_one_model_spans_them(
+    resources, embeddings
+):
+    """Vectors of different models never meet: a paper not yet on the library model is searched
+    by keywords until its index is built, and the note says how many papers that was."""
+    from pydantic import SecretStr
+
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.pipeline import Scope, retrieve_evidence
+    from tests.support.evidence import CHUNK_SET
+
+    _, sparse_pdf, _ = await seed_structured(resources)
+    _, dense_pdf, _ = await seed_structured(
+        resources, title=DENSE_TITLE, sections=DENSE, profile="openai-3-small"
+    )
+    resources.settings.openai_api_key = SecretStr("http-fixture-only")
+    result = await retrieve_evidence(
+        resources,
+        scopes=[
+            Scope(sparse_pdf, CHUNK_SET, "Paper 1: A"),
+            Scope(dense_pdf, CHUNK_SET, "Paper 2: B"),
+        ],
+        preferred_profile=OPENAI,
+        queries=["BM25 recall"],
+        question=COMPARE,
+        budget=8000,
+        counter=TiktokenCounter(),
+    )
+    assert result.summary.mode == "hybrid" and result.summary.profile == OPENAI
+    assert {call["model"] for call in embeddings} == {"text-embedding-3-large"}
+    vector_lists = [item for item in result.trace["lists"] if item["retriever"] == "vector"]
+    found = {node for item in vector_lists for node, _, _ in item["results"]}
+    async with resources.sessions() as session:
+        from sqlalchemy import select
+
+        from app.models.research import DocumentChunk
+
+        dense_chunks = set(
+            map(
+                str,
+                (
+                    await session.scalars(
+                        select(DocumentChunk.id).where(DocumentChunk.document_id == dense_pdf)
+                    )
+                ).all(),
+            )
+        )
+    assert found and not found & dense_chunks
+    assert "Searched 1 of 2 papers by keywords" in result.summary.note
+    assert {str(p.document_id) for p in result.passages} == {str(sparse_pdf), str(dense_pdf)}

@@ -2,7 +2,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import type { Citation, Paper } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
-import { assistantMessage, chatRow, included, mount, paper, paper2, settings, userMessage } from './pane-test-kit'
+import { assistantMessage, chatRow, included, luna, mount, paper, paper2, settings, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -152,4 +152,19 @@ test('Given a new conversation, When a second paper is added with @, Then the fi
   await user.type(question, 'How do they compare?{Enter}')
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] }))
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c9'))
+})
+
+test('Given a local model selected in a chat over two papers, Then the composer asks for a hosted model before sending', async () => {
+  const local = { ...luna, key: 'ifm-local', provider: 'ollama', display_name: 'IFM local', reasoning_efforts: ['default'] }
+  mockApi({
+    'GET /features': { open_models: true },
+    'GET /models': { items: [local, luna] },
+    'GET /settings': { default_model: local.key, reasoning_effort: 'default' },
+    'GET /chats': { items: [chatRow('c1', both)] },
+    'GET /chats/c1/messages': { items: [] },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  expect(await screen.findByText('Chats over several papers need a hosted model. Choose one below.')).toBeVisible()
+  await user.type(screen.getByRole('textbox', { name: 'Question about these papers' }), 'Compare them')
+  expect(screen.getByRole('button', { name: 'Ask question' })).toBeDisabled()
 })
