@@ -37,7 +37,8 @@ function ModelDetails({ model }: { model: Model }) {
         <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums sm:grid sm:grid-cols-[6rem_7.5rem_1fr] sm:gap-x-2">
           {model.input_price_per_million != null && <span>Input <span className="text-foreground">{price(model.input_price_per_million)}</span></span>}{' '}
           {model.output_price_per_million != null && <span>Output <span className="text-foreground">{price(model.output_price_per_million)}</span></span>}{' '}
-          <span>Context <span className="text-foreground">{formatTokens(model.context_window)} tokens</span></span>
+          {/* On a phone the context takes its own line in every row, so the rows keep one shape. */}
+          <span className="max-sm:basis-full">Context <span className="text-foreground">{formatTokens(model.context_window)} tokens</span></span>
         </span>
       )}
     </>
