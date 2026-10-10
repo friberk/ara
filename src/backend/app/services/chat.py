@@ -43,7 +43,7 @@ from app.rag.citations import (
     normalize_source_markers,
     passage_citations,
 )
-from app.rag.indexing import effective_profile
+from app.rag.indexing import default_profile
 from app.rag.pipeline import evidence_ceiling, retrieve_evidence
 from app.repositories.jobs import now
 from app.repositories.local_models import use_held
@@ -202,7 +202,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
         )
         paper = await session.get(Paper, chat.paper_id)
         header = await paper_header(session, paper)
-        profile, _ = await effective_profile(session, paper)
+        profile = await default_profile(session)
         stored = await session.get(ModelConfiguration, "retrieval")
         reranker = RetrievalSettings.from_stored(stored.value if stored else None).reranker
         reranker = offered_reranker(resources.settings, reranker)

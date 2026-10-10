@@ -1,4 +1,7 @@
-"""Automatic PDF retrieval on save and on first workspace open (ARA-084), on real PostgreSQL."""
+"""Automatic PDF retrieval on save and on first workspace open (ARA-084), on real PostgreSQL.
+
+Retrieval uses only OpenAlex, so it needs an OpenAlex work or a DOI and an API key (ARA-087).
+"""
 
 import asyncio
 from datetime import timedelta
@@ -6,6 +9,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import func, select
 from test_fulltext_integration import app_client
 
@@ -14,25 +18,23 @@ from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Paper
 from app.repositories.jobs import now
 from app.repositories.papers import save_canonical
-from app.schemas.research import FullTextLocation, SearchResult
+from app.schemas.research import SearchResult
 
 pytestmark = pytest.mark.integration
 
 
-def openalex(pdf_url=None, doi=None, external_id="W700"):
+@pytest.fixture(autouse=True)
+def openalex_key(resources):
+    resources.settings.openalex_api_key = SecretStr("fixture-openalex-key")
+
+
+def openalex(doi=None, external_id="W700"):
     work = {
         "id": f"https://openalex.org/{external_id}",
         "display_name": "Automatic retrieval fixture",
         "doi": f"https://doi.org/{doi}" if doi else None,
         "authorships": [],
     }
-    if pdf_url:
-        work["best_oa_location"] = {
-            "pdf_url": pdf_url,
-            "is_oa": True,
-            "version": "acceptedVersion",
-            "source": {"type": "repository"},
-        }
     return work
 
 
@@ -64,10 +66,10 @@ async def save(client, external_id="W700"):
     return response.json()["id"]
 
 
-async def test_saving_a_listed_open_pdf_starts_one_durable_retrieval(resources):
-    """Given provider metadata listing an open PDF, when saved, then one job and its outbox
-    event commit with the paper, without a click."""
-    await serve(resources, openalex(pdf_url="https://arxiv.org/pdf/700"))
+async def test_saving_an_openalex_work_starts_one_durable_retrieval(resources):
+    """Given an OpenAlex work and an API key, when saved, then one job and its outbox event
+    commit with the paper, without a click."""
+    await serve(resources, openalex())
     async with app_client(resources) as client:
         paper_id = await save(client)
         status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
@@ -80,18 +82,61 @@ async def test_saving_a_listed_open_pdf_starts_one_durable_retrieval(resources):
         assert await session.scalar(select(func.count()).select_from(FullTextRequest)) == 1
 
 
-async def test_a_doi_alone_allows_discovery_but_no_identifier_starts_nothing(resources):
-    await serve(resources, openalex(doi="10.1000/discoverable"))
+async def test_a_doi_finds_the_openalex_work_but_a_bare_record_starts_nothing(resources):
+    """Given Semantic Scholar records, when saved, then a DOI qualifies and no DOI does not."""
+
+    def semantic(request):
+        doi = request.url.path.endswith("with-doi")
+        return httpx.Response(
+            200,
+            json={
+                "paperId": request.url.path.rsplit("/", 1)[-1],
+                "title": "Semantic fixture",
+                "externalIds": {"DOI": "10.1000/semantic"} if doi else {},
+            },
+        )
+
+    await resources.http.aclose()
+    resources.http = httpx.AsyncClient(transport=httpx.MockTransport(semantic))
     async with app_client(resources) as client:
-        await save(client)
-        assert len(await fulltext_jobs(resources)) == 1
-        await serve(resources, openalex(external_id="W701"))
-        await save(client, "W701")
+        for external_id in ("s2-with-doi", "s2-bare"):
+            response = await client.post(
+                "/api/v1/papers",
+                json={"provider": "semantic_scholar", "external_id": external_id},
+            )
+            assert response.status_code == 201, response.text
     assert len(await fulltext_jobs(resources)) == 1
 
 
+async def test_without_an_api_key_nothing_is_queued_or_requested(resources):
+    """Given no OpenAlex key, when a paper is saved, opened or retried, then no job starts and
+    the status says a key is missing."""
+    resources.settings.openalex_api_key = None
+    await serve(resources, openalex(doi="10.1000/no-key"))
+    async with app_client(resources) as client:
+        paper_id = await save(client)
+        opened = await client.post(f"/api/v1/papers/{paper_id}/retrieve-fulltext/automatic")
+        manual = await client.post(
+            f"/api/v1/papers/{paper_id}/retrieve-fulltext", json={"request_id": str(uuid4())}
+        )
+        status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
+    assert opened.json() == {"paper_id": paper_id, "job_id": None}
+    assert manual.status_code == 409 and manual.json()["code"] == "OPENALEX_API_KEY_REQUIRED"
+    assert status["api_key_configured"] is False and status["retrieval_job"] is None
+    assert await fulltext_jobs(resources) == []
+
+
+async def test_status_reports_the_key_without_provider_link_lists(resources):
+    await serve(resources, openalex())
+    async with app_client(resources) as client:
+        paper_id = await save(client)
+        status = (await client.get(f"/api/v1/papers/{paper_id}/fulltext")).json()
+    assert status["api_key_configured"] is True
+    assert not {"availability", "locations", "attempts", "source_host"} & set(status)
+
+
 async def test_duplicate_and_concurrent_saves_share_the_single_automatic_job(resources):
-    await serve(resources, openalex(pdf_url="https://arxiv.org/pdf/700"))
+    await serve(resources, openalex())
     async with app_client(resources) as client:
         identifiers = await asyncio.gather(*[save(client) for _ in range(4)])
         await save(client)
@@ -102,13 +147,13 @@ async def test_duplicate_and_concurrent_saves_share_the_single_automatic_job(res
 async def test_failed_automatic_retrieval_is_never_restarted_automatically(resources):
     """Given the automatic job failed, when the paper is saved or opened again, then no new
     job starts; a deliberate request with a fresh UUID still can."""
-    await serve(resources, openalex(pdf_url="https://arxiv.org/pdf/700"))
+    await serve(resources, openalex())
     async with app_client(resources) as client:
         paper_id = await save(client)
         (job,) = await fulltext_jobs(resources)
         async with resources.sessions() as session, session.begin():
             failed = await session.get(BackgroundJob, job.id)
-            failed.state, failed.result = "failed", {"outcome": "blocked"}
+            failed.state, failed.result = "failed", {"outcome": "not_stored"}
         await save(client)
         opened = await client.post(f"/api/v1/papers/{paper_id}/retrieve-fulltext/automatic")
         assert opened.status_code == 200
@@ -120,17 +165,16 @@ async def test_failed_automatic_retrieval_is_never_restarted_automatically(resou
     assert manual.status_code == 202 and manual.json()["job_id"] != str(job.id)
 
 
-async def legacy_paper(resources, *, pdf_url="https://arxiv.org/pdf/legacy", doi=None):
+async def legacy_paper(resources, *, provider="openalex", doi=None):
     """A metadata-only paper saved before automatic retrieval existed."""
     async with resources.sessions() as session, session.begin():
         paper, _ = await save_canonical(
             session,
             SearchResult(
-                provider="openalex",
+                provider=provider,
                 external_id=f"W{uuid4().int % 10**9}",
                 title="Legacy fixture",
                 doi=doi,
-                locations=[FullTextLocation(pdf_url=pdf_url, is_oa=True)] if pdf_url else [],
             ),
         )
         return str(paper.id)
@@ -155,7 +199,7 @@ async def test_opening_a_legacy_paper_starts_retrieval_once(resources):
 
 async def test_earlier_manual_attempts_attached_pdfs_and_bare_papers_are_left_alone(resources):
     attempted = await legacy_paper(resources)
-    bare = await legacy_paper(resources, pdf_url=None)
+    bare = await legacy_paper(resources, provider="semantic_scholar")
     attached = await legacy_paper(resources)
     async with resources.sessions() as session, session.begin():
         (await session.get(Paper, attached)).active_document_id = uuid4()

@@ -17,14 +17,27 @@
     "Given metadata the user edited, when enrichment runs, then it never overwrites the user's values.",
     "Given Settings, when the user picks OpenAlex or Semantic Scholar as the metadata source, then the choice persists and later enrichments use it; OpenAlex is the default.",
     "Given the user uploads from home, the library or a paper, when the upload starts, then they see inline progress and land in the paper workspace with one clear stage indicator; no confusing 'processing continues in the background' message, dead-end dialog or extra click remains.",
-    "Given several PDFs dropped on the library, when they upload, then each becomes its own paper with its own progress; a duplicate PDF opens the existing paper with a clear note instead of an error."
+    "Given several PDFs dropped on the library, when they upload, then each becomes its own paper with its own progress; a duplicate PDF opens the existing paper with a clear note instead of an error.",
+    "Given a PDF with an XMP packet, when it is processed, then its dc:title, dc:creator, DOI (prism:doi or dc:identifier), prism:publicationName and publication date are clues ranked above the Info dictionary, pass the same junk-title filter, and a malformed packet never fails ingestion.",
+    "Given a PDF uploaded without a target paper (home, library, multi-file library) whose identity matches a library paper (same DOI or arXiv ID from XMP, the page text or a registry lookup, or a title match under the strict rule), when it is identified, then the user sees that it matches that paper.",
+    "Given the matched library paper has no PDF, when the upload is identified, then it is attached to that paper: no duplicate paper remains, its processing and automatic summary continue on that paper, and the user lands there with a short note.",
+    "Given the matched library paper already has a PDF, when the upload is identified, then the user is asked whether to replace it (Replace PDF / Cancel); Replace makes the upload its active PDF with the existing replace semantics and no duplicate paper, Cancel discards the placeholder paper, document and stored original, and each row of a multi-file upload carries its own choice; no paid work starts while the choice is pending.",
+    "Given the identical file (same sha256) is already attached, when it is uploaded again, then the existing paper opens with a clear note.",
+    "Given a match found only later by the catalog lookup, when it is found, then the same indication and attach/replace choice appear on the new paper; never a silent duplicate.",
+    "Given an upload into a specific paper, when the PDF's DOI belongs to a different library paper, then the upload stays on the chosen paper and Details says plainly which paper owns that DOI.",
+    "Given a PDF on its way (automatic retrieval queued or running, or the document being read), when its paper is open, then the header badge says Getting PDF or Preparing PDF, the composer says questions open once the PDF is ready, and uploading is a secondary option during retrieval while staying the primary action otherwise."
   ],
   "test_cases": [
     "src/backend/tests/test_pdf_metadata.py: artifact/real titles, paper.dvi with a rotated arXiv stamp, other artifacts, unprinted Info title, printed Info title kept, embedded DOI over reference DOI, placeholder authors, one-size page keeps Info title.",
     "src/backend/tests/test_metadata_lookup.py: arXiv lookups and venue on both providers, Semantic Scholar arXiv identity check, title match endpoints, 404 as no match, 429 without Retry-After, acceptance rules (author, year, rejection, truncated title, reference DOI).",
     "src/backend/tests/test_metadata_enrichment_integration.py: DOI fill with provenance and source link, arXiv via Semantic Scholar plus setting GET/PUT/422, paper.dvi title search, below-threshold no_match, rate limit and outage retries with Retry-After and three attempts plus API retry, fallback to the other source, chosen source's no-match final, manual fields kept, DOI dedup with another paper, re-ingest and saved papers queue no lookup, stale delivery no-op, jobs API kind=metadata, duplicate upload flag and 409 details, file name while untitled.",
     "Frontend: components/upload (preparation steps, PreparationSteps live summary, UploadDropzone immediate upload/progress/retry/duplicate/conflict/cancel), library (multi-file drop, picker, oversized row, #upload area, empty state, Ready with lookup note, file-name rows), home (picker to workspace, duplicate drop with note, failure retry), workspace (stage list, source-agnostic gate, title refresh after lookup, Details replace, failed-lookup retry), settings metadata source, job labels.",
-    "Browser: src/frontend/e2e/upload.spec.ts (3 journeys) and the updated E2E-03 in workspace.spec.ts, for the lead's integration run."
+    "Browser: src/frontend/e2e/upload.spec.ts (3 journeys) and the updated E2E-03 in workspace.spec.ts, for the lead's integration run.",
+    "src/backend/tests/test_pdf_metadata.py: XMP title over a printed Info title with creators, venue and cover-date year (file dates ignored); XMP junk title filtered; XMP prism:doi and dc:identifier as the first DOI clue; malformed XMP.",
+    "src/backend/tests/test_metadata_lookup.py: the PDF's venue breaks a tie between equally good title matches.",
+    "src/backend/tests/test_metadata_enrichment_integration.py: a rejected artifact title with no printed title asks the saved default model and effort (mutation-checked) and seeds the lookup.",
+    "src/backend/tests/test_upload_match_integration.py: attach to a library paper without a PDF (no model call, automatic summary on that paper, placeholder redirects), pending choice with no pages, index, summary, metadata or model work, Replace with re-ingest and kept earlier version, Cancel removing rows and the stored original with safe repeats, late match from the lookup with the chat moving on attach, upload into a paper reporting the DOI owner, strict title-only match.",
+    "Frontend: features/workspace/upload-match.test.tsx (Replace, Cancel, late banner, redirect note, DOI owner, retrieval-in-progress badge/composer/upload, upload primary otherwise); library rows with per-row choices, earlier pending uploads, list refresh on settle."
   ],
   "status": "completed",
   "related_files": [
@@ -62,7 +75,15 @@
     "src/frontend/src/test/fake-xhr.ts",
     "src/frontend/e2e/upload.spec.ts",
     "docs/api-contract.md",
-    "README.md"
+    "README.md",
+    "src/backend/app/services/upload_match.py",
+    "src/backend/app/routes/uploads.py",
+    "src/backend/app/routes/research.py",
+    "src/frontend/src/components/upload/MatchDecision.tsx",
+    "src/frontend/src/components/upload/PendingMatches.tsx",
+    "src/frontend/src/hooks/queries/uploads.ts",
+    "src/frontend/src/features/workspace/JoinedRedirect.tsx",
+    "src/frontend/src/features/chat/question-gate.ts"
   ],
   "commits": [
     "f5a051f316600bdb5f8a22165f797a66caf66049",
@@ -73,9 +94,18 @@
     "f579061a9496bb6e98f98c82a0be8cceef081383",
     "aabe4265e60258e86adbeeb6e46809f24f9889bc",
     "176a15d2034d4cfb14264edeff1c04719303609b",
-    "8872525ec8592c1d8548219cd40035d3803ce833"
+    "8872525ec8592c1d8548219cd40035d3803ce833",
+    "6deef303afa8c7c420f1cbb4d63f1787e422f341",
+    "6fe3b6fb64f96ce32c03c75e1757bbf0b7a1ecbc",
+    "0df528e408e2a7162cdab2c76c7216bef5aa587b",
+    "6b01bf01d70eddbf1d385a604327c8ad98c960e5",
+    "9b53e7b01b19aa8051aea72485b597516ed086e1",
+    "5ed5c8b19059f1a0380fdc6e679536402d8bbdf0",
+    "e7567a7cc722902345b894625e22cd5e26a2ecf1",
+    "238104f2aa8f45ff8046847206654f7f578bf56d",
+    "2c7dde468995cac3a4fbd77529a796818104f026"
   ],
   "pull_requests": [],
-  "verification": "2026-10-09 on feat/ara-086-upload-metadata in isolated project ara-upload-test. Backend: 905 passed (baseline) -> 962 passed in 153.50s with Ruff clean (scripts/test-stack.py, 2:53.79 total). Frontend: npm run check passed with 501 tests (66 files, 20.05s) and build passed (2.35s; existing >500 kB chunk warning). Diagnosis: the user's paper.dvi paper (sec18-han.pdf, USENIX Security 2018) had a dvips Info title 'paper.dvi' and empty author; the new parser yields 'A Bad Dream: Subverting Trusted Platform Module While You Are Sleeping'. Live check on the isolated stack with the real OpenAlex/Semantic Scholar APIs: uploading that PDF from home opened the workspace in 87 ms, read it, and the lookup filled OpenAlex W2889518255 (authors, 2018, USENIX Security Symposium, abstract) about 11 s later without a reload; a synthetic arXiv-stamped PDF matched by arXiv ID, an unknown synthetic title kept local metadata, and a repeated PDF showed 'Already in your library'. src/frontend/e2e/upload.spec.ts passed 3/3 against that isolated live stack (port 5197, --no-deps); the full Playwright suite, including the updated E2E-03, is left to the lead's integration run on the fixture stack.",
+  "verification": "2026-10-09 on feat/ara-086-upload-metadata in isolated project ara-upload-test. Backend: 905 passed (baseline) -> 962 passed in 153.50s with Ruff clean (scripts/test-stack.py, 2:53.79 total). Frontend: npm run check passed with 501 tests (66 files, 20.05s) and build passed (2.35s; existing >500 kB chunk warning). Diagnosis: the user's paper.dvi paper (sec18-han.pdf, USENIX Security 2018) had a dvips Info title 'paper.dvi' and empty author; the new parser yields 'A Bad Dream: Subverting Trusted Platform Module While You Are Sleeping'. Live check on the isolated stack with the real OpenAlex/Semantic Scholar APIs: uploading that PDF from home opened the workspace in 87 ms, read it, and the lookup filled OpenAlex W2889518255 (authors, 2018, USENIX Security Symposium, abstract) about 11 s later without a reload; a synthetic arXiv-stamped PDF matched by arXiv ID, an unknown synthetic title kept local metadata, and a repeated PDF showed 'Already in your library'. src/frontend/e2e/upload.spec.ts passed 3/3 against that isolated live stack (port 5197, --no-deps); the full Playwright suite, including the updated E2E-03, is left to the lead's integration run on the fixture stack. Follow-up on the integrated branch (with ARA-083/084/085), 2026-10-09: backend 1013 passed in 188.26s with Ruff clean (baseline 998); frontend npm run check passed with 540 tests (73 files, 25.21s) and the build passed; two earlier runs under load average 17-18 timed out in unrelated suites and passed when re-run. Live check with the real OpenAlex API: the USENIX paper saved from OpenAlex, then its PDF uploaded from home, matched by the strict title rule and was attached (landing on the saved paper with a note); a byte-different copy in the library offered Replace PDF / Cancel while the library held one paper; Replace re-read it on that paper. The upload spec was rewritten for library matches and type-checked, but not run; the fixture-stack browser suite is the lead's.",
   "updated_at": "2026-10-09"
 }

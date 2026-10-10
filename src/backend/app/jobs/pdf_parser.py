@@ -10,6 +10,7 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
+from xml.etree import ElementTree
 
 # Without these the layout model's import hangs under the address-space limit (ARA-071 S2).
 THREAD_TUNING = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "2", "MALLOC_ARENA_MAX": "2"}
@@ -204,21 +205,59 @@ def page_title(page) -> str | None:
     return None
 
 
-def choose_title(info_title: str | None, printed: str | None, first_pages: str) -> str | None:
-    """A usable Info title wins only when the first pages print it; else the printed title."""
-    usable = info_title if info_title and not artifact_title(info_title) else None
-    if usable and (printed is None or squashed(usable) in squashed(first_pages)):
-        return usable
-    return printed or usable
+def choose_title(embedded: list[str | None], printed: str | None, first_pages: str) -> str | None:
+    """The first usable embedded title (XMP, then Info) that the first pages print; else the
+    printed title; else the first usable embedded one."""
+    usable = [title for title in embedded if title and not artifact_title(title)]
+    for title in usable:
+        if printed is None or squashed(title) in squashed(first_pages):
+            return title
+    return printed or next(iter(usable), None)
 
 
-def embedded_text(document, metadata: dict) -> str:
+DC = "http://purl.org/dc/elements/1.1/"
+RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+
+def xmp_fields(packet: str) -> dict:
+    """Clues from an XMP packet: dc title and creators, a DOI, the venue and the publication year.
+
+    A file's own dates (xmp:CreateDate and the like) are not publication dates and are ignored.
+    A malformed packet gives no clues rather than an error (ARA-086).
+    """
     try:
-        xmp = document.get_xml_metadata() or ""
+        root = ElementTree.fromstring(packet[:200_000].encode("utf-8"))
+    except (ElementTree.ParseError, ValueError):
+        return {}
+    fields = {}
+    for element in root.iter():
+        if not isinstance(element.tag, str) or not element.tag.startswith("{"):
+            continue
+        namespace, _, name = element.tag[1:].partition("}")
+        items = [" ".join(item.text.split()) for item in element.iter(f"{{{RDF}}}li") if item.text]
+        text = " ".join(storable("".join(element.itertext())).split())
+        prism = "prismstandard.org" in namespace
+        if namespace == DC and name == "title" and text:
+            fields.setdefault("title", storable(items[0] if items else text))
+        elif namespace == DC and name == "creator" and items:
+            fields.setdefault("creators", [storable(item) for item in items])
+        elif (namespace == DC and name == "identifier") or (prism and name == "doi"):
+            fields.setdefault("doi", text)
+        elif prism and name == "publicationName" and text:
+            fields.setdefault("venue", text)
+        elif prism and name in {"coverDate", "publicationDate", "coverDisplayDate"}:
+            year = re.search(r"\b(?:19|20)\d{2}\b", text)
+            if year:
+                fields.setdefault("year", int(year[0]))
+    return fields
+
+
+def xmp_packet(document) -> str:
+    try:
+        packet = document.get_xml_metadata()
     except Exception:
-        xmp = ""
-    fields = [metadata.get("subject"), metadata.get("keywords"), xmp[:200_000]]
-    return "\n".join(value for value in fields if isinstance(value, str))
+        return ""
+    return packet if isinstance(packet, str) else ""
 
 
 def extract(document) -> dict:
@@ -233,16 +272,23 @@ def extract(document) -> dict:
         return error("OCR_REQUIRED", "No readable text found. Upload a text PDF; OCR is disabled.")
     first = "\n".join(page["text"] for page in pages[:2])
     metadata = document.metadata or {}
+    packet = xmp_packet(document)
+    xmp = xmp_fields(packet)
     info_title = " ".join(storable(metadata.get("title") or "").split()) or None
-    title = choose_title(info_title, page_title(document[0]), first)
+    title = choose_title([xmp.get("title"), info_title], page_title(document[0]), first)
     author = storable(metadata.get("author") or "").strip()
+    names = [x.strip() for x in re.split(r";|\s+and\s+", author)] if author else []
     authors = [
         name
-        for name in (x.strip() for x in re.split(r";|\s+and\s+", author))
+        for name in (names if any(names) else xmp.get("creators", []))
         if name and not PLACEHOLDER_AUTHOR.fullmatch(name) and not re.search(r"[\d\\/@]", name)
     ]
-    # Publishers embed the paper's own DOI; one in the text may belong to a cited reference.
-    doi = DOI.search(embedded_text(document, metadata)) or DOI.search(first)
+    # Publishers embed the paper's own DOI (XMP, Info); one in the text may be a reference's.
+    embedded = [xmp.get("doi"), metadata.get("subject"), metadata.get("keywords"), packet[:200_000]]
+    doi = next(
+        (found for text in embedded if isinstance(text, str) and (found := DOI.search(text))),
+        None,
+    ) or DOI.search(first)
     arxiv = ARXIV.search(pages[0]["text"])
     year = re.search(
         r"(?:published|publication year|copyright|©)\s*[:(]?\s*((?:19|20)\d{2})\b",
@@ -258,9 +304,10 @@ def extract(document) -> dict:
         "metadata": {
             "title": title,
             "authors": authors,
-            "year": int(year[1]) if year else None,
+            "year": xmp.get("year") or (int(year[1]) if year else None),
             "doi": doi[0].rstrip(".,;) ").lower() if doi else None,
             "arxiv_id": arxiv[1] if arxiv else None,
+            "venue": xmp.get("venue"),
             "abstract": abstract[1].strip() if abstract else None,
         },
         "pages": pages,

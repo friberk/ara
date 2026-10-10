@@ -48,8 +48,8 @@ from app.integrations.tokens import (
 )
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.memory import ChatMemory, ChatTurnEmbedding
-from app.models.research import ChatMessage, ChatSession, Paper
-from app.rag.indexing import UNAVAILABLE, effective_profile
+from app.models.research import ChatMessage, ChatSession
+from app.rag.indexing import UNAVAILABLE, default_profile
 from app.repositories.jobs import continue_locked, enqueue, fence, now
 from app.schemas.retrieval import ChatMemoryOut, ChatMemoryState
 from app.services.context import (
@@ -447,7 +447,9 @@ async def maybe_enqueue_compaction(
     job = await enqueue(
         session,
         kind="compact_chat",
-        payload={"chat_id": str(chat_id), "through_message_id": through,
+        payload={
+            "chat_id": str(chat_id),
+            "through_message_id": through,
             "model": model,
             "effort": effort,
         },
@@ -727,9 +729,8 @@ async def run_embed_turn_job(resources, job_id, generation, token, payload) -> N
         pairs = turn_pairs(await chat_messages(session, answer.session_id)) if answer else []
         question = next((asked for asked, answered in pairs if answered.id == message_id), None)
         if question is not None:
-            # The paper's profile at embedding time, the same one its index will use.
-            chat = await session.get(ChatSession, answer.session_id)
-            profile, _ = await effective_profile(session, await session.get(Paper, chat.paper_id))
+            # The library model at embedding time, the same one the paper indexes use.
+            profile = await default_profile(session)
     if question is None:
         await settle(resources, job_id, generation, token, result={"skipped": True})
         return

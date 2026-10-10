@@ -17,6 +17,7 @@ vi.mock('./PdfViewer', async () => {
           {highlight?.claim && <p>{`Supporting “${highlight.claim}”`}</p>}
           <p>{`Zoom ${zoom}${navigation ? `, asked for page ${navigation.page}` : ''}`}</p>
           <button type="button" onClick={() => onHighlight('highlighted')}>Report passage found</button>
+          <button type="button" onClick={() => onHighlight('region')}>Report region outlined</button>
           <button type="button" onClick={() => onHighlight('page-only')}>Report passage not found</button>
         </div>
       )
@@ -58,15 +59,15 @@ const paper = {
 }
 const metadataOnly = { ...paper, document_status: 'metadata_only', active_document_id: null }
 
-test('Given a metadata-only paper the server does not retrieve automatically, Then the PDF gate and Details offer retrieval alongside manual attachment after asking once', async () => {
-  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'GET /papers/p1/fulltext': { paper_id: 'p1', availability: 'unknown', locations: [], attempts: [] }, 'POST /papers/p1/retrieve-fulltext/automatic': { paper_id: 'p1', job_id: null } })
+test('Given a metadata-only paper and no OpenAlex key, Then the PDF gate and Details offer the DOI link beside the upload without asking for retrieval', async () => {
+  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'GET /papers/p1/fulltext': { paper_id: 'p1', api_key_configured: false, retrieval_job: null } })
   const { user } = renderApp('/papers/p1')
-  expect(await screen.findByRole('button', { name: 'Find PDF' })).toBeVisible()
+  expect(await screen.findByRole('link', { name: 'Open the paper' })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
   expect(screen.getByRole('button', { name: 'Upload PDF' })).toBeVisible()
   await user.click(screen.getByRole('tab', { name: 'Details' }))
-  expect(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('button', { name: 'Find PDF' })).toBeVisible()
-  // ARA-084: a DOI allows discovery, so opening the workspace asks the server once; it started nothing here.
-  expect(calls.filter((call) => call.method === 'POST').map((call) => call.path)).toEqual(['/papers/p1/retrieve-fulltext/automatic'])
+  expect(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('link', { name: 'Open the paper' })).toBeVisible()
+  // ARA-087: without a key nothing can be downloaded, so nothing is requested.
+  expect(calls.some((call) => call.method === 'POST')).toBe(false)
 })
 
 function narrowScreen() {
@@ -122,7 +123,7 @@ test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then 
   const { user } = renderApp('/papers/p1')
   const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
   await user.upload(within(reader).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'paper.pdf', { type: 'application/pdf' }))
-  expect(await screen.findByText('Processing PDF')).toBeVisible()
+  expect(await screen.findByText('Preparing PDF')).toBeVisible()
   const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
   expect(within(steps).getByText('Uploaded')).toBeVisible()
   await waitFor(() => expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step'))
@@ -214,7 +215,7 @@ test('Given a ready paper, When a new PDF version is uploaded from Details, Then
   await user.click(await screen.findByRole('tab', { name: 'Details' }))
   const details = screen.getByRole('tabpanel', { name: 'Details' })
   await user.upload(within(details).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'new-version.pdf', { type: 'application/pdf' }))
-  expect(await screen.findByText('Processing PDF')).toBeVisible()
+  expect(await screen.findByText('Preparing PDF')).toBeVisible()
   const steps = await within(details).findByRole('list', { name: 'Preparation steps' })
   await waitFor(() => expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step'))
   expect(within(details).queryByText(/in the background/i)).not.toBeInTheDocument()
@@ -264,6 +265,16 @@ test('Given a citation, When the reader marks its passage, Then the outcome is a
   await user.click(await screen.findByRole('button', { name: 'Report passage found' }))
   expect(screen.getByText('Highlighted the cited passage on page 2.')).toHaveAttribute('role', 'status')
   expect(screen.queryByText('Couldn’t pinpoint the passage, so showing page 2.')).not.toBeInTheDocument()
+})
+
+test('Given the reader outlines the stored region instead of the text, Then it says so and does not claim a highlight', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('button', { name: 'Page 2' }))
+  await user.click(await screen.findByRole('button', { name: 'Report region outlined' }))
+  expect(screen.getByText('Outlined the cited region on page 2.')).toHaveAttribute('role', 'status')
+  expect(screen.getByText('Couldn’t find the exact text, so outlined the cited region on page 2.')).toBeInTheDocument()
+  expect(screen.queryByText('Highlighted the cited passage on page 2.')).not.toBeInTheDocument()
 })
 
 test('Given a chip that names its claim, When it asks for its source, Then the reader receives the claim with the citation', async () => {

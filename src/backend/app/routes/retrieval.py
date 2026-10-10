@@ -15,7 +15,6 @@ from app.models.retrieval import DocumentSection, RetrievalIndex
 from app.rag.indexing import (
     REBUILD,
     default_profile,
-    effective_profile,
     ensure_index,
     profile_status,
     reconcile_indexes,
@@ -26,8 +25,8 @@ from app.schemas.retrieval import (
     EmbeddingProfileOut,
     EmbeddingProfilePage,
     PaperRetrieval,
-    PaperRetrievalUpdate,
     RebuildInput,
+    ReindexEstimate,
     RerankerOut,
     RetrievalIndexOut,
     RetrievalSettings,
@@ -66,6 +65,7 @@ async def profiles(request: Request):
                     status=status,
                     unavailable_reason=reason,
                     local_model_key=local_key(settings, profile),
+                    price_per_million=float(profile.price_per_million),
                 )
             )
         rerankers = []
@@ -123,9 +123,47 @@ async def update_retrieval_settings(body: RetrievalSettings, request: Request):
             .on_conflict_do_update(index_elements=["key"], set_={"value": body.model_dump()})
         )
     if body.embedding_profile != previous:
-        # Papers that follow the default move to the new profile once it can embed.
+        # Every paper moves to the new model once it can embed; ready indexes keep serving.
         await reconcile_indexes(resources)
     return body
+
+
+@router.get("/retrieval/reindex-estimate", response_model=ReindexEstimate)
+async def reindex_estimate(profile: str, request: Request):
+    """Papers and tokens a switch to `profile` would embed, priced from stored chunk counts."""
+    chosen = embedding_profile(profile)
+    ready = (
+        select(RetrievalIndex.id)
+        .where(
+            RetrievalIndex.document_id == Document.id,
+            RetrievalIndex.profile == profile,
+            RetrievalIndex.chunk_set == Document.chunk_set,
+            RetrievalIndex.state == "ready",
+        )
+        .exists()
+    )
+    async with request.app.state.resources.sessions() as session:
+        documents = (
+            select(Document.id, Document.chunk_set)
+            .where(Document.status == "ready", Document.chunk_set.is_not(None), ~ready)
+            .subquery()
+        )
+        papers = await session.scalar(select(func.count()).select_from(documents))
+        tokens = await session.scalar(
+            select(func.coalesce(func.sum(DocumentChunk.token_count), 0)).join(
+                documents,
+                (DocumentChunk.document_id == documents.c.id)
+                & (DocumentChunk.chunk_set == documents.c.chunk_set),
+            )
+        )
+    price = float(chosen.price_per_million)
+    return ReindexEstimate(
+        profile=profile,
+        papers=papers,
+        tokens=tokens,
+        price_per_million=price,
+        estimated_cost_usd=tokens * price / 1_000_000,
+    )
 
 
 def percent(index: RetrievalIndex) -> int:
@@ -167,7 +205,7 @@ async def paper_retrieval(session, paper_id: UUID, settings) -> PaperRetrieval:
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
-    profile, source = await effective_profile(session, paper)
+    profile = await default_profile(session)
     document = (
         await session.get(Document, paper.active_document_id) if paper.active_document_id else None
     )
@@ -175,7 +213,6 @@ async def paper_retrieval(session, paper_id: UUID, settings) -> PaperRetrieval:
         paper_id=paper.id,
         document_id=document.id if document else None,
         effective_profile=profile,
-        source=source,
         parser=document.parser if document else None,
         chunk_count=0,
         section_count=0,
@@ -291,30 +328,6 @@ async def indexable_document(session, paper: Paper) -> Document | None:
     return document
 
 
-@router.put("/papers/{paper_id}/retrieval", response_model=PaperRetrieval)
-async def update_paper_retrieval(paper_id: UUID, body: PaperRetrievalUpdate, request: Request):
-    resources = request.app.state.resources
-    if body.profile is not None and open_models.open_profile(
-        resources.settings, embedding_profile(body.profile)
-    ):
-        raise open_models.disabled(open_models.CHOOSE_SEARCH)
-    intent = {"paper_id": str(paper_id), "action": "profile", "profile": body.profile}
-    async with resources.sessions() as session, session.begin():
-        paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
-        if paper is None:
-            raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
-        if previous := await replayed(session, body.request_id, intent):
-            return previous
-        paper.retrieval_profile = body.profile
-        document = await indexable_document(session, paper)
-        if document is not None:
-            profile, _ = await effective_profile(session, paper)
-            await ensure_index(session, document.id, profile)
-        response = await paper_retrieval(session, paper_id, resources.settings)
-        await remember(session, body.request_id, intent, response)
-        return response
-
-
 @router.post("/papers/{paper_id}/retrieval/rebuild", response_model=PaperRetrieval, status_code=202)
 async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput, request: Request):
     intent = {"paper_id": str(paper_id), "action": "rebuild"}
@@ -330,7 +343,8 @@ async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput, request: R
             raise AppError(
                 409, "DOCUMENT_NOT_INDEXABLE", "Upload and process a PDF before rebuilding."
             )
-        profile, _ = await effective_profile(session, paper)
+        profile = await default_profile(session)
+        # A local library model while open models are off cannot embed (ARA-090).
         if open_models.open_profile(resources.settings, PROFILES[profile]):
             raise open_models.disabled(open_models.CHOOSE_SEARCH)
         await ensure_index(session, document.id, profile, rebuild=True)

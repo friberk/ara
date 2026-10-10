@@ -25,6 +25,7 @@ from app.routes.local_models import router as local_models_router
 from app.routes.metadata import router as metadata_router
 from app.routes.research import router as research_router
 from app.routes.retrieval import router as retrieval_router
+from app.routes.uploads import router as uploads_router
 from app.services.dispatcher import dispatcher_loop
 from app.services.health import readiness
 from app.services.reindex import prepare_search
@@ -155,6 +156,7 @@ def create_app(
     app.include_router(history_router)
     app.include_router(retrieval_router)
     app.include_router(metadata_router)
+    app.include_router(uploads_router)
     return app
 
 

@@ -927,6 +927,167 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
 - **A correction.** The user assumed OpenAI's small/medium/large embeddings are compatible. They are not mutually compatible: there is no "medium"; small is 1536-dimensional and large 3072-dimensional; and separately trained models produce different vector spaces even at equal length. One index needs one model, and switching re-embeds.
 - **ARA-088's design.** It now follows the industry pattern: one shared index filtered by document metadata, hybrid retrieval with RRF and reranking, per-document coverage, and LlamaIndex-style sub-question decomposition for comparisons. It favours a library-wide embedding model over per-paper overrides.
 
+**User decisions on embeddings and ARA-088 (2026-10-09).**
+- **Embedding model.** One library-wide embedding model replaces the per-paper choice. OpenAI small and large are both offered, with a clear warning that switching re-embeds the whole library (ARA-091, run in parallel with ARA-090).
+- **ARA-088 timing.** It starts after ARA-090 and ARA-091 land.
+- **Reader tabs.** A citation to another paper opens that PDF in a closable reader tab.
+- **Routing.** A multi-paper chat's URL uses the first paper in its list.
+- **Code check.** The lead confirmed embeddings are dimensionless HALFVEC with document-scoped exact scans, so the small profile needs no ANN index change.
+
+## 2026-10-09 — ARA-087 OpenAlex-only PDF retrieval
+
+The lead resumed the ARA-084 agent for ARA-087 in worktree `openalex-pdf` (branch `feat/ara-087-openalex-pdf`, off the integration branch with ARA-083/084/085). The user had decided: "We will use OpenAlex's thing. If it is not available on OpenAlex or behind Paywall we will present the DOI link to users and they will have to manually upload." `.env` held no OpenAlex or Semantic Scholar key. ARA-086 still owned `academic.py`, ingestion metadata and the upload UI.
+
+The OpenAlex facts were checked against the documentation and two unauthenticated probes. help.openalex.org documents the content endpoint (`content.openalex.org/works/{id}.pdf?api_key=`), the `has_content`/`content_urls` work fields, the 429 and `X-RateLimit-*` headers (with `X-RateLimit-Reset` in seconds until midnight UTC), and the R2 endpoint `a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com` with bucket `openalex-pdfs`. The pages disagree on corpus size and keyless allowance. The content endpoint answered `401 {"error":"API key required"}` without a key. A free DOI lookup (cost 0 in `X-RateLimit-Cost-USD`) returned `has_content {pdf: true}` and `content_urls`; the arXiv DOI of "Attention Is All You Need" resolved to a work whose primary DOI differs, so lookups trust OpenAlex's resolution rather than requiring DOI equality. The redirect to signed storage could not be observed without a key. The allowed storage hosts are therefore the documented R2 endpoint in path and virtual-host style, without wildcards, and remain unverified live.
+
+Decisions:
+- A new `integrations/openalex_content.py` holds `stored_work` (calling `AcademicSearch.request` unchanged for the free lookup) and `ContentDownloader`. The downloader sends requests straight to the pinned `PublicPDFTransport`, so no httpx client logs a URL carrying the key or a signature. The key goes only to `content.openalex.org`, including after a merged-work redirect. Redirects to any other host, or over plain HTTP, end `unsafe_url`.
+- Outcomes are `not_stored`, `api_key_required`, `rate_limited` (wait from `Retry-After`, else `X-RateLimit-Reset`, capped at a day), `unavailable`, `invalid_pdf` and `unsafe_url`. Lookup failures finish the job once instead of entering the job retry path.
+- Without a key, nothing is queued, the manual request returns 409 and the status reports `api_key_configured: false`.
+- Deleted as dead code: the host allowlist (config, Compose, `.env.example`), `pdf_download.py`, `fulltext_discovery.py`, attempt recording, the status fields `availability`/`locations`/`attempts`/`last_checked_at`/`source_host`, `DownloadResult.final_url`, the browser PDF, publisher and Semantic Scholar links, Find/Get PDF, VPN guidance, and the tests and fixtures for them. Old acquisition JSON still renders, and unknown old outcomes get a generic message with the DOI link.
+
+Red → green, in order:
+1. The 32 tests in `tests/test_openalex_content.py` failed with `ModuleNotFoundError: No module named 'app.integrations.openalex_content'`; all passed after the downloader was written. Six lookup tests then failed with `ImportError: cannot import name 'stored_work'` and passed after `stored_work`.
+2. Rewritten `test_fulltext_jobs.py`: 18 failed, 6 passed, including `assert 'unavailable' == 'downloaded'` and `'no_pdf_link' == 'api_key_required'`. After the service rewrite, the deletions and the resource wiring, it and the content tests passed (63).
+3. `test_automatic_fulltext_integration.py`: a keyless save still queued (`{'job_id': '…'} != {'job_id': None}`), `KeyError: 'api_key_configured'`, and the duplicate-save test found no job (`assert 0 == 1`). All passed after the key gate, the `findable` rule and the new status.
+4. Compose infrastructure: `'' is not true` (no fixture key) and `'FULLTEXT_ALLOWED_HOSTS' unexpectedly found`; both passed once Compose dropped the policy and the browser stack set a fixture key.
+5. Fixture server: `404 != 401`, `(404, None) != (429, '2')` and others; 25 fixture tests passed after the rewrite.
+6. Frontend: `FullTextAccess.test.tsx` and `fulltext-copy.test.ts` failed 14 of 20. Going green exposed a real defect: the DOI fallback rendered while the status query was still pending, which would flash the fallback before automatic retrieval started and dropped the key note. The fix renders nothing until the status arrives. The ARA-084 workspace test failed on the removed "Find PDF" button and was rewritten for the keyless DOI case. A screenshot then showed "Try again in 60 minutes" for a 3,598-second wait. A new case failed with `Expected "1 hour" Received "60 minutes"` and was fixed (5f357c7).
+
+Errors and corrections: the first red run of the rewritten Compose test used `assertNotIn` on the composed environment, so its failure printed every variable value, including the developer's hosted API key from the worktree `.env`, into local tool output. Nothing was written to files or commits. The assertions now compare names only. Whether to rotate that key is the user's call. A Python mock server could not accept connections on this macOS host, so the visual check reused the Node mock and the worktree Vite server on spare ports. Pre-existing formatter drift in unrelated files was left alone.
+
+Verification: isolated backend `ara-oapdf-test` passed Ruff and 916 tests in 156.95 s (baseline 941 in 157.33 s; old downloader, discovery and attempt tests deleted, 39 content/lookup tests added). Frontend `npm run check` passed: strict tsc, ESLint and 506 tests in 69 files (25.03 s). `npm run build` passed. Fixture tests passed 25, infrastructure 15, and the OpenAPI contract was regenerated. `e2e/fulltext.spec.ts` was rewritten for content, limit-then-retry, spent allowance, unusable/unsafe links and the 390 px DOI fallback, but not run (shared fixed ports).
+
+Not verified: a live download with the user's key, the real redirect host and status, real 429 headers, per-download cost, and whether `content_urls`/`has_content` ever disagree with the content endpoint. No merge, rebase or push.
+
+## 2026-10-09 — ARA-089 obvious and robust citation highlights
+
+**Scope.** Frontend only, on `feat/ara-089-citation-highlight`, in `citation-region.ts`, `PdfViewer.tsx`, `PdfReader.tsx`, `pdf-viewer.css`, `index.css` and their tests. No backend change.
+
+**Decisions:**
+- **Fallback order** is text match, then the stored boxes, then page-only. The new outcome `'region'` reads "Outlined the cited region on page N." Its visible note says the exact text could not be found.
+- **Box conversion.** I checked the real conventions before writing the unit tests. For PDFs made with PyMuPDF (plain, CropBox, rotated 90/180/270), PyMuPDF block boxes are relative to the CropBox and are NOT rotated with the page. A rotated page therefore needs the rotation applied. Each point goes to PDF user space (`view[0] + x`, `view[3] - y`), then through pdf.js `viewport.convertToViewportPoint`, which handles rotation and offset. The result is stored as percentages of the page.
+- **Percentages mean zoom needs no re-measuring.** The outline is an absolutely positioned child of the page wrapper, so it stays aligned at any zoom.
+- **Context styling.** The earlier test "context lines carry no tint" was a deliberate decision about stripes on the 3,200-character chunk. I kept its intent (no background on context) and replaced the test. Context now gets a thin dotted underline, which is `text-decoration`, not a background.
+- **Strong highlight.** It uses the full `--evidence` tint plus a 2 px inset edge line. The new token `--evidence-edge` (oklch 0.58 0.13 75) measures 4.4:1 on white. Pages stay white paper in both themes, so the token has one value, as `--evidence` does.
+
+**Red → green (observed):**
+- `citation-region.test.ts` (7 tests) first failed with `Failed to resolve import "./citation-region"`. The next run failed with `TypeError: PageViewport is not a constructor`, because pdfjs-dist exports `PageViewport` as a type only. The test now uses a small replica of the scale-1 transform. The replica was checked against the real viewport in a scratch node run. It then went green.
+- `pdf-viewer-css.test.ts`: 4 new or changed tests failed, e.g. `expected '/* PDF reader (ARA-037). Pages stay w…' to match /\[data-citation-region\]…/`. They went green after the CSS and token change.
+- `PdfViewer.test.tsx` region block: 7 of 10 failed, e.g. `expected "vi.fn()" to be called with arguments: [ 'region' ]`. After implementing, 3 still failed, and each was fixed:
+  - `expected '10.000000000000005%' to be '10%'`, fixed by rounding percentages;
+  - a redraw test (`expected <div data-citation-region …> not to be <div …>`), fixed by keying outlines by jump nonce;
+  - `expected "vi.fn()" to be called 1 times, but got 2 times`. This was a test bug: the zoom test passed a new `highlight` object on each render, which restarts the jump. It now passes a stable one.
+- **Test-after.** The `workspace.test.tsx` test for the region copy was written after `PdfReader.tsx` was changed, so it passed immediately. It was not run red.
+
+**Errors and corrections:**
+- `npm run check` failed lint (`react-hooks/set-state-in-effect`) on my first clearing approach. I replaced it by hiding outlines whose nonce differs from the current jump.
+- `sed` with `|` in the replacement failed for the debug patch. I used a Python edit instead.
+- `nohup` could not detach under the harness. I started Vite as a plain background job and killed it at the end.
+
+**Visual verification** (Vite on port 5191, read-only against the user's dev API, Playwright Chromium, light and dark; screenshots are in the scratchpad and not committed):
+- **Highlight.** The strong sentences are a clearly visible amber with an edge line, and the context lines have a dotted underline. Both are readable on dense pages.
+- **Centring.** The passage centre was 0 px from the reader centre after settling on all 12 cold and warm clicks across the 3 papers. It is clamped when the passage is near the very top (page 1: -189 and -319 px). The ticket's claim that the reader scrolls only to the page did not reproduce. `markPage` already centred the first strong mark. What looked wrong in the screenshots was most likely the smooth scroll still moving: the offset reads about -170 to -330 px at 300 ms and 0 by 1.5 s.
+- **Box fallback.** I forced text matching to fail with a local, uncommitted toggle, since reverted. Stored boxes were outlined on pages 1, 2, 3, 7 and 15 of 3 papers, aligned with the text blocks. The paper "Attention Is All You Need" has no boxes on its chat citations (`bboxes: []`, older chunks), so those correctly stayed page-only. The other two papers' chats carry boxes on every citation (15 of 15 and 8 of 8).
+- **Clean and stable.** A second citation cleared the first (marks and outlines). After zooming twice, the outline and marks kept their page percentage (50.82 % and 59.44 % from the left), and the passage stayed in view (about 100 px off-centre).
+- **Real-PDF geometry.** PDFs made with PyMuPDF (plain, cropped, rotated 90/180/270, cropped and rotated) put the pdf.js text baseline inside the converted region in all 6 cases.
+
+**Verification:** `npm run check` passed with 73 files and 551 tests, and `npm run build` passed with the existing over-500 kB warning.
+
+**Open:**
+- No rotated PDF in the app.
+- Cited boxes sprawl across several blocks for a 3,200-character chunk, so the outline shows the whole chunk, not the claim's sentence. Only the first box is centred.
+- A citation spanning pages is text-matched on its first page only.
+
+**Fade-out (user request after the first round: "it stuck forever").**
+- **Behaviour.** A highlight pulses, holds for `HOLD_MS` (4 s), fades for `FADE_MS` (1.5 s), then is removed. The constants are in `highlight-lifetime.ts`.
+  - Marks, context underlines and outlines fade through CSS transitions, driven by `data-citation-fade="out"` on the reader. The transition is declared only in the fade state, so highlights still appear instantly.
+  - Under reduced motion the attribute is never set, and the highlight is removed after the same hold.
+  - At the end of the fade the same clean-up as a new citation runs. The request is marked `expired`, so a text layer redrawn by a zoom cannot bring the highlight back.
+  - A re-click stops the old timers first.
+  - Hovering a mark pauses the countdown, with the time left kept. Leaving resumes it. Arriving during the fade restores full strength and gives about 1 s once the pointer leaves. Outlines let the pointer through, so hovering one is a rectangle test on `pointermove`.
+- **Red first (fake timers).** 11 new `PdfViewer` tests failed on the real assertions: `expected null to be 'out'` and `expected [ …(3) ] to deeply equal []`. The first run before the constants file existed failed with `Failed to resolve import "./highlight-lifetime"`. They went green after the implementation.
+- **CSS.** The fade-state rule test failed first with `expected '' to match /background-color:\s*transparent/`.
+- **Corrections.** The new transparent-background fade rule tripped the older "context has no background" test. I narrowed that regex to "no non-transparent background". The Page stub in the test now takes `width` as a dependency to simulate a zoom redraw.
+- **Test flakiness.** One full `npm run check` under machine load showed 4 failed files (4 tests). I did not capture which. A re-run of the whole suite passed, with 73 files and 564 tests.
+- **Live check** (Vite on port 5191, read-only):
+  - **Hold:** at 2.5 s there were 5 strong and 8 context marks, with the full tint `oklch(0.93 0.13 96 / 0.75)`.
+  - **Fade:** at about 4.8 s the fade state was on, with the tint at about 0.26 alpha.
+  - **After:** at about 7 s no marks remained, and the screenshot shows a clean page except for the PDF's own link boxes.
+  - **Hover:** with the pointer on a mark for 8.8 s the highlight stayed. After the pointer left, the fade began about 3 s later and the highlight was gone by 6.5 s.
+
+### Follow-up: XMP, the LLM reversal, library matching and retrieval wording
+
+After the first round, the lead fast-forwarded the branch to the integration branch, which already contained ARA-083, ARA-084 and ARA-085. The follow-up was built on that state. Its baseline was 998 backend tests (that run also picked up the first, unfinished XMP tests) and 530 frontend tests.
+
+**Scope changes from the user, relayed by the lead:**
+- Read XMP.
+- No GROBID.
+- Remove LLM metadata extraction. The user then reversed this ("Let's keep the LLM based metadata extraction intact then. I think it makes sense."). Nothing had been removed, so nothing needed restoring.
+- Keep the LLM step on the saved default model and effort.
+- Match uploads to library papers, with the user's request: "if there is the same paper on the library let's indicate the user there is match. If that one on the library has no PDFs attached apply the PDF, if there is PDF attached ask user to replace."
+- From ARA-084's agent:
+  - name the processing view without a source;
+  - demote uploading while automatic retrieval runs;
+  - say a PDF is on its way in the header badge and the composer.
+- ARA-087 (OpenAlex-only retrieval) was noted, so no UI was built around publisher or VPN states.
+
+**Decisions:**
+- **XMP ranking.** The XMP `dc:title` ranks above the Info title. Both pass the junk filter and must be printed on the first pages to beat the printed title. `dc:creator` fills a missing author. `prism:doi` or `dc:identifier` is the first DOI clue. `prism:publicationName` becomes a venue clue that breaks ties between title matches. Cover and publication dates give the year; file dates never do.
+- **LLM step and catalog lookup.** The inline LLM step keeps its gating. The catalog lookup runs after it and reads the LLM's title and DOI as clues, so the order is unchanged. When a new upload matches a library paper by local identifiers, the LLM step is skipped. That paper already has its bibliography, and the pending case must not spend money. This narrows, not widens, when the model runs. The LLM provenance still records `settings.default_model` rather than the saved default it actually used; that predates this ticket and was left unchanged.
+- **Matching.**
+  - Only uploads without a target paper are matched; the ingest payload carries `new_paper`.
+  - Identity checks run in order: DOI, then arXiv DOI, then the strict title rule.
+  - No PDF on the matched paper: the upload is attached in the ingest commit, so ARA-084's automatic-summary hook fires for that paper (`active_document_id` equals the document).
+  - A PDF on the matched paper: ingestion stops before storing pages. The document stays `processing` and is never marked ready, so the summary hook, index reconciliation (which covers ready documents only) and the catalog lookup are never reached.
+  - Replace re-ingests the document on the library paper, so all paid work flows through the normal ready transition after the choice.
+  - Cancel deletes the placeholder, its document by cascade, and the stored original.
+- **Late matches.** A late match records the same pending state. Attaching a document that is already ready indexes it for its new paper and calls `queue_automatic_summary` once. Its chats and summaries move with it.
+- **Storage of match state.** State is keyed rows in `model_configurations`: `upload_match:`, `paper_redirect:` and `pdf_doi_owner:`. No migration was needed.
+- **Visibility of pending uploads.** Pending placeholders leave `GET /papers`, so the library, sidebar and picker do not show them, and appear under `GET /uploads/matches` instead. While a placeholder is still processing, before its match is known, it does appear as a new paper.
+- **Wording.** The processing badge reads "Preparing PDF". While retrieval runs, the header reads "Getting PDF", the composer reads "You can ask questions once the PDF is ready.", and the dropzone becomes "Upload your own copy instead". The edits to `ConversationComposer`'s callers were limited to the gate argument.
+
+**Red → green:**
+- **XMP:** `'Module While... Are Sleeping' == 'A Bad Dream:...'` (the Info title had won) and `KeyError: 'venue'`. The DOI-from-XMP tests passed at once, because the raw packet was already scanned for a DOI.
+- **Venue tie-break:** `TypeError: Clues.__init__() got an unexpected keyword argument 'venue'`.
+- **LLM characterization test.** The test pinning the saved default model and effort passed at once, because the behaviour already existed. Hardcoding the settings default made it fail with `'gpt-5.6-luna' == 'gpt-5.6-terra'`, and the original was restored.
+- **Matching:** 7 failed and 1 passed. The failures included the model being called (`assert [{'input': 'E...6-luna', ...}] == []`) and `'PaperDetail' object has no attribute 'upload_match'`.
+- **One intended behaviour change.** The old DOI-dedup test expected a new upload of a library paper to stay a duplicate. It now covers a new version uploaded into an existing paper, which keeps its target and reports `pdf_doi_owner`.
+- **Frontend:** 8 failed. The failures included `Unable to find … This PDF matches …`, `… role="region" and name "Library match"`, `… Getting PDF` and `… role="region" and name "Needs your choice"`.
+- **Live-check finding.** The live check showed the library still listing the placeholder as "Processing PDF" after it had joined a paper. A test for the list refreshing on settle went red (`Unable to find … Preparing PDF`), then green once settling refreshed every paper query.
+
+**Agent process errors:**
+- A new test name exceeded the line length; the just-made local commit was amended before anything else used it.
+- A row check treated mockApi's empty-collection default as a redirected paper. Real payloads always carry `id`, and the check now requires one.
+- Two full frontend runs on a machine with load average 17–18 timed out in unrelated suites and in the first lazy route load of the new test file. The failing files passed when run alone and in repeated runs, and the new file's first route wait was lengthened.
+
+**Live check** (isolated stack, real OpenAlex, the user's PDF copied read-only from `ara` and removed afterwards):
+- The USENIX paper was saved from OpenAlex, then the PDF was uploaded from home. It matched by the strict title rule (OpenAlex's lowercase title against the printed one, plus the surname Han) and was attached. The browser landed on the saved paper with the note.
+- A byte-different copy uploaded in the library showed "Matches “A bad dream…”, which already has a PDF" with Replace PDF and Cancel, while the API listing held one paper.
+- Replace re-read the copy on the saved paper, and the library still held one paper.
+
+**Crossed messages.** The lead's resume message ("library matching not yet implemented") was sent before the report above. The branch had not been reset, and matching, the retrieval wording and the saved-default LLM test were already on it (`9b53e7b`, `5ed5c8b`, `e7567a7`, `238104f`, `0df528e`).
+- **One further change.** The composer for a paper whose PDF is being read used to say "Questions open when the PDF finishes processing." It now uses the same words as during retrieval: "You can ask questions once the PDF is ready." (`2c7dde4`).
+- **Red, then green.** The updated expectation in `ConversationPane.states.test.tsx` failed first with `Unable to find … You can ask questions once the PDF is ready.`
+
+**Decisions after ARA-086's follow-up (2026-10-10).**
+- **The LLM skip.** ARA-086 skips the LLM metadata step when an upload matches a library paper. The user had asked to keep that step intact, so the lead raised it. The lead recommended keeping the skip: the matched placeholder is absorbed and its metadata discarded, so the call would only cost money. Unmatched PDFs keep the unchanged fallback. The user agreed.
+- **The settings-table workaround.** The lead recommended moving upload-match state out of the prefixed `model_configurations` rows. The reasons:
+  - there are no foreign keys, so orphan rows and dangling redirects can occur;
+  - the library listing uses a string-prefix NOT IN filter;
+  - per-upload state is mixed into the settings table.
+  The user approved ARA-092, which uses migration 0009 after ARA-091's 0008 and comes before ARA-088. The workaround came from the lead's no-migration rule for this round.
+
+**ARA-091 implemented: one library-wide embedding model (2026-10-09).**
+- **Order, red first.** Tests were written before code and run in the isolated `ara-embed-test` Compose project. First run: 13 failed, 54 passed across the retrieval files. Failing assertions included `KeyError: 'openai-3-small'`, `assert 'PaperRetrievalUpdate' not in {...}`, `assert 200 == 405` (the per-paper PUT still existed) and `assert 404 == 200` for the missing estimate route. Implementation then ran the focused set green except for the migration, schema and endpoint-list tests: the migration test first failed on my own fixture row (`null value in column "metadata_provenance"`), the schema test needed the migrated database, and the contracts test still listed the removed PUT. All three were corrected. The full suite then passed: 1005 passed in 190 s.
+- **Frontend red.** `retrieval-settings.test.tsx` and `search-index.test.tsx` went red first (5 failed: no `Search model` radiogroup, no `alertdialog` titled "Re-embed the whole library?", and the ready-index test still found the per-paper "Change model" button). After the components changed, the settings and index files passed (57 tests), then `npm run check` passed with 72 files and 532 tests, and `npm run build` succeeded.
+- **Catalog.** Added `openai-3-small` (1536 dimensions, 8191 input tokens, $0.02 per million). The price and limit come from several third-party price pages; I did not check OpenAI's own pricing page, so confirm before relying on the dollar figure.
+- **Transition and pruning.** Changing the library setting still calls `reconcile_indexes`, which queues one embed job per ready document through the existing durable jobs. `ready_index` already prefers the library model and otherwise serves any ready index, so a document keeps answering from its old vectors, or from keyword search if it has none. New `prune_other_models` deletes other models' vectors and index rows only after the library model's index is ready, either when its embed job finishes (not for a staged rebuild, and only if the chunk set is still current) or when a later reconcile sees it already ready. It skips any model with a queued or running job, so an in-flight job never writes into a deleted row.
+- **Per-paper override removed.** Deleted the PUT route, `PaperRetrievalUpdate`, `PaperRetrieval.source`, `effective_profile()` (callers use `default_profile`), the model column and the frontend selector with its tests. Migration `0008_library_embeddings` drops `papers.retrieval_profile`. Papers with an override follow the library setting; startup reconcile queues their new index and prunes the old one. The upgrade test starts at `0007_feature_merge` with an overridden paper and checks the column is gone, both papers remain and the library setting is untouched.
+- **Estimate and dialog.** New `GET /retrieval/reindex-estimate?profile=` counts ready documents without a ready index for that model, sums their stored chunk token counts and multiplies by the catalog price. Settings shows it in a stock `AlertDialog` before `PUT /retrieval/settings` is sent; Cancel sends nothing.
+- **Not done or not verified.** No Playwright run (the brief excludes it; no e2e spec used the per-paper selector). No live OpenAI call: embeddings of the small model were exercised only through the in-process fixture, which now derives vector size from the model name. The full-suite image build tagged `ara-backend:development`, which the user's dev stack also uses, as the existing test script always does.
+- **Readiness bug found by the lead.** `services/health.py` pinned `SCHEMA_REVISION` to `0007_feature_merge`, so a stack migrated to 0008 would never report ready. My suite missed it because `test_fulltext_integration.py` stamps `alembic_version` from that same constant. Red first: `tests/test_schema_revision.py` failed with `assert ['0008_library_embeddings'] == ['0007_feature_merge']`. Fixed by setting the constant to 0008; the test now guards drift against the single Alembic head. Stamping 0007 had also left the shared test volume inconsistent (`DROP COLUMN` failed on re-migrate), so I reset only the `ara-embed-test` volumes. After that: 1006 passed, plus a readiness check on the migrated database.
+
 **2026-10-09: open models behind `EXPERIMENTAL_OPEN_MODELS` (ARA-090).** An Opus agent built it on `feat/ara-090-open-models-flag`, testing in its own `ara-flag-test` project. The user's running `ara` stack and its volumes were not touched.
 
 **Decisions:**

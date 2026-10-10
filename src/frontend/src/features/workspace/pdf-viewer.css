@@ -13,13 +13,15 @@
  */
 .pdf-viewer {
   --pdf-evidence: var(--evidence);
+  --pdf-evidence-edge: var(--evidence-edge);
 }
 
 /*
  * The mark sits over the canvas, so it is a translucent tint rather than a blend: Chromium composited a multiply
- * blend of the text layer as cyan in light mode. Strong lines hold the sentences that support the claim and are the
- * only mark. The rest of the cited chunk is marked 'context' but left untinted: a stored chunk is about 3,200
- * characters, and even a faint tint washed most of the page in stripes and competed with the evidence.
+ * blend of the text layer as cyan in light mode. Strong lines hold the sentences that support the claim: the full
+ * evidence tint plus an edge line under the text, which stays visible on dense pages where a tint alone was missed.
+ * The rest of the cited chunk is 'context': a stored chunk is about 3,200 characters, and any tint on it washed most
+ * of the page in stripes, so it gets only a thin dotted underline (text-decoration is not a background).
  */
 /* Marks inside a span carry a sentence that starts or ends mid-line; the text layer's text stays invisible. */
 .pdf-viewer .textLayer mark {
@@ -28,13 +30,57 @@
 }
 
 .pdf-viewer .textLayer [data-citation-highlight='strong'] {
-  background-color: color-mix(in oklch, var(--pdf-evidence) 55%, transparent);
+  background-color: var(--pdf-evidence);
+  box-shadow: inset 0 -2px 0 var(--pdf-evidence-edge);
   border-radius: 2px;
+}
+
+.pdf-viewer .textLayer [data-citation-highlight='context'] {
+  text-decoration: underline dotted 1px var(--pdf-evidence-edge);
+  text-underline-offset: 2px;
+}
+
+/*
+ * A cited region drawn from the stored layout boxes when the excerpt cannot be found in the text layer. Positioned in
+ * percentages of the page, so it follows every zoom. It sits above the text layer but never takes the pointer.
+ */
+.pdf-viewer [data-citation-region] {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid var(--pdf-evidence-edge);
+  border-radius: 3px;
+  background-color: color-mix(in oklch, var(--pdf-evidence) 45%, transparent);
 }
 
 /* One brief pulse on the strong lines when a citation lands; marks redrawn after zooming do not pulse again. */
 .pdf-viewer .textLayer [data-citation-pulse] {
   animation: citation-pulse 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+
+.pdf-viewer [data-citation-region][data-citation-pulse] {
+  animation: citation-pulse 1.2s cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+
+/*
+ * After the hold, the viewer sets data-citation-fade="out" on the reader. The transition is declared here, not on the
+ * arrival rules, so a highlight appears at once and only its fade-out is animated; the viewer removes the marks and
+ * outlines when --citation-fade-ms has passed. Under reduced motion it never sets the attribute.
+ */
+.pdf-viewer[data-citation-fade='out'] .textLayer [data-citation-highlight] {
+  background-color: transparent;
+  box-shadow: inset 0 -2px 0 transparent;
+  text-decoration-color: transparent;
+  transition:
+    background-color var(--citation-fade-ms) ease-out,
+    box-shadow var(--citation-fade-ms) ease-out,
+    text-decoration-color var(--citation-fade-ms) ease-out;
+}
+
+.pdf-viewer[data-citation-fade='out'] [data-citation-region] {
+  opacity: 0;
+  transition: opacity var(--citation-fade-ms) ease-out;
 }
 
 @keyframes citation-pulse {
@@ -50,7 +96,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pdf-viewer .textLayer [data-citation-pulse] {
+  .pdf-viewer .textLayer [data-citation-pulse],
+  .pdf-viewer [data-citation-region][data-citation-pulse] {
     animation: none;
   }
 }
@@ -58,6 +105,11 @@
 @media (forced-colors: active) {
   .pdf-viewer .textLayer [data-citation-highlight='strong'] {
     background-color: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .pdf-viewer [data-citation-region] {
+    border-color: Highlight;
     forced-color-adjust: none;
   }
 }

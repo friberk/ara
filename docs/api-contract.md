@@ -48,15 +48,13 @@ Alembic `0006_fulltext` follows the local-model migration. It adds durable reque
 
 No migration; job kinds and JSONB carry the new state.
 
-- `POST /papers` also queues retrieval, in the save transaction, for a metadata-only paper whose provider metadata lists a PDF or that has a DOI. Each paper has one automatic request UUID (UUIDv5 of the paper ID), so duplicate or concurrent saves, deliveries and restarts replay one job. A paper with an earlier retrieval job of any kind is not retried automatically.
-- `POST /papers/{id}/retrieve-fulltext/automatic` (no body) → 200 `{paper_id,job_id}`: the same automatic request for papers saved earlier. `job_id` is the automatic job (repeats replay it, including a failed one) or null when the paper has a PDF attached, has had any attempt, or names neither a PDF nor a DOI. 404 `PAPER_NOT_FOUND` for an unknown paper. The workspace calls it once on open.
-- A deliberate request after a `rate_limited` failure queues its job and outbox event only once the reported `retry_after` (at most 300 s) has passed.
-- When discovery finds no candidate because a provider lookup was rate limited, the job fails `rate_limited` with that provider's `retry_after` and a reason naming it, instead of `unavailable`.
-- `GET /papers/{id}/fulltext` adds nullable `source_host`: the host of the copy the latest retrieval tried, so progress can name the source.
+- `POST /papers` also queues retrieval, in the save transaction, for a metadata-only paper with an OpenAlex record or a DOI when an OpenAlex API key is configured (ARA-087). Each paper has one automatic request UUID (UUIDv5 of the paper ID), so duplicate or concurrent saves, deliveries and restarts replay one job. A paper with an earlier retrieval job of any kind is not retried automatically.
+- `POST /papers/{id}/retrieve-fulltext/automatic` (no body) → 200 `{paper_id,job_id}`: the same automatic request for papers saved earlier. `job_id` is the automatic job (repeats replay it, including a failed one) or null when no OpenAlex key is configured, the paper has a PDF attached, has had any attempt, or has neither an OpenAlex record nor a DOI. 404 `PAPER_NOT_FOUND` for an unknown paper. The workspace calls it once on open.
+- A deliberate request after a `rate_limited` failure queues its job and outbox event only once the reported `retry_after` (at most 86,400 s) has passed.
 - The ingestion transaction that first marks a document ready queues one `summary` job with the saved default model and effort, payload `automatic: true` and a per-document request UUID. Re-ingesting a ready document (startup chunk-set rebuilds, retries) never does; neither does a document that is not the paper's active PDF, has no passages, or already has a summary or summary job. Nothing starts when the default is a local model that is not ready, hosted generation is unconfigured, or today's budget cannot cover one hosted call; there is no fallback to another model.
 - `GET /papers/{id}/summaries` adds nullable `blocked: {code,message,model,reasoning_effort}`: why the saved default cannot summarize the active PDF now, while the paper has no summary or running summary job for it (also before a PDF exists). It reads settings and PostgreSQL only.
 
-The backend’s network determines IP-based access. Browser university sessions are not inherited. Retry does not run automatically on focus/network changes; browser links and manual upload remain the fallback. `FULLTEXT_ALLOWED_HOSTS` controls exact supported public hostnames, including redirect hosts. The HTTP boundary pins validated DNS addresses while retaining original Host/TLS verification; it sends no provider credentials, ignores proxy environment configuration, rejects encoded bodies and enforces byte/redirect/time bounds described in README. Normal startup never enables the deterministic fixture relay or fixture control routes.
+Superseded by ARA-087 below: the host allowlist, third-party downloads and network-access guidance were removed.
 
 ## Workspace history additions (ARA-034, UI overhaul)
 
@@ -99,10 +97,10 @@ All additions are backward compatible. They support the chat-centred sidebar, th
 
 `EXPERIMENTAL_OPEN_MODELS` (default `false`) gates the Ollama chat models, the Qwen3 embedding profiles and the Qwen3 reranker. `GET /features` returns `Features {open_models: bool}`; the browser hides open-model UI unless it is `true`. With the flag on, every section below behaves as documented. With it off:
 
-- Catalogs. `GET /models` lists only hosted models, plus the saved default when it is a local chat model, reported with `status="unavailable"`, `unavailable_code="OPEN_MODELS_DISABLED"` and `installation=null`. `GET /retrieval/profiles` lists only `openai-3-large` and `openai-gpt-6-luna`, plus a saved local default embedding profile or reranker, reported unavailable with `local_model_key=null`.
+- Catalogs. `GET /models` lists only hosted models, plus the saved default when it is a local chat model, reported with `status="unavailable"`, `unavailable_code="OPEN_MODELS_DISABLED"` and `installation=null`. `GET /retrieval/profiles` lists only the hosted embedding models (`openai-3-large`, `openai-3-small`) and `openai-gpt-6-luna`, plus a saved local library model or reranker, reported unavailable with `local_model_key=null`.
 - Routes. `POST /models/{key}/download`, `DELETE /models/{key}/installation`, `POST /jobs/{id}/pause` and `POST /jobs/{id}/resume` are not mounted (404). `GET /jobs` omits `model_download` and `model_delete` jobs; `GET /jobs/{id}` and `POST /jobs/{id}/retry` return 404 for them. The generated TypeScript contract comes from the flag-on schema, so it still describes these routes.
-- Refusals. A local chat model, embedding profile or reranker in a request returns 409 `OPEN_MODELS_DISABLED` with a plain message asking for a hosted choice: `PUT /settings`, summary requests, chat answers (a replay of a stored answer still returns it), `GET /chats/{id}/usage`, `PUT /papers/{id}/retrieval` and a rebuild of a paper on a local profile. `PUT /retrieval/settings` keeps an unchanged saved local choice and refuses a new one. The summary page reports `blocked.code="OPEN_MODELS_DISABLED"` for a saved local default, and no automatic summary starts.
-- Retrieval. A paper whose effective profile is local is searched by keywords; `PaperRetrieval.mode="keyword"` and `mode_note` says why, its local indexes report `state="unavailable"` with error `OPEN_MODELS_DISABLED`, and answers note keyword search. A hosted preference never uses a local index. A saved local reranker means no reranking. Embed jobs for a local profile settle as unavailable, and the startup reconcile queues them again once the flag returns; turn embeddings settle unavailable and recall skips those turns.
+- Refusals. A local chat model, embedding profile or reranker in a request returns 409 `OPEN_MODELS_DISABLED` with a plain message asking for a hosted choice: `PUT /settings`, summary requests, chat answers (a replay of a stored answer still returns it), `GET /chats/{id}/usage`, and a paper rebuild while the library model is local. `PUT /retrieval/settings` keeps an unchanged saved local choice and refuses a new one. The summary page reports `blocked.code="OPEN_MODELS_DISABLED"` for a saved local default, and no automatic summary starts.
+- Retrieval. While the library model is local, every paper is searched by keywords; `PaperRetrieval.mode="keyword"` and `mode_note` says why, its local indexes report `state="unavailable"` with error `OPEN_MODELS_DISABLED`, and answers note keyword search. A hosted preference never uses a local index. A saved local reranker means no reranking. Embed jobs for a local profile settle as unavailable, and the startup reconcile queues them again once the flag returns; turn embeddings settle unavailable and recall skips those turns.
 - Jobs. The dispatcher publishes nothing to the `local-models` and `local-generation` lanes and lease recovery skips their jobs, so unsettled model operations and local summaries keep their state until the flag is on. Startup model preparation does not run. Readiness never depended on Ollama.
 
 ## Managed local models (ARA-022, ARA-044–049)
@@ -162,20 +160,21 @@ Settings and the composer use declared aliases only for available native models.
 Contract for the retrieval and context overhaul, implemented on `feat/rag-context`. Spec: `docs/superpowers/specs/2026-10-09-rag-context-design.md`.
 
 - `GET /api/v1/retrieval/profiles` returns `EmbeddingProfilePage {items: EmbeddingProfileOut[], default_profile}`.
-  - Each `EmbeddingProfileOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `dimensions`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, and `local_model_key` for local install links.
-  - Keys: `openai-3-large` (default), `qwen3-embed-4b`, `qwen3-embed-8b`.
+  - Each `EmbeddingProfileOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `dimensions`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, and `local_model_key` for local install links, and `price_per_million` (USD per million input tokens; 0 for local models).
+  - Keys: `openai-3-large` (default, $0.13), `openai-3-small` ($0.02, 1536 dimensions), `qwen3-embed-4b`, `qwen3-embed-8b`. One model serves the whole library (ARA-091): vectors from different models are not comparable, so a library never mixes them.
 - `EmbeddingProfilePage.rerankers: RerankerOut[]` lists the reranker profiles (ARA-074). The default `openai-gpt-6-luna` uses the OpenAI Decisions API and scores the top 40 fused passages (about 2–3 s and $0.004 per answer); `qwen3-rerank-0.6b` runs locally through Ollama (about 9 s). `RerankerOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, `local_model_key` for the install link, and `candidates` (fused passages scored per question). Models are catalog data, not hardcoded. The local reranker's `model_id` is `fanyx/Qwen3-Reranker-0.6B-Q8_0:latest`, because Ollama lists an untagged pull as `:latest` and inventory matching is exact.
 - Reranking never fails an answer. When it cannot run, the passages keep their fused order, `retrieval.reranked` is `false`, and `retrieval.note` says reranking was unavailable. The server-side retrieval trace keeps the skip code: `MODEL_NOT_CONFIGURED` (no OpenAI key; no note, because Settings already says so), `DAILY_BUDGET_EXCEEDED`, `LOCAL_MODEL_NOT_READY`, `INVALID_RERANKER` (a stored key no longer in the catalog), `LOCAL_MODEL_BUSY` (the local retrieval slot stayed busy past its 20 s wait), `RERANKER_TIMEOUT` (the local pass exceeded its 45 s deadline) or `RERANKER_FAILED`. The trace also records `rerank.query`, the standalone question the reranker judged against. Turning reranking off (`null`) is a choice, not a skip.
 - With open models off, only the hosted profiles are listed and a saved local choice is reported unavailable (ARA-090, above).
 - `GET`/`PUT /api/v1/retrieval/settings` reads and writes `RetrievalSettings {embedding_profile="openai-3-large", reranker="openai-gpt-6-luna"}`. `reranker` is a reranker profile key from `app/integrations/reranker_catalog.py`, or `null` to turn reranking off. An unknown key returns 422 `INVALID_RERANKER`.
   - These settings are separate from the model defaults in `/settings`.
-  - `PUT` validates the key but does not require the profile to be available.
+  - `PUT` validates the key but does not require the profile to be available. Changing `embedding_profile` re-embeds the whole library: every ready document is queued for the new model (idempotent per document and chunk set). A document keeps answering from its ready index until the new one is ready, falls back to keyword search if it has none, and loses the old model's vectors and index rows only after the new index is ready.
+- `GET /api/v1/retrieval/reindex-estimate?profile=` returns `ReindexEstimate {profile, papers, tokens, price_per_million, estimated_cost_usd}`: the ready documents that have no ready index for `profile`, their stored chunk token counts, and tokens times the catalog price. Unknown profile: 422 `INVALID_EMBEDDING_PROFILE`. The Settings confirmation dialog reads it before anything changes.
 - `GET /api/v1/papers/{paper_id}/retrieval` returns `PaperRetrieval`:
-  - `effective_profile` and `source` (`default|paper`);
+  - `effective_profile`, the library embedding model;
   - `parser`, `chunk_count`, `section_count`;
   - `mode` (`hybrid|keyword|unavailable`) and a plain-language `mode_note`;
   - `indexes: RetrievalIndexOut[]`, each with `profile`, `state` (`queued|embedding|ready|failed|unavailable`), `embedded`, `total`, `updated_at`, `error`.
-- `PUT /api/v1/papers/{paper_id}/retrieval` takes `{profile: str|null, request_id}`. `null` follows the global default. Replaying the same request UUID returns the same body.
+- There is no per-paper embedding choice (removed in ARA-091): `PUT /papers/{id}/retrieval` and `papers.retrieval_profile` no longer exist.
 - `POST /api/v1/papers/{paper_id}/retrieval/rebuild` takes `{request_id}` and returns 202 with `PaperRetrieval`. The rebuild is blue/green: the previous ready index keeps serving until the new one is ready.
 - `GET /api/v1/chats/{chat_id}/memory` returns `ChatMemoryState {memory: {version, summary, summarized_messages, model, created_at} | null, total_messages}`. The original messages are never altered.
 - `GET /api/v1/chats/{chat_id}/usage?model=&reasoning_effort=` returns `ChatUsage {context: {used_tokens | null, input_budget, window, model}, cost: {total, answers, planning, compaction, embeddings, reranking, local, unrecorded_turns}}` for the composer's context and cost meter (ARA-085). `used_tokens` is what the latest completed answer sent; `input_budget` and `window` are the requested model's, sized as an answer sizes its prompt, so the meter follows the composer's selection (unknown model or effort: 422; unknown chat: 404 `CHAT_NOT_FOUND`). Costs are USD decimal strings (eight places) priced from the model, embedding and reranker catalogs at recorded tokens: answers from `usage`, follow-up planning, query embeddings and reranking from `retrieval.billed` on each answer, compaction from the stored memory versions. Local calls are free and `local` is true when every recorded call was local. Answers from before this was recorded count in `unrecorded_turns`, not in the total; the shared paper summary is not part of a chat's cost.
@@ -205,7 +204,7 @@ Local native requests explicitly set temperature `0.0`. Chat stores the applied 
 
 ## Combined schema deployment — ARA-082
 
-The current migration head is `0007_feature_merge`, joining `0006_fulltext` and `0006_retrieval_context` without changing either existing parent. `alembic upgrade head` applies both independent schema branches from the old main schema, or the missing branch when upgrading an existing feature database. API readiness requires the merge head. Document rows retain full-text acquisition provenance and structured parser/chunk-set fields. Paper-linked jobs include summary, fulltext and embed operations. The shared generated OpenAPI contract includes both access/retrieval schemas and managed-model controls.
+The current migration head is `0008_library_embeddings`, which drops `papers.retrieval_profile`; papers that had an override follow the library setting and are re-indexed at startup if it differs, after which their old-model vectors are pruned. Before it, `0007_feature_merge` joined `0006_fulltext` and `0006_retrieval_context` without changing either existing parent. `alembic upgrade head` applies both independent schema branches from the old main schema, or the missing branch when upgrading an existing feature database. API readiness requires the merge head. Document rows retain full-text acquisition provenance and structured parser/chunk-set fields. Paper-linked jobs include summary, fulltext and embed operations. The shared generated OpenAPI contract includes both access/retrieval schemas and managed-model controls.
 
 The retrieval migration replaces pre-structured chunk rows. Startup queues idempotent re-ingestion using stored PDF originals and previous metadata checkpoints. Analysis waits for valid chunks; previously generated messages and summaries keep stored citations with original document/page/excerpt provenance. An old chunk-ID endpoint can return 404 after replacement; the reader can show the saved citation excerpt and original PDF page. This behavior is distinct from losing the stored analysis or original file.
 
@@ -253,3 +252,46 @@ Lookup job:
   - `/jobs` accepts `kind=metadata` and links these jobs to their paper.
   - `POST /jobs/{id}/retry` accepts a failed lookup with those two codes.
   - Stages are `queued`, `finding_metadata`, `retry_wait`, `completed` and `failed`.
+
+### XMP clues and library matches (ARA-086 follow-up)
+
+**XMP clues.** The parser reads the PDF's XMP packet in the child process and ranks its fields above the Info dictionary:
+- `dc:title` comes first and passes the same junk-title and printed-title checks as the Info title;
+- `dc:creator` fills authors when the Info author is empty;
+- `prism:doi` or `dc:identifier` is the first DOI clue;
+- `prism:publicationName` becomes the `venue` clue, which breaks ties between equally good title matches;
+- `prism:coverDate`, `prism:publicationDate` or `prism:coverDisplayDate` gives the year. File dates such as `xmp:CreateDate` are ignored.
+
+A malformed packet gives no clues and never an error. The LLM metadata step keeps its behaviour and gating, with the saved default model and effort. A title that the junk filter rejects counts as missing, so that step can run for it, and its title and DOI then seed the catalog lookup.
+
+**Matching a new upload to the library.** This applies to uploads without `paper_id`, whose ingest payload carries `new_paper: true`. Ingestion compares the PDF's DOI (`normalized_doi`), the arXiv DOI `10.48550/arxiv.<id>` and, failing those, the strict title rule (title ratio ≥ 0.9 plus an agreeing author or year) against library papers:
+- **Match without a usable PDF** (no active document, or the active one failed). The upload is attached in the commit that makes it ready. The document moves to that paper, which gets it as its active document, and its processing and automatic summary continue there. The placeholder paper is deleted, `paper_redirect:<placeholder>` records the target, and the ingest job result carries `match: {paper_id, outcome: "attached", matched_by}`. No model metadata call is made.
+- **Match with a PDF.** Ingestion completes the job with `outcome: "match_pending"` before storing pages. The document stays `processing`, and `upload_match:<placeholder>` records `{paper_id, document_id, matched_by, found_by: "ingest"}`. No model metadata call, pages, chunks, index, catalog lookup or automatic summary start.
+- **Late match.** A catalog lookup for a new upload whose record another library paper owns records the same pending match, with `found_by: "lookup"` and job outcome `library_match`, and writes nothing to the upload.
+
+**API.**
+- `Paper.upload_match`: nullable `{paper_id, title, has_pdf, matched_by: doi|arxiv|title, found_by: ingest|lookup}`.
+- `Paper.pdf_doi_owner`: nullable `{paper_id, title}`. It is set when an upload into a chosen paper carries a DOI that another library paper owns. The upload stays on the chosen paper, and the state is recorded under `pdf_doi_owner:<document>`.
+- `GET /papers` leaves pending placeholders out. `GET /uploads/matches` lists them as `{items: Paper[]}`.
+- `GET /papers/{placeholder}` answers with the paper an attached or replaced upload joined. That paper's `id` differs, so the client redirects.
+
+`POST /uploads/{placeholder}/match {decision: "attach"|"discard"}`:
+- **`attach`** (Replace or Attach) moves the document to the library paper as its active PDF; earlier documents stay its versions. It also moves the placeholder's chats and summaries, deletes the placeholder and returns the library `Paper` (200).
+  - An unread document gets a fresh ingest job on that paper.
+  - A ready document is indexed for that paper, and the automatic summary is queued once.
+- **`discard`** deletes the placeholder, its document (by cascade) and the stored original, and returns 204.
+- **Repeats are safe.** A second `attach` returns the same paper, and a second `discard` returns 204. A paper without a pending match returns 409 `NO_PENDING_MATCH`.
+
+**Labels.** Matches and redirects live in `model_configurations`, with no migration. The `processing` document badge now reads "Preparing PDF".
+
+## OpenAlex-only PDF retrieval (ARA-087)
+
+No migration. Supersedes the ARA-019 multi-host downloader.
+
+- Retrieval resolves the paper's OpenAlex work with a free single-work lookup, `GET /works/{W-id}` or `GET /works/doi:{doi}` with `select=id,has_content` (the saved OpenAlex record first, else the DOI). Only `has_content.pdf: true` continues; a 404 or a missing copy ends the job `not_stored`.
+- The download is `GET https://content.openalex.org/works/{W-id}.pdf?api_key=…`. Its redirect may only reach `content.openalex.org` (a merged work) or OpenAlex's R2 storage hosts `a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com` and `openalex-pdfs.a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com`, as documented for its PDF bucket; any other target ends `unsafe_url`. The key is sent only to OpenAlex. Requests bypass httpx client logging, and no URL with the key or a signature is stored.
+- Outcomes: `downloaded`, `not_stored`, `api_key_required` (no key when the job runs, or 401/403 from OpenAlex), `rate_limited` (429; `retry_after` from `Retry-After`, else `X-RateLimit-Reset`, at most 86,400 s, else null), `unavailable` (lookup or storage failure, timeout), `invalid_pdf`, `unsafe_url`, `already_attached`, `superseded`. Older jobs keep their earlier outcome strings in `result`. None is retried automatically.
+- `GET /papers/{id}/fulltext` returns `{paper_id, api_key_configured, retrieval_job?, document_id?, ingest_job_id?, acquisition?}`; `availability`, `locations`, `attempts`, `last_checked_at` and `source_host` are removed. The attempts table is no longer written.
+- `POST /papers/{id}/retrieve-fulltext` returns 409 `OPENALEX_API_KEY_REQUIRED` without a key.
+- New acquisition records are `{method: "provider_download", provider: "openalex", source: "content", work_id, retrieved_at, retrieval_job_id}`. Earlier records, with candidate URLs, versions and licenses, stay readable.
+- `FULLTEXT_ALLOWED_HOSTS` is removed; a stale value in `.env` is ignored.

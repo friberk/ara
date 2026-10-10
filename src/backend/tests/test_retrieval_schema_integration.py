@@ -50,7 +50,7 @@ async def test_given_migrated_database_then_vector_and_new_tables_exist(resource
             "search_vector",
         } <= chunks
         assert not {"char_start", "char_end", "token_estimate"} & chunks
-        assert "retrieval_profile" in await table_columns(session, "papers")
+        assert "retrieval_profile" not in await table_columns(session, "papers")
         assert {"parser", "chunk_set"} <= await table_columns(session, "documents")
         assert {"retrieval", "context", "grounding"} <= await table_columns(
             session, "chat_messages"

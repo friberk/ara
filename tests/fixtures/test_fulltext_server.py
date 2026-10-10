@@ -1,4 +1,4 @@
-"""Public HTTP fixtures cover access transitions without pretending to prove entitlements."""
+"""OpenAlex lookup and content fixtures (ARA-087); they prove behavior, not live access."""
 
 import importlib.util
 import json
@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -29,7 +30,16 @@ class FullTextFixtureTests(unittest.TestCase):
         cls.server.server_close()
         cls.thread.join()
 
-    def test_openalex_and_semantic_cases_have_matching_dois_and_access_fields(self):
+    def get(self, path, *, key=True):
+        separator = "&" if "?" in path else "?"
+        url = self.base + path + (f"{separator}api_key=fixture-key" if key else "")
+        opener = urllib.request.build_opener(NoRedirect())
+        try:
+            return opener.open(url)
+        except urllib.error.HTTPError as error:
+            return error
+
+    def test_openalex_and_semantic_cases_have_matching_dois(self):
         with urllib.request.urlopen(self.base + "/works?search=fulltext-open") as response:
             row = json.load(response)["results"][0]
         with urllib.request.urlopen(
@@ -37,71 +47,80 @@ class FullTextFixtureTests(unittest.TestCase):
         ) as response:
             s2 = json.load(response)["data"][0]
         self.assertEqual(row["doi"], "https://doi.org/10.5555/fulltext-open")
-        self.assertTrue(s2.get("isOpenAccess"))
-        self.assertTrue(s2["openAccessPdf"]["url"].endswith("fulltext-open"))
+        self.assertEqual(s2["externalIds"]["DOI"], "10.5555/fulltext-open")
 
-    def test_semantic_no_pdf_has_exact_doi_alternative(self):
-        with urllib.request.urlopen(self.base + "/graph/v1/paper/s2-fulltext-doi") as response:
-            row = json.load(response)
-        self.assertIsNone(row["openAccessPdf"])
-        with urllib.request.urlopen(
-            self.base + "/works?filter=doi:https://doi.org/10.5555/fulltext-doi"
-        ) as response:
-            alternate = json.load(response)["results"][0]
-        self.assertTrue(alternate["best_oa_location"]["pdf_url"].endswith("fulltext-doi"))
+    def test_lookups_report_stored_content_by_work_or_doi(self):
+        for path, work, stored in [
+            ("/works/W19001?select=id,has_content", "W19001", True),
+            ("/works/W19007?select=id,has_content", "W19007", False),
+            ("/works/doi:10.5555/fulltext-doi?select=id,has_content", "W19002", True),
+        ]:
+            with self.get(path, key=False) as response:
+                row = json.load(response)
+            self.assertEqual(row["id"], f"https://openalex.org/{work}")
+            self.assertIs(row["has_content"]["pdf"], stored)
+        response = self.get("/works/doi:10.5555/fulltext-semantic", key=False)
+        self.assertEqual(response.status, 404)
+        response.close()
 
-    def test_denied_case_can_be_granted_and_returns_original_pdf(self):
+    def test_content_needs_a_key_and_redirects_to_signed_storage(self):
+        response = self.get("/content/works/W19001.pdf", key=False)
+        self.assertEqual(response.status, 401)
+        response.close()
+        response = self.get("/content/works/W19001.pdf")
+        self.assertEqual(response.status, 302)
+        location = urllib.parse.urlsplit(response.headers["Location"])
+        response.close()
+        self.assertEqual(
+            location.hostname, "a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com"
+        )
+        self.assertEqual(location.path, "/openalex-pdfs/fulltext-open.pdf")
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "fixture.pdf"
             source.write_bytes(b"%PDF-1.7\nfixture")
             self.module.FULLTEXT.pdf_path = source
-            self.module.FULLTEXT.granted.discard("fulltext-denied")
-            with self.assertRaises(urllib.error.HTTPError) as error:
-                urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-denied")
-            self.assertEqual(error.exception.code, 403)
-            request = urllib.request.Request(
-                self.base + "/__fulltext_fixture/fulltext-denied/grant",
-                data=b"{}",
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(request) as response:
-                self.assertTrue(json.load(response)["granted"])
-            with urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-denied") as response:
-                self.assertEqual(response.read(), b"%PDF-1.7\nfixture\n% fulltext-denied\n")
+            with self.get("/storage/openalex-pdfs/fulltext-open.pdf", key=False) as pdf:
+                self.assertEqual(pdf.read(), b"%PDF-1.7\nfixture\n% fulltext-open\n")
 
-    def test_html_and_rate_limit_are_distinct(self):
-        with urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-html") as response:
-            self.assertIn(b"<html>", response.read())
-        with self.assertRaises(urllib.error.HTTPError) as error:
-            urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-rate")
-        self.assertEqual(error.exception.code, 429)
+    def test_limited_case_waits_until_granted(self):
+        self.module.FULLTEXT.granted.discard("fulltext-limited")
+        response = self.get("/content/works/W19003.pdf")
+        self.assertEqual((response.status, response.headers["Retry-After"]), (429, "2"))
+        response.close()
+        request = urllib.request.Request(
+            self.base + "/__fulltext_fixture/fulltext-limited/grant", data=b"{}"
+        )
+        with urllib.request.urlopen(request) as granted:
+            self.assertTrue(json.load(granted)["granted"])
+        response = self.get("/content/works/W19003.pdf")
+        self.assertEqual(response.status, 302)
+        response.close()
+
+    def test_spent_allowance_missing_copy_html_and_unsafe_cases_are_distinct(self):
+        spent = self.get("/content/works/W19005.pdf")
+        self.assertEqual(spent.status, 429)
+        self.assertEqual(spent.headers["X-RateLimit-Remaining"], "0")
+        self.assertEqual(spent.headers["X-RateLimit-Reset"], "3600")
+        spent.close()
+        missing = self.get("/content/works/W19007.pdf")
+        self.assertEqual(missing.status, 404)
+        missing.close()
+        unsafe = self.get("/content/works/W19006.pdf")
+        self.assertEqual(urllib.parse.urlsplit(unsafe.headers["Location"]).hostname, "arxiv.org")
+        unsafe.close()
+        with self.get("/storage/openalex-pdfs/fulltext-html.pdf", key=False) as html:
+            self.assertIn(b"<html>", html.read())
 
     def test_recovery_case_has_distinct_identity(self):
         with urllib.request.urlopen(self.base + "/works?search=fulltext-recovery") as response:
             row = json.load(response)["results"][0]
         self.assertEqual(row["doi"], "https://doi.org/10.5555/fulltext-recovery")
 
-    def test_direct_semantic_copy_has_no_openalex_alternative(self):
-        with urllib.request.urlopen(self.base + "/graph/v1/paper/s2-fulltext-semantic") as response:
-            row = json.load(response)
-        self.assertIsNotNone(row["openAccessPdf"])
-        self.assertTrue(row["openAccessPdf"]["url"].endswith("fulltext-semantic"))
-        with urllib.request.urlopen(
-            self.base + "/works?filter=doi:https://doi.org/10.5555/fulltext-semantic"
-        ) as response:
-            alternate = json.load(response)
-        self.assertEqual(alternate["results"], [])
-
     def test_fixture_can_hold_and_release_a_download(self):
         request = urllib.request.Request(
             self.base + "/__fulltext_fixture/fulltext-open/hold", data=b"{}"
         )
-        try:
-            response = urllib.request.urlopen(request)
-        except urllib.error.HTTPError as error:
-            response = error
-        self.assertEqual(response.status, 200)
-        response.close()
+        urllib.request.urlopen(request).close()
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "fixture.pdf"
             source.write_bytes(b"%PDF-1.7\nfixture")
@@ -110,7 +129,7 @@ class FullTextFixtureTests(unittest.TestCase):
             result = []
 
             def fetch():
-                with urllib.request.urlopen(self.base + "/fulltext/pdf/fulltext-open") as pdf:
+                with self.get("/storage/openalex-pdfs/fulltext-open.pdf", key=False) as pdf:
                     result.append(pdf.read())
                 finished.set()
 
@@ -126,13 +145,6 @@ class FullTextFixtureTests(unittest.TestCase):
                 thread.join(3)
             self.assertTrue(finished.is_set())
             self.assertEqual(result, [b"%PDF-1.7\nfixture\n% fulltext-open\n"])
-
-    def test_unsafe_redirect_is_a_fixture_not_a_live_request(self):
-        opener = urllib.request.build_opener(NoRedirect())
-        with self.assertRaises(urllib.error.HTTPError) as error:
-            opener.open(self.base + "/fulltext/pdf/fulltext-unsafe")
-        self.assertEqual(error.exception.code, 302)
-        self.assertEqual(error.exception.headers["Location"], "http://127.0.0.1/private")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

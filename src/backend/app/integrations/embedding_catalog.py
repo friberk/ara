@@ -42,6 +42,16 @@ PROFILES: dict[str, EmbeddingProfile] = {
             price_per_million=Decimal("0.13"),
         ),
         EmbeddingProfile(
+            "openai-3-small",
+            "openai",
+            "text-embedding-3-small",
+            "OpenAI text-embedding-3-small",
+            1536,
+            8191,
+            64,
+            price_per_million=Decimal("0.02"),
+        ),
+        EmbeddingProfile(
             "qwen3-embed-4b",
             "ollama",
             "qwen3-embedding:4b-q4_K_M",

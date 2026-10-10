@@ -89,26 +89,24 @@ async def index(resources, document_id, profile) -> RetrievalIndex | None:
 
 
 @pytest.mark.open_models
-async def test_given_papers_following_the_default_when_it_changes_then_each_is_queued_once(
-    resources, client
-):
+async def test_given_the_library_model_changes_then_every_paper_is_queued_once(resources, client):
     await install(resources)
-    _, following = await seed_paper(resources)
-    _, pinned = await seed_paper(resources, retrieval_profile=OPENAI)
-    for document_id in (following, pinned):
+    _, first = await seed_paper(resources)
+    _, second = await seed_paper(resources)
+    for document_id in (first, second):
         await set_index(resources, document_id, OPENAI, state="ready", embedded=5)
     url = "/api/v1/retrieval/settings"
     for profile in (QWEN, OPENAI, QWEN):
         saved = await client.put(url, json={"embedding_profile": profile, "reranker": None})
         assert saved.status_code == 200, saved.text
-    assert await embed_jobs(resources) == [(str(following), QWEN)]
-    assert (await index(resources, following, QWEN)).state == "queued"
-    assert await index(resources, pinned, QWEN) is None
+    assert sorted(await embed_jobs(resources)) == sorted([(str(first), QWEN), (str(second), QWEN)])
+    assert (await index(resources, first, QWEN)).state == "queued"
+    assert (await index(resources, second, QWEN)).state == "queued"
     rerank = await client.put(
         url, json={"embedding_profile": QWEN, "reranker": "openai-gpt-6-luna"}
     )
     assert rerank.status_code == 200
-    assert len(await embed_jobs(resources)) == 1
+    assert len(await embed_jobs(resources)) == 2
 
 
 @pytest.mark.open_models
@@ -196,7 +194,6 @@ async def test_given_mixed_documents_when_reconciled_then_only_missing_available
         error_code="EMBEDDING_FAILED",
         error_message="The embedding request failed.",
     )
-    _, uninstalled = await seed_paper(resources, retrieval_profile=QWEN)
     _, processing = await seed_paper(resources)
     _, unchunked = await seed_paper(resources)
     _, reingesting = await seed_paper(resources)
@@ -209,7 +206,6 @@ async def test_given_mixed_documents_when_reconciled_then_only_missing_available
     assert await reconcile_indexes(resources) == 1
     assert await embed_jobs(resources) == [(str(missing), OPENAI)]
     assert (await index(resources, failed, OPENAI)).state == "failed"
-    assert await index(resources, uninstalled, QWEN) is None
 
 
 async def test_given_concurrent_reconciliations_then_each_index_is_queued_once(resources):

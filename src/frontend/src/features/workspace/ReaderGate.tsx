@@ -5,10 +5,12 @@ import type { Paper, UploadAccepted } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
+import { MatchDecision } from '@/components/upload/MatchDecision'
 import { PreparationSteps } from '@/components/upload/PreparationSteps'
 import { usePreparation } from '@/components/upload/use-preparation'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
+import { usePdfComing } from '@/hooks/queries/uploads'
 import { FullTextAccess } from './FullTextAccess'
 
 function Abstract({ text }: { text: string | null }) {
@@ -75,14 +77,18 @@ export function ReaderGate({ paper }: { paper: Paper }) {
   const onUploaded = (accepted: UploadAccepted) => setStarted({ jobId: accepted.job_id, uploaded: true })
   const onRetrieved = (accepted: UploadAccepted) => setStarted({ jobId: accepted.job_id, uploaded: false })
   const followed = started ?? (handedOver && paper.document_status === 'processing' ? { jobId: handedOver, uploaded: true } : null)
+  // While retrieval brings the PDF, uploading your own copy is the secondary way; otherwise it is the main one.
+  const coming = usePdfComing(paper)
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto grid max-w-md gap-8 px-5 py-10">
-        {followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
+        {paper.upload_match ? <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} />
+          : followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
           : paper.document_status === 'processing' ? <ProcessingGate paper={paper} />
           : paper.document_status === 'failed' ? <FailedGate paper={paper} onUploaded={onUploaded} onRetrieved={onRetrieved} />
+          : coming ? <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} variant="secondary" chooseLabel="Upload your own copy instead" onAccepted={onUploaded} /></>
           : <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={onUploaded} /></>}
-        <Abstract text={paper.document_status === 'metadata_only' && !followed ? paper.abstract : null} />
+        <Abstract text={paper.document_status === 'metadata_only' && !followed && !paper.upload_match ? paper.abstract : null} />
       </div>
     </div>
   )

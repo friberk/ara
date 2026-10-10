@@ -26,7 +26,8 @@ export function usePreparation({ paperId, documentStatus, jobId, uploaded, onSet
     const key = `${ingest.id}:${ingest.state}`
     if (settled.current === key) return
     settled.current = key
-    void client.invalidateQueries({ queryKey: queryKeys.papers.detail(paperId) })
+    // The paper and every list showing it (library, sidebar) change once its PDF settles.
+    void client.invalidateQueries({ queryKey: queryKeys.papers.all })
     notify.current?.(ingest)
   }, [ingest, client, paperId])
   return preparationSteps({ uploaded, ingest, lookup, documentStatus: status })

@@ -18,6 +18,8 @@ class EmbeddingProfileOut(BaseModel):
     status: Literal["available", "unavailable"]
     unavailable_reason: str | None = None
     local_model_key: str | None = None
+    # US dollars per million input tokens; 0 for local models.
+    price_per_million: float = 0
 
 
 class RerankerOut(BaseModel):
@@ -66,7 +68,6 @@ class PaperRetrieval(BaseModel):
     paper_id: UUID
     document_id: UUID | None
     effective_profile: str
-    source: Literal["default", "paper"]
     parser: str | None
     chunk_count: int
     section_count: int
@@ -75,10 +76,14 @@ class PaperRetrieval(BaseModel):
     indexes: list[RetrievalIndexOut]
 
 
-class PaperRetrievalUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    profile: str | None
-    request_id: UUID
+class ReindexEstimate(BaseModel):
+    """What switching the library embedding model would re-embed (ARA-091)."""
+
+    profile: str
+    papers: int
+    tokens: int
+    price_per_million: float
+    estimated_cost_usd: float
 
 
 class RebuildInput(BaseModel):

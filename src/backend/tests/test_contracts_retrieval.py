@@ -5,7 +5,8 @@ from app.main import create_app
 PATHS = {
     "/api/v1/retrieval/profiles": {"get"},
     "/api/v1/retrieval/settings": {"get", "put"},
-    "/api/v1/papers/{paper_id}/retrieval": {"get", "put"},
+    "/api/v1/retrieval/reindex-estimate": {"get"},
+    "/api/v1/papers/{paper_id}/retrieval": {"get"},
     "/api/v1/papers/{paper_id}/retrieval/rebuild": {"post"},
     "/api/v1/chats/{chat_id}/memory": {"get"},
 }
@@ -56,10 +57,9 @@ def test_message_citation_and_model_carry_new_fields():
 def test_retrieval_dtos_have_exact_shapes():
     schemas = openapi()["components"]["schemas"]
     assert set(schemas["RetrievalSettings"]["properties"]) == {"embedding_profile", "reranker"}
-    assert set(schemas["PaperRetrievalUpdate"]["properties"]) == {"profile", "request_id"}
+    assert "PaperRetrievalUpdate" not in schemas
     assert {
         "effective_profile",
-        "source",
         "parser",
         "chunk_count",
         "section_count",
@@ -67,6 +67,11 @@ def test_retrieval_dtos_have_exact_shapes():
         "mode_note",
         "indexes",
     } <= set(schemas["PaperRetrieval"]["properties"])
+    assert "source" not in schemas["PaperRetrieval"]["properties"]
+    assert {"price_per_million"} <= set(schemas["EmbeddingProfileOut"]["properties"])
+    assert {"profile", "papers", "tokens", "price_per_million", "estimated_cost_usd"} <= set(
+        schemas["ReindexEstimate"]["properties"]
+    )
     assert {"memory", "total_messages"} == set(schemas["ChatMemoryState"]["properties"])
 
 

@@ -48,3 +48,42 @@ def toolchain_pdf(
     data = document.tobytes()
     document.close()
     return data
+
+
+def xmp_packet(*, title=None, creators=(), doi=None, identifier=None, venue=None, cover_date=None):
+    """An XMP packet in the shape publishers embed (dc, prism), with only the given fields."""
+    parts = []
+    if title is not None:
+        parts.append(
+            f'<dc:title><rdf:Alt><rdf:li xml:lang="x-default">{title}</rdf:li></rdf:Alt></dc:title>'
+        )
+    if creators:
+        names = "".join(f"<rdf:li>{name}</rdf:li>" for name in creators)
+        parts.append(f"<dc:creator><rdf:Seq>{names}</rdf:Seq></dc:creator>")
+    if identifier is not None:
+        parts.append(f"<dc:identifier>{identifier}</dc:identifier>")
+    if doi is not None:
+        parts.append(f"<prism:doi>{doi}</prism:doi>")
+    if venue is not None:
+        parts.append(f"<prism:publicationName>{venue}</prism:publicationName>")
+    if cover_date is not None:
+        parts.append(f"<prism:coverDate>{cover_date}</prism:coverDate>")
+    return (
+        '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+        'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/" '
+        'xmlns:xmp="http://ns.adobe.com/xap/1.0/">'
+        "<xmp:CreateDate>2026-01-02T03:04:05Z</xmp:CreateDate>"
+        + "".join(parts)
+        + '</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>'
+    )
+
+
+def with_xmp(data: bytes, packet: str) -> bytes:
+    document = pymupdf.open(stream=data, filetype="pdf")
+    document.set_xml_metadata(packet)
+    result = document.tobytes()
+    document.close()
+    return result

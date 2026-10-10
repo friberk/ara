@@ -52,7 +52,7 @@ export type EmbeddingProfilePage = Schemas['EmbeddingProfilePage']
 export type RetrievalSettings = Schemas['RetrievalSettings']
 export type RetrievalIndex = Schemas['RetrievalIndexOut']
 export type PaperRetrieval = Schemas['PaperRetrieval']
-export type PaperRetrievalUpdate = Schemas['PaperRetrievalUpdate']
+export type ReindexEstimate = Schemas['ReindexEstimate']
 export type ChatMemory = Schemas['ChatMemoryOut']
 export type ChatMemoryState = Schemas['ChatMemoryState']
 // The composer's context and cost meter (ARA-085).
@@ -66,3 +66,6 @@ export type RerankerKey = NonNullable<RetrievalSettings['reranker']>
 // Uploaded-paper metadata lookups (ARA-086, docs/api-contract.md).
 export type MetadataSettings = Schemas['MetadataSettings']
 export type MetadataSource = MetadataSettings['source']
+export type UploadMatch = Schemas['UploadMatch']
+export type PaperLink = Schemas['PaperLink']
+export type MatchDecision = Schemas['MatchDecision']['decision']

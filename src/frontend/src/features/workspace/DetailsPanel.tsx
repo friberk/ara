@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ExternalLink, Pencil } from 'lucide-react'
 import { downloadUrl, safeUrl } from '@/api/client'
 import { providerLabels, type Paper } from '@/api/types'
@@ -65,6 +66,12 @@ export function DetailsPanel({ paper, onOpenPdf }: { paper: Paper; onOpenPdf: ()
               <h3 id={`${id}-abstract`} className="text-sm font-medium">Abstract</h3>
               {paper.abstract ? <p className="max-w-[70ch] text-sm leading-relaxed whitespace-pre-line text-pretty">{paper.abstract}</p> : <p className="text-sm text-muted-foreground">No abstract is available for this paper yet.</p>}
             </section>
+            {paper.pdf_doi_owner && (
+              <p className="text-sm text-pretty">
+                {`This PDF’s DOI belongs to “${paper.pdf_doi_owner.title || 'Untitled paper'}” in your library.`}{' '}
+                <Link to={`/papers/${paper.pdf_doi_owner.paper_id}`} className="underline decoration-foreground/25 underline-offset-4 hover:decoration-foreground">Open that paper</Link>
+              </p>
+            )}
             <MetadataSources provenance={paper.metadata_provenance} headingId={`${id}-sources`} />
             <LookupNotice paper={paper} />
           </section>

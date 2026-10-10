@@ -21,9 +21,10 @@ from app.models.local_models import ModelInstallation
 from app.models.research import GenerationReservation, ModelConfiguration
 from app.repositories.jobs import enqueue, now
 from tests.support.evidence import CHUNK_SET, seed_structured
-from tests.support.papers import OPENAI, QWEN, seed_paper
+from tests.support.papers import OPENAI, QWEN, seed_paper, use_library_profile
 
 LOCAL_CHAT = "ifm-k2-horizon-7b"
+SMALL = "openai-3-small"
 LOCAL_RERANKER = "qwen3-rerank-0.6b"
 HOSTED_RERANKER = "openai-gpt-6-luna"
 DISABLED = "OPEN_MODELS_DISABLED"
@@ -91,7 +92,7 @@ async def test_given_flag_off_when_reading_features_and_models_then_only_hosted_
         assert models and {model["provider"] for model in models} == {"openai"}
         assert all(model["installation"] is None for model in models)
         profiles = (await client.get("/api/v1/retrieval/profiles")).json()
-        assert [item["key"] for item in profiles["items"]] == [OPENAI]
+        assert [item["key"] for item in profiles["items"]] == [OPENAI, SMALL]
         assert [item["key"] for item in profiles["rerankers"]] == [HOSTED_RERANKER]
 
 
@@ -198,7 +199,7 @@ async def test_given_saved_local_retrieval_when_flag_off_then_reported_and_prese
         assert profiles["default_profile"] == QWEN
         embedders = {item["key"]: item for item in profiles["items"]}
         rerankers = {item["key"]: item for item in profiles["rerankers"]}
-        assert set(embedders) == {OPENAI, QWEN} and set(rerankers) == {
+        assert set(embedders) == {OPENAI, SMALL, QWEN} and set(rerankers) == {
             HOSTED_RERANKER,
             LOCAL_RERANKER,
         }
@@ -226,27 +227,16 @@ async def test_given_saved_local_retrieval_when_flag_off_then_reported_and_prese
 
 
 @pytest.mark.integration
-async def test_given_paper_on_local_profile_when_flag_off_then_keyword_search_explains(
-    resources,
-):
+async def test_given_local_library_model_when_flag_off_then_keyword_search_explains(resources):
     paper_id, document_id, _ = await seed_structured(resources, profile=QWEN)
-    async with resources.sessions() as session, session.begin():
-        from app.models.research import Paper
-
-        (await session.get(Paper, paper_id)).retrieval_profile = QWEN
+    await use_library_profile(resources, QWEN)
     async with client_for(resources) as client:
         state = (await client.get(f"/api/v1/papers/{paper_id}/retrieval")).json()
-        assert state["effective_profile"] == QWEN and state["source"] == "paper"
-        assert state["mode"] == "keyword"
+        assert state["effective_profile"] == QWEN and state["mode"] == "keyword"
         assert "Open models are turned off" in state["mode_note"]
         assert "hosted search model" in state["mode_note"]
         (index,) = state["indexes"]
         assert index["state"] == "unavailable" and index["error"]["code"] == DISABLED
-        chosen = await client.put(
-            f"/api/v1/papers/{paper_id}/retrieval",
-            json={"profile": "qwen3-embed-8b", "request_id": str(uuid4())},
-        )
-        assert chosen.status_code == 409 and chosen.json()["code"] == DISABLED
         rebuilt = await client.post(
             f"/api/v1/papers/{paper_id}/retrieval/rebuild", json={"request_id": str(uuid4())}
         )

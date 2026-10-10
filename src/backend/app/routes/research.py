@@ -4,10 +4,12 @@ from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy import select
 
 from app.integrations.academic import AcademicSearch
+from app.integrations.openalex_content import api_key
 from app.models.research import Paper
 from app.repositories.fulltext import enqueue_automatic
 from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
 from app.schemas.research import PaperDetail, PaperPage, PaperPatch, Provider, SavePaper, SearchPage
+from app.services.upload_match import library_papers
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
 
@@ -37,8 +39,8 @@ async def save(body: SavePaper, request: Request, response: Response):
     )
     async with resources.sessions() as session, session.begin():
         paper, created = await save_canonical(session, canonical)
-        # The job commits with the paper: a listed PDF or a DOI is fetched without a click.
-        await enqueue_automatic(session, paper.id)
+        # The job commits with the paper: OpenAlex's stored PDF is fetched without a click.
+        await enqueue_automatic(session, paper.id, enabled=api_key(resources.settings) is not None)
         response.status_code = 201 if created else 200
         return await paper_detail(session, paper.id)
 
@@ -51,7 +53,14 @@ async def library(
     offset: int = Query(default=0, ge=0),
 ):
     async with request.app.state.resources.sessions() as session:
-        statement = select(Paper.id).order_by(Paper.created_at.desc()).limit(limit).offset(offset)
+        # Uploads waiting for a match decision are listed by GET /uploads/matches (ARA-086).
+        statement = (
+            select(Paper.id)
+            .where(library_papers())
+            .order_by(Paper.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if q:
             statement = statement.where(Paper.title.ilike(f"%{q}%"))
         ids = (await session.scalars(statement)).all()

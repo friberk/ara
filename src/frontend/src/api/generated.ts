@@ -221,7 +221,8 @@ export interface paths {
         put?: never;
         /**
          * Retrieve Fulltext Automatically
-         * @description Start retrieval for a paper saved before automatic retrieval; every repeat replays it.
+         * @description Start retrieval for a paper saved before automatic retrieval or without a key at the time;
+         *     every repeat replays it.
          */
         post: operations["retrieve_fulltext_automatically_api_v1_papers__paper_id__retrieve_fulltext_automatic_post"];
         delete?: never;
@@ -569,6 +570,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/retrieval/reindex-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reindex Estimate
+         * @description Papers and tokens a switch to `profile` would embed, priced from stored chunk counts.
+         */
+        get: operations["reindex_estimate_api_v1_retrieval_reindex_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/papers/{paper_id}/retrieval": {
         parameters: {
             query?: never;
@@ -578,8 +599,7 @@ export interface paths {
         };
         /** Read Paper Retrieval */
         get: operations["read_paper_retrieval_api_v1_papers__paper_id__retrieval_get"];
-        /** Update Paper Retrieval */
-        put: operations["update_paper_retrieval_api_v1_papers__paper_id__retrieval_put"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -633,6 +653,40 @@ export interface paths {
         /** Update Settings */
         put: operations["update_settings_api_v1_metadata_settings_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/uploads/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending Matches */
+        get: operations["pending_matches_api_v1_uploads_matches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/uploads/{paper_id}/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide */
+        post: operations["decide_api_v1_uploads__paper_id__match_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -907,6 +961,11 @@ export interface components {
             unavailable_reason?: string | null;
             /** Local Model Key */
             local_model_key?: string | null;
+            /**
+             * Price Per Million
+             * @default 0
+             */
+            price_per_million: number;
         };
         /** EmbeddingProfilePage */
         EmbeddingProfilePage: {
@@ -937,36 +996,6 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
-        };
-        /** FullTextAttemptView */
-        FullTextAttemptView: {
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "openalex" | "semantic_scholar";
-            /** Source Label */
-            source_label: string;
-            /** Version */
-            version?: string | null;
-            /** Is Oa */
-            is_oa?: boolean | null;
-            /** License */
-            license?: string | null;
-            /** Response Status */
-            response_status?: number | null;
-            /**
-             * Outcome
-             * @enum {string}
-             */
-            outcome: "downloaded" | "access_required" | "blocked" | "not_found" | "rate_limited" | "unavailable" | "invalid_pdf" | "unsafe_url" | "unsupported_source" | "no_pdf_link" | "already_attached" | "superseded";
-            /** Reason */
-            reason: string;
-            /**
-             * Checked At
-             * Format: date-time
-             */
-            checked_at: string;
         };
         /** FullTextInput */
         FullTextInput: {
@@ -1004,24 +1033,13 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Availability
-             * @enum {string}
-             */
-            availability: "open_copy_reported" | "publisher_link_only" | "unknown";
-            /** Locations */
-            locations?: components["schemas"]["FullTextLocation"][];
+            /** Api Key Configured */
+            api_key_configured: boolean;
             retrieval_job?: components["schemas"]["JobStatus"] | null;
-            /** Source Host */
-            source_host?: string | null;
             /** Document Id */
             document_id?: string | null;
             /** Ingest Job Id */
             ingest_job_id?: string | null;
-            /** Last Checked At */
-            last_checked_at?: string | null;
-            /** Attempts */
-            attempts?: components["schemas"]["FullTextAttemptView"][];
             /** Acquisition */
             acquisition?: {
                 [key: string]: unknown;
@@ -1155,6 +1173,14 @@ export interface components {
             /** Paper Title */
             paper_title?: string | null;
             readonly error: components["schemas"]["JobError"] | null;
+        };
+        /** MatchDecision */
+        MatchDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "attach" | "discard";
         };
         /** Message */
         Message: {
@@ -1307,6 +1333,18 @@ export interface components {
             };
             /** File Name */
             file_name?: string | null;
+            upload_match?: components["schemas"]["UploadMatch"] | null;
+            pdf_doi_owner?: components["schemas"]["PaperLink"] | null;
+        };
+        /** PaperLink */
+        PaperLink: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Title */
+            title: string | null;
         };
         /** PaperPage */
         PaperPage: {
@@ -1337,11 +1375,6 @@ export interface components {
             document_id: string | null;
             /** Effective Profile */
             effective_profile: string;
-            /**
-             * Source
-             * @enum {string}
-             */
-            source: "default" | "paper";
             /** Parser */
             parser: string | null;
             /** Chunk Count */
@@ -1358,16 +1391,6 @@ export interface components {
             /** Indexes */
             indexes: components["schemas"]["RetrievalIndexOut"][];
         };
-        /** PaperRetrievalUpdate */
-        PaperRetrievalUpdate: {
-            /** Profile */
-            profile: string | null;
-            /**
-             * Request Id
-             * Format: uuid
-             */
-            request_id: string;
-        };
         /** RebuildInput */
         RebuildInput: {
             /**
@@ -1375,6 +1398,22 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+        };
+        /**
+         * ReindexEstimate
+         * @description What switching the library embedding model would re-embed (ARA-091).
+         */
+        ReindexEstimate: {
+            /** Profile */
+            profile: string;
+            /** Papers */
+            papers: number;
+            /** Tokens */
+            tokens: number;
+            /** Price Per Million */
+            price_per_million: number;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number;
         };
         /**
          * RerankerOut
@@ -1689,6 +1728,31 @@ export interface components {
              * @default false
              */
             duplicate: boolean;
+        };
+        /**
+         * UploadMatch
+         * @description A new upload that is this library paper; it waits for Replace/Attach or Cancel (ARA-086).
+         */
+        UploadMatch: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Title */
+            title: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Matched By
+             * @enum {string}
+             */
+            matched_by: "doi" | "arxiv" | "title";
+            /**
+             * Found By
+             * @enum {string}
+             */
+            found_by: "ingest" | "lookup";
         };
         /** ValidationError */
         ValidationError: {
@@ -3003,13 +3067,13 @@ export interface operations {
             };
         };
     };
-    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
+    reindex_estimate_api_v1_retrieval_reindex_estimate_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                paper_id: string;
+            query: {
+                profile: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3020,7 +3084,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaperRetrieval"];
+                    "application/json": components["schemas"]["ReindexEstimate"];
                 };
             };
             /** @description Validation Error */
@@ -3034,7 +3098,7 @@ export interface operations {
             };
         };
     };
-    update_paper_retrieval_api_v1_papers__paper_id__retrieval_put: {
+    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3043,11 +3107,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PaperRetrievalUpdate"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3176,6 +3236,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MetadataSettings"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_matches_api_v1_uploads_matches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperPage"];
+                };
+            };
+        };
+    };
+    decide_api_v1_uploads__paper_id__match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperDetail"];
+                };
+            };
+            /** @description The upload was discarded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

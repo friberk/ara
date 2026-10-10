@@ -180,7 +180,11 @@ async def ingest_pdf_bytes(
             )
             session.add(document)
             await session.flush()
-            job = await enqueue(session, kind="ingest", payload={"document_id": str(document.id)})
+            payload = {"document_id": str(document.id)}
+            if paper_id is None:
+                # Created for this upload: ingestion may find it is a library paper (ARA-086).
+                payload["new_paper"] = True
+            job = await enqueue(session, kind="ingest", payload=payload)
             # The delayed durable job recovers a crash between DB commit and S3 completion.
             job.available_at = grace
             await session.execute(

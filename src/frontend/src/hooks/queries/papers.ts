@@ -23,7 +23,8 @@ export function usePaper(id: string | undefined) {
     queryKey: queryKeys.papers.detail(id ?? ''),
     queryFn: ({ signal }) => api<Paper>(`/papers/${encodeURIComponent(id ?? '')}`, { signal }),
     enabled: !!id,
-    refetchInterval: (current) => current.state.data?.document_status === 'processing' ? 1500 : false,
+    // An upload waiting for a library-match choice is not being read, so it is not polled (ARA-086).
+    refetchInterval: (current) => current.state.data?.document_status === 'processing' && !current.state.data.upload_match ? 1500 : false,
   })
 }
 
