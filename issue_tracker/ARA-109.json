@@ -1,0 +1,42 @@
+{
+  "id": "ARA-109",
+  "title": "Settings as a categorized dialog, with plain copy and models that say what they are for",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"Also we should work on the settings. Both chatgpt.com and claude.ai have their settings menu as pop up modal type of things grouped by the categories. We should follow the same principle. Currently the settings page is very unpolished, full of AI-isms, and unclear. For example I don't even know what is GPT-6 Luna is for. Also bunch of other problematic unpolished things. Can we overhaul our settings using the Impeccable skills?\" Today /settings is one long page with Appearance, Default model (name and price, with no purpose), the paper-details source, the search index (embedding model and reranker), and local models when the experimental flag is on. The hosted catalog has no description of what each model is for.",
+  "dependencies": [
+    "ARA-108"
+  ],
+  "acceptance_criteria": [
+    "Given the sidebar's Settings item, the ⌘K settings command or a /settings link, when used, then a modal dialog opens over the current page, as in ChatGPT and Claude.ai. A category list sits on the left and the chosen category's panel on the right. The URL reflects the open category, so it can be linked; Back and Esc close it and focus returns to the opener. Old /settings links open the dialog instead of a separate page.",
+    "Given the categories, when browsed, then each groups related settings under a plain name. The lead's starting point is General (appearance), Models (the default model and reasoning for new chats), Library and search (where paper details come from, the search index model, reranking) and, only with the experimental flag on, Open models. The agent may refine these with a stated reason.",
+    "Given the Models category, when it shows the hosted models, then each model states in one plain line what it is for, taken from OpenAI's own model page (the catalog's source URL) and stored in the hosted catalog. Each also shows its price per million input and output tokens and its context window in plain units. The default is clearly marked. The copy says that each chat can still switch models in the composer.",
+    "Given any setting, when read, then its label and help text say in plain words what it changes and what happens when it changes (for example, re-embedding the library). There are no AI-isms: no middle-dot separators, no vague filler, no internal jargon (no 'profile', 'provider', 'embedding' without explanation).",
+    "Given a 390px screen, when settings open, then the dialog is full-screen with a category list that drills into a panel with a back control, with no horizontal scroll. Desktop and mobile both work in light and dark.",
+    "Given the codebase, when this lands, then the old SettingsPage layout and anything used only by it are deleted, with no second implementation, and every link that pointed at the page opens the dialog. Existing settings behaviour is kept and tested (saving defaults, switching the embedding model with its confirmation, choosing the metadata source, the reranker, and local models with the flag on)."
+  ],
+  "test_cases": [
+    "Opening from the sidebar, ⌘K and /settings shows the dialog with categories; Esc and Back close it and return focus.",
+    "Deep link to a category opens it.",
+    "Models category shows each model's purpose, prices and window, and marks the default; saving the default works.",
+    "Library and search keeps the embedding switch confirmation, metadata source and reranker behaviour.",
+    "Open models category exists only with the flag on.",
+    "No '·' in the dialog; 390px drill-in navigation works.",
+    "Backend: hosted catalog entries carry a description; models API exposes it; generated.ts regenerated."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/settings/SettingsPage.tsx",
+    "src/frontend/src/features/settings/MetadataSettingsSection.tsx",
+    "src/frontend/src/features/settings/RetrievalSettingsSection.tsx",
+    "src/frontend/src/features/settings/LocalModels.tsx",
+    "src/frontend/src/App.tsx",
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/src/components/shell/CommandPalette.tsx",
+    "src/backend/app/integrations/hosted_catalog.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-109-settings-dialog.",
+  "updated_at": "2026-10-10"
+}
