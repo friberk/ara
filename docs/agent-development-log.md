@@ -1628,15 +1628,15 @@ An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 me
   - Activity showed work stopped by Remove PDF as Failed; `isCancelledJob` now counts `PDF_REMOVED` as well, so it shows as Cancelled. Its test failed first with `Unable to find … Cancelled`.
   - My first gate skipped the PDF checks for every existing chat; an existing test caught it ("queued question … processing"). The gate now skips them only when the chat's PDF is not the paper's current one.
 
-**Merge.** Conflicts came in DESIGN.md (both sections kept), README (integration text plus the details sheet), the contract, the journal (this section kept last) and `ConversationThread.tsx`. For `ConversationThread.tsx`, ARA-096's mention-aware gate was kept, with my option until it was replaced. Section summaries cascade from documents; `queue_storage_cleanup` replaced my own enqueue.
+**Merges.** The second merge (`574b547`, ARA-098's Library fixes) conflicted only in this journal. The lead's last message asked for the dialog line "Conversations that use this PDF keep using it. New questions need a new PDF."; the test failed on the old wording, then passed. In the first merge, conflicts came in DESIGN.md (both sections kept), README (integration text plus the details sheet), the contract, the journal (this section kept last) and `ConversationThread.tsx`. For `ConversationThread.tsx`, ARA-096's mention-aware gate was kept, with my option until it was replaced. Section summaries cascade from documents; `queue_storage_cleanup` replaced my own enqueue.
 
 **Visual check.** Fixture PDFs were seeded through the API, with chats holding long links, identifiers, a wide table, a code block and an eight-turn two-paper chat. They ran on an API at 8097 and Vite at 5197 and were screenshotted with the project's Playwright library. The shots are in the session scratch directory.
 - **Round 1.** Desktop light and dark, and 390px light and dark. Phone document and thread were 390 wide; focus returned to ⓘ after Esc, close and an outside click. It found the "PDF options" tooltip staying over the open menu (the menu opens on pointerdown, so the click that cancels Radix's pending tooltip never lands) and a truncated venue.
 - **Round 2.** Both fixes were confirmed, along with Remove PDF end to end under the first design, and focus falling to `BODY` after removal (fixed, jsdom only). The final semantics were not screenshotted: the check was bounded to two rounds.
 
 **Verification:**
-- **Backend:** `test-stack.py test --project-name ara-workspace-test`: Ruff "All checks passed!", 1209 passed in 266.34 s after the merge (baseline before the branch: 1112 passed in 252.32 s).
-- **Frontend:** `npm run check` was clean with 684 tests in 89 files after the merge (the integration branch adds ARA-094/096/098 tests). `npm run build` passed with the existing chunk-size warning.
+- **Backend:** `test-stack.py test --project-name ara-workspace-test`: Ruff "All checks passed!", 1209 passed in 275.14 s after the second merge (baseline before the branch: 1112 passed in 252.32 s).
+- **Frontend:** `npm run check` was clean with 685 tests in 89 files after the second merge (the integration branch adds ARA-094/096/098 tests). `npm run build` passed with the existing chunk-size warning.
 - **Contract:** `generated.ts` was regenerated from the flag-on `app.openapi()`.
 
 **Not verified:**
