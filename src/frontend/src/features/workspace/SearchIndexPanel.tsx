@@ -76,24 +76,27 @@ function IndexDetails({ paperId }: { paperId: string }) {
   )
 }
 
-/** Advanced, collapsed by default: the library model's index for this paper. Loads only when opened. */
+/**
+ * The ⓘ sheet's Advanced disclosure (ARA-097), collapsed by default: the library model's index for this paper, with
+ * Rebuild. It loads only when opened.
+ */
 export function SearchIndexPanel({ paperId }: { paperId: string }) {
   const id = useId()
   const [open, setOpen] = useState(false)
   return (
-    <Collapsible open={open} onOpenChange={setOpen} asChild>
-      <section aria-labelledby={`${id}-title`} className="grid gap-3">
-        <h3 id={`${id}-title`} className="text-sm font-medium">
-          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
-            <span>Search index</span>
-            <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
-              <span className="text-muted-foreground">Advanced</span>
-              <ChevronDown aria-hidden="true" className="size-4 motion-safe:transition-transform group-data-[state=open]:rotate-180" />
-            </span>
-          </CollapsibleTrigger>
-        </h3>
-        <CollapsibleContent><IndexDetails paperId={paperId} /></CollapsibleContent>
-      </section>
+    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-3">
+      <h3 className="text-sm font-medium">
+        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          Advanced
+          <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground motion-safe:transition-transform group-data-[state=open]:rotate-180" />
+        </CollapsibleTrigger>
+      </h3>
+      <CollapsibleContent>
+        <section aria-labelledby={`${id}-index`} className="grid gap-3">
+          <h4 id={`${id}-index`} className="text-sm font-medium">Search index</h4>
+          <IndexDetails paperId={paperId} />
+        </section>
+      </CollapsibleContent>
     </Collapsible>
   )
 }

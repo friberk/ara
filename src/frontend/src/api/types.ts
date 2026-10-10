@@ -74,3 +74,6 @@ export type IncludedPaper = Schemas['IncludedPaper']
 // Deleting papers and their preview (ARA-095, docs/api-contract.md).
 export type DeletionPreview = Schemas['DeletionPreview']
 export type DeletedPapers = Schemas['DeletedPapers']
+// The reader's PDF menu and removing a paper's PDF (ARA-097, docs/api-contract.md).
+export type DocumentDetail = Schemas['DocumentDetail']
+export type PdfRemovalPreview = Schemas['PdfRemovalPreview']

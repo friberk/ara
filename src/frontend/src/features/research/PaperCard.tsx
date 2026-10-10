@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BookmarkPlus, Check, ExternalLink, FileText, MessageSquareText } from 'lucide-react'
 import { toast } from 'sonner'
@@ -7,35 +7,9 @@ import { providerLabels, type SearchHit } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useSavePaper } from '@/hooks/queries/papers'
-import { cn } from '@/lib/utils'
+import { ClampedText } from '@/components/paper/ClampedText'
 import { PaperByline } from './PaperByline'
 import { displayText, doiLink, recordLink } from './paper-format'
-
-/** Clamped to three lines; Show more appears only when the text actually overflows. */
-function Abstract({ text }: { text: string }) {
-  const id = useId()
-  const ref = useRef<HTMLParagraphElement>(null)
-  const [expanded, setExpanded] = useState(false)
-  const [overflowing, setOverflowing] = useState(false)
-  useEffect(() => {
-    const element = ref.current
-    if (!element || expanded) return
-    // ResizeObserver reports once on observe, then on every width change (sidebar, window, font load).
-    const observer = new ResizeObserver(() => setOverflowing(element.scrollHeight > element.clientHeight + 1))
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [expanded, text])
-  return (
-    <div className="mt-2.5">
-      <p ref={ref} id={id} className={cn('text-sm leading-6 text-pretty text-foreground/80', !expanded && 'line-clamp-3')}>{text}</p>
-      {(overflowing || expanded) && (
-        <button type="button" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded((open) => !open)} className="mt-1 rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </div>
-  )
-}
 
 const newTab = <span className="sr-only"> (opens in a new tab)</span>
 const linkClass = 'inline-flex items-center gap-1.5 rounded-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline'
@@ -95,7 +69,7 @@ export function PaperCard({ hit }: { hit: SearchHit }) {
       </h2>
       <PaperByline authors={hit.authors} year={hit.year} className="mt-1.5" />
       {(hit.is_open_access === true || hit.locations?.some((location) => location.is_oa === true)) && <p className="mt-1.5 text-xs text-muted-foreground">Open copy reported</p>}
-      {hit.abstract?.trim() ? <Abstract text={hit.abstract.trim()} /> : <p className="mt-2.5 text-sm text-muted-foreground">{providerLabels[hit.provider]} has no abstract for this paper.</p>}
+      {hit.abstract?.trim() ? <ClampedText text={hit.abstract.trim()} className="mt-2.5" /> : <p className="mt-2.5 text-sm text-muted-foreground">{providerLabels[hit.provider]} has no abstract for this paper.</p>}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <PaperLinks hit={hit} />
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">

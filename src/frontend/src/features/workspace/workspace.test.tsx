@@ -1,5 +1,5 @@
-// Paper workspace (ARA-037). Replaces the legacy paper-page tests with the same behavioural coverage
-// (metadata-only gate, provenance, dirty-only PATCH) plus the reader, mobile views and the evidence jump.
+// Paper workspace (ARA-037, ARA-097): the reader without tabs, the conversation, the Chat | PDF segments on narrow
+// screens and the evidence jump. The paper's details live behind ⓘ (paper-details.test.tsx); the PDF menu has its own file.
 import { screen, waitFor, within } from '@testing-library/react'
 import type { Citation } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
@@ -59,13 +59,12 @@ const paper = {
 }
 const metadataOnly = { ...paper, document_status: 'metadata_only', active_document_id: null }
 
-test('Given a metadata-only paper and no OpenAlex key, Then the PDF gate and Details offer the DOI link beside the upload without asking for retrieval', async () => {
+test('Given a metadata-only paper and no OpenAlex key, Then the reader offers the DOI link beside the upload without asking for retrieval', async () => {
   const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'GET /papers/p1/fulltext': { paper_id: 'p1', api_key_configured: false, retrieval_job: null } })
-  const { user } = renderApp('/papers/p1')
-  expect(await screen.findByRole('link', { name: 'Open the paper' })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
-  expect(screen.getByRole('button', { name: 'Upload PDF' })).toBeVisible()
-  await user.click(screen.getByRole('tab', { name: 'Details' }))
-  expect(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('link', { name: 'Open the paper' })).toBeVisible()
+  renderApp('/papers/p1')
+  const reader = await screen.findByRole('region', { name: 'PDF reader' })
+  expect(await within(reader).findByRole('link', { name: 'Open the paper' })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
+  expect(within(reader).getByRole('button', { name: 'Upload PDF' })).toBeVisible()
   // ARA-087: without a key nothing can be downloaded, so nothing is requested.
   expect(calls.some((call) => call.method === 'POST')).toBe(false)
 })
@@ -87,15 +86,17 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-test('Given a ready paper, When the workspace opens, Then the header names it beside the PDF reader and the conversation', async () => {
+test('Given a ready paper, When the workspace opens, Then the reader shows its PDF beside the conversation, with no tabs', async () => {
   mockApi({ 'GET /papers/p1': paper })
   renderApp('/papers/p1')
   expect(await screen.findByRole('heading', { level: 1, name: paper.title })).toBeVisible()
   expect(screen.getByText('Ready to read')).toBeVisible()
   expect(screen.getByRole('region', { name: 'Conversation' })).toBeVisible()
-  expect(await screen.findByText('Showing doc-1')).toBeVisible()
-  expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
-  expect(screen.getByRole('link', { name: 'Open original PDF' })).toHaveAttribute('href', '/api/v1/documents/doc-1/download')
+  const reader = screen.getByRole('region', { name: 'PDF reader' })
+  expect(await within(reader).findByText('Showing doc-1')).toBeVisible()
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: 'Details' })).not.toBeInTheDocument()
+  expect(within(reader).getByRole('button', { name: 'PDF options' })).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Page number' })).toHaveValue('1')
   expect(await screen.findByText('/ 15')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
@@ -106,10 +107,11 @@ test('Given a metadata-only paper, Then the reader offers the PDF dropzone and k
   mockApi({ 'GET /papers/p1': metadataOnly })
   renderApp('/papers/p1')
   expect(await screen.findByText('Attach the PDF to read, summarize and ask')).toBeVisible()
-  const reader = screen.getByRole('tabpanel', { name: 'PDF' })
+  const reader = screen.getByRole('region', { name: 'PDF reader' })
   expect(within(reader).getByLabelText('PDF file')).toBeInTheDocument()
   expect(within(reader).getByText(paper.abstract)).toBeVisible()
-  expect(screen.queryByRole('link', { name: 'Open original PDF' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'PDF options' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
 })
 
 test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then one stage list follows it until the PDF opens', async () => {
@@ -121,7 +123,7 @@ test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then 
     'GET /jobs/job-1': () => json(job),
   })
   const { user } = renderApp('/papers/p1')
-  const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
+  const reader = await screen.findByRole('region', { name: 'PDF reader' })
   await user.upload(within(reader).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'paper.pdf', { type: 'application/pdf' }))
   expect(await screen.findByText('Preparing PDF')).toBeVisible()
   const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
@@ -138,7 +140,7 @@ test('Given a PDF that arrived without an upload here, Then the processing view 
   const job = { id: 'job-3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 50, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: null }
   mockApi({ 'GET /papers/p1': { ...metadataOnly, title: null, file_name: 'retrieved-paper.pdf', document_status: 'processing', active_document_id: 'doc-1' }, 'GET /jobs': { items: [job] }, 'GET /jobs/job-3': job })
   renderApp('/papers/p1')
-  const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
+  const reader = await screen.findByRole('region', { name: 'PDF reader' })
   const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
   await waitFor(() => expect(within(steps).getByText('Finding paper details').closest('li')).toHaveAttribute('aria-current', 'step'))
   expect(within(steps).queryByText(/Upload/)).not.toBeInTheDocument()
@@ -161,83 +163,6 @@ test('Given a ready paper whose catalog lookup is running, When it finishes, The
   expect(screen.getByText('Ready to read')).toBeVisible()
 })
 
-test('Given the catalog lookup ran out of attempts, Then Details explains it and can look the paper up again', async () => {
-  const failed = { id: 'lookup-2', kind: 'metadata', state: 'failed', stage: 'failed', progress: 50, error: { code: 'PROVIDER_RATE_LIMITED', message: 'The metadata sources are rate limited, so the details read from the PDF were kept. Retry the lookup later.' }, result: null, attempts: 3, paper_id: 'p1', paper_title: paper.title, created_at: '2026-10-09T00:00:00Z' }
-  const queued = { ...failed, id: 'lookup-3', state: 'queued', stage: 'queued', error: null, attempts: 0 }
-  let lookups: Record<string, unknown>[] = [failed]
-  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? lookups : [] }), 'POST /papers/p1/metadata-lookup': () => { lookups = [queued, failed]; return json(queued, 202) } })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  const details = screen.getByRole('tabpanel', { name: 'Details' })
-  expect(await within(details).findByText(/the details read from the PDF were kept/)).toBeVisible()
-  await user.click(within(details).getByRole('button', { name: 'Look up again' }))
-  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/papers/p1/metadata-lookup')).toBe(true))
-  expect(await within(details).findByRole('button', { name: 'Looking up…' })).toBeDisabled()
-  expect(calls.some((call) => call.path.endsWith('/retry'))).toBe(false)
-})
-
-test('Given any paper with a title, DOI or record, Then Details can look it up again at any time and says edits stay', async () => {
-  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'POST /papers/p1/metadata-lookup': () => json({ id: 'lookup-1', kind: 'metadata', state: 'queued', stage: 'queued', progress: 0, error: null, paper_id: 'p1' }, 202) })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  const details = screen.getByRole('tabpanel', { name: 'Details' })
-  expect(within(details).getByText('Refreshes the details from the metadata source. Fields you edited stay as they are.')).toBeVisible()
-  await user.click(within(details).getByRole('button', { name: 'Look up again' }))
-  await waitFor(() => expect(calls.filter((call) => call.path === '/papers/p1/metadata-lookup')).toHaveLength(1))
-})
-
-test('Given a venue, Then Details shows it and the editor changes it like any other field', async () => {
-  let stored = { ...paper, venue: 'CHI' }
-  const { calls } = mockApi({
-    'GET /papers/p1': () => json(stored),
-    'PATCH /papers/p1': ({ body }) => json(stored = { ...stored, ...(body as object) }),
-  })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  const details = screen.getByRole('tabpanel', { name: 'Details' })
-  expect(within(details).getByText('CHI')).toBeVisible()
-  await user.click(within(details).getByRole('button', { name: 'Edit' }))
-  expect(within(details).getByRole('heading', { name: 'Edit details' })).toBeVisible()
-  const venue = within(details).getByRole('textbox', { name: 'Venue' })
-  await user.clear(venue)
-  await user.type(venue, 'CHI 2024')
-  await user.click(within(details).getByRole('button', { name: 'Save details' }))
-  expect(await within(details).findByText('CHI 2024')).toBeVisible()
-  expect(calls.filter((call) => call.method === 'PATCH').map((call) => call.body)).toEqual([{ venue: 'CHI 2024' }])
-})
-
-test('Given the workspace, When the paper is deleted from its actions, Then the Library opens and says so', async () => {
-  let deleted = false
-  const { calls } = mockApi({
-    'GET /papers/p1': () => deleted ? json({ code: 'PAPER_NOT_FOUND', message: 'Paper not found.' }, 404) : json(paper),
-    'GET /papers/p1/deletion-preview': { papers: [{ paper_id: 'p1', title: paper.title }], missing: [], pdfs: 1, summaries: 0, deleted_chats: [], updated_chats: [], active_jobs: 0, answering: false },
-    'DELETE /papers/p1': () => { deleted = true; return new Response(null, { status: 204 }) },
-  })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('button', { name: `Actions for “${paper.title}”` }))
-  await user.click(screen.getByRole('menuitem', { name: 'Delete…' }))
-  const dialog = await screen.findByRole('alertdialog', { name: `Delete “${paper.title}”?` })
-  await user.click(await within(dialog).findByRole('button', { name: 'Delete paper' }))
-  expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
-  expect(await screen.findByText(`Deleted “${paper.title}”`)).toBeVisible()
-  // The deletion's own redirect is not mistaken for a stale link.
-  expect(screen.queryByText('That paper isn’t in your library anymore. It may have been deleted.')).not.toBeInTheDocument()
-  expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual(['/papers/p1'])
-})
-
-test('Given field provenance, Then the details show the bibliography and where each field came from', async () => {
-  mockApi({ 'GET /papers/p1': paper })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  const details = screen.getByRole('tabpanel', { name: 'Details' })
-  expect(within(details).getByText('A. Author, B. Writer')).toBeVisible()
-  expect(within(details).getByRole('link', { name: '10.1234/evidence' })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
-  expect(within(details).getByRole('link', { name: 'OpenAlex' })).toHaveAttribute('href', 'https://openalex.org/W1')
-  expect(within(details).getByRole('heading', { name: 'Metadata sources' })).toBeVisible()
-  expect(within(details).getByText('Title: edited by you')).toBeVisible()
-  expect(within(details).getByText('Authors: OpenAlex')).toBeVisible()
-})
-
 test('Given provider metadata, When only the title is edited, Then only the title is patched and the header follows', async () => {
   let stored = paper
   const { calls } = mockApi({
@@ -245,47 +170,40 @@ test('Given provider metadata, When only the title is edited, Then only the titl
     'GET /papers/p1': () => json(stored),
   })
   const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  await user.click(screen.getByRole('button', { name: 'Edit' }))
-  const title = screen.getByRole('textbox', { name: 'Title' })
+  await user.click(await screen.findByRole('button', { name: 'Paper details' }))
+  await user.click(within(await screen.findByRole('dialog', { name: paper.title })).getByRole('button', { name: 'Edit details' }))
+  const title = within(await screen.findByRole('dialog', { name: 'Edit details' })).getByRole('textbox', { name: 'Title' })
   await user.clear(title)
   await user.type(title, 'Corrected title')
   await user.click(screen.getByRole('button', { name: 'Save details' }))
+  // The sheet names the paper too; behind it, the header follows once the sheet closes.
+  expect(await screen.findByRole('dialog', { name: 'Corrected title' })).toBeVisible()
+  await user.keyboard('{Escape}')
   expect(await screen.findByRole('heading', { level: 1, name: 'Corrected title' })).toBeVisible()
   expect(calls.filter((call) => call.method === 'PATCH').map((call) => call.body)).toEqual([{ title: 'Corrected title' }])
-  expect(screen.getByText('Authors: OpenAlex')).toBeVisible()
 })
 
-test('Given a ready paper, When a new PDF version is uploaded from Details, Then its stages stay there while the paper processes', async () => {
-  let stored = paper
-  const job = { id: 'job-2', kind: 'ingest', state: 'processing', stage: 'processing', progress: 10, error: null, result: null, attempts: 1, paper_id: 'p1', paper_title: paper.title }
-  mockApi({
-    'POST /documents': () => { stored = { ...paper, document_status: 'processing', active_document_id: 'doc-2' }; return json({ paper_id: 'p1', document_id: 'doc-2', job_id: 'job-2', duplicate: false }) },
-    'GET /papers/p1': () => json(stored),
-    'GET /jobs/job-2': job,
-  })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  const details = screen.getByRole('tabpanel', { name: 'Details' })
-  await user.upload(within(details).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'new-version.pdf', { type: 'application/pdf' }))
-  expect(await screen.findByText('Preparing PDF')).toBeVisible()
-  const steps = await within(details).findByRole('list', { name: 'Preparation steps' })
-  await waitFor(() => expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step'))
-  expect(within(details).queryByText(/in the background/i)).not.toBeInTheDocument()
-})
-
-test('Given a narrow screen, Then Chat, PDF and Details are tabs that follow ?view=', async () => {
+test('Given a narrow screen, Then Chat and PDF are the only segments, and they follow ?view=', async () => {
   narrowScreen()
   mockApi({ 'GET /papers/p1': paper })
-  const { user } = renderApp('/papers/p1?view=details')
-  expect(await screen.findByRole('tab', { name: 'Details', selected: true })).toBeVisible()
-  expect(screen.getByText('Title: edited by you')).toBeVisible()
+  const { user } = renderApp('/papers/p1?view=pdf')
+  expect(await screen.findByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Chat', 'PDF'])
+  expect(await screen.findByText('Showing doc-1')).toBeVisible()
   expect(screen.queryByRole('separator')).not.toBeInTheDocument()
   await user.click(screen.getByRole('tab', { name: 'Chat' }))
   expect(screen.getByRole('tab', { name: 'Chat', selected: true })).toBeVisible()
   expect(screen.getByRole('region', { name: 'Conversation' })).toBeVisible()
   await user.click(screen.getByRole('tab', { name: 'PDF' }))
   expect(await screen.findByText('Showing doc-1')).toBeVisible()
+})
+
+test('Given a narrow screen and an old ?view=details link, Then the conversation opens', async () => {
+  narrowScreen()
+  mockApi({ 'GET /papers/p1': paper })
+  renderApp('/papers/p1?view=details')
+  expect(await screen.findByRole('tab', { name: 'Chat', selected: true })).toBeVisible()
+  expect(screen.getByRole('region', { name: 'Conversation' })).toBeVisible()
 })
 
 test('Given a narrow screen, When a citation asks for its source, Then the PDF tab opens at the cited page', async () => {
@@ -300,15 +218,6 @@ test('Given a narrow screen, When a citation asks for its source, Then the PDF t
   expect(screen.getByText('Couldn’t pinpoint the passage, so showing page 2.')).toBeVisible()
   // Assistive technology hears one polite announcement that names the page and says nothing was highlighted.
   expect(screen.getByText('Showing page 2. The cited passage could not be highlighted.')).toHaveAttribute('role', 'status')
-})
-
-test('Given the Details tab is open, When a citation asks for its source, Then the reader returns to the PDF', async () => {
-  mockApi({ 'GET /papers/p1': paper })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  await user.click(screen.getByRole('button', { name: 'Page 2' }))
-  expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
-  expect(await screen.findByText('Showing doc-1 at page 2')).toBeVisible()
 })
 
 test('Given a citation, When the reader marks its passage, Then the outcome is announced politely', async () => {
@@ -346,7 +255,6 @@ test('Given a citation from an earlier PDF, When its source is shown, Then the r
   await user.click(await screen.findByRole('button', { name: 'Page 1 of an earlier PDF' }))
   expect(await screen.findByText('Showing an earlier PDF version')).toBeVisible()
   expect(await screen.findByText('Showing doc-0 at page 1')).toBeVisible()
-  expect(screen.getByRole('link', { name: 'Open original PDF' })).toHaveAttribute('href', '/api/v1/documents/doc-0/download')
   await user.click(screen.getByRole('button', { name: 'Back to current PDF' }))
   expect(await screen.findByText('Showing doc-1')).toBeVisible()
   expect(screen.queryByText('Showing an earlier PDF version')).not.toBeInTheDocument()
@@ -412,29 +320,12 @@ describe('test-after coverage (mutation-verified)', () => {
     expect(screen.getByRole('button', { name: 'Zoom out' })).toBeDisabled()
   })
 
-  test('Given a metadata-only paper, When Details offers to attach a PDF, Then the reader returns to the PDF dropzone', async () => {
-    mockApi({ 'GET /papers/p1': metadataOnly })
-    const { user } = renderApp('/papers/p1')
-    await user.click(await screen.findByRole('tab', { name: 'Details' }))
-    await user.click(screen.getByRole('button', { name: 'Attach a PDF' }))
-    expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
-    expect(within(screen.getByRole('tabpanel', { name: 'PDF' })).getByText('Attach the PDF to read, summarize and ask')).toBeVisible()
-  })
-
-  test('Given a narrow screen, When Details offers to attach a PDF, Then the PDF view opens', async () => {
-    narrowScreen()
-    mockApi({ 'GET /papers/p1': metadataOnly })
-    const { user } = renderApp('/papers/p1?view=details')
-    await user.click(await screen.findByRole('button', { name: 'Attach a PDF' }))
-    expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
-  })
-
   test('Given an impossible publication year, When the details are saved, Then the field explains the range and nothing is sent', async () => {
     const { calls } = mockApi({ 'GET /papers/p1': paper })
     const { user } = renderApp('/papers/p1')
-    await user.click(await screen.findByRole('tab', { name: 'Details' }))
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
-    const year = screen.getByRole('textbox', { name: 'Publication year' })
+    await user.click(await screen.findByRole('button', { name: 'Paper details' }))
+    await user.click(within(await screen.findByRole('dialog', { name: paper.title })).getByRole('button', { name: 'Edit details' }))
+    const year = within(await screen.findByRole('dialog', { name: 'Edit details' })).getByRole('textbox', { name: 'Publication year' })
     await user.clear(year)
     await user.type(year, '12')
     await user.click(screen.getByRole('button', { name: 'Save details' }))
