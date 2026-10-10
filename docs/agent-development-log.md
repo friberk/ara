@@ -1880,3 +1880,11 @@ The branches recorded for archival are listed in AGENTS.md. Their worktrees unde
 ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to `completed`, the tracker's value), then into `main`. The full backend suite passed 1222 with Ruff clean on the integration branch. The change is backend only and needs no migration.
 
 **Lead error, corrected.** At 03:12 the repository root had been switched to a new branch, `feat/ara-107-deploy`, created from `main` at `36d9076` by someone other than this session. I didn't check the branch, so my first ARA-105 merge and its docs commit (`26fc714`, `f18bbdf`) landed on that branch. I removed them with `git reset --keep 36d9076`. That branch had no commits or tracked changes of its own, and its untracked `issue_tracker/ARA-107.json` was left untouched. I then redid the merge on `main` in a temporary worktree, so the root checkout stays on its own branch. During the few minutes the root held ARA-105, the dev API ran it and its startup backfill could revive failed section summaries under the cap, which is the behaviour the user approved.
+
+## 2026-10-10 - ARA-108 Remove the Theme control from the sidebar footer
+
+- Prompt: the user asked "I am annoyed with the Theme button at the bottom. Should it be there?" The lead recommended removing it, and the user approved: "OK. Go ahead and remove that from the sidebar".
+- **Red first.** Two new shell tests (expanded and collapsed-to-icons) asserted that the sidebar has no Theme text and keeps Settings. Against the unchanged code they failed on the Theme span: 2 failed, 17 passed. The palette dark-theme test passed before and after, as a keep-behaviour check.
+- **Change.** The `<ThemeToggle />` footer item is removed from `AppSidebar.tsx`. `components/theme/ThemeToggle.tsx` is deleted; it had no test file of its own. `ThemeProvider` and the theme context stay. README and DESIGN.md no longer mention a sidebar theme switch.
+- **Corrected error.** The first `npm run check` failed one test: `App.test.tsx` opened the sidebar Theme menu. The test's behaviour (Dark applies and persists) is kept and now drives Settings > Appearance; it passes 8/8 and the full check passes.
+- **Result.** `npm run check`: 90 files, 722 tests passed, exit 0. `npm run build`: exit 0. Commit `794daed`.
