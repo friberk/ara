@@ -36,8 +36,12 @@ function IndexDetails({ paperId }: { paperId: string }) {
   const percent = index && view === 'building' && index.total > 0 ? Math.min(99, Math.round(100 * index.embedded / index.total)) : null
   return (
     <div className="grid gap-4">
-      {/* One plain sentence, the model named once (ARA-101 follow-up). A ready index says nothing more. */}
-      <p className="text-sm text-pretty tabular">{`Searching ${count(data.chunk_count, 'passage')} in ${count(data.section_count, 'section')} with ${profile?.display_name ?? data.effective_profile}.`}</p>
+      {/* One plain sentence, the model named once (ARA-101 follow-up). A ready index says nothing more. The name never
+          breaks at its own hyphens ("text-embedding-" / "3-large"); the line breaks before it instead. */}
+      <p className="text-sm text-pretty tabular">
+        {`Searching ${count(data.chunk_count, 'passage')} in ${count(data.section_count, 'section')} with `}
+        <span className="whitespace-nowrap">{profile?.display_name ?? data.effective_profile}</span>.
+      </p>
       {view === 'building' && (
         <div className="grid gap-2">
           <p className="flex items-center gap-2 text-sm"><LoaderCircle aria-hidden="true" className="size-3.5 text-muted-foreground motion-safe:animate-spin" />Building the index</p>

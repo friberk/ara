@@ -480,4 +480,102 @@ describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
     expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
     vi.restoreAllMocks()
   })
+
+  /**
+   * A small layout model for jsdom: a 600px viewer whose scrollTop is stored, a 320px header, and pages as tall as the
+   * viewer sizes them (their style height, which follows the width), 16px apart with page 1 at 336. Widths are reported
+   * through `resize`, as the ResizeObserver would.
+   */
+  function layoutModel() {
+    const tops = new WeakMap<Element, number>()
+    const writes: number[] = []
+    let callback: ResizeObserverCallback | null = null
+    window.ResizeObserver = class {
+      constructor(next: ResizeObserverCallback) { callback = next }
+      observe() { queueMicrotask(() => callback?.([{ contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    const height = (element: HTMLElement) => parseFloat(element.style.height) || 0
+    const pageTop = (page: number) => {
+      let top = 336
+      for (const element of document.querySelectorAll<HTMLElement>('[data-pdf-page]')) {
+        if (Number(element.dataset.pdfPage) === page) break
+        top += height(element) + 16
+      }
+      return top
+    }
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.dataset.pdfPage ? height(this) : 0 })
+    vi.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) { return tops.get(this) ?? 0 })
+    vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) { tops.set(this, value); writes.push(value) })
+    vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(function (this: Element, options?: ScrollToOptions | number) {
+      if (typeof options === 'object' && options.top !== undefined) { tops.set(this, options.top); writes.push(options.top) }
+    })
+    const viewer = () => screen.getByRole('region', { name: 'PDF document' })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const scrolled = tops.get(viewer()) ?? 0
+      const page = Number((this as HTMLElement).dataset?.pdfPage)
+      if (page) return new DOMRect(0, pageTop(page) - scrolled, 800, height(this as HTMLElement))
+      if (this.tagName === 'HEADER') return new DOMRect(0, -scrolled, 800, 320)
+      return new DOMRect(0, 0, 800, 600)
+    })
+    return {
+      writes,
+      scrollTop: () => tops.get(viewer()) ?? 0,
+      pageTop,
+      scrollTo: (top: number) => { tops.set(viewer(), top); fireEvent.scroll(viewer()) },
+      resize: (width: number) => act(() => { callback?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver) }),
+    }
+  }
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 250)))
+
+  test('Given the header and no citation, When the page width changes again on load (a scrollbar appears), Then the reader stays at the top, header first', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    await layout.resize(785)
+    await settle()
+    await layout.resize(770)
+    await settle()
+    expect(layout.scrollTop()).toBe(0)
+    expect(layout.writes.filter((top) => top !== 0)).toEqual([])
+    vi.restoreAllMocks()
+  })
+
+  test('Given the reader scrolled into page 3, When the width changes, Then page 3 stays in view at the same spot', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    // A quarter of the way into page 3; after the resize the pages are shorter, and the same quarter is kept.
+    const before = layout.pageTop(3)
+    const page = screen.getByRole('group', { name: 'Page 3' })
+    layout.scrollTo(before + parseFloat(page.style.height) / 4)
+    await waitFor(() => expect(handlers.onPageChange).toHaveBeenLastCalledWith(3))
+    await layout.resize(785)
+    await settle()
+    expect(layout.pageTop(3)).toBeLessThan(before)
+    expect(layout.scrollTop()).toBeCloseTo(layout.pageTop(3) + parseFloat(page.style.height) / 4, 5)
+    vi.restoreAllMocks()
+  })
+
+  test('Given the reader is reading the header, When the width changes, Then it keeps the same distance from the top', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    layout.scrollTo(120)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(null))))
+    await layout.resize(785)
+    await settle()
+    expect(layout.scrollTop()).toBe(120)
+    vi.restoreAllMocks()
+  })
+
+  test('Given the viewer, Then the browser does not anchor its scrolling, which the viewer does itself', () => {
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
+    expect(screen.getByRole('region', { name: 'PDF document' })).toHaveClass('[overflow-anchor:none]')
+  })
 })

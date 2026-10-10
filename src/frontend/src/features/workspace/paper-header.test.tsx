@@ -142,7 +142,7 @@ test('Given ⓘ, When it is pressed, Then a centred dialog lists sources, Look u
   const identifiers = within(dialog).getByRole('region', { name: 'Identifiers' })
   expect(within(identifiers).getByText('10.1234/evidence')).toHaveClass('font-mono')
   expect(within(identifiers).getByText('W123')).toHaveClass('font-mono')
-  expect(await within(dialog).findByText('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')).toBeVisible()
+  expect(await within(dialog).findByText(/^Searching 212 passages in 14 sections with/)).toHaveTextContent('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')
   expect(within(dialog).getByRole('heading', { name: 'Search index' })).toBeVisible()
   expect(within(dialog).getByRole('button', { name: 'Delete paper…' })).toBeVisible()
   expect(within(dialog).queryByText(paper.abstract)).not.toBeInTheDocument()

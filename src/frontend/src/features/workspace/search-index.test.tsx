@@ -24,7 +24,10 @@ test('Given a ready index on the default model, Then one plain sentence names th
   mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': retrieval() })
   mount()
   const panel = screen.getByRole('region', { name: 'Search index' })
-  expect(await within(panel).findByText('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')).toBeVisible()
+  const sentence = await within(panel).findByText(/^Searching 212 passages in 14 sections with/)
+  expect(sentence).toHaveTextContent('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')
+  // The line breaks before the model's name, never at the hyphens inside it.
+  expect(within(sentence).getByText('OpenAI text-embedding-3-large')).toHaveClass('whitespace-nowrap')
   // The model is named once, a ready index needs no pill, and the user has asked for no middle dots.
   expect(within(panel).queryByText('text-embedding-3-large')).not.toBeInTheDocument()
   expect(within(panel).queryByText('Ready')).not.toBeInTheDocument()
