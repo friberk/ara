@@ -1150,3 +1150,16 @@ After the first round, the lead fast-forwarded the branch to the integration bra
 - **One mixed test.** In the full run, ARA-091's mixed estimate test failed on its local line, because local estimates are now refused while off. It now runs with the flag on.
 - **Verification.** Backend: 1013 passed in 192.73 s, with Ruff clean. Frontend: `npm run check` passed with 583 tests, and `npm run build` passed. Infrastructure: 19 passed. A live flag-off test stack served hosted-only catalogs, refused the local estimate and returned 404 for a model download.
 - **Warnings.** Both came from the merged branch: an alembic `DeprecationWarning` in `test_schema_revision.py` and a react-refresh lint warning on `priceLabel`. At the lead's request, `priceLabel` moved from `ProfileOptions.tsx` to a sibling `profile-format.ts`, and `npx eslint .` now reports no problems. This was a refactor, so lint was its only check; 583 tests and the build still pass.
+
+**Context window decision (ARA-093).**
+- **The question.** The user asked why the app doesn't use each model's native window (about 1M).
+- **What the lead found:**
+  - The window exists only as one shared constant, not as per-model catalog data.
+  - The 64K working budget acts as a fill target, not a pure ceiling. Evidence packing adds same-section neighbours until the budget is full, and history stays verbatim until it reaches 25% of the budget.
+  - Raising the ceiling would therefore raise spend per question.
+- **Industry practice:**
+  - OpenAI file search retrieves about 16K tokens.
+  - Claude Projects switches to retrieval near the window.
+  - NotebookLM stresses retrieval and ranking despite a 1M window.
+  - Scite and SciSpace use retrieval and publish no token figures.
+- **The decision.** The user kept 64K "unless we decide" otherwise. ARA-093 is limited to putting each model's window and limits in the catalog, with no change in behaviour. Full text when it fits, as Claude Projects does, was noted as a later option for multi-paper chats.

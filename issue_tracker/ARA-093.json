@@ -1,0 +1,36 @@
+{
+  "id": "ARA-093",
+  "title": "Per-model context and limits in the hosted model catalog",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "Hosted model facts are scattered across the code:\n- context_registry.py has one HOSTED_WINDOW = 1_050_000 and one HOSTED_OUTPUT_TOKENS = 4000 for every hosted model;\n- llm.py keeps prices in a PRICES dict and reasoning levels in HOSTED_REASONING_EFFORTS;\n- the Model DTO defaults context_window to 1050000.\nThis contradicts the catalog-not-hardcoded rule. On 2026-10-10 the user asked to embed each model's native context window in the model catalog metadata and manage limits from it. After discussing cost and industry practice, they decided to keep the 64K working budget (HOSTED_WORKING_CONTEXT_TOKENS) unchanged for now. Industry practice bounds per-question context below the native window: OpenAI file search uses about 16K of retrieved context, and Claude Projects switches to retrieval near the window. This ticket is catalog-only, with no change in behaviour.",
+  "dependencies": [
+    "ARA-012",
+    "ARA-076",
+    "ARA-085"
+  ],
+  "acceptance_criteria": [
+    "Given the hosted catalog, when it is read, then each model has one entry with model id, display name, native context window, maximum output tokens, input and output prices, reasoning levels and token encoding. HOSTED_WINDOW, HOSTED_OUTPUT_TOKENS, PRICES and HOSTED_REASONING_EFFORTS become derived views or are deleted, with no parallel sources of truth.",
+    "Given each hosted model, when its window and output limit are recorded, then the values are checked against OpenAI's model documentation. The entry cites the source, and anything unverifiable is flagged rather than assumed.",
+    "Given /models, when it renders, then context_window (and max output, if exposed) come from each model's entry, not a shared default.",
+    "Given any question, when the prompt is assembled, then the input budget stays min(model window - answer allowance - safety, HOSTED_WORKING_CONTEXT_TOKENS) with the 64K default, the answer allowance stays at today's value, and every prompt, cost and budget test passes unchanged.",
+    "Given the context meter (ARA-085), when it shows the full window, then that number comes from the model's catalog entry."
+  ],
+  "test_cases": [
+    "Catalog unit tests: each entry is complete; derived views match; an unknown model raises as today.",
+    "Behaviour lock: existing context, budget, pricing and usage suites pass with no expectation changes.",
+    "/models reports per-model windows."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/integrations/context_registry.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/schemas/ai.py",
+    "src/backend/app/services/costs.py",
+    "src/backend/app/routes/ai.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10; catalog-only, with the 64K working budget unchanged by user decision. Branch feat/ara-093-hosted-catalog.",
+  "updated_at": "2026-10-10"
+}
