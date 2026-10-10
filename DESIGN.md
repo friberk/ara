@@ -228,7 +228,7 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 ### Hierarchy
 - **Display** (600, 28px, tight tracking, balanced wrap): the home greeting above the composer ("What are you researching?"). Used once per screen at most.
-- **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library, Activity and Settings.
+- **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library and Settings.
 - **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the details panel at 1.125rem.
 - **Reading** (400, 15.5px, 28px line): assistant answers, user messages and summaries. This is the conversation's reading voice, one step above the interface.
 - **Composer** (400, 15px, 24px line): text typed into the composer.
@@ -251,7 +251,7 @@ The product's mark is the wordmark "ara." (the dot is part of the name), set in 
 
 ## Layout
 
-The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), Library and Activity, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher.
+The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), and Library, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher.
 
 Content routes centre a single column at max-w-3xl (48rem). Home centres the display greeting, the composer and suggestion chips vertically, with a 28px gap and 12vh of extra bottom padding so the group sits slightly above centre. Search pins the composer to the bottom of the results column, like a chat thread. Search results and library entries are borderless rows with 24px and 20px vertical padding, divided by hairlines.
 
@@ -320,7 +320,7 @@ The single input surface of the app. It is a 22px-radius floating form on paper 
 
 Reasoning choices come from the selected model's backend capabilities. Settings and the composer show **None**, **Low**, **Medium** and **High** for verified IFM models; GPT retains its own levels, including **Extra high** and **Max**. Verified per-model aliases resolve older IFM preset/enabled preferences to High without a false unsaved-change state. Binary-only models use a **Reasoning** toggle, with Enabled/Disabled state, rather than an effort menu. Incomplete capabilities explain that reasoning is model-controlled. Unavailable models preserve the preference and hide editing until readiness returns. Deliberate model switches store an explicit supported level; later preset changes do not move that choice. Historical Runtime preset/Reasoning enabled labels describe stored requests without rewriting them.
 
-Installed local models prepare automatically when runtime or capability checks become stale. Settings shows **Preparing model**, the current phase and background continuity; preparation has no transfer percentage or Pause button. Selection remains unavailable until the server confirms readiness, then enables through polling. Temporary unavailability preserves the saved model and reasoning effort. Activity calls verification-only work **Model preparation**, including its history. Failed preparation offers **Retry preparation** with retained weights, or an explicit **Download** if weights disappeared; failed transfer/deletion actions name their respective retries. Routine upgrades require no **Verify again** action.
+Installed local models prepare automatically when runtime or capability checks become stale. Settings shows **Preparing model**, the current phase and background continuity; preparation has no transfer percentage or Pause button. Selection remains unavailable until the server confirms readiness, then enables through polling. Temporary unavailability preserves the saved model and reasoning effort. Settings calls verification-only work **Model preparation**, including its history. Failed preparation offers **Retry preparation** with retained weights, or an explicit **Download** if weights disappeared; failed transfer/deletion actions name their respective retries. Routine upgrades require no **Verify again** action.
 
 ### Conversation thread
 User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a muted meta line (copy, model name, reasoning level). While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.

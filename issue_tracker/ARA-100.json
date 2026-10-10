@@ -21,7 +21,7 @@
     "Backend: failed storage_cleanup is re-queued at startup or recovery, idempotently.",
     "Contextual retry surfaces still work: reader retry, summary failure, Look up again."
   ],
-  "status": "planned",
+  "status": "in_progress",
   "related_files": [
     "src/frontend/src/features/activity/ActivityPage.tsx",
     "src/frontend/src/App.tsx",

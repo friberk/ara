@@ -111,7 +111,7 @@ def storage_down(resources):
 
 async def test_a_storage_outage_retries_and_never_brings_rows_back(resources):
     """Given storage failing, the job waits and retries within its attempts, the paper stays
-    deleted, and a failure after the last attempt can be retried from Activity."""
+    deleted, and a failure after the last attempt can still be retried through the jobs API."""
     paper, key = await uploaded(resources, "Deleted")
     async with client_for(resources) as client:
         await client.delete(f"/api/v1/papers/{paper}")

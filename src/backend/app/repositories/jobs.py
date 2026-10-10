@@ -7,6 +7,11 @@ from sqlalchemy import func, select, update
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.schemas.jobs import JobStatus
 
+# A storage cleanup that ran out of attempts against an unreachable store is queued again by
+# recovery after this wait, at most this many times (ARA-100).
+STORAGE_REVIVE_SECONDS = 600
+STORAGE_MAX_REVIVALS = 48
+
 
 def now() -> datetime:
     return datetime.now(UTC)
@@ -232,6 +237,7 @@ async def recover(sessions, *, open_models: bool = True) -> None:
                     installation.updated_at = now()
             await mark_terminal_document(session, job)
             await mark_terminal_index(session, job)
+        await revive_storage_cleanups(session)
         # Delivered events can be lost in Redis or remain unclaimed after a worker crash.
         # Redelivery preserves generation and attempts; an atomic claim defeats duplicates.
         await session.execute(
@@ -243,6 +249,40 @@ async def recover(sessions, *, open_models: bool = True) -> None:
                 ),
             )
             .values(delivered_at=None)
+        )
+
+
+async def revive_storage_cleanups(session) -> None:
+    """Queue storage cleanups that ran out of attempts against an unreachable store again.
+
+    No page offers a retry (ARA-100), so recovery does, or the stored PDFs of deleted papers
+    would leak. Only the transient failure qualifies; a refused request fails permanently. Each
+    revival waits out a cooldown and counts in the payload, so a store that never answers stops
+    being asked. The row lock with skip-locked makes concurrent recoveries revive a job once.
+    """
+    revivals = func.coalesce(BackgroundJob.payload["revivals"].as_integer(), 0)
+    failed = (
+        await session.scalars(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.kind == "storage_cleanup",
+                BackgroundJob.state == "failed",
+                BackgroundJob.error_code == "STORAGE_UNAVAILABLE",
+                BackgroundJob.updated_at <= now() - timedelta(seconds=STORAGE_REVIVE_SECONDS),
+                revivals < STORAGE_MAX_REVIVALS,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(100)
+        )
+    ).all()
+    for job in failed:
+        job.payload = {**job.payload, "revivals": int(job.payload.get("revivals") or 0) + 1}
+        job.state, job.stage, job.attempts = "queued", "retry_wait", 0
+        job.generation += 1
+        job.lease_token = job.lease_expires_at = None
+        job.available_at = job.updated_at = now()
+        session.add(
+            JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at)
         )
 
 
