@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import embedding_profile
-from app.integrations.llm import PRICES
+from app.integrations.hosted_catalog import hosted_model
 from app.integrations.model_catalog import local_spec
 from app.integrations.reranker_catalog import reranker_profile
 
@@ -16,15 +16,36 @@ def token_count(value) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
+def cache_tokens(usage: dict, sent: int) -> tuple[int, int]:
+    """Input tokens read from and written to the prompt cache (Responses `input_tokens_details`).
+
+    Both are part of `input_tokens` and each token has one rate. An implausible count is
+    ignored, so the call is priced uncached rather than cheaper than it was.
+    """
+    details = usage.get("input_tokens_details")
+    if not isinstance(details, dict):
+        return 0, 0
+    read = token_count(details.get("cached_tokens")) or 0
+    written = token_count(details.get("cache_write_tokens")) or 0
+    return (read, written) if read + written <= sent else (0, 0)
+
+
 def call_cost(model: str, usage: dict) -> Decimal | None:
     """A chat call's cost. Local models are free; an unknown model or missing usage has none."""
     if local_spec(model):
         return Decimal(0)
-    prices = PRICES.get(model)
+    entry = hosted_model(model)
     tokens = (token_count(usage.get("input_tokens")), token_count(usage.get("output_tokens")))
-    if prices is None or None in tokens:
+    if entry is None or None in tokens:
         return None
-    return (prices[0] * tokens[0] + prices[1] * tokens[1]) / MILLION
+    sent, output = tokens
+    read, written = cache_tokens(usage, sent)
+    return (
+        entry.input_price * (sent - read - written)
+        + entry.cached_input_price * read
+        + entry.cache_write_price * written
+        + entry.output_price * output
+    ) / MILLION
 
 
 def embedding_cost(profile: str, tokens: int) -> Decimal | None:

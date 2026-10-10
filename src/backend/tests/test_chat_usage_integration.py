@@ -231,6 +231,9 @@ async def test_given_a_hosted_follow_up_when_answering_then_each_billed_call_is_
         ).all()
     (message,) = rows
     billed = message.retrieval["billed"]
-    assert billed["planner"] == {"model": LUNA, "input_tokens": 20, "output_tokens": 5}
+    planner = {k: v for k, v in billed["planner"].items() if k != "input_tokens_details"}
+    assert planner == {"model": LUNA, "input_tokens": 20, "output_tokens": 5}
+    # Cache counts the provider reports are kept for pricing (ARA-093).
+    assert "input_tokens_details" in billed["planner"]
     assert billed["embedding"]["profile"] == EMBED and billed["embedding"]["tokens"] > 0
     assert billed["rerank"]["profile"] == RERANK and billed["rerank"]["tokens"] > 0

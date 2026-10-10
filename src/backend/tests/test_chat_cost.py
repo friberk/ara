@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 from app.integrations.embedding_catalog import PROFILES
-from app.integrations.llm import PRICES
+from app.integrations.hosted_catalog import HOSTED_MODELS
 from app.integrations.model_catalog import LOCAL_MODELS
 from app.integrations.reranker_catalog import RERANKERS
 
@@ -11,10 +11,11 @@ from app.integrations.reranker_catalog import RERANKERS
 def test_given_a_hosted_call_when_priced_then_tokens_use_the_catalog_rates():
     from app.services.costs import call_cost
 
-    cheap_in, cheap_out = PRICES["gpt-5.6-luna"]
+    cheap = HOSTED_MODELS["gpt-5.6-luna"]
+    cheap_in, cheap_out = cheap.input_price, cheap.output_price
     cost = call_cost("gpt-5.6-luna", {"input_tokens": 20_000, "output_tokens": 500})
     assert cost == (cheap_in * 20_000 + cheap_out * 500) / Decimal(1_000_000)
-    dear_in, _ = PRICES["gpt-5.6-sol"]
+    dear_in = HOSTED_MODELS["gpt-5.6-sol"].input_price
     assert call_cost("gpt-5.6-sol", {"input_tokens": 1_000_000, "output_tokens": 0}) == dear_in
 
 

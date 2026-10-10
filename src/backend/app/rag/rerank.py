@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.core.errors import AppError
-from app.integrations.context_registry import HOSTED_ENCODING, LOCAL_ENCODING
+from app.integrations.context_registry import LOCAL_ENCODING
+from app.integrations.hosted_catalog import HOSTED_ENCODING
 from app.integrations.reranker_catalog import (
     RELEVANCE_INSTRUCTIONS,
     RerankerProfile,

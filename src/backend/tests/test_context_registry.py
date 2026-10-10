@@ -17,7 +17,7 @@ def resources(**overrides):
     return SimpleNamespace(settings=Settings(_env_file=None, **overrides))
 
 
-def test_given_hosted_luna_when_profiling_then_working_cap_bounds_real_tokens():
+def test_given_hosted_luna_when_profiling_then_price_tier_bounds_real_tokens():
     from app.integrations.context_registry import context_profile
 
     profile = context_profile(resources(), "gpt-5.6-luna", "low")
@@ -28,10 +28,9 @@ def test_given_hosted_luna_when_profiling_then_working_cap_bounds_real_tokens():
         0,
         512,
     )
-    assert profile.input_budget == 64000
+    # 1,050,000 less reserves exceeds the 272K tier boundary, which then bounds the budget.
+    assert profile.input_budget == 272_000
     assert profile.counter.count("hello world") == 2
-    narrow = resources(hosted_working_context_tokens=20000)
-    assert context_profile(narrow, "gpt-5.6-luna", "low").input_budget == 20000
 
 
 def test_given_local_model_without_thinking_when_profiling_then_output_and_safety_are_reserved():
@@ -83,7 +82,7 @@ def test_given_registry_when_limiting_then_model_limits_delegates():
     from app.integrations.llm import model_limits
 
     assert model_limits(resources(), "ifm-k2-horizon-7b") == (3072, 2048)
-    assert model_limits(resources(), "gpt-5.6-luna") == (64000, 4000)
+    assert model_limits(resources(), "gpt-5.6-luna") == (272_000, 4000)
 
 
 @pytest.mark.parametrize(
@@ -92,7 +91,6 @@ def test_given_registry_when_limiting_then_model_limits_delegates():
         {"ollama_context_window": 4096, "ollama_thinking_tokens": 2048},
         {"local_token_factor": 0.9},
         {"local_input_budget_tokens": 0},
-        {"hosted_working_context_tokens": 0},
     ],
 )
 def test_given_invalid_context_settings_when_configuring_then_reject(overrides):
@@ -120,7 +118,7 @@ async def test_given_hosted_model_when_recording_configuration_then_budget_is_ex
         "max_output": 4000,
         "thinking_allowance": 0,
         "safety_tokens": 512,
-        "input_budget": 64000,
+        "input_budget": 272_000,
         "tokenizer": "o200k_base",
         "token_factor": 1.0,
     }
@@ -212,6 +210,6 @@ def test_given_hosted_prompt_when_budgeting_then_real_tokens_decide_the_limit():
         # 40,000 bytes but 5,000 tokens: byte counting wrongly rejected this.
         adapter.parameters("gpt-5.6-luna", "low", "instructions", "x" * 40000)
         with pytest.raises(LLMError, match="context"):
-            adapter.parameters("gpt-5.6-luna", "low", "instructions", " word" * 64000)
+            adapter.parameters("gpt-5.6-luna", "low", "instructions", " word" * 300000)
     finally:
         asyncio.run(adapter.close())

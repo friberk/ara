@@ -179,7 +179,7 @@ async def test_given_oversized_message_list_when_calling_then_context_limit_with
     adapter = (hosted if provider == "hosted" else local)(lambda request: requests.append(request))
     model = "gpt-5.6-luna" if provider == "hosted" else "ifm-k2-horizon-7b"
     effort = "low" if provider == "hosted" else "none"
-    words = 64000 if provider == "hosted" else 5400
+    words = 300000 if provider == "hosted" else 5400
     # Every message fits alone; together they exceed the input budget.
     messages = [
         PromptMessage("system", "Instructions"),

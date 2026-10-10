@@ -6,9 +6,8 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
 from app.integrations import open_models
+from app.integrations.hosted_catalog import HOSTED_MODELS
 from app.integrations.llm import (
-    HOSTED_REASONING_EFFORTS,
-    PRICES,
     LLMError,
     configured,
     saved_defaults,
@@ -43,7 +42,9 @@ async def features(request: Request):
 async def models(request: Request):
     resources = request.app.state.resources
     settings = resources.settings
-    items = [validate_selection(key, HOSTED_REASONING_EFFORTS[key][0]) for key in PRICES]
+    items = [
+        validate_selection(key, entry.reasoning_efforts[0]) for key, entry in HOSTED_MODELS.items()
+    ]
     for item in items:
         item.status = "configured" if configured(settings) else "unavailable"
     if open_models.enabled(settings):

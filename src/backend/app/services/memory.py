@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from app.core.errors import AppError
 from app.integrations.context_registry import (
     context_profile,
+    history_budget,
     hosted_profile,
     hosted_reasoning_headroom,
     local_profile,
@@ -88,6 +89,8 @@ TURN_EMBED_TOKENS = 1800
 RECALL_SIMILARITY = 0.3
 PLANNER_TURNS = 2
 PLANNER_CONTEXT_TOKENS = 1500
+# The planner reads a quarter of the history budget H at most, so small windows plan on less.
+PLANNER_HISTORY_SHARE = 4
 PLANNER_OUTPUT_TOKENS = 300
 # Planning delays the answer; a slow planner yields to the heuristic.
 PLANNER_TIMEOUT_SECONDS = 60
@@ -190,7 +193,12 @@ def planner_prompt(counter, budget: int, turns, memory_summary: str | None, ques
     fixed = count_messages(
         counter, [PromptMessage("system", PLANNER_INSTRUCTIONS), PromptMessage("user", tail)]
     )
-    room = max(0, min(PLANNER_CONTEXT_TOKENS, budget - fixed))
+    room = max(
+        0,
+        min(
+            PLANNER_CONTEXT_TOKENS, history_budget(budget) // PLANNER_HISTORY_SHARE, budget - fixed
+        ),
+    )
     parts = []
     if memory_summary:
         # The summary opens with the user's goals and facts; long answers must not push its
@@ -275,14 +283,18 @@ async def plan_query(
 
 
 def billed_tokens(usage: dict) -> dict:
-    return {key: usage[key] for key in ("input_tokens", "output_tokens") if key in usage}
+    return {
+        key: usage[key]
+        for key in ("input_tokens", "output_tokens", "input_tokens_details")
+        if key in usage
+    }
 
 
-def answer_profile(settings, model: str):
-    """The answering model's budget, before its effort or the question is known."""
+def answer_profile(settings, model: str, effort: str):
+    """The answering model's budget, before the question is known."""
     if local_spec(model):
         return local_profile(settings, model, "default")
-    return hosted_profile(settings, model)
+    return hosted_profile(model, effort)
 
 
 def memory_shares(profile):
@@ -290,7 +302,13 @@ def memory_shares(profile):
     instructions = PromptMessage("system", answer_instructions(PaperHeader(None, [], None)))
     fixed = cost(profile.counter, instructions) + MESSAGE_OVERHEAD + REPLY_PRIMING
     available = profile.input_budget - fixed
-    return allocate(available, summary_need=available, recent_need=available, recall_need=available)
+    return allocate(
+        available,
+        profile.history_budget,
+        summary_need=available,
+        recent_need=available,
+        recall_need=available,
+    )
 
 
 async def chat_messages(session, chat_id: UUID) -> list[ChatMessage]:
@@ -411,7 +429,7 @@ async def maybe_enqueue_compaction(
     )
     local = local_spec(model) is not None
     through = compaction_boundary(
-        pairs, answer_profile(settings, model), settings.memory_compaction_ratio
+        pairs, answer_profile(settings, model, effort), settings.memory_compaction_ratio
     )
     pending = await pending_compactions(session, chat_id)
     replaced = [
@@ -583,10 +601,8 @@ async def run_compact_job(resources, job_id, generation, token, payload) -> None
         profile = context_profile(
             resources, compactor, effort, thinking=thinking_controls(selection)
         )
-        target = min(
-            SUMMARY_TOKEN_LIMIT,
-            memory_shares(answer_profile(resources.settings, payload["model"])).summary,
-        )
+        answering = answer_profile(resources.settings, payload["model"], payload["effort"])
+        target = min(SUMMARY_TOKEN_LIMIT, memory_shares(answering).summary)
         # Models overshoot a requested length (IFM 7B overran 300 of 400 tokens live), so the
         # allowance holds twice the request, which is phrased in words (about 0.75 per token).
         floor = LOCAL_COMPACTION_OUTPUT if selection else COMPACTION_MIN_OUTPUT
