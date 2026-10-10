@@ -1667,3 +1667,7 @@ User feedback: the summary card showed a "Uses <model> with <effort>" line with 
 ### 2026-10-10 — ARA-102: regenerate icon beside the summary heading
 
 The user asked for a way to regenerate the summary now that the version menu is gone. Test first: three tests (icon present only with a summary, a click requests a summary with the current settings, disabled while a summary job runs) failed as missing-button errors. The icon is an icon-xs ghost button using RefreshCw, labelled "Regenerate summary" with a tooltip. It reuses start(), spins while a job or request is in flight, and keeps the current summary visible. One of the new tests was missing an await on the async query and was fixed before the green run. Commit 323c58dc4b6174df5664327b77c0169378c8ee5f.
+
+### 2026-10-10 — ARA-102: e2e regenerates through the heading icon
+
+E2E-04 (conversation) and E2E-12 (local models) no longer reuse a stored summary on later runs. They regenerate through the "Regenerate summary" button and wait for the stored summary count to rise before checking content. Not run: the spec needs the live stack. Commit 94a33f21ca59d6383b91662ec1ea9b8c966cadff.
