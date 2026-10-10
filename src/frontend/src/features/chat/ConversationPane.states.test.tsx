@@ -133,7 +133,8 @@ test('Given a queued question for a paper whose PDF is processing, Then it waits
   queueQuestion('c1', { content: 'Queued while processing', settings: { model: luna.key, reasoning_effort: 'low' } })
   mount('/papers/p1/chats/c1', { value: { ...paper, document_status: 'processing' } })
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toHaveValue('Queued while processing'))
-  expect(screen.getByText('Questions open when the PDF finishes processing.')).toBeVisible()
+  // The same words as while retrieval brings the PDF: it is on its way (ARA-086).
+  expect(screen.getByText('You can ask questions once the PDF is ready.')).toBeVisible()
   expect(calls.some((call) => call.path.endsWith('/messages/stream'))).toBe(false)
 })
 
