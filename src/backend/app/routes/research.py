@@ -3,12 +3,24 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy import select
 
+from app.core.errors import AppError
 from app.integrations.academic import AcademicSearch
 from app.integrations.openalex_content import api_key
 from app.models.research import Paper
 from app.repositories.fulltext import enqueue_automatic
 from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
-from app.schemas.research import PaperDetail, PaperPage, PaperPatch, Provider, SavePaper, SearchPage
+from app.schemas.research import (
+    DeletedPapers,
+    DeletionPreview,
+    PaperDetail,
+    PaperIds,
+    PaperPage,
+    PaperPatch,
+    Provider,
+    SavePaper,
+    SearchPage,
+)
+from app.services.deletion import delete_papers, deletion_preview
 from app.services.upload_match import library_papers
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
@@ -77,3 +89,40 @@ async def detail(paper_id: UUID, request: Request):
 async def edit(paper_id: UUID, body: PaperPatch, request: Request):
     async with request.app.state.resources.sessions() as session, session.begin():
         return await patch_paper(session, paper_id, body)
+
+
+@router.get("/papers/{paper_id}/deletion-preview", response_model=DeletionPreview)
+async def preview_deletion(paper_id: UUID, request: Request):
+    """What deleting the paper removes; nothing changes (ARA-095)."""
+    async with request.app.state.resources.sessions() as session:
+        preview = await deletion_preview(session, [paper_id])
+    if preview.missing:
+        raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+    return preview
+
+
+@router.post("/papers/deletion-preview", response_model=DeletionPreview)
+async def preview_deletions(body: PaperIds, request: Request):
+    """The combined preview for several papers; unknown IDs are listed as missing."""
+    async with request.app.state.resources.sessions() as session:
+        return await deletion_preview(session, body.paper_ids)
+
+
+@router.delete("/papers/{paper_id}", status_code=204, response_class=Response)
+async def delete_paper(paper_id: UUID, request: Request):
+    """Delete the paper and what hangs off it (services/deletion.py); a repeat answers 404."""
+    resources = request.app.state.resources
+    async with resources.sessions() as session, session.begin():
+        deleted, _ = await delete_papers(session, resources, [paper_id])
+    if not deleted:
+        raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+    return Response(status_code=204)
+
+
+@router.post("/papers/delete", response_model=DeletedPapers)
+async def delete_several(body: PaperIds, request: Request):
+    """Delete several papers in one transaction; papers already gone are listed as missing."""
+    resources = request.app.state.resources
+    async with resources.sessions() as session, session.begin():
+        deleted, missing = await delete_papers(session, resources, body.paper_ids)
+    return DeletedPapers(deleted=deleted, missing=missing)

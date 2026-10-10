@@ -22,7 +22,6 @@ State lives in tables whose foreign keys remove it with the rows it names (ARA-0
   paper. Deleting the owner clears it.
 """
 
-import logging
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -44,8 +43,6 @@ from app.repositories.papers import identity_locks
 from app.schemas.research import SearchResult
 from app.services.chat_papers import move_paper
 from app.services.metadata import Clues, acceptable, title_score
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -223,16 +220,31 @@ async def match_view(session, paper: Paper) -> tuple[dict | None, dict | None]:
     return match, owner
 
 
+async def continue_upload(session, resources, document: Document) -> None:
+    """A held upload goes on as its paper's PDF: indexed and summarized once if it was already
+    read, as when a PDF becomes ready, else read now."""
+    from app.rag import hooks
+    from app.services.summarization import queue_automatic_summary
+
+    if document.status == "ready":
+        await hooks.after_chunks_persisted(session, document_id=document.id)
+        await queue_automatic_summary(session, resources, document)
+    else:
+        # Held before its pages were stored.
+        job = await enqueue(session, kind="ingest", payload={"document_id": str(document.id)})
+        document.ingest_job_id = job.id
+        document.status = "processing"
+
+
 async def resolve(resources, placeholder_id: UUID, decision: str) -> UUID | None:
     """Attach or discard a pending upload; returns the paper to show, or None once discarded.
 
     Repeats are safe: a second attach answers with the paper it went to, a second discard with
-    nothing. A paper without a pending match is a conflict.
+    nothing. A paper without a pending match is a conflict. Discarding deletes the placeholder
+    as any paper deletion does, so its stored original is removed by a durable job (ARA-095).
     """
-    from app.rag import hooks
-    from app.services.summarization import queue_automatic_summary
+    from app.services.deletion import delete_papers
 
-    discarded_key = None
     async with resources.sessions() as session, session.begin():
         await identity_locks(session, [pending_lock_key(placeholder_id)])
         row = await session.get(UploadMatch, placeholder_id, with_for_update=True)
@@ -264,9 +276,7 @@ async def resolve(resources, placeholder_id: UUID, decision: str) -> UUID | None
         )
         library = papers.get(library_id)
         if decision == "discard":
-            discarded_key = document.object_key if document else None
-            await session.delete(row)
-            await session.execute(delete(Paper).where(Paper.id == placeholder_id))
+            await delete_papers(session, resources, [placeholder_id])
             target = None
         elif document is None or document.paper_id != placeholder_id:
             raise AppError(409, "NO_PENDING_MATCH", "This upload is no longer waiting.")
@@ -281,24 +291,5 @@ async def resolve(resources, placeholder_id: UUID, decision: str) -> UUID | None
                 )
                 target = library.id
             await session.flush()
-            if document.status == "ready":
-                # Found late: the PDF is already read; index it for its paper and summarize it
-                # once, as when a PDF becomes ready.
-                await hooks.after_chunks_persisted(session, document_id=document.id)
-                await queue_automatic_summary(session, resources, document)
-            else:
-                # Held before its pages were stored: read it now, on its paper.
-                job = await enqueue(
-                    session, kind="ingest", payload={"document_id": str(document.id)}
-                )
-                document.ingest_job_id = job.id
-                document.status = "processing"
-    if discarded_key:
-        try:
-            await resources.storage_call(
-                resources.storage.remove_object, resources.settings.minio_bucket, discarded_key
-            )
-        except Exception:
-            # The rows are gone; an unreachable store only leaves an unreferenced object.
-            logger.warning("Discarded upload original could not be removed from storage")
+            await continue_upload(session, resources, document)
     return target

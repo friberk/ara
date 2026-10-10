@@ -98,6 +98,42 @@ class PaperPatch(BaseModel):
     doi: str | None = Field(default=None, max_length=300)
 
 
+class PaperIds(BaseModel):
+    """Papers to preview or delete together (ARA-095)."""
+
+    model_config = ConfigDict(extra="forbid")
+    paper_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class ChatLink(BaseModel):
+    id: UUID
+    title: str
+
+
+class DeletionPreview(BaseModel):
+    """What deleting these papers removes; reading it changes nothing (ARA-095)."""
+
+    papers: list[PaperLink]
+    # Requested IDs that name no paper, in request order.
+    missing: list[UUID]
+    # Stored PDFs, every version.
+    pdfs: int
+    summaries: int
+    # Chats about only these papers; they are deleted.
+    deleted_chats: list[ChatLink]
+    # Chats that also cover other papers; they keep those and their saved citations.
+    updated_chats: list[ChatLink]
+    # Queued or running work for these papers; it stops.
+    active_jobs: int
+    # A chat is writing an answer now; deletion waits for it (409 CHAT_BUSY).
+    answering: bool
+
+
+class DeletedPapers(BaseModel):
+    deleted: list[UUID]
+    missing: list[UUID]
+
+
 class MatchDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # attach also replaces the library paper's PDF; discard removes the upload.
