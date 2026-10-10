@@ -20,6 +20,10 @@ if (!('ResizeObserver' in window)) Object.defineProperty(window, 'ResizeObserver
 if (!('IntersectionObserver' in window)) Object.defineProperty(window, 'IntersectionObserver', { writable: true, value: NoopObserver })
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = function scrollIntoView() {}
 if (!Element.prototype.scrollTo) Element.prototype.scrollTo = function scrollTo() {}
+// The composer's editor (ProseMirror, ARA-096) measures caret positions; jsdom has no layout, so these report nothing.
+if (!document.elementFromPoint) document.elementFromPoint = () => null
+if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => Object.assign([], { item: () => null }) as unknown as DOMRectList
+if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect()
 if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false
   Element.prototype.setPointerCapture = () => {}

@@ -1,8 +1,9 @@
 import { z } from 'zod'
 const page = z.number().int().positive()
 // Fields added by the retrieval overhaul are optional, so answers saved before it still parse (docs/api-contract.md).
+// paper_id names the cited paper (ARA-088), so an answer may cite a paper its question just brought in (ARA-096).
 const citation = z.object({
-  chunk_id: z.string(), document_id: z.string(), page, excerpt: z.string(),
+  chunk_id: z.string(), document_id: z.string(), paper_id: z.string().nullish(), page, excerpt: z.string(),
   page_end: page.nullish(), section: z.string().nullish(), kind: z.enum(['front_matter', 'text', 'table', 'references']).nullish(), bboxes: z.array(z.array(z.number())).optional(),
 })
 const retrieval = z.object({

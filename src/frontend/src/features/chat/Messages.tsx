@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import type { Citation, Message } from '@/api/types'
+import { MentionPill } from '@/components/paper/MentionPill'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Markdown, pageLabel, SourceList } from '@/features/content'
 import { GenerationMeta } from '@/features/summary'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
+import { mentionSegments, type MentionSpan } from '@/lib/mentions'
 import { AnswerDetails } from './AnswerDetails'
 import type { ChatSources } from './chat-sources'
 
@@ -20,10 +22,13 @@ function plainAnswer(content: string, citations: Citation[], paperName?: (citati
   })
 }
 
-export function UserMessage({ content }: { content: string }) {
+/** A question as sent: its paper mentions are pills (ARA-096); questions saved before them are plain text. */
+export function UserMessage({ content, mentions = [] }: { content: string; mentions?: readonly MentionSpan[] }) {
   return (
     <article aria-label="Your message" className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-[15.5px] leading-7 break-words whitespace-pre-wrap">{content}</div>
+      <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-[15.5px] leading-7 break-words whitespace-pre-wrap">
+        {mentionSegments(content, mentions).map((segment, index) => ('mention' in segment ? <MentionPill key={index} mention={segment.mention} /> : segment.text))}
+      </div>
     </article>
   )
 }

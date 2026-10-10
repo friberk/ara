@@ -6,6 +6,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SummaryCard } from '@/features/summary'
 import { useChatMemory } from '@/hooks/queries/retrieval'
+import { emptyDraft, mentionedPapers, withoutPaper, type Draft } from '@/lib/mentions'
 import { peekQuestion, takeQuestion, type PendingQuestion } from '@/lib/pending-questions'
 import { usePdfComing } from '@/hooks/queries/uploads'
 import { ConversationComposer } from './ConversationComposer'
@@ -39,29 +40,39 @@ export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat
   const generation = useGenerationSettings()
   const stream = useChatStream(chat)
   const memory = useChatMemory(chat.id).data?.memory
-  const [text, setText] = useState('')
+  const [draft, setDraft] = useState<Draft>(emptyDraft)
+  // A paper removed from the chat takes its pills out of the draft, which would otherwise add it back (ARA-096).
+  const included = chat.papers.map((item) => item.paper_id)
+  const [previous, setPrevious] = useState(included)
+  if (previous.join() !== included.join()) {
+    setPrevious(included)
+    const removed = previous.filter((id) => !included.includes(id))
+    if (removed.length) setDraft((current) => removed.reduce(withoutPaper, current))
+  }
   const local = generation.models.find((model) => model.key === generation.settings.model)?.provider === 'ollama'
-  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && chat.papers.length > 1 })
+  // Papers the draft mentions join the chat when it is sent.
+  const severalOnSend = new Set([...included, ...mentionedPapers(draft.mentions)]).size > 1
+  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && severalOnSend })
   const loaded = stream.history.isSuccess
   const ready = canAsk(gate) && loaded && !stream.busy
 
-  const { saved, draft, pending } = stream
+  const { saved, draft: answer, pending } = stream
   const progress = stream.streaming && stream.stage ? stageLabels[stream.stage] : null
   const asked = saved.filter((message) => message.role === 'user').length
   // While streaming, the live draft stands in for its saved row; the optimistic question shows until saved.
-  const rows = draft ? saved.map((message) => (message.id === draft.id ? draft : message)) : saved
-  const question = pending && asked <= pending.baseline ? pending.text : null
-  const unsavedDraft = draft && !saved.some((message) => message.id === draft.id) ? draft : null
+  const rows = answer ? saved.map((message) => (message.id === answer.id ? answer : message)) : saved
+  const question = pending && asked <= pending.baseline ? pending : null
+  const unsavedDraft = answer && !saved.some((message) => message.id === answer.id) ? answer : null
   const empty = loaded && !rows.length && !question && !unsavedDraft && !stream.streaming && !peekQuestion(chat.id)
-  const cited = useMemo(() => [...saved, ...(draft ? [draft] : [])].flatMap((message) => message.citations), [saved, draft])
+  const cited = useMemo(() => [...saved, ...(answer ? [answer] : [])].flatMap((message) => message.citations), [saved, answer])
   const sources = useChatSources(chat.papers, cited)
   const several = chat.papers.length > 1
-  const { scrollRef, onScroll, away, scrolled, stick, toLatest } = useFollowBottom(`${rows.length}:${question ?? ''}:${draft?.id ?? ''}:${draft?.content.length ?? 0}:${draft?.state ?? ''}`)
+  const { scrollRef, onScroll, away, scrolled, stick, toLatest } = useFollowBottom(`${rows.length}:${question?.text ?? ''}:${answer?.id ?? ''}:${answer?.content.length ?? 0}:${answer?.state ?? ''}`)
 
-  function ask(content: string, settings: GenerationSettings = generation.settings, requestId?: string) {
+  function ask(next: Draft, settings: GenerationSettings = generation.settings, requestId?: string) {
     stick()
-    setText('')
-    void stream.send(content, settings, requestId)
+    setDraft(emptyDraft)
+    void stream.send(next, settings, requestId)
   }
 
   // Opening a chat adopts the model and effort of its latest answer once, never as a saved default.
@@ -78,8 +89,9 @@ export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat
   // A question queued by the home composer or the new-conversation start is sent once, with its own request_id.
   // Peek in the effect, send from a timer the cleanup clears: StrictMode's remount then sends exactly once.
   const sendQueued = useEffectEvent((queued: PendingQuestion) => {
-    if (gate.locked || stream.busy) setText(queued.content)
-    else ask(queued.content, queued.settings, queued.request_id)
+    const next = { text: queued.content, mentions: queued.mentions }
+    if (gate.locked || stream.busy) setDraft(next)
+    else ask(next, queued.settings, queued.request_id)
   })
   useEffect(() => {
     if (!loaded || !peekQuestion(chat.id)) return
@@ -105,9 +117,9 @@ export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat
       composer={
         <ConversationComposer
           chatId={chat.id}
-          value={text}
-          onValueChange={setText}
-          onSubmit={() => { if (ready) ask(text) }}
+          draft={draft}
+          onDraftChange={(text, mentions) => setDraft({ text, mentions })}
+          onSubmit={() => { if (ready) ask(draft) }}
           gate={gate}
           sendable={loaded}
           busy={stream.busy}
@@ -120,13 +132,13 @@ export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat
       {!several && <SummaryCard paper={paper} />}
       {stream.history.isPending && <HistorySkeleton />}
       <ErrorNotice error={stream.history.error} retry={() => void stream.history.refetch()} />
-      {empty && ready && <SuggestedQuestions onSelect={ask} />}
+      {empty && ready && <SuggestedQuestions onSelect={(text) => ask({ text, mentions: [] })} />}
       {rows.map((message) => message.role === 'user'
-        ? <UserMessage key={message.id} content={message.content} />
-        : <AssistantMessage key={message.id} message={message} sources={sources} progress={message.id === draft?.id ? progress : null} />)}
-      {question && <UserMessage content={question} />}
+        ? <UserMessage key={message.id} content={message.content} mentions={message.mentions} />
+        : <AssistantMessage key={message.id} message={message} sources={sources} progress={message.id === answer?.id ? progress : null} />)}
+      {question && <UserMessage content={question.text} mentions={question.mentions} />}
       {unsavedDraft && <AssistantMessage message={unsavedDraft} sources={sources} progress={progress} />}
-      {stream.streaming && !draft && <PendingAnswer />}
+      {stream.streaming && !answer && <PendingAnswer />}
       <ErrorNotice error={stream.error} />
       <p role="status" className="sr-only">{stream.streaming ? progress ?? 'Assistant is responding.' : stream.outcome ? announcements[stream.outcome] : ''}</p>
     </ThreadLayout>

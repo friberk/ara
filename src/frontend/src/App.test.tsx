@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { renderApp } from '@/test/render'
 import { mockApi, noContent } from '@/test/fetch-routes'
 import { peekQuestion } from '@/lib/pending-questions'
+import { deletePill, textIn } from '@/test/editor'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const readyPaper = { id: 'p1', title: 'Traceable research systems', authors: ['Ada Researcher'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
@@ -40,7 +41,7 @@ test('Given an empty composer, Then Search papers stays disabled and Shift+Enter
   expect(screen.getByRole('button', { name: 'Search papers' })).toBeDisabled()
   const input = screen.getByRole('textbox', { name: 'Research topic' })
   await user.type(input, 'first{Shift>}{Enter}{/Shift}second')
-  expect(input).toHaveValue('first\nsecond')
+  expect(textIn(input)).toBe('first\nsecond')
 })
 
 test('Given library papers chosen in the composer, When a question is asked, Then one chat over them opens at its first paper with the question queued once', async () => {
@@ -54,14 +55,12 @@ test('Given library papers chosen in the composer, When a question is asked, The
   const { user } = renderApp('/')
   await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
   await user.click(await screen.findByRole('option', { name: /Traceable research systems/ }))
-  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeVisible()
-  // Typing @ opens the same picker for a second paper.
+  // Typing @ opens the same picker; the paper picked becomes a pill where @ was typed (ARA-096).
   await user.type(screen.getByRole('textbox', { name: 'Question about this paper' }), '@')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   const question = screen.getByRole('textbox', { name: 'Question about these papers' })
-  // The paper chosen after typing @ is mentioned in the question.
-  await waitFor(() => expect(question).toHaveValue('@Karpukhin 2020 '))
-  // A paper chosen after typing @ hands the cursor back to the question.
+  expect(within(question).getByRole('img', { name: 'Karpukhin (2020). Dense passage retrieval.' })).toHaveTextContent('Karpukhin 2020')
+  // A paper picked after typing @ hands the caret back to the question.
   await waitFor(() => expect(question).toHaveFocus())
   for (const name of ['Remove Traceable research systems', 'Remove Dense passage retrieval']) expect(screen.getByRole('button', { name })).toBeVisible()
   await waitFor(() => expect(screen.getByRole('button', { name: /^Model: GPT-5.6 Luna/ })).toBeEnabled())
@@ -69,11 +68,11 @@ test('Given library papers chosen in the composer, When a question is asked, The
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
   await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/chats')).toBe(true))
   expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] })
-  expect(peekQuestion('c9')).toMatchObject({ content: '@Karpukhin 2020 Which datasets were used?', settings: { model: luna.key, reasoning_effort: 'low' } })
+  expect(peekQuestion('c9')).toMatchObject({ content: 'Karpukhin 2020 Which datasets were used?', mentions: [{ paper_id: 'p2', label: 'Karpukhin 2020', start: 0, end: 14 }], settings: { model: luna.key, reasoning_effort: 'low' } })
   expect(peekQuestion('c9')?.request_id).toMatch(/^[0-9a-f-]{36}$/)
 })
 
-test('Given a topic typed on home, When @ picks a paper, Then the paper is chosen and mentioned where @ was typed', async () => {
+test('Given a topic typed on home, When @ picks a paper, Then its pills choose it, and deleting the last pill lets it go', async () => {
   mockApi({
     'GET /papers': { items: [readyPaper, otherPaper] },
     'GET /models': { items: [luna] },
@@ -83,12 +82,43 @@ test('Given a topic typed on home, When @ picks a paper, Then the paper is chose
   await user.type(screen.getByRole('textbox', { name: 'Research topic' }), 'Compare @')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   const question = screen.getByRole('textbox', { name: 'Question about this paper' })
-  await waitFor(() => expect(question).toHaveValue('Compare @Karpukhin 2020 '))
+  await waitFor(() => expect(textIn(question)).toBe('Compare Karpukhin 2020 '))
   expect(screen.getByRole('button', { name: 'Stop asking about this paper' })).toBeVisible()
-  // Mentioning it again keeps it chosen.
+  // A second pill for the same paper keeps one chip.
   await user.type(question, 'and @')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
-  await waitFor(() => expect(question).toHaveValue('Compare @Karpukhin 2020 and @Karpukhin 2020 '))
+  await waitFor(() => expect(within(question).getAllByRole('img', { name: /Dense passage retrieval/ })).toHaveLength(2))
+  expect(screen.getAllByRole('button', { name: 'Stop asking about this paper' })).toHaveLength(1)
+  deletePill(question, 1)
+  expect(screen.getByRole('button', { name: 'Stop asking about this paper' })).toBeVisible()
+  deletePill(question, 0)
+  expect(screen.queryByRole('button', { name: 'Stop asking about this paper' })).not.toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: 'Research topic' })).toBe(question)
+})
+
+test('Given a paper added with the @ button and also mentioned, When its pill is deleted, Then it stays; its chip removes it with its pills', async () => {
+  mockApi({
+    'GET /papers': { items: [readyPaper, otherPaper] },
+    'GET /models': { items: [luna] },
+    'GET /settings': { default_model: luna.key, reasoning_effort: 'low' },
+  })
+  const { user } = renderApp('/')
+  await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  const question = screen.getByRole('textbox', { name: 'Question about this paper' })
+  await user.type(question, 'What does @')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  await waitFor(() => expect(within(question).getByRole('img', { name: /Dense passage retrieval/ })).toBeVisible())
+  deletePill(question, 0)
+  expect(within(question).queryByRole('img')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Stop asking about this paper' })).toBeVisible()
+  // A pill-only paper: the chip's remove button takes its pills too.
+  await user.type(question, 'and @')
+  await user.click(await screen.findByRole('option', { name: /Traceable research systems/ }))
+  await waitFor(() => expect(within(question).getByRole('img', { name: /Traceable research systems/ })).toBeVisible())
+  await user.click(screen.getByRole('button', { name: 'Remove Traceable research systems' }))
+  expect(within(question).queryByRole('img')).not.toBeInTheDocument()
+  expect(textIn(question)).not.toContain('Researcher 2024')
   expect(screen.getByRole('button', { name: 'Stop asking about this paper' })).toBeVisible()
 })
 

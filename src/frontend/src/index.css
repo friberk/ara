@@ -187,6 +187,17 @@
   }
 }
 
+@layer components {
+  /* The composer's placeholder (TipTap, ARA-096) on its empty first line, as a textarea shows one. */
+  .composer-editor p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--muted-foreground);
+  }
+}
+
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
