@@ -7,8 +7,9 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.models.research import ChatMessage, ChatSession
+from app.models.research import ChatMessage
 from tests.support.answers import ask, first_handle, named, parse, use_hosted
+from tests.support.chats import new_chat as chat_with_papers
 from tests.support.evidence import CHUNK_SET, OPENAI, TITLE, seed_structured
 from tests.support.models import hosted_responses
 from tests.support.providers import openai_fixture
@@ -34,11 +35,7 @@ def embeddings(resources, monkeypatch):
 
 
 async def new_chat(resources, paper_id, document_id) -> object:
-    async with resources.sessions() as session, session.begin():
-        chat = ChatSession(paper_id=paper_id, document_id=document_id, title="Discussion")
-        session.add(chat)
-        await session.flush()
-        return chat.id
+    return await chat_with_papers(resources, (paper_id, document_id))
 
 
 async def stored(resources, message_id) -> ChatMessage:
@@ -414,14 +411,13 @@ async def evidence(resources, document_id, *, budget=8000, reranker="openai-gpt-
     from pydantic import SecretStr
 
     from app.integrations.tokens import TiktokenCounter
-    from app.rag.pipeline import retrieve_evidence
+    from app.rag.pipeline import Scope, retrieve_evidence
 
     # The ready OpenAI index embeds queries through the fixture, which needs a configured key.
     resources.settings.openai_api_key = SecretStr("http-fixture-only")
     return await retrieve_evidence(
         resources,
-        document_id=document_id,
-        chunk_set=CHUNK_SET,
+        scopes=[Scope(document_id, CHUNK_SET)],
         preferred_profile=OPENAI,
         queries=["BM25 recall dense retrieval"],
         question=QUESTION,

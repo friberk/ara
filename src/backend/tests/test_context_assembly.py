@@ -65,7 +65,7 @@ def assemble(profile, *, history=(), question="What changed?", summary=None, rec
     evidence = Evidence(profile.counter)
     result = assemble_answer_prompt(
         profile=profile,
-        paper=paper(),
+        papers=[paper()],
         history=list(history),
         memory_summary=summary,
         recalled=list(recalled),
@@ -219,7 +219,7 @@ def test_given_summary_and_recall_when_assembling_then_messages_are_role_separat
         "assistant",
         "user",
     ]
-    assert result.messages[0].content == answer_instructions(paper())
+    assert result.messages[0].content == answer_instructions([paper()])
     assert "Traceable research" in result.messages[0].content
     assert result.messages[1].content.startswith(SUMMARY_PREFIX)
     assert "They discussed the blue condition." in result.messages[1].content
@@ -267,7 +267,7 @@ def test_given_retrieval_query_when_assembling_then_user_message_names_it():
     profile = hosted()
     result = assemble_answer_prompt(
         profile=profile,
-        paper=paper(),
+        papers=[paper()],
         history=[],
         memory_summary=None,
         recalled=[],
@@ -278,3 +278,20 @@ def test_given_retrieval_query_when_assembling_then_user_message_names_it():
     assert result.messages[-1].content.startswith(
         'Paper passages (retrieved for: "Baseline accuracy of the blue condition"):\n\n[S1]'
     )
+
+
+def test_given_several_papers_when_instructing_then_each_is_named_by_a_bounded_header():
+    """A multi-paper chat names every paper; long titles and author lists are cut (ARA-088)."""
+    from app.services.context import COMPARE_RULES, PaperHeader, answer_instructions, paper_label
+
+    long = PaperHeader(title="T" * 2000, authors=[f"Author {n}" for n in range(20)], year=None)
+    instructions = answer_instructions([paper(), long])
+    assert instructions.startswith("You are a research assistant answering questions about 2")
+    assert "Paper 1: Traceable research (Ada Example; 2024)" in instructions
+    assert f"Paper 2: {'T' * 300} (Author 0, " in instructions and "T" * 301 not in instructions
+    assert "Author 7 et al.; year unknown)" in instructions and "Author 8" not in instructions
+    assert instructions.endswith(COMPARE_RULES)
+    assert answer_instructions([paper()]).startswith("You are a research assistant answering")
+    assert "Paper 1" not in answer_instructions([paper()])
+    assert paper_label(paper()) == "Traceable research (Ada Example, 2024)"
+    assert len(paper_label(long)) < 200 and paper_label(long).endswith("(Author 0 et al.)")

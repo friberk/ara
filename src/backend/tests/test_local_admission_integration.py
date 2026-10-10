@@ -9,8 +9,9 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.local_models import ModelUse
-from app.models.research import ChatMessage, ChatSession
+from app.models.research import ChatMessage
 from tests.support.answers import CONNECTED, named, parse
+from tests.support.chats import chat_with
 from tests.test_ai_integration import local_fixture, paper_fixture
 
 # Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
@@ -40,8 +41,7 @@ async def post(resources, chat_id, body) -> httpx.Response:
 async def answering_elsewhere(resources, paper_id, document_id, model: str) -> None:
     """Another chat streaming a local answer: an interactive holder the reader can see."""
     async with resources.sessions() as session, session.begin():
-        other = ChatSession(paper_id=paper_id, document_id=document_id, title="Other")
-        session.add(other)
+        other = await chat_with(session, (paper_id, document_id), title="Other")
         await session.flush()
         session.add(
             ChatMessage(

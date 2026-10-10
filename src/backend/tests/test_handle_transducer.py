@@ -149,11 +149,12 @@ def test_given_mapped_answer_when_citing_then_passages_give_full_provenance():
     passages = [passage("S1"), passage("S2")]
     passages[1] = Passage(**{**vars(passages[1]), "bboxes": [[3, 1.0, 2.0, 3.0, 4.0]]})
     content = f"A [source:{uid('S2')}] b 【source:{uid('S1')}】 c [source:{uid('S2')}]."
-    cited = passage_citations(content, passages, DOCUMENT)
+    cited = passage_citations(content, passages, {DOCUMENT})
     assert [c.chunk_id for c in cited] == [uid("S2"), uid("S1")]
     assert cited[0].model_dump() == {
         "chunk_id": uid("S2"),
         "document_id": DOCUMENT,
+        "paper_id": None,
         "page": 2,
         "page_end": 3,
         "section": "2 Method",
@@ -174,4 +175,20 @@ def test_given_unsupplied_source_when_citing_then_it_is_rejected(kind):
         "malformed": "【source:not-a-uuid】",
     }[kind]
     with pytest.raises(ValueError):
-        passage_citations(f"Claim {marker}.", [passage("S1"), foreign], DOCUMENT)
+        passage_citations(f"Claim {marker}.", [passage("S1"), foreign], {DOCUMENT})
+
+
+def test_given_passages_of_two_chat_papers_when_citing_then_each_keeps_its_own_document():
+    """A multi-paper chat accepts any of its documents and still rejects any other (ARA-088)."""
+    from app.rag.citations import passage_citations
+
+    other = UUID(int=8)
+    first, second = passage("S1"), passage("S2", document=other)
+    content = f"A [source:{first.chunk_id}] and B [source:{second.chunk_id}]."
+    cited = passage_citations(content, [first, second], {DOCUMENT, other})
+    assert [(c.chunk_id, c.document_id) for c in cited] == [
+        (first.chunk_id, DOCUMENT),
+        (second.chunk_id, other),
+    ]
+    with pytest.raises(ValueError):
+        passage_citations(content, [first, second], {DOCUMENT})

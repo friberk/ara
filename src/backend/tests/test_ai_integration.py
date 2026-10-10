@@ -10,7 +10,6 @@ from sqlalchemy import delete, func, select
 
 from app.models.research import (
     ChatMessage,
-    ChatSession,
     Document,
     DocumentChunk,
     GenerationReservation,
@@ -19,6 +18,7 @@ from app.models.research import (
 )
 from app.repositories.jobs import claim, enqueue, now
 from tests.support.answers import CONNECTED
+from tests.support.chats import chat_with
 
 pytestmark = pytest.mark.integration
 
@@ -658,15 +658,14 @@ async def paper_fixture(resources):
                     token_count=20,
                 )
             )
-        chat = ChatSession(paper_id=paper.id, document_id=document.id, title="Discussion")
-        session.add(chat)
+        chat = await chat_with(session, (paper.id, document.id), title="Discussion")
         await session.flush()
         return paper.id, document.id, chat.id
 
 
 async def test_given_two_documents_when_retrieving_then_scope_is_immutable(resources):
     from app.integrations.tokens import TiktokenCounter
-    from app.rag.pipeline import retrieve_evidence
+    from app.rag.pipeline import Scope, retrieve_evidence
 
     _, first, _ = await paper_fixture(resources)
     _, second, _ = await paper_fixture(resources)
@@ -674,8 +673,7 @@ async def test_given_two_documents_when_retrieving_then_scope_is_immutable(resou
     async def passages(question):
         result = await retrieve_evidence(
             resources,
-            document_id=first,
-            chunk_set="test",
+            scopes=[Scope(first, "test")],
             preferred_profile="openai-3-large",
             queries=[question],
             question=question,
@@ -705,7 +703,7 @@ async def test_given_metadata_only_when_creating_chat_or_summary_then_ready_gate
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app), base_url="http://test"
     ) as client:
-        response = await client.post(f"/api/v1/papers/{paper_id}/chats", json={})
+        response = await client.post("/api/v1/chats", json={"paper_ids": [str(paper_id)]})
         assert response.status_code == 409
         response = await client.post(
             f"/api/v1/papers/{paper_id}/summaries",

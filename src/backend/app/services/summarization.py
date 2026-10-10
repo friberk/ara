@@ -54,7 +54,7 @@ INSTRUCTIONS = (
 
 def supported_citations(content, passages, document_id):
     try:
-        return passage_citations(content, passages, document_id)
+        return passage_citations(content, passages, {document_id})
     except ValueError:
         raise LLMError(
             "UNGROUNDED_OUTPUT", "The summary cited unavailable source evidence."
@@ -452,7 +452,7 @@ async def run_summary_job(resources, job_id, generation, lease_token, payload):
                     model=model,
                     reasoning_effort=effort,
                     content=content,
-                    citations=[c.model_dump(mode="json") for c in citations],
+                    citations=[c.model_dump(mode="json", exclude={"paper_id"}) for c in citations],
                     configuration=configuration,
                     usage=total_usage,
                 )

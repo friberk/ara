@@ -8,6 +8,8 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.services.health import SCHEMA_REVISION
+
 
 async def test_given_papers_with_overrides_when_upgrading_from_0007_then_column_is_dropped(
     resources,
@@ -76,7 +78,7 @@ async def test_given_papers_with_overrides_when_upgrading_from_0007_then_column_
             )
             assert setting == "openai-3-small"
             assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0009_upload_match_tables"
+                SCHEMA_REVISION
             )
     finally:
         await engine.dispose()

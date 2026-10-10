@@ -16,47 +16,54 @@ from app.integrations.llm import (
     validate_selection,
 )
 from app.integrations.model_catalog import local_spec
-from app.models.research import ChatMessage, ChatSession, Document, Paper
-from app.repositories.chats import chat_spend, chat_summaries
+from app.models.research import ChatMessage, ChatSession, Paper
+from app.repositories.chats import (
+    chat_dto,
+    chat_spend,
+    chat_summaries,
+    chat_view,
+    included_papers,
+    includes,
+    with_cited_papers,
+)
 from app.schemas.ai import (
     Chat,
     ChatCreate,
     ChatInput,
     ChatPage,
+    ChatPaperAdd,
     ChatRename,
+    ChatSummary,
     ChatSummaryPage,
     Message,
     MessagePage,
 )
 from app.schemas.usage import ChatContext, ChatUsage
 from app.services.chat import expire, held_by_background, prepare, stream_answer
+from app.services.chat_papers import add_paper, create_chat, locked_chat, remove_paper
 from app.services.local_models import list_local_models
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 
-@router.post("/papers/{paper_id}/chats", response_model=Chat, status_code=201)
-async def create_chat(paper_id: UUID, body: ChatCreate, request: Request):
+@router.post("/chats", response_model=Chat, status_code=201)
+async def new_chat(body: ChatCreate, request: Request):
+    """A chat over one or more ready library papers, each pinned to its active PDF."""
     async with request.app.state.resources.sessions() as session, session.begin():
-        paper = await session.get(Paper, paper_id)
-        if paper is None:
-            raise HTTPException(404, "Paper not found")
-        document = (
-            await session.get(Document, paper.active_document_id)
-            if paper.active_document_id
-            else None
-        )
-        if document is None or document.status != "ready":
-            raise HTTPException(409, "Upload and process a paper PDF before starting a chat")
-        chat = ChatSession(
-            paper_id=paper_id,
-            document_id=document.id,
-            title=body.title,
-            title_source="manual" if "title" in body.model_fields_set else "default",
-        )
-        session.add(chat)
-        await session.flush()
-        return Chat.model_validate(chat)
+        return await chat_view(session, await create_chat(session, body))
+
+
+@router.post("/chats/{chat_id}/papers", response_model=Chat)
+async def include_paper(chat_id: UUID, body: ChatPaperAdd, request: Request):
+    async with request.app.state.resources.sessions() as session, session.begin():
+        return await chat_view(session, await add_paper(session, chat_id, body.paper_id))
+
+
+@router.delete("/chats/{chat_id}/papers/{paper_id}", response_model=Chat)
+async def exclude_paper(chat_id: UUID, paper_id: UUID, request: Request):
+    """The response's `paper_id` is the chat's first paper after the removal."""
+    async with request.app.state.resources.sessions() as session, session.begin():
+        return await chat_view(session, await remove_paper(session, chat_id, paper_id))
 
 
 @router.get("/papers/{paper_id}/chats", response_model=ChatPage)
@@ -64,14 +71,15 @@ async def list_chats(paper_id: UUID, request: Request):
     async with request.app.state.resources.sessions() as session:
         if await session.get(Paper, paper_id) is None:
             raise HTTPException(404, "Paper not found")
-        items = (
+        chats = (
             await session.scalars(
                 select(ChatSession)
-                .where(ChatSession.paper_id == paper_id)
+                .where(includes(paper_id))
                 .order_by(ChatSession.created_at.desc())
             )
         ).all()
-        return ChatPage(items=[Chat.model_validate(item) for item in items])
+        papers = await included_papers(session, [chat.id for chat in chats])
+        return ChatPage(items=[Chat(**chat_dto(chat, papers[chat.id])) for chat in chats])
 
 
 @router.get("/chats", response_model=ChatSummaryPage)
@@ -86,13 +94,14 @@ async def recent_chats(
         return ChatSummaryPage(items=items)
 
 
-async def locked_chat(session, chat_id: UUID) -> ChatSession:
-    chat = await session.scalar(
-        select(ChatSession).where(ChatSession.id == chat_id).with_for_update()
-    )
-    if chat is None:
+@router.get("/chats/{chat_id}", response_model=ChatSummary)
+async def read_chat(chat_id: UUID, request: Request):
+    """One chat with its papers; its URL is /papers/{paper_id}/chats/{id}."""
+    async with request.app.state.resources.sessions() as session:
+        found = await chat_summaries(session, paper_id=None, chat_id=chat_id, limit=1, offset=0)
+    if not found:
         raise AppError(404, "CHAT_NOT_FOUND", "Chat not found.")
-    return chat
+    return found[0]
 
 
 @router.patch("/chats/{chat_id}", response_model=Chat)
@@ -101,7 +110,7 @@ async def rename_chat(chat_id: UUID, body: ChatRename, request: Request):
         chat = await locked_chat(session, chat_id)
         chat.title, chat.title_source = body.title, "manual"
         await session.flush()
-        return Chat.model_validate(chat)
+        return await chat_view(session, chat)
 
 
 @router.delete("/chats/{chat_id}", status_code=204, response_class=Response)
@@ -142,7 +151,8 @@ async def list_messages(chat_id: UUID, request: Request):
                 .order_by(ChatMessage.created_at, ChatMessage.id)
             )
         ).all()
-        return MessagePage(items=[Message.model_validate(item) for item in items])
+        messages = [Message.model_validate(item) for item in items]
+        return MessagePage(items=await with_cited_papers(session, messages))
 
 
 @router.get("/chats/{chat_id}/usage", response_model=ChatUsage)

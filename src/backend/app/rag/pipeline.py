@@ -1,17 +1,21 @@
 """Evidence for one answer: hybrid search, fusion, reranking, expansion and packing (ARA-073).
 
-Retrieval stays inside the chat's immutable document and that document's current chunk set.
-Without a ready index it searches by keywords and says why; it never reads a half-built index.
+Retrieval stays inside the chat's papers, each to its immutable pinned document and that
+document's current chunk set. One keyword and one vector search span the papers, filtered per
+document, and a comparative question's sub-questions are searched within their own paper
+(ARA-088; docs/plans/retrieval-orchestration.md, steps 1-8). Without a ready index a paper is
+searched by keywords and the note says why; a half-built index is never read.
 """
 
 import asyncio
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from uuid import UUID
 
 from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
@@ -22,19 +26,54 @@ from app.models.research import DocumentChunk
 from app.models.retrieval import RetrievalIndex
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.indexing import ready_index
-from app.rag.packing import SEPARATOR, Passage, node_passage, pack_evidence, render_evidence
+from app.rag.packing import (
+    FLOOR,
+    SEPARATOR,
+    Passage,
+    node_passage,
+    pack_evidence,
+    render_evidence,
+    render_header,
+)
 from app.rag.rerank import rerank_candidates
 from app.rag.retrievers import PgLexicalRetriever, PgVectorRetriever, chunk_node
 from app.schemas.ai import RetrievalSummary
 
 TOP_K = 30
 MAX_PASSAGES = 16
+# Sub-questions enter evidence headers cut to this length, so headers stay short and bounded.
+SUB_QUESTION_CHARS = 300
+SUB_QUESTION_LABEL = "\nSub-question: "
 BUILDING_NOTE = "Searched by keywords until the search index is built."
 UNAVAILABLE_NOTE = "Searched by keywords because the search index is unavailable."
+SOME_BUILDING_NOTE = (
+    "Searched {count} of {total} papers by keywords until their search index is built."
+)
+SOME_UNAVAILABLE_NOTE = (
+    "Searched {count} of {total} papers by keywords because their search index is unavailable."
+)
 MODEL_DOWN_NOTE = "Searched by keywords because the search model is unavailable right now."
 OPENING_NOTE = "No passage matched the question, so the paper's opening passages were used."
+SOME_OPENING_NOTE = (
+    "No passage matched in {count} of {total} papers, so their opening passages were used."
+)
+ROUTED_NOTE = "Only the {count} most relevant papers fit in the context for this answer."
 # Without an OpenAI key the default reranker cannot run at all; Settings already says why.
 QUIET_RERANK_SKIPS = {"MODEL_NOT_CONFIGURED"}
+
+
+@dataclass(frozen=True)
+class Scope:
+    """One paper of the chat: the PDF pinned for it and that PDF's current chunk set."""
+
+    document_id: UUID
+    chunk_set: str
+    # The paper's one-line evidence header; empty when the chat has one paper.
+    header: str = ""
+
+    @property
+    def key(self) -> tuple[UUID, str]:
+        return self.document_id, self.chunk_set
 
 
 @dataclass
@@ -45,8 +84,12 @@ class EvidenceResult:
     ranked: list[NodeWithScore] = field(default_factory=list)
     neighbours: dict[str, list[TextNode]] = field(default_factory=dict)
     counter: TokenCounter | None = None
-    # One vector per query, in `summary.profile`; None when searching by keywords only.
+    # One vector per query, then per sub-question, in `summary.profile`; None for keywords only.
     vectors: list[list[float]] | None = None
+    # Document id -> evidence header, in the chat's paper order; empty for one paper.
+    headers: dict[str, str] = field(default_factory=dict)
+    documents: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     def pack(self, budget: int) -> list[Passage]:
         self.passages = pack_evidence(
@@ -55,38 +98,51 @@ class EvidenceResult:
             counter=self.counter,
             neighbours=self.neighbours,
             max_passages=MAX_PASSAGES,
+            headers=self.headers,
         )
         chosen = {str(item.chunk_id) for item in self.passages}
         self.summary.passages_used = len(self.passages)
         self.summary.limited_by_context = any(
             item.node.node_id not in chosen for item in self.ranked[:MAX_PASSAGES]
         )
+        used = Counter(str(item.document_id) for item in self.passages)
+        candidates = {item.node.metadata["document_id"] for item in self.ranked}
+        answering = sum(1 for document in self.documents if used[document])
+        routed = len(candidates) > answering > 0
+        notes = [*self.notes, *([ROUTED_NOTE.format(count=answering)] if routed else [])]
+        self.summary.note = " ".join(notes) or None
         self.trace["selected"] = {item.handle: str(item.chunk_id) for item in self.passages}
+        self.trace["papers"] = {document: used[document] for document in self.documents}
         self.trace["budget"] = budget
         return self.passages
 
     def block(self, budget: int) -> str:
         """The `evidence_block` for answer assembly, which may grant less than retrieval used."""
-        return render_evidence(self.pack(budget))
+        return render_evidence(self.pack(budget), self.headers)
 
 
 def elapsed(start: float) -> int:
     return round((time.monotonic() - start) * 1000)
 
 
-def ranks(items: Sequence[NodeWithScore]) -> list:
-    return [[item.node.node_id, rank, item.score] for rank, item in enumerate(items[:TOP_K], 1)]
+def ranks(items: Sequence[NodeWithScore], limit: int = TOP_K) -> list:
+    return [[item.node.node_id, rank, item.score] for rank, item in enumerate(items[:limit], 1)]
 
 
-async def keyword_note(session, document_id: UUID, chunk_set: str, preferred: str) -> str:
-    state = await session.scalar(
+async def keyword_note(session, scopes: Sequence[Scope], preferred: str, total: int) -> str:
+    states = await session.scalars(
         select(RetrievalIndex.state).where(
-            RetrievalIndex.document_id == document_id,
+            tuple_(RetrievalIndex.document_id, RetrievalIndex.chunk_set).in_(
+                [scope.key for scope in scopes]
+            ),
             RetrievalIndex.profile == preferred,
-            RetrievalIndex.chunk_set == chunk_set,
         )
     )
-    return UNAVAILABLE_NOTE if state in {"failed", "unavailable"} else BUILDING_NOTE
+    unavailable = any(state in {"failed", "unavailable"} for state in states)
+    if len(scopes) == total:
+        return UNAVAILABLE_NOTE if unavailable else BUILDING_NOTE
+    note = SOME_UNAVAILABLE_NOTE if unavailable else SOME_BUILDING_NOTE
+    return note.format(count=len(scopes), total=total)
 
 
 async def embed_queries(resources, profile: str, queries: list[str]) -> list[list[float]]:
@@ -97,56 +153,111 @@ async def embed_queries(resources, profile: str, queries: list[str]) -> list[lis
         await embedder.close()
 
 
-def scoped(document_id: UUID, chunk_set: str):
+def scoped(scopes: Sequence[Scope]):
     return select(DocumentChunk).where(
-        DocumentChunk.document_id == document_id,
-        DocumentChunk.chunk_set == chunk_set,
+        tuple_(DocumentChunk.document_id, DocumentChunk.chunk_set).in_(
+            [scope.key for scope in scopes]
+        ),
         DocumentChunk.kind != "references",
     )
 
 
-async def evidence_ceiling(session, document_id: UUID, chunk_set: str, counter) -> int:
-    """The most evidence packing can choose: the costliest passages, at most MAX_PASSAGES."""
+def header_bound(counter, scopes: Sequence[Scope]) -> int:
+    """The most the evidence headers can cost, with a sub-question of the longest length."""
+    if len(scopes) < 2:
+        return 0
+    longest = SUB_QUESTION_LABEL + "x" * SUB_QUESTION_CHARS
+    # A token is at least one character, so the cut sub-question costs at most its length.
+    return sum(
+        counter.count(render_header(scope.header)) + counter.count(SEPARATOR) + len(longest)
+        for scope in scopes
+    )
+
+
+async def evidence_ceiling(session, scopes: Sequence[Scope], counter) -> int:
+    """The most evidence packing can choose: the costliest passages, at most MAX_PASSAGES, and
+    the papers' headers."""
     chunks = await session.scalars(
-        scoped(document_id, chunk_set)
+        scoped(scopes)
         .order_by(DocumentChunk.token_count.desc(), DocumentChunk.ordinal)
         .limit(MAX_PASSAGES)
     )
     widest = f"S{MAX_PASSAGES}"
-    return sum(
+    return header_bound(counter, scopes) + sum(
         counter.count(node_passage(chunk_node(chunk), widest).render()) + counter.count(SEPARATOR)
         for chunk in chunks
     )
 
 
-async def opening_nodes(resources, document_id: UUID, chunk_set: str) -> list[NodeWithScore]:
+async def opening_nodes(resources, scope: Scope) -> list[NodeWithScore]:
     async with resources.sessions() as session:
         chunks = await session.scalars(
-            scoped(document_id, chunk_set).order_by(DocumentChunk.ordinal).limit(MAX_PASSAGES)
+            scoped([scope]).order_by(DocumentChunk.ordinal).limit(MAX_PASSAGES)
         )
         return [NodeWithScore(node=chunk_node(chunk), score=0.0) for chunk in chunks]
 
 
 async def neighbour_nodes(
-    resources, document_id: UUID, chunk_set: str, ranked: Sequence[NodeWithScore]
+    resources, scopes: Sequence[Scope], ranked: Sequence[NodeWithScore]
 ) -> dict[str, list[TextNode]]:
     """The passages just before and after each candidate, when they share its section."""
-    wanted = {item.node.metadata["ordinal"] + step for item in ranked for step in (-1, 1)}
+    chunk_sets = {str(scope.document_id): scope.chunk_set for scope in scopes}
+    wanted = {
+        (UUID(item.node.metadata["document_id"]), item.node.metadata["ordinal"] + step)
+        for item in ranked
+        for step in (-1, 1)
+    }
+    if not wanted:
+        return {}
     async with resources.sessions() as session:
         rows = await session.scalars(
-            scoped(document_id, chunk_set).where(DocumentChunk.ordinal.in_(wanted))
+            select(DocumentChunk).where(
+                tuple_(
+                    DocumentChunk.document_id, DocumentChunk.chunk_set, DocumentChunk.ordinal
+                ).in_(
+                    [(document, chunk_sets[str(document)], ordinal) for document, ordinal in wanted]
+                ),
+                DocumentChunk.kind != "references",
+            )
         )
-        nearby = {chunk.ordinal: chunk for chunk in rows}
+        nearby = {(str(chunk.document_id), chunk.ordinal): chunk for chunk in rows}
     found = {}
     for item in ranked:
-        ordinal, section = item.node.metadata["ordinal"], item.node.metadata["section"]
+        metadata = item.node.metadata
+        document, ordinal = metadata["document_id"], metadata["ordinal"]
         same = [
-            chunk_node(nearby[step])
+            chunk_node(nearby[(document, step)])
             for step in (ordinal - 1, ordinal + 1)
-            if step in nearby and nearby[step].heading == section
+            if (document, step) in nearby
+            and nearby[(document, step)].heading == metadata["section"]
         ]
         if same:
             found[item.node.node_id] = same
+    return found
+
+
+def interleaved(nodes: Sequence[NodeWithScore]) -> list[NodeWithScore]:
+    """Papers take turns, each in its fused order, so the reranker's head (it scores only the
+    first candidates) holds every paper's best passages: a per-document quota on the reranked
+    pool (docs/plans/retrieval-orchestration.md, steps 3 and 6). One paper keeps its order."""
+    queues: dict[str, list[NodeWithScore]] = {}
+    for item in nodes:
+        queues.setdefault(item.node.metadata["document_id"], []).append(item)
+    longest = max((len(queue) for queue in queues.values()), default=0)
+    return [
+        queue[turn] for turn in range(longest) for queue in queues.values() if turn < len(queue)
+    ]
+
+
+def best_per_paper(ranked: Sequence[NodeWithScore]) -> list[NodeWithScore]:
+    """Each paper's first FLOOR candidates: the passages its floor will take."""
+    seen: Counter = Counter()
+    found = []
+    for item in ranked:
+        document = item.node.metadata["document_id"]
+        if seen[document] < FLOOR:
+            seen[document] += 1
+            found.append(item)
     return found
 
 
@@ -160,92 +271,140 @@ def query_tokens(profile: str, queries: list[str]) -> int:
 async def retrieve_evidence(
     resources,
     *,
-    document_id: UUID,
-    chunk_set: str,
+    scopes: Sequence[Scope],
     preferred_profile: str,
     queries: list[str],
     question: str,
     budget: int,
     counter: TokenCounter,
     reranker: str | None = None,
+    sub_questions: Sequence[tuple[int, str]] = (),
     on_stage: Callable[[str], Awaitable[None]] | None = None,
 ) -> EvidenceResult:
-    """`queries` are searched; the reranker judges passages against the standalone `question`.
+    """`queries` are searched in every paper; each (scope index, text) of `sub_questions` only in
+    its paper. The reranker judges passages against the standalone `question`.
 
     `reranker` is a catalog profile key, or None for off; `on_stage` hears "reranking".
     """
     started = time.monotonic()
     timings = {}
-    summary = RetrievalSummary(mode="keyword", search_queries=list(queries))
+    asked = [(index, text) for index, text in sub_questions if 0 <= index < len(scopes)]
+    summary = RetrievalSummary(
+        mode="keyword",
+        search_queries=list(queries),
+        sub_questions=[text for _, text in asked],
+    )
+    notes: list[str] = []
     usable = offered(resources.settings, PROFILES)
+    profile, searched = None, []
     async with resources.sessions() as session:
         # An open model while open models are off: keywords, never a paid profile (ARA-090).
-        index = (
-            await ready_index(session, document_id, preferred_profile, profiles=usable)
-            if preferred_profile in usable
-            else None
-        )
         if preferred_profile not in usable:
-            summary.note = KEYWORD_NOTE
-        elif index is None:
-            summary.note = await keyword_note(session, document_id, chunk_set, preferred_profile)
+            notes.append(KEYWORD_NOTE)
+        else:
+            indexes = {
+                scope.document_id: await ready_index(
+                    session, scope.document_id, preferred_profile, profiles=usable
+                )
+                for scope in scopes
+            }
+            ready = [index.profile for index in indexes.values() if index is not None]
+            # One embedding model spans the papers (ARA-091): the library's, else the one the
+            # first ready paper still serves.
+            profile = preferred_profile if preferred_profile in ready else next(iter(ready), None)
+            searched = [
+                scope
+                for scope in scopes
+                if indexes[scope.document_id] is not None
+                and indexes[scope.document_id].profile == profile
+            ]
+            if missing := [scope for scope in scopes if scope not in searched]:
+                notes.append(await keyword_note(session, missing, preferred_profile, len(scopes)))
+    texts = [*queries, *(text for _, text in asked)]
     vectors, billed = None, {}
-    if index is not None:
+    if searched:
         clock = time.monotonic()
         try:
-            vectors = await embed_queries(resources, index.profile, list(queries))
+            vectors = await embed_queries(resources, profile, texts)
         except AppError:
-            summary.note = MODEL_DOWN_NOTE
+            notes = [MODEL_DOWN_NOTE]
+            searched = []
         else:
-            summary.mode, summary.profile = "hybrid", index.profile
-            if tokens := query_tokens(index.profile, list(queries)):
-                billed["embedding"] = {"profile": index.profile, "tokens": tokens}
-            if index.profile != preferred_profile:
-                summary.note = (
-                    f"Searched with {PROFILES[index.profile].display_name} until "
+            summary.mode, summary.profile = "hybrid", profile
+            if tokens := query_tokens(profile, texts):
+                billed["embedding"] = {"profile": profile, "tokens": tokens}
+            if profile != preferred_profile:
+                notes.append(
+                    f"Searched with {PROFILES[profile].display_name} until "
                     f"{PROFILES[preferred_profile].display_name} is ready."
                 )
         timings["embed"] = elapsed(clock)
     clock = time.monotonic()
     searches = []
+
+    def search(kind: str, text: str, paper: int | None, within: Sequence[Scope], vector=None):
+        keys = [scope.key for scope in within]
+        if kind == "keyword":
+            found = PgLexicalRetriever(resources.sessions, keys, top_k=TOP_K).aretrieve(text)
+        else:
+            retriever = PgVectorRetriever(resources.sessions, keys, profile, top_k=TOP_K)
+            found = retriever.aretrieve(QueryBundle(query_str=text, embedding=vector))
+        searches.append((kind, text, paper, found))
+
     for position, query in enumerate(queries):
-        keyword = PgLexicalRetriever(resources.sessions, document_id, chunk_set, top_k=TOP_K)
-        searches.append(("keyword", query, keyword.aretrieve(query)))
-        if vectors is not None:
-            vector = PgVectorRetriever(
-                resources.sessions, document_id, chunk_set, index.profile, top_k=TOP_K
-            )
-            bundle = QueryBundle(query_str=query, embedding=vectors[position])
-            searches.append(("vector", query, vector.aretrieve(bundle)))
+        search("keyword", query, None, scopes)
+        if searched:
+            search("vector", query, None, searched, vectors[position])
+    for offset, (index, text) in enumerate(asked):
+        scope = scopes[index]
+        search("keyword", text, index + 1, [scope])
+        if scope in searched:
+            search("vector", text, index + 1, [scope], vectors[len(queries) + offset])
     # Each retriever call opens its own session, so the searches run in parallel.
-    results = await asyncio.gather(*(search for _, _, search in searches))
+    results = await asyncio.gather(*(found for *_, found in searches))
     timings["search"] = elapsed(clock)
     fused = reciprocal_rank_fusion(results)
     if reranker is not None and fused and on_stage is not None:
         await on_stage("reranking")
-    reranked = await rerank_candidates(resources, query=question, nodes=fused, reranker=reranker)
+    reranked = await rerank_candidates(
+        resources, query=question, nodes=interleaved(fused), reranker=reranker
+    )
     timings["rerank"] = reranked.elapsed_ms
     summary.reranked = reranked.reranked
     if reranked.skipped and reranked.skipped not in QUIET_RERANK_SKIPS:
-        skip_note = f"Reranking was unavailable, so results use the {summary.mode} order."
-        summary.note = " ".join(filter(None, [summary.note, skip_note]))
+        notes.append(f"Reranking was unavailable, so results use the {summary.mode} order.")
     if reranked.billed_tokens and reranked.reranker:
         billed["rerank"] = {"profile": reranked.reranker, "tokens": reranked.billed_tokens}
-    ranked = reranked.nodes
-    if not ranked:
-        ranked = await opening_nodes(resources, document_id, chunk_set)
-        summary.note = " ".join(filter(None, [summary.note, OPENING_NOTE]))
+    # Without reranking, fusion order compares passages across papers.
+    ranked = list(reranked.nodes if reranked.reranked else fused)
+    matched = {item.node.metadata["document_id"] for item in ranked}
+    if silent := [scope for scope in scopes if str(scope.document_id) not in matched]:
+        for scope in silent:
+            ranked += await opening_nodes(resources, scope)
+        notes.append(
+            OPENING_NOTE
+            if len(silent) == len(scopes)
+            else SOME_OPENING_NOTE.format(count=len(silent), total=len(scopes))
+        )
     summary.passages_found = len(fused)
-    neighbours = await neighbour_nodes(resources, document_id, chunk_set, ranked[:MAX_PASSAGES])
+    expand = {item.node.node_id: item for item in [*ranked[:MAX_PASSAGES], *best_per_paper(ranked)]}
+    neighbours = await neighbour_nodes(resources, scopes, list(expand.values()))
+    width = TOP_K * len(scopes)
     trace = {
         "queries": list(queries),
+        "sub_questions": [{"paper": index + 1, "question": text} for index, text in asked],
         "mode": summary.mode,
         "profile": summary.profile,
         "lists": [
-            {"retriever": kind, "query": query, "results": ranks(found)}
-            for (kind, query, _), found in zip(searches, results, strict=True)
+            {
+                "retriever": kind,
+                "query": text,
+                **({"paper": paper} if paper else {}),
+                "results": ranks(found, width),
+            }
+            for (kind, text, paper, _), found in zip(searches, results, strict=True)
         ],
-        "fused": [[item.node.node_id, item.score] for item in fused[:TOP_K]],
+        "fused": [[item.node.node_id, item.score] for item in fused[:width]],
         "rerank": {
             "profile": reranker,
             "query": question,
@@ -256,7 +415,27 @@ async def retrieve_evidence(
         "timings_ms": timings,
         "billed": billed,
     }
-    result = EvidenceResult([], summary, trace, ranked, neighbours, counter, vectors)
+    headers = {}
+    if len(scopes) > 1:
+        questions = {index: text for index, text in asked}
+        for index, scope in enumerate(scopes):
+            header = scope.header
+            if text := questions.get(index):
+                cut = text if len(text) <= SUB_QUESTION_CHARS else text[: SUB_QUESTION_CHARS - 1]
+                header += SUB_QUESTION_LABEL + cut + ("" if cut == text else "…")
+            headers[str(scope.document_id)] = header
+    result = EvidenceResult(
+        [],
+        summary,
+        trace,
+        ranked,
+        neighbours,
+        counter,
+        vectors,
+        headers=headers,
+        documents=[str(scope.document_id) for scope in scopes],
+        notes=notes,
+    )
     result.pack(budget)
     timings["total"] = elapsed(started)
     return result

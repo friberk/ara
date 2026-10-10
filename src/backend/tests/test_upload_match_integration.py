@@ -211,7 +211,8 @@ async def test_cancel_discards_the_upload_and_its_stored_original(resources):
 
 
 async def test_a_match_found_later_by_the_catalog_lookup_asks_instead_of_duplicating(resources):
-    from app.models.research import ChatSession, Document, Paper
+    from app.models.research import ChatPaper, Document, Paper
+    from tests.support.chats import chat_with
 
     # The library paper carries the DOI under a title the user edited, so the PDF alone cannot
     # match it; the catalog record found by title then names the DOI.
@@ -228,7 +229,7 @@ async def test_a_match_found_later_by_the_catalog_lookup_asks_instead_of_duplica
     )
     assert (await detail(resources, accepted.paper_id)).upload_match is None
     async with resources.sessions() as session, session.begin():
-        session.add(ChatSession(paper_id=accepted.paper_id, document_id=accepted.document_id))
+        await chat_with(session, (accepted.paper_id, accepted.document_id))
     job = await run_lookup(resources, accepted.paper_id, due=False)
     assert job.result["outcome"] == "library_match"
     paper = await detail(resources, accepted.paper_id)
@@ -250,8 +251,8 @@ async def test_a_match_found_later_by_the_catalog_lookup_asks_instead_of_duplica
     assert attached.status_code == 200 and attached.json()["document_status"] == "ready"
     assert attached.json()["active_document_id"] == str(accepted.document_id)
     async with resources.sessions() as session:
-        chat = await session.scalar(select(ChatSession))
-        assert chat.paper_id == saved
+        link = await session.scalar(select(ChatPaper))
+        assert (link.paper_id, link.document_id) == (saved, accepted.document_id)
         assert (await session.get(Document, accepted.document_id)).paper_id == saved
     assert await count(resources, Paper, Paper.id == accepted.paper_id) == 0
     assert await lookup_job(resources, saved) is None

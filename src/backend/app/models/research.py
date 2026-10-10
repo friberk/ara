@@ -180,13 +180,31 @@ class ChatSession(Base):
         CheckConstraint("title_source IN ('default','auto','manual')", name="chat_title_source"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    paper_id: Mapped[UUID] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"))
-    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"))
     title: Mapped[str] = mapped_column(String(200), default="Paper discussion")
     title_source: Mapped[str] = mapped_column(
         String(20), default="default", server_default="default"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatPaper(Base):
+    """A library paper in a chat and the PDF pinned for it when it joined (ARA-088).
+
+    The paper with the lowest ordinal is the chat's first paper; its page is the chat's URL.
+    Deleting a chat's last link deletes the chat (trigger `chat_papers_last_paper`).
+    """
+
+    __tablename__ = "chat_papers"
+    __table_args__ = (UniqueConstraint("chat_id", "ordinal", name="uq_chat_paper_ordinal"),)
+    chat_id: Mapped[UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    paper_id: Mapped[UUID] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), index=True)
+    ordinal: Mapped[int]
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ChatMessage(Base):

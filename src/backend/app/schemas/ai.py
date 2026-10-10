@@ -14,6 +14,8 @@ class DTO(BaseModel):
 class Citation(DTO):
     chunk_id: UUID
     document_id: UUID
+    # The paper the cited PDF belongs to, filled when chat history is read (ARA-088).
+    paper_id: UUID | None = None
     page: int = Field(ge=1)
     page_end: int | None = Field(default=None, ge=1)
     section: str | None = None
@@ -30,6 +32,8 @@ class RetrievalSummary(BaseModel):
     reranked: bool = False
     standalone_query: str | None = None
     search_queries: list[str] = Field(default_factory=list)
+    # A comparative question's per-paper sub-questions, each searched in its paper (ARA-088).
+    sub_questions: list[str] = Field(default_factory=list)
     passages_found: int = 0
     passages_used: int = 0
     limited_by_context: bool = False
@@ -67,8 +71,27 @@ class ChatInput(GenerationInput):
         return value.strip()
 
 
+# A chat covers at most this many papers; the user's default for ARA-088.
+MAX_CHAT_PAPERS = 5
+
+
 class ChatCreate(BaseModel):
+    """The papers a new chat covers, in order; the first one's page is the chat's URL."""
+
+    paper_ids: list[UUID] = Field(min_length=1, max_length=MAX_CHAT_PAPERS)
     title: str = Field(default="Paper discussion", min_length=1, max_length=200)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def distinct(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("Each paper can be included once")
+        return value
+
+
+class ChatPaperAdd(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paper_id: UUID
 
 
 class ChatRename(BaseModel):
@@ -164,10 +187,22 @@ class SummaryAccepted(BaseModel):
     summary_id: UUID | None = None
 
 
-class Chat(DTO):
-    id: UUID
+class IncludedPaper(BaseModel):
+    """A library paper in a chat, with the PDF pinned for it when it joined (ARA-088)."""
+
     paper_id: UUID
     document_id: UUID
+    title: str | None
+    first_author: str | None
+    year: int | None
+    added_at: datetime
+
+
+class Chat(BaseModel):
+    id: UUID
+    # The first included paper; the chat's URL is /papers/{paper_id}/chats/{id}.
+    paper_id: UUID
+    papers: list[IncludedPaper]
     title: str
     title_source: Literal["default", "auto", "manual"]
     created_at: datetime
@@ -178,7 +213,6 @@ class ChatPage(BaseModel):
 
 
 class ChatSummary(Chat):
-    paper_title: str | None
     last_activity_at: datetime
     message_count: int
     last_question_preview: str | None
