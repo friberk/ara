@@ -78,7 +78,7 @@ export default function SettingsDialog() {
                   <TabsPrimitive.Trigger
                     key={id}
                     value={id}
-                    className="flex h-11 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm text-foreground outline-hidden transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:bg-accent data-[state=active]:font-medium md:h-8 md:px-2 [&_svg]:size-4 [&_svg]:shrink-0"
+                    className="flex h-11 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm text-foreground outline-hidden transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=active]:bg-accent data-[state=active]:font-medium md:h-8 md:px-2 [&_svg]:size-4 [&_svg]:shrink-0"
                   >
                     <Icon aria-hidden="true" className="text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{label}</span>

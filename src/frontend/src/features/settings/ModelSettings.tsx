@@ -11,6 +11,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useOpenModels, withoutOpenModels } from '@/hooks/queries/features'
 import { isChatModel, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { formatTokens } from '@/lib/usage-format'
+import { cn } from '@/lib/utils'
 import { ChoiceList, ChoiceRow, SettingsSection } from './parts'
 import { segmentedGroup, segmentedItem } from './segmented'
 
@@ -88,7 +89,7 @@ function ModelDefaults({ models, saved }: { models: Model[]; saved: Settings }) 
         control={controls.kind === 'boolean' && <Switch aria-labelledby={reasoningHeading} checked={shown.reasoning_effort === 'on'} onCheckedChange={(enabled) => commit({ model: shown.model, reasoning_effort: enabled ? 'on' : 'none' }, 'reasoning')} className="mt-0.5" />}
       >
         {controls.kind === 'levels' && controls.options.length > 0 && (
-          <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-labelledby={reasoningHeading} value={shown.reasoning_effort} onValueChange={(value) => { if (value) commit({ model: shown.model, reasoning_effort: value }, 'reasoning') }} className={segmentedGroup}>
+          <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-labelledby={reasoningHeading} value={shown.reasoning_effort} onValueChange={(value) => { if (value) commit({ model: shown.model, reasoning_effort: value }, 'reasoning') }} className={cn(segmentedGroup, controls.options.length > 4 && 'max-sm:grid max-sm:w-full max-sm:grid-cols-3')}>
             {controls.options.map((effort) => <ToggleGroupItem key={effort} value={effort} className={segmentedItem}>{effortLabel(effort)}</ToggleGroupItem>)}
           </ToggleGroup>
         )}
