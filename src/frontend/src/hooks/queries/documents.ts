@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { api } from '@/api/client'
-import type { Citation } from '@/api/types'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, ApiError, apiVoid, remove } from '@/api/client'
+import type { Citation, DocumentDetail, PdfRemovalPreview } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 
 /** The complete stored chunk behind a citation, verified to be the one that was cited. */
@@ -14,5 +14,48 @@ export function useCitationSource(citation: Citation, enabled = true) {
     },
     enabled,
     staleTime: Infinity,
+  })
+}
+
+/** One PDF's file facts for the reader's menu: name, pages, size and where it came from (ARA-097). */
+export function useDocument(documentId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.documents.detail(documentId ?? ''),
+    queryFn: ({ signal }) => api<DocumentDetail>(`/documents/${encodeURIComponent(documentId ?? '')}`, { signal }),
+    enabled: !!documentId,
+    staleTime: Infinity,
+    // A removed or deleted PDF stays gone, so asking again only delays saying so.
+    retry: (failures, error) => !(error instanceof ApiError && error.status === 404) && failures < 1,
+  })
+}
+
+/** What removing the paper's PDF changes, read afresh each time the dialog opens (ARA-097). */
+export function usePdfRemovalPreview(paperId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.pdfRemovalPreview(paperId),
+    queryFn: ({ signal }) => api<PdfRemovalPreview>(`/papers/${encodeURIComponent(paperId)}/pdf/removal-preview`, { signal }),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+/**
+ * Removes the paper's PDF (ARA-097): the paper has none, and its PDFs no chat uses are deleted. Chats keep the PDFs
+ * they use; the reader returns to its upload state when the paper is read again.
+ */
+export function useRemovePdf(paperId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiVoid(`/papers/${encodeURIComponent(paperId)}/pdf`, remove),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.papers.all })
+      void client.invalidateQueries({ queryKey: queryKeys.chats.all })
+      void client.invalidateQueries({ queryKey: queryKeys.jobs.all })
+      void client.invalidateQueries({ queryKey: queryKeys.fulltext(paperId) })
+      void client.invalidateQueries({ queryKey: queryKeys.summaries(paperId) })
+      void client.invalidateQueries({ queryKey: queryKeys.retrieval.paper(paperId) })
+      void client.invalidateQueries({ queryKey: queryKeys.documents.all })
+    },
   })
 }

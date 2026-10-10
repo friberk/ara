@@ -7,7 +7,7 @@ export function ThreadLayout({ scrollRef, onScroll, away, scrolled = false, onLa
   onScroll: () => void
   /** The reader has scrolled up from the newest content. */
   away: boolean
-  /** Scrolled away from the top: fade the top edge under the conversation header. */
+  /** Scrolled away from the top: a hairline divides the thread from the header and the paper chips above it. */
   scrolled?: boolean
   onLatest: () => void
   composer: React.ReactNode
@@ -15,7 +15,8 @@ export function ThreadLayout({ scrollRef, onScroll, away, scrolled = false, onLa
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="relative min-h-0 flex-1">
+      {/* The border is always there, so the hairline appears without moving the thread by a pixel. */}
+      <div data-scrolled={scrolled || undefined} className="relative min-h-0 flex-1 border-t border-transparent data-scrolled:border-border">
         <div
           ref={scrollRef}
           onScroll={onScroll}
@@ -23,7 +24,7 @@ export function ThreadLayout({ scrollRef, onScroll, away, scrolled = false, onLa
           aria-label="Conversation"
           tabIndex={0}
           data-scrolled={scrolled || undefined}
-          className="absolute inset-0 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset data-scrolled:[mask-image:linear-gradient(to_bottom,transparent,black_24px)]"
+          className="absolute inset-0 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
         >
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-4 pt-2 pb-10">{children}</div>
         </div>

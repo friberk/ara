@@ -9,9 +9,10 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.models.jobs import BackgroundJob
-from app.models.research import ChatMessage, ChatSession
+from app.models.research import ChatMessage
 from app.repositories.jobs import claim
 from tests.support.answers import ask, first_handle, named, use_hosted
+from tests.support.chats import new_chat as chat_with_papers
 from tests.support.evidence import seed_structured
 from tests.support.models import (
     hosted_responses,
@@ -81,11 +82,7 @@ def embeddings(resources, monkeypatch):
 
 
 async def new_chat(resources, paper_id, document_id):
-    async with resources.sessions() as session, session.begin():
-        chat = ChatSession(paper_id=paper_id, document_id=document_id, title="Discussion")
-        session.add(chat)
-        await session.flush()
-        return chat.id
+    return await chat_with_papers(resources, (paper_id, document_id))
 
 
 async def run_memory_jobs(resources) -> list[str]:
@@ -118,6 +115,7 @@ async def conversation(resources, chat_id):
         return [(message.role, message.content, message.state) for message in rows]
 
 
+@pytest.mark.open_models
 async def test_given_forty_local_turns_when_asking_about_turn_two_then_memory_carries_it(
     resources, monkeypatch, embeddings
 ):

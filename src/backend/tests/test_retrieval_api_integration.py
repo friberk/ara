@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from app.models.jobs import BackgroundJob
 from app.models.research import Paper
 from app.models.retrieval import RetrievalIndex
-from tests.support.papers import CHUNK_SET, OPENAI, QWEN, seed_paper
+from tests.support.papers import CHUNK_SET, OPENAI, QWEN, SMALL, seed_paper, use_library_profile
 
 pytestmark = pytest.mark.integration
 
@@ -43,6 +43,7 @@ async def embed_jobs(resources):
         ).all()
 
 
+@pytest.mark.open_models
 async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(resources, client):
     resources.settings.openai_api_key = None
     response = await client.get("/api/v1/retrieval/profiles")
@@ -50,10 +51,12 @@ async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(r
     page = response.json()
     assert page["default_profile"] == OPENAI
     items = {item["key"]: item for item in page["items"]}
-    assert list(items) == [OPENAI, QWEN, "qwen3-embed-8b"]
+    assert list(items) == [OPENAI, SMALL, QWEN, "qwen3-embed-8b"]
     assert items[OPENAI]["status"] == "unavailable"
     assert items[OPENAI]["unavailable_reason"] == "Add an OpenAI API key on the server."
     assert items[OPENAI]["dimensions"] == 3072 and items[OPENAI]["provider"] == "openai"
+    assert (items[SMALL]["dimensions"], items[SMALL]["price_per_million"]) == (1536, 0.02)
+    assert items[OPENAI]["price_per_million"] == 0.13
     assert items[QWEN] == {
         "key": QWEN,
         "provider": "ollama",
@@ -63,12 +66,14 @@ async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(r
         "status": "unavailable",
         "unavailable_reason": "Download Qwen3 Embedding 4B in Settings.",
         "local_model_key": "qwen3-embedding-4b",
+        "price_per_million": 0.0,
     }
     resources.settings.openai_api_key = SecretStr("http-fixture-only")
     items = (await client.get("/api/v1/retrieval/profiles")).json()["items"]
     assert items[0]["status"] == "available" and items[0]["unavailable_reason"] is None
 
 
+@pytest.mark.open_models
 async def test_given_settings_when_saving_then_profile_is_validated_and_stored(resources, client):
     response = await client.get("/api/v1/retrieval/settings")
     assert response.json() == {"embedding_profile": OPENAI, "reranker": "openai-gpt-6-luna"}
@@ -113,7 +118,6 @@ async def test_given_paper_without_document_when_reading_then_retrieval_is_unava
         "paper_id": str(paper.id),
         "document_id": None,
         "effective_profile": OPENAI,
-        "source": "default",
         "parser": None,
         "chunk_count": 0,
         "section_count": 0,
@@ -219,50 +223,29 @@ async def test_given_index_state_when_reading_paper_then_mode_explains_search(
         assert entry["error"] == expected
 
 
+@pytest.mark.open_models
 async def test_given_other_profile_ready_when_switching_then_it_serves_until_new_is_ready(
     resources, client
 ):
-    paper_id, document_id = await seed_paper(resources, retrieval_profile=QWEN)
+    await use_library_profile(resources, QWEN)
+    paper_id, document_id = await seed_paper(resources)
     await set_index(resources, document_id, OPENAI, state="ready", embedded=5)
     await set_index(resources, document_id, QWEN, state="embedding", embedded=1)
     body = (await client.get(f"/api/v1/papers/{paper_id}/retrieval")).json()
-    assert (body["effective_profile"], body["source"], body["mode"]) == (QWEN, "paper", "hybrid")
+    assert (body["effective_profile"], body["mode"]) == (QWEN, "hybrid")
     assert body["mode_note"] == (
         "Searching with OpenAI text-embedding-3-large until Qwen3 Embedding 4B is ready (20%)."
     )
     assert [entry["profile"] for entry in body["indexes"]] == [OPENAI, QWEN]
 
 
-async def test_given_profile_change_when_replayed_then_the_same_body_returns(resources, client):
-    paper_id, document_id = await seed_paper(resources)
-    identity = str(uuid4())
+async def test_given_a_paper_when_choosing_its_own_model_then_the_route_is_gone(resources, client):
+    paper_id, _ = await seed_paper(resources)
     url = f"/api/v1/papers/{paper_id}/retrieval"
-    first = await client.put(url, json={"profile": QWEN, "request_id": identity})
-    assert first.status_code == 200, first.text
-    body = first.json()
-    assert (body["effective_profile"], body["source"], body["mode"]) == (QWEN, "paper", "keyword")
-    assert body["mode_note"] == "Search index is building (0%)."
-    (job,) = await embed_jobs(resources)
-    assert job.payload["profile"] == QWEN
-    async with resources.sessions() as session:
-        assert (await session.get(Paper, paper_id)).retrieval_profile == QWEN
-    reset = await client.put(url, json={"profile": None, "request_id": str(uuid4())})
-    assert reset.status_code == 200
-    assert (reset.json()["effective_profile"], reset.json()["source"]) == (OPENAI, "default")
-    replay = await client.put(url, json={"profile": QWEN, "request_id": identity})
-    assert replay.status_code == 200 and replay.json() == body
-    assert len(await embed_jobs(resources)) == 2
-    async with resources.sessions() as session:
-        assert (await session.get(Paper, paper_id)).retrieval_profile is None
-    conflict = await client.put(url, json={"profile": OPENAI, "request_id": identity})
-    assert conflict.status_code == 409 and conflict.json()["code"] == "RETRIEVAL_REQUEST_CONFLICT"
-    other_paper, _ = await seed_paper(resources)
-    foreign = await client.put(
-        f"/api/v1/papers/{other_paper}/retrieval", json={"profile": QWEN, "request_id": identity}
-    )
-    assert foreign.status_code == 409
-    invalid = await client.put(url, json={"profile": "bge-small", "request_id": str(uuid4())})
-    assert invalid.status_code == 422 and invalid.json()["code"] == "INVALID_EMBEDDING_PROFILE"
+    response = await client.put(url, json={"profile": QWEN, "request_id": str(uuid4())})
+    assert response.status_code == 405
+    assert "source" not in (await client.get(url)).json()
+    assert await embed_jobs(resources) == []
 
 
 async def test_given_ready_index_when_rebuilding_then_it_keeps_serving(resources, client):
@@ -298,14 +281,15 @@ async def test_given_ready_index_when_rebuilding_then_it_keeps_serving(resources
         assert await session.scalar(select(func.count()).select_from(BackgroundJob)) == 1
 
 
+@pytest.mark.open_models
 async def test_given_embed_job_when_listing_jobs_then_it_links_to_its_paper(resources, client):
     paper_id, _ = await seed_paper(resources)
     other_paper, _ = await seed_paper(resources)
     for paper in (paper_id, other_paper):
-        response = await client.put(
-            f"/api/v1/papers/{paper}/retrieval", json={"profile": QWEN, "request_id": str(uuid4())}
+        response = await client.post(
+            f"/api/v1/papers/{paper}/retrieval/rebuild", json={"request_id": str(uuid4())}
         )
-        assert response.status_code == 200, response.text
+        assert response.status_code == 202, response.text
     page = (await client.get("/api/v1/jobs", params={"paper_id": str(paper_id)})).json()
     (job,) = page["items"]
     assert (job["kind"], job["paper_id"], job["paper_title"]) == (
@@ -315,3 +299,44 @@ async def test_given_embed_job_when_listing_jobs_then_it_links_to_its_paper(reso
     )
     listed = (await client.get("/api/v1/jobs")).json()["items"]
     assert {item["paper_id"] for item in listed} == {str(paper_id), str(other_paper)}
+
+
+@pytest.mark.open_models
+async def test_given_a_library_when_estimating_a_switch_then_papers_tokens_and_cost_are_returned(
+    resources, client
+):
+    await seed_paper(resources)
+    _, ready_already = await seed_paper(resources)
+    await set_index(resources, ready_already, SMALL, state="ready", embedded=5)
+    response = await client.get("/api/v1/retrieval/reindex-estimate", params={"profile": SMALL})
+    assert response.status_code == 200, response.text
+    # Each seeded paper has 5 passages of 12 tokens; the one already on SMALL is not counted.
+    assert response.json() == {
+        "profile": SMALL,
+        "papers": 1,
+        "tokens": 60,
+        "price_per_million": 0.02,
+        "estimated_cost_usd": 60 * 0.02 / 1_000_000,
+    }
+    large = await client.get("/api/v1/retrieval/reindex-estimate", params={"profile": OPENAI})
+    assert (large.json()["papers"], large.json()["tokens"]) == (2, 120)
+    local = await client.get("/api/v1/retrieval/reindex-estimate", params={"profile": QWEN})
+    assert local.json()["estimated_cost_usd"] == 0
+    invalid = await client.get("/api/v1/retrieval/reindex-estimate", params={"profile": "bge"})
+    assert invalid.status_code == 422 and invalid.json()["code"] == "INVALID_EMBEDDING_PROFILE"
+
+
+async def test_given_the_small_model_when_saved_then_every_paper_is_queued_for_it(
+    resources, client
+):
+    resources.settings.openai_api_key = SecretStr("http-fixture-only")
+    documents = [(await seed_paper(resources))[1] for _ in range(2)]
+    for document_id in documents:
+        await set_index(resources, document_id, OPENAI, state="ready", embedded=5)
+    saved = await client.put(
+        "/api/v1/retrieval/settings", json={"embedding_profile": SMALL, "reranker": None}
+    )
+    assert saved.status_code == 200, saved.text
+    jobs = await embed_jobs(resources)
+    assert sorted(job.payload["document_id"] for job in jobs) == sorted(map(str, documents))
+    assert {job.payload["profile"] for job in jobs} == {SMALL}

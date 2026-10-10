@@ -172,7 +172,7 @@ async def test_given_chunks_saved_then_indexing_hook_runs_in_the_same_transactio
 
     calls = []
 
-    async def failing_hook(session, *, document_id):
+    async def failing_hook(session, *, document_id, resources=None):
         visible = await count(session, DocumentChunk, document_id)
         calls.append((document_id, visible, session.in_transaction()))
         raise RuntimeError("index bookkeeping failed")

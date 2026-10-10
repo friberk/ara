@@ -44,25 +44,21 @@ test('E2E-04 Given ready text, when summarized, then a stored grounded summary a
   await page.goto(`/papers/${paper.id}`)
   const summary = page.getByRole('article', { name: 'Paper summary' })
   const generate = summary.getByRole('button', { name: 'Generate summary', exact: true })
-  const versions = summary.getByRole('button', { name: /^Version \d+ of \d+$/ })
-  // The fixture paper is shared across runs: the first run has no summary, later runs add a version.
-  await expect(generate.or(versions)).toBeVisible()
-  const before = (await versions.isVisible()) ? Number((await versions.innerText()).match(/of (\d+)/)?.[1]) : 0
-  if (before) {
-    await versions.click()
-    await page.getByRole('menuitem', { name: 'Generate summary' }).click()
-  } else {
-    await generate.click()
-  }
-  const latest = `Version ${before + 1} of ${before + 1}`
-  await expect(summary.getByRole('button', { name: latest })).toBeVisible({ timeout: 45_000 })
-  await expect(summary).toContainText('Orion-12')
+  const regenerate = summary.getByRole('button', { name: 'Regenerate summary', exact: true })
+  // The fixture paper is shared across runs: the first run generates, later runs regenerate from the heading icon.
+  await expect(generate.or(regenerate)).toBeVisible()
+  const stored = async () => (await (await request.get(`/api/v1/papers/${paper.id}/summaries`)).json()).items.length
+  const before = await stored()
+  if (await generate.isVisible()) await generate.click()
+  else await regenerate.click()
+  await expect.poll(stored, { timeout: 45_000 }).toBeGreaterThan(before)
   // A summary that just finished opens in full, with its page sources.
-  await expect(summary.getByRole('button', { name: 'Collapse summary' })).toBeVisible()
+  await expect(summary.getByRole('button', { name: 'Collapse summary' })).toBeVisible({ timeout: 45_000 })
   await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()
+  await expect(summary).toContainText('Orion-12', { timeout: 45_000 })
 
   await page.reload()
-  await expect(summary.getByRole('button', { name: latest })).toBeVisible()
+  await expect(summary.getByRole('button', { name: 'Show full summary' })).toBeVisible()
   await expect(summary).toContainText('Orion-12')
   await summary.getByRole('button', { name: 'Show full summary' }).click()
   await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()

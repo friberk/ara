@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page, pdfjs, type DocumentProps } from 'react-pdf'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -9,7 +9,9 @@ import type { Citation } from '@/api/types'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import type { PdfNavigation } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
+import { regionsFor, type PageGeometry, type Region } from './citation-region'
 import { findEvidence } from './evidence'
+import { FADE_MS, HOLD_MS } from './highlight-lifetime'
 import type { HighlightOutcome, SourceRequest } from './workspace-context'
 
 // The worker comes from the same pdfjs-dist that react-pdf resolves, so API and worker versions always agree.
@@ -19,6 +21,8 @@ const GUTTER = 16
 const DEFAULT_RATIO = 11 / 8.5
 const DEVICE_PIXEL_RATIO = Math.min(2, window.devicePixelRatio || 1)
 const HIGHLIGHT_TIMEOUT_MS = 8000
+/** Time left to read a passage the pointer has just stopped covering during a fade. */
+const MIN_RESUME_MS = 1000
 
 export type PdfViewerProps = {
   documentId: string
@@ -30,13 +34,25 @@ export type PdfViewerProps = {
   onDocumentLoad: (numPages: number) => void
   onPageChange: (page: number) => void
   onHighlight: (outcome: HighlightOutcome) => void
+  /** Shown above page 1 in the same scroll column, so it scrolls away with the document (the paper header, ARA-101). */
+  header?: React.ReactNode
+  /** The PDF's heading and controls, between the header and page 1. It docks at the top once the header has gone. */
+  bar?: React.ReactNode
 }
 
-type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean }
+type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean; waitingForGeometry?: boolean; expired?: boolean }
 type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function offsetIn(root: HTMLElement, element: Element) { return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop }
+/** The docked PDF bar covers this much of the reader's top edge, so landings and centring start below it. */
+function barHeight(root: HTMLElement) { return root.querySelector<HTMLElement>('[data-pdf-bar]')?.offsetHeight ?? 0 }
+/** Scrolls so the vertical middle of `element` is the middle of the reader below the bar. */
+function centreIn(root: HTMLElement, element: Element) {
+  const middle = offsetIn(root, element) + element.getBoundingClientRect().height / 2
+  const bar = barHeight(root)
+  root.scrollTo({ top: Math.max(0, middle - bar - (root.clientHeight - bar) / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+}
 
 /**
  * Wraps characters [start, end) of a text-layer span in a <mark>, as pdf.js's own find highlighter does, so a passage
@@ -68,11 +84,26 @@ function clearMarks(root: HTMLElement) {
   })
 }
 
-const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTextLayer, onTextLayerError }: {
+const NO_REGIONS: Region[] = []
+const percent = (value: number) => `${Number(value.toFixed(3))}%`
+
+/**
+ * The header and the bar line up with the page column: as wide as a page and centred like one, never wider than the
+ * reader less its gutters, so all three share one left edge at every zoom. Pinned to the left edge, so a page zoomed
+ * wider than the reader does not carry them sideways.
+ */
+function Column({ pageWidth, children }: { pageWidth: number; children: React.ReactNode }) {
+  return <div className="mx-auto" style={{ maxWidth: pageWidth || undefined }}>{children}</div>
+}
+
+const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, regions, nonce, onTextLayer, onTextLayerError }: {
   pageNumber: number
   width: number
   height: number
   render: boolean
+  regions: Region[]
+  /** Changes with each jump, so an outline is redrawn (and pulses) even for the same boxes. */
+  nonce: number
   onTextLayer: (page: number) => void
   onTextLayerError: (page: number) => void
 }) {
@@ -80,8 +111,17 @@ const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTex
   const textRendered = useCallback(() => onTextLayer(pageNumber), [onTextLayer, pageNumber])
   const textFailed = useCallback(() => onTextLayerError(pageNumber), [onTextLayerError, pageNumber])
   return (
-    <div data-pdf-page={pageNumber} role="group" aria-label={`Page ${pageNumber}`} className="pdf-page relative isolate shrink-0 overflow-hidden bg-card" style={{ width, height }}>
+    <div data-pdf-page={pageNumber} role="group" aria-label={`Page ${pageNumber}`} className="pdf-page relative isolate shrink-0 overflow-hidden bg-card ring-1 ring-border" style={{ width, height }}>
       {render && <Page pageNumber={pageNumber} width={width} devicePixelRatio={DEVICE_PIXEL_RATIO} loading={null} onRenderTextLayerSuccess={textRendered} onRenderTextLayerError={textFailed} />}
+      {regions.map((region, index) => (
+        <div
+          key={`${nonce}-${index}`}
+          data-citation-region=""
+          data-citation-pulse=""
+          aria-hidden="true"
+          style={{ left: percent(region.left), top: percent(region.top), width: percent(region.width), height: percent(region.height) }}
+        />
+      ))}
     </div>
   )
 })
@@ -99,13 +139,19 @@ export default function PdfViewer(props: PdfViewerProps) {
   const latest = useRef(props)
   const request = useRef<ActiveHighlight | null>(null)
   const pendingPage = useRef<number | null>(null)
-  const anchor = useRef({ page: 1, offset: 0 })
+  // Where the reader is, kept across zoom and width changes: a page and the fraction into it, or page 0 for the header
+  // above page 1, with the distance from the top in pixels. It starts at the very top (ARA-101).
+  const anchor = useRef({ page: 0, offset: 0 })
   const reportedPage = useRef(1)
   const frame = useRef(0)
+  const life = useRef({ timer: 0, deadline: 0, remaining: HOLD_MS, phase: 'idle' as 'idle' | 'hold' | 'fade' | 'gone', overText: false, overRegion: false })
+  const geometry = useRef<Map<number, PageGeometry> | null>(null)
+  const [regions, setRegions] = useState<{ nonce: number; list: Region[] }>({ nonce: 0, list: [] })
   const [width, setWidth] = useState(0)
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([])
   const [nearby, setNearby] = useState<ReadonlySet<number>>(() => new Set())
+  const [stuck, setStuck] = useState(false)
   const pageWidth = width ? Math.max(160, Math.floor((width - GUTTER * 2) * zoom)) : 0
   const measured = pageWidth > 0
 
@@ -119,21 +165,105 @@ export default function PdfViewer(props: PdfViewerProps) {
     const element = root.querySelector(`[data-pdf-page="${page}"]`)
     if (!element) return
     pendingPage.current = null
-    root.scrollTo({ top: offsetIn(root, element) - GUTTER / 2, behavior: 'instant' })
+    root.scrollTo({ top: offsetIn(root, element) - barHeight(root) - GUTTER / 2, behavior: 'instant' })
   }, [])
+
+  const stopLife = useCallback(() => {
+    const state = life.current
+    window.clearTimeout(state.timer)
+    state.timer = 0
+    state.phase = 'idle'
+    rootRef.current?.removeAttribute('data-citation-fade')
+  }, [])
+
+  /** End of the fade: the same clean-up a new citation does, and the passage is not marked again by a redrawn layer. */
+  const expire = useCallback(() => {
+    const root = rootRef.current
+    life.current.phase = 'gone'
+    life.current.timer = 0
+    if (request.current) request.current.expired = true
+    if (!root) return
+    root.removeAttribute('data-citation-fade')
+    clearMarks(root)
+    setRegions({ nonce: 0, list: [] })
+  }, [])
+
+  const beginFade = useCallback(() => {
+    const root = rootRef.current
+    if (!root || prefersReducedMotion()) { expire(); return }
+    life.current.phase = 'fade'
+    root.style.setProperty('--citation-fade-ms', `${FADE_MS}ms`)
+    root.setAttribute('data-citation-fade', 'out')
+    life.current.timer = window.setTimeout(expire, FADE_MS)
+  }, [expire])
+
+  const runHold = useCallback((ms: number) => {
+    const state = life.current
+    window.clearTimeout(state.timer)
+    state.phase = 'hold'
+    state.deadline = Date.now() + ms
+    state.timer = window.setTimeout(beginFade, ms)
+  }, [beginFade])
+
+  /** Holding a passage while the pointer is over it, so a reader is not racing the fade. */
+  const pauseLife = useCallback(() => {
+    const state = life.current
+    if (state.phase === 'hold') {
+      state.remaining = Math.max(0, state.deadline - Date.now())
+    } else if (state.phase === 'fade') {
+      state.remaining = MIN_RESUME_MS
+      state.phase = 'hold'
+      rootRef.current?.removeAttribute('data-citation-fade')
+    } else return
+    window.clearTimeout(state.timer)
+    state.timer = 0
+  }, [])
+
+  const resumeLife = useCallback(() => {
+    const state = life.current
+    if (state.phase === 'hold' && !state.timer) runHold(state.remaining)
+  }, [runHold])
+
+  const setHover = useCallback((kind: 'text' | 'region', over: boolean) => {
+    const state = life.current
+    const before = state.overText || state.overRegion
+    if (kind === 'text') state.overText = over
+    else state.overRegion = over
+    const after = state.overText || state.overRegion
+    if (after && !before) pauseLife()
+    else if (!after && before) resumeLife()
+  }, [pauseLife, resumeLife])
 
   const settle = useCallback((outcome: HighlightOutcome, nonce: number) => {
     const active = request.current
     if (!active || active.nonce !== nonce || active.reported) return
     active.reported = true
     latest.current.onHighlight(outcome)
-  }, [])
+    if (outcome === 'page-only') return
+    life.current.remaining = HOLD_MS
+    life.current.phase = 'hold'
+    if (life.current.overText || life.current.overRegion) life.current.timer = 0
+    else runHold(HOLD_MS)
+  }, [runHold])
+
+  /**
+   * The excerpt is not in the text layer: outline the citation's stored layout boxes instead, or settle page-only when
+   * there are none. Waits for the page geometry (fetched with the document) before deciding.
+   */
+  const outlineRegions = useCallback((nonce: number) => {
+    const active = request.current
+    if (!active || active.nonce !== nonce || active.reported) return
+    if (!geometry.current) { active.waitingForGeometry = true; return }
+    const list = regionsFor(active.citation, geometry.current)
+    if (list.length) setRegions({ nonce, list })
+    settle(list.length ? 'region' : 'page-only', nonce)
+  }, [settle])
 
   /** Marks the cited passage on its page if that page's text layer is complete; the first time also reports and centres it. */
   const markPage = useCallback((pageNumber: number) => {
     const root = rootRef.current
     const active = request.current
-    if (!root || !active || active.citation.page !== pageNumber) return
+    if (!root || !active || active.expired || active.citation.page !== pageNumber) return
     const layer = root.querySelector(`[data-pdf-page="${pageNumber}"] .textLayer`)
     // react-pdf appends .endOfContent when a text layer finishes; it is removed again when the layer re-renders.
     if (!layer?.querySelector('.endOfContent')) return
@@ -150,21 +280,19 @@ export default function PdfViewer(props: PdfViewerProps) {
       if (first) element.setAttribute('data-citation-pulse', '')
     }
     if (!first) return
-    settle(marks.length ? 'highlighted' : 'page-only', active.nonce)
+    if (marks.length) settle('highlighted', active.nonce)
+    else outlineRegions(active.nonce)
     const start = marks[0]
-    if (start) {
-      const middle = offsetIn(root, start) + start.getBoundingClientRect().height / 2
-      root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
-    }
+    if (start) centreIn(root, start)
     // A chip in a now-hidden tab had focus; keep keyboard users in the document they were sent to.
     const focused = document.activeElement
     if (!(focused instanceof HTMLElement) || focused === document.body || !focused.offsetParent) root.focus({ preventScroll: true })
-  }, [settle])
+  }, [settle, outlineRegions])
 
   const onTextLayerError = useCallback((pageNumber: number) => {
     const active = request.current
-    if (active?.citation.page === pageNumber) settle('page-only', active.nonce)
-  }, [settle])
+    if (active?.citation.page === pageNumber) outlineRegions(active.nonce)
+  }, [outlineRegions])
 
   // Width: measured at once, then re-measured after the panel stops resizing so canvases are not redrawn per frame.
   useEffect(() => {
@@ -209,8 +337,14 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!root || previousWidth.current === pageWidth) return
     const hadLayout = previousWidth.current > 0
     previousWidth.current = pageWidth
-    const element = root.querySelector<HTMLElement>(`[data-pdf-page="${anchor.current.page}"]`)
-    if (hadLayout && element && pendingPage.current === null) root.scrollTop = offsetIn(root, element) + anchor.current.offset * element.offsetHeight
+    const { page, offset } = anchor.current
+    const element = root.querySelector<HTMLElement>(`[data-pdf-page="${page}"]`)
+    // Above page 1 (the paper header) the spot is a distance from the top, which a new page size does not move.
+    // Before this, a width change on load (a scrollbar appearing) jumped a fresh reader past the header to page 1.
+    if (hadLayout && pendingPage.current === null) {
+      if (page === 0) root.scrollTop = offset
+      else if (element) root.scrollTop = offsetIn(root, element) + offset * element.offsetHeight
+    }
     flushPendingPage()
   }, [pageWidth, flushPendingPage])
 
@@ -225,21 +359,67 @@ export default function PdfViewer(props: PdfViewerProps) {
   useEffect(() => {
     if (!highlight) return
     const { citation, claim, nonce } = highlight
+    stopLife()
+    life.current.overText = false
+    life.current.overRegion = false
+    if (rootRef.current) clearMarks(rootRef.current)
     request.current = { citation, claim, nonce, reported: false }
     pendingPage.current = citation.page
     flushPendingPage()
     markPage(citation.page)
-    const timer = window.setTimeout(() => settle('page-only', nonce), HIGHLIGHT_TIMEOUT_MS)
+    const timer = window.setTimeout(() => outlineRegions(nonce), HIGHLIGHT_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [highlight, flushPendingPage, markPage, settle])
+  }, [highlight, flushPendingPage, markPage, outlineRegions, stopLife])
+
+  useEffect(() => () => window.clearTimeout(life.current.timer), [])
+
+  // Once the outline is on the page, bring it to the middle of the reader.
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const outline = regions.list.length ? root?.querySelector('[data-citation-region]') : null
+    if (root && outline) centreIn(root, outline)
+  }, [regions])
+
+  // Outlines belong to the jump that drew them: a newer request hides them at once, before anything is redrawn.
+  const nonce = highlight?.nonce
+  const byPage = useMemo(() => {
+    const pages = new Map<number, Region[]>()
+    for (const region of nonce === regions.nonce ? regions.list : []) pages.set(region.page, [...(pages.get(region.page) ?? []), region])
+    return pages
+  }, [regions, nonce])
 
   useEffect(() => () => window.cancelAnimationFrame(frame.current), [])
+
+  function onPointerOver(event: React.PointerEvent) {
+    if (event.target instanceof Element && event.target.closest('[data-citation-highlight]')) setHover('text', true)
+  }
+
+  function onPointerOut(event: React.PointerEvent) {
+    if (!(event.target instanceof Element) || !event.target.closest('[data-citation-highlight]')) return
+    const next = event.relatedTarget
+    if (!(next instanceof Element) || !next.closest('[data-citation-highlight]')) setHover('text', false)
+  }
+
+  /** Outlines let the pointer through, so hovering one is a rectangle test. */
+  function onPointerMove(event: React.PointerEvent) {
+    const state = life.current
+    if (state.phase === 'idle' || state.phase === 'gone') return
+    const outlines = rootRef.current?.querySelectorAll('[data-citation-region]')
+    if (!outlines?.length && !state.overRegion) return
+    const over = Array.from(outlines ?? []).some((outline) => {
+      const box = outline.getBoundingClientRect()
+      return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom
+    })
+    setHover('region', over)
+  }
 
   function trackScroll() {
     window.cancelAnimationFrame(frame.current)
     frame.current = window.requestAnimationFrame(() => {
       const root = rootRef.current
       if (!root) return
+      const sentinel = root.querySelector('[data-pdf-bar-sentinel]')
+      setStuck(!!sentinel && root.scrollTop > offsetIn(root, sentinel))
       const probe = root.scrollTop + root.clientHeight * 0.3
       let current: HTMLElement | null = null
       for (const element of root.querySelectorAll<HTMLElement>('[data-pdf-page]')) {
@@ -248,7 +428,10 @@ export default function PdfViewer(props: PdfViewerProps) {
       }
       if (!current) return
       const page = Number(current.dataset.pdfPage)
-      anchor.current = { page, offset: (root.scrollTop - offsetIn(root, current)) / Math.max(1, current.offsetHeight) }
+      const top = offsetIn(root, current)
+      anchor.current = page === 1 && root.scrollTop < top
+        ? { page: 0, offset: root.scrollTop }
+        : { page, offset: (root.scrollTop - top) / Math.max(1, current.offsetHeight) }
       if (page !== reportedPage.current) { reportedPage.current = page; latest.current.onPageChange(page) }
     })
   }
@@ -258,9 +441,14 @@ export default function PdfViewer(props: PdfViewerProps) {
     latest.current.onDocumentLoad(pdf.numPages)
     void Promise.all(Array.from({ length: pdf.numPages }, (_, index) => pdf.getPage(index + 1).then((page) => {
       const viewport = page.getViewport({ scale: 1 })
-      return viewport.height / viewport.width
-    }))).then(setRatios, () => {})
-  }, [])
+      return { ratio: viewport.height / viewport.width, geometry: { view: page.view, viewport } as PageGeometry }
+    }))).then((pages) => {
+      setRatios(pages.map(({ ratio }) => ratio))
+      geometry.current = new Map(pages.map(({ geometry }, index) => [index + 1, geometry]))
+      const active = request.current
+      if (active?.waitingForGeometry) { active.waitingForGeometry = false; outlineRegions(active.nonce) }
+    }, () => {})
+  }, [outlineRegions])
 
   const goToItem = useCallback(({ pageNumber }: { pageNumber: number }) => {
     pendingPage.current = pageNumber
@@ -275,8 +463,22 @@ export default function PdfViewer(props: PdfViewerProps) {
       aria-label="PDF document"
       tabIndex={0}
       onScroll={trackScroll}
-      className="pdf-viewer relative h-full overflow-auto bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+      onPointerOver={onPointerOver}
+      onPointerOut={onPointerOut}
+      onPointerMove={onPointerMove}
+      // The viewer keeps its own place across size changes, so the browser's scroll anchoring would only fight it.
+      className="pdf-viewer relative h-full overflow-auto bg-background outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
     >
+      {props.header && <div className="sticky left-0 w-full px-4"><Column pageWidth={pageWidth}>{props.header}</Column></div>}
+      {props.bar && (
+        <>
+          {/* Where the bar sits in the flow: once the reader scrolls past it, the bar is docked and shows its hairline. */}
+          <div data-pdf-bar-sentinel="" aria-hidden="true" />
+          <div data-pdf-bar="" data-stuck={stuck || undefined} className="sticky top-0 left-0 z-10 w-full border-b border-transparent bg-background px-4 data-stuck:border-border">
+            <Column pageWidth={pageWidth}>{props.bar}</Column>
+          </div>
+        </>
+      )}
       <Document
         file={downloadUrl(documentId)}
         suspense={false}
@@ -296,6 +498,8 @@ export default function PdfViewer(props: PdfViewerProps) {
               pageNumber={page}
               width={pageWidth}
               height={Math.round(pageWidth * (ratios[index] ?? ratios[0] ?? DEFAULT_RATIO))}
+              regions={byPage.get(page) ?? NO_REGIONS}
+              nonce={regions.nonce}
               render={nearby.has(page) || page === target || (nearby.size === 0 && page <= 2)}
               onTextLayer={markPage}
               onTextLayerError={onTextLayerError}

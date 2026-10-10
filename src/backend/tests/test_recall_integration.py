@@ -11,7 +11,7 @@ from app.models.jobs import BackgroundJob
 from app.models.memory import ChatTurnEmbedding
 from app.repositories.jobs import claim
 from tests.support.chats import add_turns, seed_chat
-from tests.support.papers import OPENAI, QWEN
+from tests.support.papers import OPENAI, QWEN, use_library_profile
 from tests.support.providers import ollama_fixture, openai_fixture
 from tests.support.vectors import fixture_vector
 
@@ -106,10 +106,12 @@ async def test_given_completed_turn_when_embedding_then_q_and_a_use_the_paper_pr
     assert len(embedders["openai"]) == 1 and len(await turn_embeddings(resources, chat_id)) == 1
 
 
-async def test_given_paper_profile_when_embedding_turn_then_local_profile_is_used(
+@pytest.mark.open_models
+async def test_given_library_profile_when_embedding_turn_then_local_profile_is_used(
     resources, embedders
 ):
-    _, _, chat_id = await seed_chat(resources, retrieval_profile=QWEN)
+    await use_library_profile(resources, QWEN)
+    _, _, chat_id = await seed_chat(resources)
     (turn,) = await add_turns(resources, chat_id, [DATASETS])
     await embed_turn(resources, turn.answer)
     (row,) = await turn_embeddings(resources, chat_id)
@@ -135,10 +137,12 @@ async def test_given_turn_already_queued_when_enqueueing_again_then_one_job(reso
     assert count == 1
 
 
+@pytest.mark.open_models
 async def test_given_uninstalled_local_profile_when_embedding_turn_then_settles_unavailable(
     resources,
 ):
-    _, _, chat_id = await seed_chat(resources, retrieval_profile=QWEN)
+    await use_library_profile(resources, QWEN)
+    _, _, chat_id = await seed_chat(resources)
     (turn,) = await add_turns(resources, chat_id, [DATASETS])
     job_id, *_ = await embed_turn(resources, turn.answer)
     job = await load_job(resources, job_id)

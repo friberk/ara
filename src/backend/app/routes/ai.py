@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
+from app.integrations import open_models
+from app.integrations.hosted_catalog import HOSTED_MODELS
 from app.integrations.llm import (
-    HOSTED_REASONING_EFFORTS,
-    PRICES,
     LLMError,
     configured,
     saved_defaults,
@@ -19,6 +19,7 @@ from app.models.research import Document, ModelConfiguration, Paper, PaperSummar
 from app.repositories.jobs import enqueue
 from app.schemas.ai import (
     Defaults,
+    Features,
     GenerationInput,
     ModelPage,
     Summary,
@@ -26,17 +27,36 @@ from app.schemas.ai import (
     SummaryPage,
 )
 from app.services.local_models import list_local_models, model_dto
+from app.services.summarization import summary_block
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
 
 
+@router.get("/features", response_model=Features)
+async def features(request: Request):
+    """Server features the browser adapts to; open models are experimental (ARA-090)."""
+    return Features(open_models=open_models.enabled(request.app.state.resources.settings))
+
+
 @router.get("/models", response_model=ModelPage)
 async def models(request: Request):
-    settings = request.app.state.resources.settings
-    items = [validate_selection(key, HOSTED_REASONING_EFFORTS[key][0]) for key in PRICES]
+    resources = request.app.state.resources
+    settings = resources.settings
+    items = [
+        validate_selection(key, entry.reasoning_efforts[0]) for key, entry in HOSTED_MODELS.items()
+    ]
     for item in items:
         item.status = "configured" if configured(settings) else "unavailable"
-    items.extend(await list_local_models(request.app.state.resources))
+    if open_models.enabled(settings):
+        items.extend(await list_local_models(resources))
+        return ModelPage(items=items)
+    # A saved local default is reported, unavailable, so nothing switches to a paid model.
+    saved = (await saved_defaults(resources)).default_model
+    if open_models.open_chat_model(settings, saved):
+        item = validate_selection(saved, "default")
+        item.unavailable_code = open_models.DISABLED
+        item.unavailable_reason = open_models.CHOOSE_MODEL
+        items.append(item)
     return ModelPage(items=items)
 
 
@@ -48,19 +68,10 @@ async def settings(request: Request):
 @router.put("/settings", response_model=Defaults)
 async def update_settings(body: Defaults, request: Request):
     resources = request.app.state.resources
+    if open_models.open_chat_model(resources.settings, body.default_model):
+        raise open_models.disabled()
     try:
         validate_selection(body.default_model, body.reasoning_effort)
-        if "memory_model" not in body.model_fields_set:
-            # Saving only the chat defaults, as the composer does, keeps the memory model.
-            stored = (await saved_defaults(resources)).memory_model
-            if stored in HOSTED_REASONING_EFFORTS:
-                body.memory_model = stored
-        if body.memory_model not in HOSTED_REASONING_EFFORTS:
-            raise LLMError(
-                "INVALID_MEMORY_MODEL",
-                "Choose a hosted chat model for summaries and follow-up questions.",
-                422,
-            )
         from app.integrations.model_catalog import local_spec
         from app.models.local_models import ModelInstallation
 
@@ -190,8 +201,10 @@ async def create_summary(paper_id: UUID, body: GenerationInput, request: Request
 
 @router.get("/papers/{paper_id}/summaries", response_model=SummaryPage)
 async def summaries(paper_id: UUID, request: Request):
-    async with request.app.state.resources.sessions() as session:
-        if await session.get(Paper, paper_id) is None:
+    resources = request.app.state.resources
+    async with resources.sessions() as session:
+        paper = await session.get(Paper, paper_id)
+        if paper is None:
             raise HTTPException(404, "Paper not found")
         items = (
             await session.scalars(
@@ -200,4 +213,7 @@ async def summaries(paper_id: UUID, request: Request):
                 .order_by(PaperSummary.created_at.desc())
             )
         ).all()
-        return SummaryPage(items=[Summary.model_validate(item) for item in items])
+        return SummaryPage(
+            items=[Summary.model_validate(item) for item in items],
+            blocked=await summary_block(session, resources, paper),
+        )

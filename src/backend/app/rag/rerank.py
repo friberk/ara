@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.core.errors import AppError
-from app.integrations.context_registry import HOSTED_ENCODING, LOCAL_ENCODING
+from app.integrations.context_registry import LOCAL_ENCODING
+from app.integrations.hosted_catalog import HOSTED_ENCODING
 from app.integrations.reranker_catalog import (
     RELEVANCE_INSTRUCTIONS,
     RerankerProfile,
@@ -47,6 +48,7 @@ class RerankOutcome:
     skipped: str | None = None  # plain reason code when reranking did not run
     elapsed_ms: int = 0
     scores: dict[str, float] = field(default_factory=dict)  # node id -> relevance, for the trace
+    billed_tokens: int = 0  # input tokens a hosted reranker was sent, priced by the chat meter
 
 
 class Skipped(Exception):
@@ -72,10 +74,10 @@ async def rerank_candidates(
         return RerankOutcome(nodes=nodes, reranked=False, reranker=None, skipped=error.code)
     started = time.perf_counter()
     head = nodes[: profile.candidates]
-    scores, skipped = {}, None
+    scores, skipped, spent = {}, None, {}
     try:
         if profile.method == "openai-decisions":
-            scores = await decisions_scores(resources, profile, query, head)
+            scores = await decisions_scores(resources, profile, query, head, spent)
         else:
             async with asyncio.timeout(LOCAL_DEADLINE_SECONDS):
                 scores = await local_scores(resources, profile, query, head)
@@ -98,6 +100,7 @@ async def rerank_candidates(
             reranker=profile.key,
             skipped=skipped,
             elapsed_ms=elapsed_ms,
+            billed_tokens=spent.get("tokens", 0),
         )
     return RerankOutcome(
         nodes=reordered(nodes, profile.candidates, scores),
@@ -105,6 +108,7 @@ async def rerank_candidates(
         reranker=profile.key,
         elapsed_ms=elapsed_ms,
         scores=scores,
+        billed_tokens=spent.get("tokens", 0),
     )
 
 
@@ -144,8 +148,9 @@ def relevance_probability(data) -> float | None:
 
 
 async def decisions_scores(
-    resources, profile: RerankerProfile, query: str, head: list
+    resources, profile: RerankerProfile, query: str, head: list, spent: dict | None = None
 ) -> dict[str, float]:
+    """`spent["tokens"]` receives the input tokens sent once the budget reservation succeeds."""
     from openai import APIError, AsyncOpenAI
 
     from app.integrations.llm import LLMError, configured, reserve_amount
@@ -166,6 +171,8 @@ async def decisions_scores(
         )
     except LLMError as error:
         raise Skipped(error.code) from None
+    if spent is not None:
+        spent["tokens"] = tokens
     # The shared process client carries the request; closing this wrapper would close it.
     client = AsyncOpenAI(
         api_key=settings.openai_api_key.get_secret_value(),

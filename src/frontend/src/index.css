@@ -43,6 +43,7 @@
   /* Product roles: evidence highlight and document-status tints only. */
   --color-evidence: var(--evidence);
   --color-evidence-foreground: var(--evidence-foreground);
+  --color-evidence-edge: var(--evidence-edge);
   --color-success: var(--success);
   --color-success-muted: var(--success-muted);
   --color-warning: var(--warning);
@@ -92,6 +93,8 @@
   /* The evidence mark lands on PDF pages, which stay white paper in both themes, so it has one value. */
   --evidence: oklch(0.93 0.13 96 / 0.75);
   --evidence-foreground: oklch(0.145 0 0);
+  /* The edge line of the evidence mark and of a cited region: at least 3:1 on the white page (ARA-089). */
+  --evidence-edge: oklch(0.58 0.13 75);
   --success: oklch(0.45 0.11 155);
   --success-muted: oklch(0.96 0.03 155);
   --warning: oklch(0.5 0.11 70);
@@ -182,6 +185,25 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+@layer components {
+  /* The composer's placeholder (TipTap, ARA-096) on its empty first line, as a textarea shows one. */
+  .composer-editor p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--muted-foreground);
+  }
+}
+
+/*
+ * TipTap injects ProseMirror's base CSS unlayered, and it turns font features off ("liga" 0) to keep the caret true.
+ * The composer keeps the app's Geist features with it, as its textarea did; two classes outrank the injected rule.
+ */
+.ProseMirror.composer-editor {
+  font-feature-settings: "ss01", "cv11", "liga" 0;
 }
 
 @utility tabular {

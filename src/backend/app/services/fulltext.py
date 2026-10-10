@@ -1,4 +1,4 @@
-"""Full-text request orchestration; worker downloading is added independently."""
+"""PDF retrieval from OpenAlex's stored copies (ARA-087), stored and ingested like an upload."""
 
 import asyncio
 from uuid import UUID
@@ -7,12 +7,13 @@ from minio.error import S3Error
 from sqlalchemy import select, update
 
 from app.core.errors import AppError
+from app.integrations.openalex_content import api_key, stored_work
 from app.models.jobs import BackgroundJob
-from app.models.research import Document, DocumentUploadRequest, Paper
-from app.repositories.fulltext import enqueue_request, record_attempt
+from app.models.research import Document, DocumentUploadRequest, Paper, PaperSource
+from app.repositories.fulltext import enqueue_request
 from app.repositories.jobs import fence, now
-from app.schemas.fulltext import DownloadResult, FullTextAccepted
-from app.services.fulltext_discovery import discover_fulltext
+from app.schemas.fulltext import FullTextAccepted
+from app.services.deletion import PAPER_DELETED, STOPPED
 from app.services.uploads import (
     AttachmentGuard,
     AttachmentLeaseLost,
@@ -25,6 +26,12 @@ JOB_SECONDS = 420
 
 
 async def request_fulltext(resources, paper_id: UUID, request_id: UUID) -> FullTextAccepted:
+    if api_key(resources.settings) is None:
+        raise AppError(
+            409,
+            "OPENALEX_API_KEY_REQUIRED",
+            "Add an OpenAlex API key to download PDFs automatically.",
+        )
     async with resources.sessions() as session, session.begin():
         return await enqueue_request(session, paper_id, request_id)
 
@@ -62,7 +69,9 @@ async def finish(resources, job_id, generation, token, result, *, reason=None):
             paper = await session.scalar(
                 select(Paper).where(Paper.id == UUID(job.payload["paper_id"])).with_for_update()
             )
-            if paper and str(paper.active_document_id) != result.get("document_id"):
+            if paper is None:
+                result, reason = {"outcome": "paper_deleted"}, STOPPED
+            elif str(paper.active_document_id) != result.get("document_id"):
                 document = (
                     await session.get(Document, paper.active_document_id)
                     if paper.active_document_id
@@ -73,7 +82,12 @@ async def finish(resources, job_id, generation, token, result, *, reason=None):
         job.state, job.stage = ("completed", "completed") if success else ("failed", "failed")
         job.progress = 100 if success else job.progress
         job.result = result
-        job.error_code = None if success else f"FULLTEXT_{result['outcome'].upper()}"
+        if success:
+            job.error_code = None
+        elif result["outcome"] == "paper_deleted":
+            job.error_code = PAPER_DELETED
+        else:
+            job.error_code = f"FULLTEXT_{result['outcome'].upper()}"
         job.error_message = None if success else (reason or "The PDF could not be retrieved.")[:400]
         job.lease_token, job.lease_expires_at = None, None
         job.updated_at = now()
@@ -90,6 +104,21 @@ async def checkpoint(resources, job_id, generation, token, payload, stage, progr
             )
             is not None
         )
+
+
+async def lookup_work(resources, paper_id):
+    """The paper's OpenAlex work: its saved OpenAlex record, else its DOI (a free lookup)."""
+    async with resources.sessions() as session:
+        paper = await session.get(Paper, paper_id)
+        if paper is None:
+            raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+        work_id = await session.scalar(
+            select(PaperSource.external_id).where(
+                PaperSource.paper_id == paper_id, PaperSource.provider == "openalex"
+            )
+        )
+        doi = paper.normalized_doi
+    return await stored_work(resources.http, resources.settings, work_id=work_id, doi=doi)
 
 
 async def run_fulltext_job(
@@ -177,124 +206,126 @@ async def run_fulltext_job(
                     document_result(document, "already_attached"),
                 )
                 return
+            key = api_key(resources.settings)
+            if key is None:
+                await finish(
+                    resources,
+                    job_id,
+                    generation,
+                    lease_token,
+                    {"outcome": "api_key_required"},
+                    reason="Add an OpenAlex API key to download PDFs automatically.",
+                )
+                return
             if not await checkpoint(
                 resources, job_id, generation, lease_token, payload, "discovering_fulltext", 10
             ):
                 return
-            discovery = await discover_fulltext(resources, paper_id)
-            payload["discovery_warnings"] = discovery.warnings[:4]
-            failures = []
-            for ordinal, candidate in enumerate(discovery.candidates):
-                if not await checkpoint(
-                    resources, job_id, generation, lease_token, payload, "fetching_pdf", 40
-                ):
-                    return
-                downloaded = await resources.pdf_downloader.fetch(candidate)
-                async with resources.sessions() as session, session.begin():
-                    if not await record_attempt(
-                        session,
-                        job_id=job_id,
-                        generation=generation,
-                        lease_token=lease_token,
-                        ordinal=ordinal,
-                        candidate=candidate,
-                        result=downloaded,
-                    ):
-                        return
-                if downloaded.outcome != "downloaded":
-                    failures.append(downloaded)
-                    continue
-                if not await checkpoint(
-                    resources, job_id, generation, lease_token, payload, "storing_pdf", 75
-                ):
-                    return
-                accepted = await ingest_pdf_bytes(
+            try:
+                work = await lookup_work(resources, paper_id)
+            except AppError as error:
+                if error.code == "PAPER_NOT_FOUND":
+                    raise
+                # A refused or failed lookup ends this attempt; retrying is the user's choice.
+                limited = error.code == "PROVIDER_RATE_LIMITED"
+                await finish(
                     resources,
-                    data=downloaded.data or b"",
-                    filename="retrieved-paper.pdf",
-                    request_id=UUID(payload["attachment_request_id"]),
-                    paper_id=paper_id,
-                    guard=AttachmentGuard(job_id, generation, lease_token, expected),
-                    acquisition={
-                        "method": "provider_download",
-                        "provider": candidate.provider,
-                        "candidate_url": candidate.url,
-                        "final_url": downloaded.final_url,
-                        "is_oa": candidate.location.is_oa,
-                        "license": candidate.location.license,
-                        "version": candidate.location.version,
-                        "retrieved_at": now().isoformat(),
-                        "retrieval_job_id": str(job_id),
+                    job_id,
+                    generation,
+                    lease_token,
+                    {
+                        "outcome": "rate_limited" if limited else "unavailable",
+                        "retry_after": error.retry_after if limited else None,
                     },
+                    reason=error.message,
                 )
-                result = {
-                    "outcome": "downloaded",
-                    "document_id": str(accepted.document_id),
-                    "ingest_job_id": str(accepted.job_id),
-                }
-                payload["accepted"] = result
-                if not await checkpoint(
-                    resources, job_id, generation, lease_token, payload, "storing_pdf", 90
-                ):
-                    return
-                await finish(resources, job_id, generation, lease_token, result)
                 return
-            priority = [
-                "access_required",
-                "blocked",
-                "rate_limited",
-                "unavailable",
-                "invalid_pdf",
-                "not_found",
-                "unsupported_source",
-                "unsafe_url",
-            ]
-            failure = (
-                min(failures, key=lambda item: priority.index(item.outcome))
-                if failures
-                else DownloadResult(
-                    "unavailable" if discovery.warnings else "no_pdf_link",
-                    reason="Provider discovery is temporarily unavailable."
-                    if discovery.warnings
-                    else "No direct PDF link was found. "
-                    "Open the paper in your browser or upload a PDF.",
+            if work is None or not work.has_pdf:
+                await finish(
+                    resources,
+                    job_id,
+                    generation,
+                    lease_token,
+                    {"outcome": "not_stored"},
+                    reason="OpenAlex has no stored copy of this PDF.",
                 )
-            )
-            await finish(
+                return
+            payload["work_id"] = work.work_id
+            if not await checkpoint(
+                resources, job_id, generation, lease_token, payload, "fetching_pdf", 40
+            ):
+                return
+            downloaded = await resources.pdf_downloader.fetch(work.work_id, key)
+            if downloaded.outcome != "downloaded":
+                await finish(
+                    resources,
+                    job_id,
+                    generation,
+                    lease_token,
+                    {"outcome": downloaded.outcome, "retry_after": downloaded.retry_after},
+                    reason=downloaded.reason,
+                )
+                return
+            if not await checkpoint(
+                resources, job_id, generation, lease_token, payload, "storing_pdf", 75
+            ):
+                return
+            accepted = await ingest_pdf_bytes(
                 resources,
-                job_id,
-                generation,
-                lease_token,
-                {"outcome": failure.outcome, "retry_after": failure.retry_after},
-                reason=failure.reason,
+                data=downloaded.data or b"",
+                filename=f"{work.work_id}.pdf",
+                request_id=UUID(payload["attachment_request_id"]),
+                paper_id=paper_id,
+                guard=AttachmentGuard(job_id, generation, lease_token, expected),
+                acquisition={
+                    "method": "provider_download",
+                    "provider": "openalex",
+                    "source": "content",
+                    "work_id": work.work_id,
+                    "retrieved_at": now().isoformat(),
+                    "retrieval_job_id": str(job_id),
+                },
             )
+            result = {
+                "outcome": "downloaded",
+                "document_id": str(accepted.document_id),
+                "ingest_job_id": str(accepted.job_id),
+            }
+            payload["accepted"] = result
+            if not await checkpoint(
+                resources, job_id, generation, lease_token, payload, "storing_pdf", 90
+            ):
+                return
+            await finish(resources, job_id, generation, lease_token, result)
     except AttachmentLeaseLost:
         return
     except AttachmentSuperseded:
-        await finish(
-            resources,
-            job_id,
-            generation,
-            lease_token,
-            document_result(await current_document(resources, paper_id), "superseded"),
-        )
+        try:
+            result = document_result(await current_document(resources, paper_id), "superseded")
+        except AppError as error:
+            if error.code != "PAPER_NOT_FOUND":
+                raise
+            result = {"outcome": "paper_deleted"}
+        await finish(resources, job_id, generation, lease_token, result, reason=STOPPED)
     except TimeoutError:
         await finish(
             resources,
             job_id,
             generation,
             lease_token,
-            {"outcome": "unavailable"},
+            {"outcome": "unavailable", "retry_after": None},
             reason="PDF retrieval exceeded its time limit. Try again or upload the PDF.",
         )
     except AppError as error:
         if error.status_code >= 500:
             raise
+        # The paper was deleted while this ran (ARA-095).
+        deleted = error.code == "PAPER_NOT_FOUND"
         await finish(
             resources,
             job_id,
             generation,
             lease_token,
-            {"outcome": "invalid_pdf"},
-            reason=error.message,
+            {"outcome": "paper_deleted" if deleted else "invalid_pdf"},
+            reason=STOPPED if deleted else error.message,
         )

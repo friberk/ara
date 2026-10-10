@@ -1,0 +1,35 @@
+{
+  "id": "ARA-104",
+  "title": "Paper chat history behind a History icon, with relative times",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"I think we can also improve the UX in New conversation and history switcher. First of all, let's use relative ago industry practices here. Second of all \\\"Conversations about this paper\\\" text is too verbose. We need to find ways to communicate this is the history of conversation for this paper.\" Today the title dropdown mixes the paper's conversation list (labelled \\\"Conversations about this paper\\\", with clock-time or date stamps) with Rename, Delete and New. Direction, following chat panels attached to a document (VS Code Copilot Chat, Cursor) and the Claude title menu: a History icon opens the list; the title menu keeps only the open conversation's actions; rows show compact relative times (Linear, Slack, Gmail), with the full date and time on hover, following NN/g guidance on relative timestamps.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given the conversation pane's top row, when it renders, then it shows the open conversation's title, then a History icon button (lucide History, tooltip and accessible name 'Chat history'), then the New conversation icon. A new unsaved conversation's title has no menu.",
+    "Given a saved conversation, when its title is pressed, then a small menu offers only Rename and Delete.",
+    "Given the History button, when it is pressed, then a popover lists the conversations that include this paper, newest activity first, with no 'Conversations about this paper' label. Each row shows the title and, when it adds information, the latest question as a muted second line. The open conversation is marked, and Earlier PDF keeps its badge. Choosing a row opens it. Loading, error-with-retry and empty states are short and plain. A filter field appears only when the list is long enough to need one.",
+    "Given a row's last activity, when it shows, then the time is compact and relative: 'now' under a minute, then '12m', '3h' and '2d' up to 6 days, then 'Oct 2' this year and 'Oct 2, 2025' in earlier years. The full local date and time shows on hover through title or tooltip, screen readers hear the long form ('12 minutes ago'), and the label refreshes while the page stays open.",
+    "Given the codebase, when this lands, then there is one relative-time helper in src/lib, shared with any other caller. The chat-switcher-only date formatters are deleted.",
+    "Given a 390px screen, when the history opens, then it fits within the screen with no horizontal scroll."
+  ],
+  "test_cases": [
+    "Unit: compact relative labels at the boundaries (59 s, 1 m, 59 m, 1 h, 23 h, 1 d, 6 d, 7 d, previous year), long-form aria text, an invalid date.",
+    "History popover lists chats with relative times and no verbose label; the active chat is marked; selecting navigates.",
+    "Title menu has only Rename and Delete; a new conversation has no title menu.",
+    "Filter appears only above the threshold and filters by title."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/features/chat/ChatSwitcher.tsx",
+    "src/frontend/src/lib/relative-time.ts",
+    "src/frontend/src/features/chat/ChatHistory.tsx",
+    "src/frontend/src/features/chat/chat-pdf.ts",
+    "src/frontend/src/features/chat/ChatSwitcher.test.tsx",
+    "src/frontend/src/lib/relative-time.test.ts"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Red first: src/lib/relative-time.test.ts failed to load (module missing, 'Test Files 1 failed, no tests'); ChatSwitcher.test.tsx 'Tests 11 failed (11)' on the old dropdown. Green: relative-time 25 passed; ChatSwitcher 11 passed; src/features/chat 109 passed in 16 files; npm run check ESLint clean, tsc clean, 726 passed in 93 files (before moving usesEarlierPdf to chat-pdf.ts to clear a react-refresh warning; chat tests rerun green); npm run build passed. Browser: Vite on 5204 proxied to the read-only API at 8011; popover light, dark and 390px had no horizontal overflow (popover 352px wide, 16px gutters) after adding collisionPadding. Screenshots in /private/tmp/claude-505/-Users-bcakar-Documents-friBot-cs593-hw1/bcece1ee-7349-41a8-8a9f-76be1d8b081c/scratchpad/ara104/ (history-light.png, history-dark.png, history-mobile.png). e2e/multi-paper.spec.ts updated, not run.",
+  "updated_at": "2026-10-10"
+}

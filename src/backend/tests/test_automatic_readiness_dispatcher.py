@@ -4,7 +4,12 @@ import asyncio
 from contextlib import suppress
 from types import SimpleNamespace
 
+import pytest
+
 from app.services import dispatcher, local_models
+
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
 
 
 async def test_given_slow_optional_runtime_when_dispatching_then_core_jobs_and_shutdown_continue(
@@ -19,7 +24,7 @@ async def test_given_slow_optional_runtime_when_dispatching_then_core_jobs_and_s
         finally:
             settled.set()
 
-    async def recover(sessions):
+    async def recover(sessions, **options):
         return None
 
     async def dispatch(sessions, publish, **kwargs):
@@ -31,7 +36,11 @@ async def test_given_slow_optional_runtime_when_dispatching_then_core_jobs_and_s
     monkeypatch.setattr(dispatcher, "dispatch_once", dispatch)
     resources = SimpleNamespace(
         sessions=object(),
-        settings=SimpleNamespace(recovery_interval_seconds=30, dispatch_interval_seconds=0.001),
+        settings=SimpleNamespace(
+            recovery_interval_seconds=30,
+            dispatch_interval_seconds=0.001,
+            experimental_open_models=True,
+        ),
     )
     task = asyncio.create_task(dispatcher.dispatcher_loop(resources, lambda *args: None))
     try:
@@ -55,7 +64,7 @@ async def test_given_optional_refresh_failure_when_dispatching_then_regular_poll
         inspected.set()
         raise ConnectionError("synthetic optional runtime failure")
 
-    async def recover(sessions):
+    async def recover(sessions, **options):
         return None
 
     async def dispatch(sessions, publish, **kwargs):
@@ -69,7 +78,11 @@ async def test_given_optional_refresh_failure_when_dispatching_then_regular_poll
     monkeypatch.setattr(dispatcher, "dispatch_once", dispatch)
     resources = SimpleNamespace(
         sessions=object(),
-        settings=SimpleNamespace(recovery_interval_seconds=30, dispatch_interval_seconds=0.001),
+        settings=SimpleNamespace(
+            recovery_interval_seconds=30,
+            dispatch_interval_seconds=0.001,
+            experimental_open_models=True,
+        ),
     )
     task = asyncio.create_task(dispatcher.dispatcher_loop(resources, lambda *args: None))
     try:

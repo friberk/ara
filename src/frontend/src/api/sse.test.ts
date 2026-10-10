@@ -23,7 +23,7 @@ test('Given a final heartbeat followed by an incomplete event, Then framing fail
 const completedMessage = {
   id: 'm1', role: 'assistant', content: 'Recall rose.', state: 'completed', model: 'gpt-5.6-luna', reasoning_effort: 'low', created_at: '2026-10-09T12:00:00Z',
   citations: [{ chunk_id: '12345678-1234-1234-1234-123456789abc', document_id: 'd1', page: 5, page_end: 6, section: 'Results > Open-domain QA', kind: 'table', bboxes: [[5, 10, 20, 300, 40]], excerpt: 'BM25 recall 71.2' }],
-  retrieval: { mode: 'hybrid', profile: 'openai-3-large', reranked: false, standalone_query: 'What recall did BM25 reach?', search_queries: ['BM25 recall'], passages_found: 12, passages_used: 6, limited_by_context: true, note: null },
+  retrieval: { mode: 'hybrid', profile: 'openai-3-large', reranked: false, standalone_query: 'What recall did BM25 reach?', search_queries: ['BM25 recall'], passages_found: 12, passages_used: 6, limited_by_context: true, note: null, pruned: 3, evidence_tokens: 2400, summaries_used: 1, question_type: 'broad', retried: true, map_reduce: false },
   context: { window: 8192, input_tokens: 5120, output_reserved: 2048, summary_version: 2, recent_turns: 4, recalled_turns: 1, truncated: false },
   grounding: 'insufficient',
 }

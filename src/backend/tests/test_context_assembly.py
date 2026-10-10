@@ -23,7 +23,7 @@ def local():
 def hosted():
     from app.integrations.context_registry import hosted_profile
 
-    return hosted_profile(SETTINGS, "gpt-5.6-luna")
+    return hosted_profile("gpt-5.6-luna", "low")
 
 
 def paper():
@@ -65,7 +65,7 @@ def assemble(profile, *, history=(), question="What changed?", summary=None, rec
     evidence = Evidence(profile.counter)
     result = assemble_answer_prompt(
         profile=profile,
-        paper=paper(),
+        papers=[paper()],
         history=list(history),
         memory_summary=summary,
         recalled=list(recalled),
@@ -87,21 +87,24 @@ def sent_tokens(profile, result):
 def test_given_any_budget_when_allocating_then_shares_never_starve_evidence(available, need):
     from app.services.context import MIN_EVIDENCE, allocate
 
-    allocation = allocate(available, summary_need=need, recent_need=need, recall_need=need)
+    history = available // 4
+    allocation = allocate(available, history, summary_need=need, recent_need=need, recall_need=need)
     shares = allocation.summary + allocation.recent + allocation.recall
     assert allocation.evidence + shares == available
-    assert allocation.evidence >= 0.58 * available
+    # History never takes more than H, so evidence keeps at least W - F - H.
+    assert shares <= history
+    assert allocation.evidence >= available - history
     assert allocation.evidence >= min(available, MIN_EVIDENCE)
-    assert allocation.summary <= available * 0.10 and allocation.recent <= available * 0.25
-    assert allocation.recall <= available * 0.07
+    assert allocation.summary <= history * 0.15 and allocation.recent <= history * 0.70
+    assert allocation.recall <= history * 0.15
 
 
 def test_given_needs_below_caps_when_allocating_then_they_are_fully_granted():
     from app.services.context import allocate
 
-    allocation = allocate(5000, summary_need=400, recent_need=1200, recall_need=300)
-    assert (allocation.summary, allocation.recent, allocation.recall) == (400, 1200, 300)
-    assert allocation.evidence == 5000 - 1900
+    allocation = allocate(5000, 2000, summary_need=200, recent_need=1200, recall_need=300)
+    assert (allocation.summary, allocation.recent, allocation.recall) == (200, 1200, 300)
+    assert allocation.evidence == 5000 - 1700
 
 
 def test_given_cited_prior_answer_when_rendering_then_sources_become_page_references():
@@ -219,7 +222,7 @@ def test_given_summary_and_recall_when_assembling_then_messages_are_role_separat
         "assistant",
         "user",
     ]
-    assert result.messages[0].content == answer_instructions(paper())
+    assert result.messages[0].content == answer_instructions([paper()])
     assert "Traceable research" in result.messages[0].content
     assert result.messages[1].content.startswith(SUMMARY_PREFIX)
     assert "They discussed the blue condition." in result.messages[1].content
@@ -267,7 +270,7 @@ def test_given_retrieval_query_when_assembling_then_user_message_names_it():
     profile = hosted()
     result = assemble_answer_prompt(
         profile=profile,
-        paper=paper(),
+        papers=[paper()],
         history=[],
         memory_summary=None,
         recalled=[],
@@ -278,3 +281,31 @@ def test_given_retrieval_query_when_assembling_then_user_message_names_it():
     assert result.messages[-1].content.startswith(
         'Paper passages (retrieved for: "Baseline accuracy of the blue condition"):\n\n[S1]'
     )
+
+
+def test_given_several_papers_when_instructing_then_labels_are_bounded_and_comparisons_ruled():
+    """A multi-paper prompt states the count and the comparison rule; paper labels for evidence
+    headers and the planner cut long titles and author lists (ARA-088)."""
+    from app.services.context import COMPARE_RULES, PaperHeader, answer_instructions, paper_label
+
+    long = PaperHeader(title="T" * 2000, authors=[f"Author {n}" for n in range(20)], year=None)
+    instructions = answer_instructions([paper(), long])
+    assert instructions.startswith("You are a research assistant answering questions about 2")
+    assert instructions.endswith(COMPARE_RULES)
+    assert answer_instructions([paper()]).startswith("You are a research assistant answering")
+    assert "Title: Traceable research" in answer_instructions([paper()])
+    assert paper_label(paper()) == "Traceable research (Ada Example, 2024)"
+    assert len(paper_label(long)) < 200 and paper_label(long).endswith("(Author 0 et al.)")
+
+
+def test_given_many_papers_when_instructing_then_the_prompt_does_not_grow_with_them():
+    """Any number of papers (ARA-088): evidence headers name the answering papers, so the system
+    prompt states only how many papers the chat has."""
+    from app.integrations.tokens import TiktokenCounter
+    from app.services.context import PaperHeader, answer_instructions
+
+    counter = TiktokenCounter()
+    few = [PaperHeader(f"Title {n}", [f"Author {n}"], 2020) for n in range(3)]
+    many = [PaperHeader(f"Title {n}", [f"Author {n}"], 2020) for n in range(300)]
+    assert counter.count(answer_instructions(many)) - counter.count(answer_instructions(few)) <= 1
+    assert "Title 1" not in answer_instructions(many)

@@ -1,21 +1,47 @@
 import type { Job } from '@/api/types'
 
-export function retrievalMessage(outcome: unknown): string {
-  switch (outcome) {
-    case 'access_required': return 'This source requires authentication. Your university may provide access.'
-    case 'blocked': return 'This site blocked the download. Institutional access or downloading in your browser may help.'
-    case 'invalid_pdf': return 'This source returned a web page instead of a PDF, or an invalid PDF. Try downloading in your browser.'
-    case 'rate_limited': return 'This source limited download requests. Wait before trying again.'
-    case 'not_found': return 'This PDF link is no longer available. Try the publisher or upload a copy.'
-    case 'unsupported_source': return 'Download this copy in your browser, then upload it here. This source isn’t supported for automatic downloads.'
-    case 'unsafe_url': return 'The app couldn’t safely download from this link. Open the source in your browser or upload a PDF.'
-    case 'no_pdf_link': return 'No direct PDF link was found. Open the publisher or Semantic Scholar to look for a copy.'
-    default: return 'The source or paper lookup is temporarily unavailable. You can retry or upload a PDF.'
+/** One line for a retrieval in progress; PDFs come only from OpenAlex's stored copies. */
+export function retrievalProgress(job: Pick<Job, 'state' | 'stage'> | null | undefined): string {
+  switch (job?.stage) {
+    case 'fetching_pdf': return 'Downloading the PDF from OpenAlex'
+    case 'storing_pdf': return 'Saving the PDF'
+    case 'retry_wait': return 'Trying again shortly'
+    default: return 'Checking OpenAlex for a stored PDF'
   }
 }
 
+export type RetrievalFailure = {
+  title: string
+  /** Shown before the request to open the paper from its DOI and upload the PDF. */
+  detail?: string
+  /** A fresh attempt can succeed: the cause is transient. */
+  retry: boolean
+}
+
+export function retrievalFailure(outcome: unknown, reason?: string | null): RetrievalFailure {
+  switch (outcome) {
+    case 'not_stored': return { title: 'OpenAlex doesn’t have this PDF', detail: 'It may be paywalled or not stored yet.', retry: false }
+    case 'rate_limited': return { title: 'OpenAlex is limiting requests', detail: reason || undefined, retry: true }
+    case 'unavailable': return { title: 'OpenAlex couldn’t be reached', retry: true }
+    case 'invalid_pdf': return { title: 'OpenAlex’s copy isn’t a usable PDF', retry: false }
+    case 'unsafe_url': return { title: 'OpenAlex’s link couldn’t be followed safely', retry: false }
+    case 'api_key_required': return { title: 'OpenAlex didn’t accept the API key', detail: 'Check OPENALEX_API_KEY on the server.', retry: false }
+    // Outcomes of the retired multi-host downloader, kept by older jobs.
+    default: return { title: 'The PDF couldn’t be downloaded', retry: true }
+  }
+}
+
+/** Seconds left of the wait OpenAlex reported; a spent daily allowance can mean hours. */
 export function retryWait(job: Pick<Job, 'result' | 'updated_at'> | null | undefined, now: number): number {
   if (job?.result?.outcome !== 'rate_limited' || typeof job.result.retry_after !== 'number') return 0
   const at = Date.parse(job.updated_at)
-  return Number.isFinite(at) ? Math.max(0, Math.ceil((at + Math.min(300, Math.max(0, job.result.retry_after)) * 1000 - now) / 1000)) : 0
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at + Math.min(86_400, Math.max(0, job.result.retry_after)) * 1000 - now) / 1000)) : 0
+}
+
+export function waitText(seconds: number): string {
+  if (seconds < 90) return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `${minutes} minutes`
+  const hours = Math.ceil(seconds / 3600)
+  return `${hours} ${hours === 1 ? 'hour' : 'hours'}`
 }

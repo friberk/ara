@@ -6,8 +6,10 @@ import { citingClaims, stripCitationMarkers } from './remark-citations'
 
 export type SourceListProps = {
   citations: Citation[]
-  /** Citations from any other document are withheld and reported. */
-  documentId: string
+  /** The documents that may be cited; citations from any other document are withheld and reported. */
+  documents: ReadonlySet<string>
+  /** The cited paper's short name for each chip, in a chat over several papers. */
+  paperName?: (citation: Citation) => string | undefined
   /**
    * The raw answer or summary these sources support. A passage chip hands onSelect the claims whose markers cite that
    * passage, or the whole text without markers when none does.
@@ -18,9 +20,9 @@ export type SourceListProps = {
 }
 
 /** The passages an answer or summary cites, once each and in order of their first page. */
-export function SourceList({ citations, documentId, context, onSelect, className }: SourceListProps) {
+export function SourceList({ citations, documents, paperName, context, onSelect, className }: SourceListProps) {
   const labelId = useId()
-  const valid = citations.filter((citation) => citation.document_id === documentId)
+  const valid = citations.filter((citation) => documents.has(citation.document_id))
   // Two passages from one page are two sources; the same passage cited twice is one.
   const byChunk = new Map<string, Citation>()
   for (const citation of valid) if (!byChunk.has(citation.chunk_id.toLowerCase())) byChunk.set(citation.chunk_id.toLowerCase(), citation)
@@ -36,10 +38,10 @@ export function SourceList({ citations, documentId, context, onSelect, className
       {passages.length > 0 && (
         <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-1.5">
           <span id={labelId} className="mr-0.5 text-xs text-muted-foreground">Sources</span>
-          {passages.map((citation) => <CitationChip key={citation.chunk_id} citation={citation} claim={claimFor(citation)} onSelect={onSelect} />)}
+          {passages.map((citation) => <CitationChip key={citation.chunk_id} citation={citation} claim={claimFor(citation)} paper={paperName?.(citation)} onSelect={onSelect} />)}
         </div>
       )}
-      {mismatch && <p role="alert" className="text-sm text-destructive">A citation could not be matched to this document.</p>}
+      {mismatch && <p role="alert" className="text-sm text-destructive">A citation could not be matched to {documents.size > 1 ? 'these papers' : 'this document'}.</p>}
     </div>
   )
 }

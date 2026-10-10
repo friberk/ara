@@ -1,12 +1,23 @@
-import { useId, useRef } from 'react'
+import { useEffect, useEffectEvent, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { ArrowUp, Square } from 'lucide-react'
+import type { Editor } from '@tiptap/core'
+import { EditorContent, useEditor } from '@tiptap/react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { DraftMention } from '@/lib/mentions'
 import { cn } from '@/lib/utils'
+import { composerExtensions, configure, draftKey, insertAtCaret, setDraft, toContent, toDraft, type Mention, type MentionTarget } from './editor'
+
+export type { Mention, MentionTarget, PaperPill } from './editor'
+
+const noMentions: readonly DraftMention[] = []
 
 export type ComposerProps = {
+  /** The question's text; each pill appears in it as its label. */
   value: string
-  onValueChange: (value: string) => void
+  /** The pills in the text (ARA-096). */
+  mentions?: readonly DraftMention[]
+  onValueChange: (value: string, mentions: DraftMention[]) => void
   onSubmit: () => void
   /** Accessible name of the text field, e.g. "Research topic" or "Question about this paper". */
   label: string
@@ -26,51 +37,88 @@ export type ComposerProps = {
   trailing?: React.ReactNode
   /** One line under the composer: why it is disabled, or a quiet reminder. */
   footnote?: React.ReactNode
+  /** Typing @ at the start of a word calls this, to open the paper picker; a picked paper becomes a pill. */
+  onMention?: (mention: Mention) => void
+  /** Filled with a handle that puts a pill at the caret, for the @ button (ARA-096). */
+  mentionTarget?: Ref<MentionTarget>
   maxLength?: number
   autoFocus?: boolean
   size?: 'default' | 'large'
   className?: string
 }
 
-/** The one input surface of the app: Enter sends, Shift+Enter adds a line. */
-export function Composer({ value, onValueChange, onSubmit, label, placeholder, submitLabel, disabled, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
-  const id = useId()
-  const textarea = useRef<HTMLTextAreaElement>(null)
+/**
+ * The one input surface of the app: Enter sends, Shift+Enter adds a line. A TipTap editor (ARA-096), so a paper
+ * mentioned with @ is an atomic pill rather than text.
+ */
+export function Composer({ value, mentions = noMentions, onValueChange, onSubmit, label, placeholder, submitLabel, disabled = false, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, onMention, mentionTarget, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
   const canSubmit = !disabled && !submitDisabled && !busy && value.trim().length > 0
   const stopping = busy && onStop
+  const mentionable = !!onMention
+  // The editor is created once; its settings change through `configure`, and it reports back through events.
+  const [extensions] = useState(() => composerExtensions({ label, placeholder, disabled, size, limit: maxLength, mentionable }))
+  const [content] = useState(() => toContent({ text: value, mentions: [...mentions] }))
+  const editor = useEditor({ extensions, content, editable: !disabled })
+  // Drafts the editor reported that the owner may still hand back; an older one can arrive after a newer keystroke.
+  const reported = useRef([draftKey({ text: value, mentions: [...mentions] })])
+  const focusOnMount = useRef(autoFocus)
+  const form = useRef<HTMLFormElement>(null)
+  // Whether a pill from the @ button goes at the caret: the question had focus, and gave it to a control of this form.
+  const keepCaret = useRef(false)
+  useImperativeHandle(mentionTarget, () => ({ insert: (pill) => insertAtCaret(editor, pill, keepCaret.current), focus: () => editor.commands.focus() }), [editor])
+  const submit = useEffectEvent(() => { if (canSubmit) onSubmit() })
+  const mention = useEffectEvent((handle: Mention) => onMention?.(handle))
+  const change = useEffectEvent((text: string, next: DraftMention[]) => onValueChange(text, next))
+  useEffect(() => {
+    const updated = ({ editor: current }: { editor: Editor }) => {
+      const draft = toDraft(current.state.doc)
+      reported.current.push(draftKey(draft))
+      change(draft.text, draft.mentions)
+    }
+    const submitted = () => submit()
+    const mentioned = (handle: Mention) => mention(handle)
+    const focused = () => { keepCaret.current = true }
+    const blurred = ({ event }: { event: FocusEvent }) => { keepCaret.current = !!form.current?.contains(event.relatedTarget as Node | null) }
+    editor.on('update', updated).on('composerSubmit', submitted).on('composerMention', mentioned).on('focus', focused).on('blur', blurred)
+    return () => { editor.off('update', updated).off('composerSubmit', submitted).off('composerMention', mentioned).off('focus', focused).off('blur', blurred) }
+  }, [editor])
+  useEffect(() => {
+    configure(editor, { label, placeholder, disabled, size, limit: maxLength, mentionable })
+    if (editor.isEditable !== !disabled) editor.setEditable(!disabled, false)
+  }, [editor, label, placeholder, disabled, size, maxLength, mentionable])
+  // Focus on mount as a textarea's autoFocus does; TipTap's own autofocus waits for a timer. An editor useEditor has
+  // not mounted yet has no view to focus, so it focuses when it mounts.
+  useEffect(() => {
+    if (!focusOnMount.current) return
+    const focus = () => editor.view.focus()
+    if (!editor.isDestroyed) return focus()
+    editor.on('mount', focus)
+    return () => { editor.off('mount', focus) }
+  }, [editor])
+  // A draft set by the owner (cleared after sending, a queued question restored) replaces the editor's content.
+  useEffect(() => {
+    const draft = { text: value, mentions: [...mentions] }
+    const echo = reported.current.lastIndexOf(draftKey(draft))
+    if (echo >= 0) {
+      reported.current = reported.current.slice(echo)
+      return
+    }
+    reported.current = [draftKey(draft)]
+    setDraft(editor, draft)
+  }, [editor, value, mentions])
   return (
     <div className={cn('w-full', className)}>
       <form
+        ref={form}
         onSubmit={(event) => { event.preventDefault(); if (canSubmit) onSubmit() }}
-        onClick={(event) => { if (event.target === event.currentTarget) textarea.current?.focus() }}
+        onClick={(event) => { if (event.target === event.currentTarget) editor.commands.focus() }}
         className={cn(
           'relative flex w-full cursor-text flex-col rounded-3xl border bg-background shadow-[0_1px_2px_rgb(0_0_0/0.04),0_4px_16px_-4px_rgb(0_0_0/0.08)] transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:shadow-[0_1px_2px_rgb(0_0_0/0.05),0_8px_24px_-6px_rgb(0_0_0/0.12)] dark:bg-card dark:shadow-none',
           disabled && 'cursor-not-allowed opacity-70',
         )}
       >
         {header && <div className="flex flex-wrap gap-1.5 px-3 pt-3">{header}</div>}
-        <label htmlFor={`${id}-input`} className="sr-only">{label}</label>
-        <textarea
-          ref={textarea}
-          id={`${id}-input`}
-          rows={1}
-          value={value}
-          maxLength={maxLength}
-          disabled={disabled}
-          autoFocus={autoFocus}
-          placeholder={placeholder}
-          onChange={(event) => onValueChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault()
-              if (canSubmit) onSubmit()
-            }
-          }}
-          className={cn(
-            'field-sizing-content max-h-60 w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-1 text-[15px] leading-6 outline-none placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed',
-            size === 'large' ? 'min-h-16' : 'min-h-11',
-          )}
-        />
+        <EditorContent editor={editor} />
         <div className="flex items-center gap-1 px-2 pb-2">
           <div className="flex min-w-0 flex-1 items-center gap-0.5">{leading}</div>
           {trailing}

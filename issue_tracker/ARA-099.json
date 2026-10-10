@@ -1,0 +1,51 @@
+{
+  "id": "ARA-099",
+  "title": "ara. wordmark in Instrument Serif Italic replaces the book icon and 'Research Assistant'",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"I think we also need a logo. That book thing and Research assitant thing is looking ugly. I was thinking a text only logo 'ara.' with a popping font and typesetting.\" The lead built a wordmark options sheet with the impeccable skill: six candidates, large, in the sidebar and as icons, in light and dark (artifact https://claude.ai/artifact/7VfAfGScsP3SgAE7KBA4bk). The user chose B, Instrument Serif Italic (OFL-1.1). The lead outlined 'ara.' and 'a.' with HarfBuzz shaping (the font's own kerning), tracking -0.02em and the dot pulled in another -0.02em, plus a favicon that inverts in dark browser chrome. Assets are in branding/ with the generator script; no webfont is loaded.",
+  "dependencies": [
+    "ARA-033"
+  ],
+  "acceptance_criteria": [
+    "Given the sidebar, when it is expanded, then its header shows the ara. wordmark (inline SVG in currentColor, accessible name 'ara.', linking home) in place of the book icon and 'Research Assistant'; when collapsed to icons, it shows the 'a.' mark.",
+    "Given the browser tab, when any page loads, then the favicon is the 'a.' tile from branding/favicon.svg and the document title uses 'ara.' instead of 'Research Assistant'.",
+    "Given light and dark themes, when the wordmark renders, then it uses the foreground token with no new colour or font load, and stays crisp from 16px to 120px.",
+    "Given DESIGN.md, PRODUCT.md and docs/third-party-notices.md, when this lands, then the wordmark is documented as the only serif in the system (an outline, not a UI font, with minimum size and clear space), and the Instrument Serif OFL-1.1 notice is recorded.",
+    "Given the repository, when someone needs to regenerate the logo, then branding/make_wordmark.py with documented pinned tools and font source reproduces the SVGs."
+  ],
+  "test_cases": [
+    "Shell: wordmark present with name 'ara.', no 'Research Assistant' text, mark in collapsed mode, header link goes home.",
+    "index.html: favicon link and title.",
+    "Visual check in light, dark and at 390px by the lead."
+  ],
+  "status": "completed",
+  "related_files": [
+    "branding/ara-wordmark.svg",
+    "branding/ara-mark.svg",
+    "branding/favicon.svg",
+    "branding/make_wordmark.py",
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/index.html",
+    "src/frontend/public/favicon.svg",
+    "DESIGN.md",
+    "PRODUCT.md",
+    "docs/third-party-notices.md",
+    "src/frontend/src/components/brand/AraBrand.tsx",
+    "src/frontend/src/components/brand/index-html.test.ts",
+    "src/frontend/src/components/shell/shell.test.tsx",
+    "branding/README.md",
+    "PRODUCT.md",
+    "branding/render_icons.mjs",
+    "src/frontend/public/favicon-32.png",
+    "src/frontend/public/apple-touch-icon.png",
+    "src/frontend/src/components/brand/AraBrand.test.tsx"
+  ],
+  "commits": [
+    "820e65c",
+    "1b17d70"
+  ],
+  "pull_requests": [],
+  "verification": "Red first: shell.test.tsx (no link named 'ara.') and index-html.test.ts (title did not match /<title>ara\\.<\\/title>/) failed, 3 tests. Green after implementation. Full run: 86 files, 669+ tests passing (see journal), npm run check and build clean. Visual check in light, dark, collapsed and 390px via Vite on port 5391 (no backend, 502s expected): found the wordmark shrunk to 16px by the shadcn button svg rule; fixed with h-[26px]! w-auto!. Not verified: real browser tab favicon in dark chrome, 16px legibility on a real display. Addendum: PNG fallbacks (favicon-32.png RGBA, apple-touch-icon.png 180x180 opaque square) rendered by branding/render_icons.mjs; the index-html test failed red on the missing png link, then passed. Path drift guard AraBrand.test.tsx: red with an altered path character (expected 'M89.0 9Q53.1 9...' to be 'M89.0 9Q53.0 9...'), green when restored.",
+  "updated_at": "2026-10-10"
+}

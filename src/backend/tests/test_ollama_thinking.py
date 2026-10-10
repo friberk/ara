@@ -12,6 +12,9 @@ from app.integrations.model_catalog import local_spec
 from app.integrations.ollama import OllamaRuntime, local_model_reasoning
 from app.integrations.ollama_llm import OllamaLLM
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 
 @pytest.mark.parametrize(
     ("thinking", "expected"),

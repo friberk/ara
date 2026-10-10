@@ -1,0 +1,42 @@
+{
+  "id": "ARA-100",
+  "title": "Remove the Activity page; surface background work where it happens",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User decision on 2026-10-10: \"I think we should remove the Activity page. It doesn't make sense in a product like this.\" Category products (chatgpt.com, claude.ai, Elicit) have no jobs page; progress and recovery appear where the work matters. Today Activity lists PDF processing, retrieval, summaries, metadata lookups, section summaries, storage cleanup and model jobs, and offers retry for failures. Most of this already lives in context: the reader's processing steps and retry, the summary card, and Look up again in the details sheet. Storage cleanup (ARA-095) is retryable only from Activity, so it needs automatic recovery. The /jobs API stays, because components use it for progress.",
+  "dependencies": [
+    "ARA-095",
+    "ARA-097"
+  ],
+  "acceptance_criteria": [
+    "Given the app, when it renders, then there is no Activity page, sidebar item or command-palette entry. /activity and /jobs redirect to home, and no link anywhere points to Activity (ChatSwitcher, FullTextAccess, Settings and others).",
+    "Given each job kind that Activity used to surface, when it runs or fails, then its progress and recovery appear in context. PDF retrieval, ingest and processing show in the reader with retry; summaries in the summary card; metadata lookups through Look up again in the details sheet; local model downloads in Settings (flag on only). Copy that pointed users to Activity is rewritten.",
+    "Given a storage cleanup job that failed after its retries, when the API starts or on the existing recovery interval, then it is re-queued automatically and durably, so storage cannot leak because no page offers a retry.",
+    "Given the codebase, when this lands, then ActivityPage, its tests, relative-time helpers used only there, and job labels used only there are deleted (single implementation). The /jobs routes and their tests stay.",
+    "Given README, DESIGN.md and the api-contract, when this lands, then they no longer describe an Activity page."
+  ],
+  "test_cases": [
+    "Routing: /activity and /jobs redirect home; no nav item or palette entry.",
+    "Each former Activity link target updated.",
+    "Backend: failed storage_cleanup is re-queued at startup or recovery, idempotently.",
+    "Contextual retry surfaces still work: reader retry, summary failure, Look up again."
+  ],
+  "status": "done",
+  "related_files": [
+    "src/frontend/src/features/activity/ActivityPage.tsx",
+    "src/frontend/src/App.tsx",
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/src/components/shell/CommandPalette.tsx",
+    "src/frontend/src/features/chat/ChatSwitcher.tsx",
+    "src/frontend/src/features/workspace/FullTextAccess.tsx",
+    "src/backend/app/services/deletion.py",
+    "src/backend/app/services/reindex.py"
+  ],
+  "commits": [
+    "204ef6f feat(shell): remove the Activity page",
+    "d4b9786 feat(jobs): revive failed storage cleanups through recovery"
+  ],
+  "pull_requests": [],
+  "verification": "2026-10-10. Red first: shell/App tests 4 failed, 21 passed before removal; storage-cleanup recovery tests ImportError, then 3 failed, 2 passed (two vacuous) before the revival code. Green: 5 recovery tests pass; the test for a cleanup queued by pdf_removal.delete_detached passed on first run (the mechanism is generic), so it has no red. Backend full suite via scripts/test-stack.py (project ara-activity-test): 1197 passed before merging ARA-097, 1215 passed after (278 s). Frontend npm run check after the last merge: 92 files, 724 tests passed; npm run build succeeds; eslint and tsc clean. Earlier full runs showed load-flaky findBy failures (6, then 2) that passed when rerun. ruff check clean; ruff format --check lists only app/jobs/development_worker.py and tests/test_pdf_parser_structured.py, which this ticket did not touch. Playwright specs edited, not run. Section-summary jobs get three attempts but no later automatic retry (reported to the lead).",
+  "updated_at": "2026-10-10"
+}

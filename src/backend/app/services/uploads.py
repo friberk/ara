@@ -134,9 +134,23 @@ async def ingest_pdf_bytes(
                     409,
                     "DOCUMENT_ALREADY_ATTACHED",
                     "This PDF belongs to another paper. Open that paper to reconcile it.",
+                    details=[{"paper_id": str(existing.paper_id)}],
                 )
             if guard and paper:
                 paper.active_document_id = existing.id
+            revived = False
+            if binding is None and not guard and existing.status == "ready":
+                # A PDF kept for older chats after Remove PDF, or an earlier version, uploaded
+                # again becomes its paper's current PDF; from the home page only when the paper
+                # has none (ARA-097).
+                owner = paper or await session.scalar(
+                    select(Paper).where(Paper.id == existing.paper_id).with_for_update()
+                )
+                revived = owner.active_document_id != existing.id and (
+                    paper is not None or owner.active_document_id is None
+                )
+                if revived:
+                    owner.active_document_id = existing.id
             if binding is None:
                 session.add(DocumentUploadRequest(request_id=request_id, document_id=existing.id))
             job = await session.get(BackgroundJob, existing.ingest_job_id)
@@ -146,7 +160,10 @@ async def ingest_pdf_bytes(
                 or job.state != "failed"
                 or job.error_code not in {"STORAGE_UPLOAD_FAILED", "STORAGE_OBJECT_MISSING"}
             ):
-                return references(existing)
+                # A new request for bytes already stored opens that paper; a replay is not new.
+                return references(existing).model_copy(
+                    update={"duplicate": binding is None and not revived}
+                )
             # Same bytes can resume an interrupted upload using the retained object key.
             existing.status, existing.warnings = "uploading", []
             job.state, job.stage, job.progress = "queued", "queued", 0
@@ -178,7 +195,11 @@ async def ingest_pdf_bytes(
             )
             session.add(document)
             await session.flush()
-            job = await enqueue(session, kind="ingest", payload={"document_id": str(document.id)})
+            payload = {"document_id": str(document.id)}
+            if paper_id is None:
+                # Created for this upload: ingestion may find it is a library paper (ARA-086).
+                payload["new_paper"] = True
+            job = await enqueue(session, kind="ingest", payload=payload)
             # The delayed durable job recovers a crash between DB commit and S3 completion.
             job.available_at = grace
             await session.execute(

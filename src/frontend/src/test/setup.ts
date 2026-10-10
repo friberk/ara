@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import { FetchBackedXhr } from './fake-xhr'
 
 // Whole-app tests load lazy routes (Markdown, KaTeX, pdf.js) on first use; under a parallel run that can exceed 1s.
 configure({ asyncUtilTimeout: 3000 })
@@ -19,8 +20,16 @@ if (!('ResizeObserver' in window)) Object.defineProperty(window, 'ResizeObserver
 if (!('IntersectionObserver' in window)) Object.defineProperty(window, 'IntersectionObserver', { writable: true, value: NoopObserver })
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = function scrollIntoView() {}
 if (!Element.prototype.scrollTo) Element.prototype.scrollTo = function scrollTo() {}
+// The composer's editor (ProseMirror, ARA-096) measures caret positions; jsdom has no layout, so these report nothing.
+if (!document.elementFromPoint) document.elementFromPoint = () => null
+if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => Object.assign([], { item: () => null }) as unknown as DOMRectList
+if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect()
 if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false
   Element.prototype.setPointerCapture = () => {}
   Element.prototype.releasePointerCapture = () => {}
 }
+
+// Uploads report real progress through XMLHttpRequest; in tests it goes through the stubbed fetch (ARA-086).
+// Assigned directly, not with vi.stubGlobal, so a test's vi.unstubAllGlobals() keeps it.
+Object.defineProperty(window, 'XMLHttpRequest', { writable: true, value: FetchBackedXhr })

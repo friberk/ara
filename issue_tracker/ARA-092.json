@@ -1,0 +1,46 @@
+{
+  "id": "ARA-092",
+  "title": "Store upload-match state in proper tables instead of the settings table",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "ARA-086's library matching stores its state as prefixed rows in model_configurations: upload_match:<placeholder>, paper_redirect:<placeholder> and pdf_doi_owner:<document>. That was a workaround for the lead's no-migration rule in this round. It has three costs:\n- no foreign keys, so deleting a paper leaves orphan rows and a redirect can point at a deleted paper;\n- the library listing filters with a string NOT IN subquery over key prefixes on every request;\n- per-upload state mixes into the settings table.\nThe user approved moving the state into proper tables on 2026-10-10. Sequence: migration 0009, after ARA-091's 0008 and before ARA-088.",
+  "dependencies": [
+    "ARA-086",
+    "ARA-091"
+  ],
+  "acceptance_criteria": [
+    "Given a pending match, when it is stored, then it lives in an upload_matches table keyed by the placeholder paper, with foreign keys to the placeholder, the library paper and the document, all ON DELETE CASCADE.",
+    "Given an attached or replaced upload, when its placeholder is retired, then the redirect lives in a paper_redirects table whose target is a foreign key with ON DELETE CASCADE, so a deleted target removes the redirect.",
+    "Given an upload into a chosen paper whose DOI belongs to another paper, when it is recorded, then the owner is a nullable documents.doi_owner_paper_id foreign key with ON DELETE SET NULL.",
+    "Given the library listing, sidebar and picker, when they exclude pending placeholders, then they use an indexed join or NOT EXISTS on upload_matches, not key-prefix string matching.",
+    "Given existing prefixed rows in model_configurations, when migration 0009 runs, then valid rows move to the new tables, orphans are dropped, the prefixed rows are deleted, and the downgrade restores them.",
+    "Given every ARA-086 matching behaviour, when the suites run, then the API and the UI behave exactly as before; only storage changes."
+  ],
+  "test_cases": [
+    "Migration upgrade from 0008 with prefixed rows, including orphans; downgrade round trip.",
+    "Cascade: deleting a library paper, a placeholder or a document cleans up its match, redirect and owner state.",
+    "Existing upload-match integration tests pass unchanged against the new storage.",
+    "A health readiness drift test passes at the new head."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/alembic/versions/0009_upload_match_tables.py",
+    "src/backend/app/models/research.py",
+    "src/backend/app/services/upload_match.py",
+    "src/backend/app/routes/uploads.py",
+    "src/backend/app/services/health.py",
+    "src/backend/tests/test_upload_match_tables_migration.py",
+    "src/backend/tests/test_upload_match_tables_integration.py",
+    "src/backend/tests/test_fulltext_migration.py",
+    "src/backend/tests/test_library_embedding_migration.py",
+    "docs/api-contract.md",
+    "src/backend/alembic.ini"
+  ],
+  "commits": [
+    "1cd0c9a",
+    "3d911c5"
+  ],
+  "pull_requests": [],
+  "verification": "Completed 2026-10-09 in the isolated ara-match-test project. Red first: the migration test failed with 'Extra items in the left set: upload_matches, paper_redirects'; 7 integration tests failed with \"ImportError: cannot import name 'UploadMatch'\" / \"'Document' object has no attribute 'doi_owner_paper_id'\"; the two head-pin tests failed with \"assert '0008_library_embeddings' == '0009_upload_match_tables'\". Green: full backend suite 1005 passed; frontend check 574 tests passed; build succeeded; regenerated generated.ts from app.openapi() is identical to the committed file. No live-data migration run; the migration was exercised on an isolated database only. Alembic path_separator = os added; the full suite then reported 1005 passed with no warnings.",
+  "updated_at": "2026-10-09"
+}

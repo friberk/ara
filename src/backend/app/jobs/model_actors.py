@@ -71,9 +71,10 @@ async def requeue_busy_summary(resources, job_id, generation, token):
     broker=actors.broker, queue_name="local-generation", max_retries=0, time_limit=21_660_000
 )
 async def execute_local_summary(job_id: str, generation: int) -> None:
-    """Long local generation: paper summaries and conversation compaction."""
+    """Long local generation: paper and section summaries and conversation compaction."""
     from app.integrations.llm import LLMError
     from app.services.memory import run_compact_job
+    from app.services.section_summaries import run_section_summaries_job
     from app.services.summarization import run_summary_job
 
     resources, identifier = worker_resources(), UUID(job_id)
@@ -82,7 +83,11 @@ async def execute_local_summary(job_id: str, generation: int) -> None:
         return
     async with resources.sessions() as session:
         job = await session.get(BackgroundJob, identifier)
-    runner = {"summary": run_summary_job, "compact_chat": run_compact_job}.get(job.kind)
+    runner = {
+        "summary": run_summary_job,
+        "section_summaries": run_section_summaries_job,
+        "compact_chat": run_compact_job,
+    }.get(job.kind)
     if runner is None:
         await fail(resources.sessions, identifier, generation, token, permanent=True)
         return

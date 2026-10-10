@@ -6,6 +6,9 @@ import pytest
 from app.core.errors import AppError
 from app.integrations.model_catalog import local_spec
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 
 async def test_pull_progress_counts_each_layer_once_and_requires_success():
     from app.integrations.ollama import OllamaRuntime, PullProgress

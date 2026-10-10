@@ -20,7 +20,8 @@ from app.services.local_models import (
     transition_job,
 )
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 KEY = "ifm-k2-horizon-3.7b"
 
 

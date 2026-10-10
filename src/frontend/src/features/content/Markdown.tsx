@@ -16,8 +16,10 @@ export type MarkdownProps = {
   content: string
   /** Citations of this message or summary. [source:UUID] markers whose UUID is a citation chunk_id become inline chips. */
   citations?: Citation[]
-  /** Only citations from this document may render; markers for any other document render nothing. */
-  documentId?: string
+  /** Only citations from these documents may render; markers for any other document render nothing. */
+  documents?: ReadonlySet<string>
+  /** The cited paper's short name for each chip, in a chat over several papers. */
+  paperName?: (citation: Citation) => string | undefined
   /** Called when a reader activates an inline citation chip, with the claim the chip stands after. */
   onCitation?: (citation: Citation, claim?: string) => void
   className?: string
@@ -61,15 +63,15 @@ const prose: Components = {
 }
 
 /** Safe, readable Markdown for answers and summaries: GFM, KaTeX math and inline page chips for cited passages. */
-export function Markdown({ content, citations, documentId, onCitation, className }: MarkdownProps) {
+export function Markdown({ content, citations, documents, paperName, onCitation, className }: MarkdownProps) {
   const sources = useMemo(() => {
     const byChunk = new Map<string, Citation>()
     for (const citation of citations ?? []) {
       const chunkId = citation.chunk_id.toLowerCase()
-      if ((!documentId || citation.document_id === documentId) && !byChunk.has(chunkId)) byChunk.set(chunkId, citation)
+      if ((!documents || documents.has(citation.document_id)) && !byChunk.has(chunkId)) byChunk.set(chunkId, citation)
     }
     return byChunk
-  }, [citations, documentId])
+  }, [citations, documents])
   const components = useMemo<Components>(() => ({
     ...prose,
     // remark-citations emits <cite data-chunk-id data-claim> only for chunks in `sources`.
@@ -77,9 +79,9 @@ export function Markdown({ content, citations, documentId, onCitation, className
       const chunkId = node?.properties.dataChunkId
       const claim = node?.properties.dataClaim
       const citation = typeof chunkId === 'string' ? sources.get(chunkId) : undefined
-      return citation ? <CitationChip citation={citation} claim={typeof claim === 'string' ? claim : undefined} onSelect={onCitation} className="ml-1 align-[0.1em]" /> : null
+      return citation ? <CitationChip citation={citation} claim={typeof claim === 'string' ? claim : undefined} paper={paperName?.(citation)} onSelect={onCitation} className="ml-1 align-[0.1em]" /> : null
     },
-  }), [sources, onCitation])
+  }), [sources, paperName, onCitation])
   const allowed = useMemo(() => new Set(sources.keys()), [sources])
   return (
     <div data-slot="markdown" className={cn('content-markdown text-[15.5px] leading-[1.7] wrap-break-word text-foreground [&>:first-child]:mt-0 [&>:last-child]:mb-0', className)}>

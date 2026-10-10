@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useDeleteChat, useRenameChat } from '@/hooks/queries/chats'
+import { chatPapersLabel } from '@/lib/paper-names'
 
 // Shared by the sidebar's Recent list and the workspace chat switcher.
-export function RenameChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'id' | 'paper_id' | 'title' | 'paper_title'>; onClose: () => void }) {
+export function RenameChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'id' | 'paper_id' | 'title' | 'papers'>; onClose: () => void }) {
   const [title, setTitle] = useState(chat.title)
   const rename = useRenameChat()
   const trimmed = title.trim()
@@ -21,7 +22,7 @@ export function RenameChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'i
         <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (trimmed) rename.mutate({ chatId: chat.id, title: trimmed }, { onSuccess: () => { toast.success('Conversation renamed'); onClose() } }) }}>
           <DialogHeader>
             <DialogTitle>Rename conversation</DialogTitle>
-            <DialogDescription>{chat.paper_title ?? 'Paper conversation'}</DialogDescription>
+            <DialogDescription>{chatPapersLabel(chat.papers) ?? 'Paper conversation'}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             <Label htmlFor="rename-chat">Conversation name</Label>
@@ -38,7 +39,7 @@ export function RenameChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'i
   )
 }
 
-export function DeleteChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'id' | 'paper_id' | 'title' | 'paper_title'>; onClose: () => void }) {
+export function DeleteChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'id' | 'paper_id' | 'title' | 'papers'>; onClose: () => void }) {
   const remove = useDeleteChat()
   const location = useLocation()
   const navigate = useNavigate()
@@ -47,7 +48,7 @@ export function DeleteChatDialog({ chat, onClose }: { chat: Pick<ChatSummary, 'i
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
-          <AlertDialogDescription>“{chat.title}” and its answers will be removed. The paper and its summaries stay in your library.</AlertDialogDescription>
+          <AlertDialogDescription>“{chat.title}” and its answers will be removed. {chat.papers.length > 1 ? 'The papers and their summaries stay' : 'The paper and its summaries stay'} in your library.</AlertDialogDescription>
         </AlertDialogHeader>
         <ErrorNotice error={remove.error} />
         <AlertDialogFooter>

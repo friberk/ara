@@ -29,6 +29,8 @@ class SearchResult(BaseModel):
     pdf_url: str | None = None
     is_open_access: bool | None = None
     locations: list[FullTextLocation] = Field(default_factory=list)
+    # Journal or conference name; older stored snapshots have none (ARA-086).
+    venue: str | None = None
 
 
 class SearchHit(SearchResult):
@@ -50,6 +52,19 @@ class SavePaper(BaseModel):
     external_id: str = Field(min_length=1, max_length=200)
 
 
+class PaperLink(BaseModel):
+    paper_id: UUID
+    title: str | None
+
+
+class UploadMatch(PaperLink):
+    """A new upload that is this library paper; it waits for Replace/Attach or Cancel (ARA-086)."""
+
+    has_pdf: bool
+    matched_by: Literal["doi", "arxiv", "title"]
+    found_by: Literal["ingest", "lookup"]
+
+
 class PaperDetail(BaseModel):
     id: UUID
     title: str | None
@@ -57,10 +72,17 @@ class PaperDetail(BaseModel):
     year: int | None
     abstract: str | None
     doi: str | None
+    # From the linked provider record; papers have no venue column (ARA-086).
+    venue: str | None = None
     sources: list[SearchResult]
     document_status: Literal["metadata_only", "processing", "ready", "failed"]
     active_document_id: UUID | None
     metadata_provenance: dict
+    # The active PDF's file name, so an untitled paper can be named while it is read (ARA-086).
+    file_name: str | None = None
+    upload_match: UploadMatch | None = None
+    # The active PDF's DOI belongs to this other library paper.
+    pdf_doi_owner: PaperLink | None = None
 
 
 class PaperPage(BaseModel):
@@ -74,12 +96,89 @@ class PaperPatch(BaseModel):
     year: int | None = Field(default=None, ge=1500, le=2100)
     abstract: str | None = Field(default=None, max_length=20000)
     doi: str | None = Field(default=None, max_length=300)
+    # Kept in metadata_provenance.venue as {source: manual, value}; papers have no venue column.
+    venue: str | None = Field(default=None, max_length=300)
+
+
+class PaperIds(BaseModel):
+    """Papers to preview or delete together (ARA-095)."""
+
+    model_config = ConfigDict(extra="forbid")
+    paper_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class ChatLink(BaseModel):
+    id: UUID
+    title: str
+
+
+class DeletionPreview(BaseModel):
+    """What deleting these papers removes; reading it changes nothing (ARA-095)."""
+
+    papers: list[PaperLink]
+    # Requested IDs that name no paper, in request order.
+    missing: list[UUID]
+    # Stored PDFs, every version.
+    pdfs: int
+    summaries: int
+    # Chats about only these papers; they are deleted.
+    deleted_chats: list[ChatLink]
+    # Chats that also cover other papers; they keep those and their saved citations.
+    updated_chats: list[ChatLink]
+    # Queued or running work for these papers; it stops.
+    active_jobs: int
+    # A chat is writing an answer now; deletion waits for it (409 CHAT_BUSY).
+    answering: bool
+
+
+class DeletedPapers(BaseModel):
+    deleted: list[UUID]
+    missing: list[UUID]
+
+
+class DocumentDetail(BaseModel):
+    """One PDF's file facts, for the reader's PDF menu (ARA-097)."""
+
+    id: UUID
+    paper_id: UUID
+    file_name: str
+    page_count: int | None
+    byte_size: int
+    status: Literal["uploading", "processing", "ready", "failed"]
+    # How a retrieved PDF was acquired (ARA-087); null for an upload.
+    acquisition: dict | None
+    created_at: datetime
+
+
+class PdfRemovalPreview(BaseModel):
+    """What removing the paper's PDF changes; reading it changes nothing (ARA-097)."""
+
+    # The paper's PDFs that no chat pins, the current one or earlier versions; they are deleted.
+    deleted_pdfs: int
+    # The paper's PDFs a chat pins; they stay whole, and those chats keep using them.
+    kept_pdfs: int
+    # Summaries of the deleted PDFs; they go with them.
+    summaries: int
+    # Chats that pin one of the paper's PDFs; they continue as they are.
+    chats: list[ChatLink]
+    # Queued or running work on the deleted PDFs; it stops.
+    active_jobs: int
+    # One of those chats is writing an answer now; removal waits for it (409 CHAT_BUSY).
+    answering: bool
+
+
+class MatchDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # attach also replaces the library paper's PDF; discard removes the upload.
+    decision: Literal["attach", "discard"]
 
 
 class UploadAccepted(BaseModel):
     paper_id: UUID
     document_id: UUID
     job_id: UUID
+    # True when a new request matched a PDF the library already holds (ARA-086).
+    duplicate: bool = False
 
 
 class Citation(BaseModel):

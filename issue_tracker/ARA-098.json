@@ -1,0 +1,50 @@
+{
+  "id": "ARA-098",
+  "title": "PDF availability as a quiet file icon everywhere; short citations in the Library",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"I detected some AI-isms in our frontend. First, that 'Ready to read' and 'PDF Needed' things look too verbose on the library page. I think we should indicate the availability and not availability of the PDFs but I didn't like the current way. But I liked the icon for missing PDF. Anyway, use your Impeccable design skill to find best UI/UX here. Also we need to work on the short citations here as well. Then that 'Ready to read' thing also appears inside /papers/ page.\"\nDesign (lead, impeccable skill, Operate mode; precedents: the attachment icon column in Zotero and Mendeley, and file-type icons in file managers). PDF state becomes the paper's leading file icon on every surface that lists papers: the Library, the sidebar Papers list, the @ picker and the command palette. The workspace header shows the icon only when the PDF is not ready.\nIcon states:\n- attached: FileText in regular ink;\n- none: FileQuestion in muted ink (the icon the user liked);\n- preparing: LoaderCircle, spinning unless reduced motion is set, muted;\n- failed: FileWarning in destructive red.\nEach icon has a tooltip on hover and focus ('PDF attached', 'No PDF yet', 'Preparing PDF…', 'PDF couldn't be read') and matching screen-reader text. There are no text badges, and the green and amber tints go, per DESIGN.md's Black-and-White rule. Library rows use PaperCitation (ARA-088): 'Subakan et al. (2021), *Venue*'.",
+  "dependencies": [
+    "ARA-088",
+    "ARA-096",
+    "ARA-097"
+  ],
+  "acceptance_criteria": [
+    "Given the Library, the sidebar Papers list, the @ picker and the command palette, when a paper renders, then its leading icon shows PDF state (attached, none, preparing or failed) as specified, with a tooltip on hover and keyboard focus and equivalent screen-reader text. No 'Ready to read', 'PDF needed', 'Preparing PDF' or 'Processing failed' text badge remains.",
+    "Given a Library row, when it renders, then its byline is the shared PaperCitation, 'Surname et al. (Year), *Venue*', with the venue truncating first; the full author list is available in the paper details sheet (ARA-097).",
+    "Given the paper workspace header, when the PDF is ready, then no status label or icon appears; when it is not ready, only the state icon with its tooltip appears beside the title.",
+    "Given the @ picker, when a paper has no ready PDF, then its row shows the state icon instead of a badge, stays unselectable, and its tooltip says why it can't be asked about yet.",
+    "Given DocumentStatusBadge, PaperStatusBadge and documentStateLabels, when this lands, then they are deleted or replaced by one shared PdfStateIcon (single implementation), and DESIGN.md documents the icon and drops status-badge colour for PDF state.",
+    "Given light, dark and 390px, when these surfaces render, then icons meet the contrast floor (3:1 for graphics) and nothing overflows."
+  ],
+  "test_cases": [
+    "Component: PdfStateIcon for each state (icon, tooltip text, screen-reader text, reduced-motion spinner).",
+    "Library, sidebar, picker, palette and header render the icon and no badge text.",
+    "Library byline uses PaperCitation.",
+    "Visual check in light, dark and at 390px, run by the lead."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/components/feedback/DocumentStatusBadge.tsx",
+    "src/frontend/src/components/feedback/document-state.ts",
+    "src/frontend/src/features/workspace/PaperStatusBadge.tsx",
+    "src/frontend/src/features/library/LibraryPage.tsx",
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/src/components/shell/CommandPalette.tsx",
+    "src/frontend/src/components/composer/PaperPicker.tsx",
+    "DESIGN.md"
+  ],
+  "commits": [
+    "5be605e",
+    "5962ab1",
+    "1add69a",
+    "4764908",
+    "c27b47f",
+    "3954640",
+    "20d3b7f",
+    "6ddc763"
+  ],
+  "pull_requests": [],
+  "verification": "Phase 1 on 2026-10-10 (Library, sidebar, palette, DESIGN.md). Red: PdfStateIcon.test.tsx failed on the missing module; library and shell tests failed with 'Unable to find role=\"img\" and name \"No PDF yet\"' and 'Unable to find an element with the text: Vaswani et al. (2017)'. Green: 646 vitest tests passed in one full run, then focused runs passed; two full runs under load showed unrelated timeouts in other files that passed when rerun alone. Visual round with Chromium at 1100px and 390px, light and dark: no horizontal overflow, tooltip opens on hover. Phase 2 on 2026-10-10: header icon and picker rows use PdfStateIcon; DocumentStatusBadge, PaperStatusBadge and document-state deleted. npm run check and npm run build run at the end (see journal). Visual rounds in Chromium at 1100px and 390px, light and dark. Playwright specs were updated but not run.",
+  "updated_at": "2026-10-10"
+}

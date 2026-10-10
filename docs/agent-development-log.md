@@ -699,3 +699,1152 @@ The cache-free build completed for backend, frontend, MinIO and patched Ollama. 
 A read-only main-browser smoke initially asserted an obsolete `pdf-page-2` test ID. The independent UI reviewer reproduced the actual successful page jump and identified the current semantic Page2 group; the source reader opens no dialog and announces the jump. Correcting only the harness selector passed the main smoke: old summary and saved citation preview, original PDF page2, Search index panel and local-model Settings were visible, with no horizontal overflow or mutation requests. No product change was needed.
 
 The user then authorized removing merged worktrees. Before deletion, ignored configuration and development evidence were copied to `docs/evidence/generated/worktree-archives/`; model files stay in their existing named Docker volumes. Original and feature databases were not consolidated or replaced. Preview/test stacks were stopped without volume deletion. Orca’s documented remove command normally attempts branch deletion, so its two managed checkouts were detached first; a saved reference-map check confirmed no branch restoration was necessary. Git removed the two Superpowers worktrees; Orca removed the full-text and temporary integration worktrees. Only the primary main checkout remains. All feature and integration refs retain their original tips and are ancestors of main, while the user’s untracked homework files and writing skills remain untouched. Nothing was pushed.
+
+## 2026-10-09 — User feedback round: chat model, automatic PDFs, context meter, upload metadata (ARA-083 to ARA-086)
+
+The user listed four complaints and asked the lead to ticket each one and dispatch one agent per ticket, choosing the model by difficulty. Each agent works on its own branch and git worktree, test-first. The complaints were:
+- summaries and follow-ups should use the chat's active model, not a separate setting;
+- available PDFs should be retrieved and summarized without a click;
+- a hollow context/cost ring belongs at the bottom left of the chat input;
+- the upload experience needs an overhaul, the metadata was wrong (an uploaded paper was titled `paper.dvi`), and lookup should go to OpenAlex or Semantic Scholar, chosen in Settings, while staying resilient to rate limits.
+
+**Setup.** The lead surveyed the relevant code before writing tickets ARA-083 to ARA-086 (`1d789dc`). The integration branch `feat/ux-feedback-round` sits off main `bef2ee6`, and each agent branch sits off it. Assignments:
+
+| Ticket | Model | Branch |
+|---|---|---|
+| ARA-083 | Sonnet | `feat/ara-083-chat-model` |
+| ARA-084 | Opus | `feat/ara-084-auto-pdf` |
+| ARA-085 | Sonnet | `feat/ara-085-context-meter` |
+| ARA-086 | Opus | `feat/ara-086-upload-metadata` |
+
+Opus went to the tickets that change durable background jobs. Each agent has its own test Compose project (`ara-<name>-test`). The main checkout and the user's running `ara` stack are untouched; agents may only read them.
+
+**File ownership.** The brief divided files so the agents wouldn't collide:
+- ARA-086 owns `ReaderGate`, `UploadDropzone`, the parser and the metadata part of ingestion.
+- ARA-084 owns `FullTextAccess`, `SummaryCard`, summarization, and a minimal ready-hook in ingestion.
+
+No migrations and no new dependencies are allowed.
+
+**Lead divergence: the reasoning effort for helper calls.**
+- The user asked that "Summaries and follow-ups should use whatever model is active in that chat." The lead's ticket and brief went further than that. Both said hosted chats should plan follow-ups and compact memory with the chat's model "at that model's quietest verified effort (as local chats already do)", and the lead's report to the user repeated it.
+- That effort rule was the lead's own extrapolation from the existing local-chat behaviour (`quiet_effort` in `services/memory.py`). The user never asked for it.
+- The user corrected it: "the reasoning effort should also follow what is active in that conversation at that time."
+- The lead sent the ARA-083 agent a correction. Planning uses the turn's model and effort, for hosted and local chats alike. Compaction uses the model and effort that were active when it was triggered.
+- The agent must also check that higher efforts don't truncate the planner or compaction output, break structured output or time out, and must report rather than silently downgrade.
+- Consequence for the user: a chat on an expensive model at high effort pays for that effort on its helper calls too, and local chats with reasoning on plan more slowly.
+
+**Metadata decisions.**
+- The lead summarized standard practice for scholarly PDF metadata: distrust the Info dictionary, read identifiers, resolve them in a registry, then extract the header layout as a fallback (GROBID being the usual tool).
+- The lead also noted two gaps in the ARA-086 brief: XMP was not read, and the layout fallback was a largest-font heuristic plus the existing LLM extraction.
+- The user chose XMP reading, no GROBID for now, and no LLM for metadata. The ARA-086 agent was told to:
+  - read XMP and the arXiv margin stamp as clues;
+  - remove `extract_metadata` from ingestion, test-first, while keeping older queued payloads safe;
+  - rely only on deterministic local extraction plus the OpenAlex or Semantic Scholar lookup.
+
+**Metadata decision revised.** After hearing what the lead's no-LLM instruction would remove, the user reversed it: "Let's keep the LLM based metadata extraction intact then. I think it makes sense." The ARA-086 agent was told to keep `extract_metadata`, with its existing gating, stage and payload handling, and to restore any removal with forward commits. A title rejected by the junk filter counts as missing, so the existing LLM fallback still runs for it. The LLM's title and DOI may also seed the registry lookup. When values conflict, user edits win over registry values, and registry values win over LLM and local values. XMP reading stays in scope and GROBID stays out.
+
+## 2026-10-09 — Context and cost meter in the composer (ARA-085)
+
+The user asked for a hollow progress ring at the bottom left of the chat input showing used and total context and the chat's cost so far. Built on `feat/ara-085-context-meter` in an isolated worktree and Compose project `ara-meter-test`; the running `ara` stack was not touched.
+
+**Definitions.**
+- *Used* is the `input_tokens` that the latest completed answer recorded in its `context` JSON when its prompt was assembled (tiktoken count of what it sent). A latest answer without that record reports no usage and the ring stays empty rather than guessing.
+- *Total* is the selected model's effective input budget in this app (`context_profile(...).input_budget`: 64,000 hosted by `HOSTED_WORKING_CONTEXT_TOKENS`, 3,072 local by default), with the model's full window as secondary text when it differs. The chat's own history is what that budget bounds; the 1.05M window would make every ring look empty.
+- *Cost* is the sum of recorded calls priced through the catalogs: answers (`ChatMessage.usage`), follow-up planning, query embeddings and reranking (new `retrieval.billed` on each answer) and compaction (`ChatMemory.usage`). Local calls are $0.00. The shared paper summary and the daily budget ledger are not part of it.
+
+**Decisions.**
+- The budget follows the composer through query parameters `model` and `reasoning_effort` on `GET /chats/{id}/usage`, computed exactly as `prepare()` sizes a prompt, with local thinking controls read from the database (`list_local_models(inspect_runtime=False)`), so no runtime call happens. A `/models` DTO field would be instant but cannot reflect the effort, which changes a local model's thinking allowance. The cost of that choice is one small request on a switch; the previous numbers stay (dimmed) until it returns (`keepPreviousData`).
+- Planner, embedding and rerank usage was not recorded per chat before. It is now stored in the existing `retrieval` JSONB under `billed`, with no migration: `QueryPlan.billed` (model and tokens from the planner call), the query-embedding input tokens counted the way the ledger reserves them, and `RerankOutcome.billed_tokens` from the Decisions reserve. These two are estimates of the input size; the provider's own usage is not returned by those clients. Older answers have no such record, and the API reports `unrecorded_turns` (completed answers with no usage) instead of inventing numbers. Turn-embedding jobs, failed compaction attempts and a failed answer's partial generation are not attributed.
+- UI: a controlled Popover anchored to a plain button, because Radix Tooltip does not open on tap and HoverCard ignores touch. Hover (mouse and pen), keyboard focus and click or tap open it; a click pins it, and Escape closes it without moving focus. The ring turns destructive at 90 percent and above. The new-conversation start has no chat, so it shows no ring and makes no request.
+
+**Red then green.**
+- `tests/test_chat_cost.py`: 4 failed with `ModuleNotFoundError: No module named 'app.services.costs'`; then 4 passed.
+- `tests/test_chat_usage_integration.py`: 7 failed and 1 passed before the route existed (`assert 404 == 200`, `KeyError: 'cost'`, `KeyError: 'context'`, `KeyError: 'billed'`); the unknown-chat 404 test passed vacuously because the route itself was missing. After the route and recording, 12 passed together with the pricing tests on the first run.
+- Frontend: `usage-format.test.ts` and `ContextMeter.test.tsx` failed with `Failed to resolve import "./usage-format"` / `"./ContextMeter"`. The component tests passed on the first run except one whose expected name was my arithmetic slip (12.4k of 3.1k is 404 percent, not 100). `ConversationPane.usage.test.tsx`: 2 of 3 failed (`Unable to find role="button" and name "Context 0% used of 32k tokens. $0.00 this chat."`).
+
+**Errors and corrections.**
+- The pane test then showed the first usage request carrying no model, because settings were still loading; the query is now disabled until the selection exists.
+- The new-conversation test caught a request to `/chats/undefined/usage`: `NewConversation` also uses `ConversationComposer`. `chatId` became optional and the ring renders only with a chat.
+- A formatting expectation of mine (`$0.0000` for $0.00001) contradicted the rule I wrote next to it (`<$0.0001`); the test was corrected before the first run of the helper.
+- `ruff format` on the whole tree reformatted two unrelated files; they were restored and only my files were formatted. macOS `sed -i` calls failed twice; the edits were made with Python instead.
+
+**Results.** Backend 917 passed in 146.21 s with Ruff clean (905 before). Frontend typecheck, ESLint and 494 tests passed (479 before) and the build passed. The Playwright suite and a visual check of the ring were not run.
+
+**Touched outside the new files.** `services/memory.py` (a `billed` field on `QueryPlan` and a small helper), `rag/pipeline.py` and `rag/rerank.py` (record billed tokens), `services/chat.py` (`record_evidence` stores `billed`), `use-chat-stream.ts` (invalidate usage after each stream), `ConversationThread.tsx` (passes `chatId`), `lib/query-keys.ts`, `api/types.ts` and the generated API types.
+
+## 2026-10-09 — ARA-083 chat model drives summaries and follow-ups
+
+User feedback: summaries and follow-ups should use whatever model is active in that chat; a separate setting is confusing. Decisions: hosted chats now plan follow-ups and compact memory with the chat's own model at its quietest verified effort (`memory_model()` in `services/memory.py` no longer reads settings); `Defaults.memory_model` and `INVALID_MEMORY_MODEL` were removed, and Pydantic's default ignoring of extra fields makes a stored row or PUT body that still carries `memory_model` succeed and drop it. No migration. Settings loses the radio group. `ConversationThread` restores the model and effort of the chat's latest answer once per open (`restoreChatSettings` in `reasoning.ts`, normalised through the existing alias rules), only when that model is available; it never saves a default and never touches history. The paper summary already reads the composer selection, so it follows the chat's model without edits to `SummaryCard`.
+
+Red before green: `test_memory_model_integration.py` failed with `Left contains 1 more item: {'memory_model': 'gpt-5.6-luna'}`, a 422 `INVALID_MEMORY_MODEL` for a PUT carrying `gpt-unknown`, and `'gpt-5.6-luna' == 'gpt-5.6-terra'` for hosted compaction. Frontend: both restore tests failed (composer stayed on Luna) and the Settings test failed with `expected <div role="radiogroup" ...> to be null`.
+
+Errors and corrections: my first `sed -i` (BSD) failed silently on imports, so Ruff reported two unused imports, fixed with `ruff --fix`; `ruff format .` reformatted two unrelated files, which I reverted; the first restore edit forgot its import (ReferenceError in four tests); `Array.findLast` is not in the TS lib target, replaced with a reversed copy. A first OpenAPI dump produced another branch's schema from a shared scratch file; I regenerated it from this worktree's source. The first full backend run failed two older tests (`test_query_planner`, `test_compaction_integration`) that asserted Luna as memory model for a Sol chat; two frontend tests assumed the composer kept its selection while opening a chat with another model. All four now assert the new behaviour.
+
+Results: backend 906 passed in 145.95s (Ruff clean), frontend check 483 tests passed, build passes. Cost consequence: a hosted chat on an expensive model also plans and compacts with that model.
+
+**Correction (same day): effort follows the chat.** The brief for this ticket said planning and compaction run at the model's quietest verified effort, as local chats did. The user corrected it: the reasoning effort should also follow what is active in that conversation. The first commits (`c4c7de4` to `f8dc668`) shipped the quietest-effort version and were fixed forward.
+
+Changes: `memory_model(resources, model, effort)` returns the turn's effort. The user then asked to drop the legacy fallback: `quiet_effort` is deleted, `effort` is required, and a compaction job whose payload lacks it ends as a normal failed job (`COMPACTION_FAILED`, caught by the generic handler in `run_compact_job`, so no expired-lease loop). `maybe_enqueue_compaction` and `remember_turn` take the answering turn's effort, store it in the job payload, and the job never rereads chat or settings. Because hosted reasoning tokens count against `max_output_tokens`, `HostedLLM.request` allows an intermediate call `HOSTED_REASONING_HEADROOM[effort]` (1024 low, 2048 medium, 4096 high, 8192 xhigh, 16384 max) above the answer allowance; the planner and compaction pass and reserve that total. Local requests already add `ollama_thinking_tokens` to `num_predict`. `planner_timeout` replaces the fixed 60 s when the call thinks: 180 s hosted and the local request timeout for local models, since a 7B CPU model needs well over 60 s for 1024 thinking tokens.
+
+Red before green: hosted plan at high sent `{'effort': 'none'}`; local plan with effort `on` sent `think` False; compaction raised `TypeError: maybe_enqueue_compaction() got an unexpected keyword argument 'effort'`; `ImportError: cannot import name 'planner_timeout'`. Existing tests asserting `none` or `think` False were updated after failing. Backend 911 passed in 142.35 s.
+
+Not proven: the local planner sends `think` together with a `format` schema. The fixture accepts it, but whether the installed Ollama build honours both on every model was not exercised live (the user's `ara` project was off limits); if it ignores the schema, the planner falls back to the heuristic and logs "Query planning fell back". Hosted headroom values are estimates; a reasoning-heavy turn above them would end MODEL_INCOMPLETE and also fall back.
+
+## 2026-10-09 — ARA-084 automatic PDF retrieval and summaries
+
+The lead assigned ARA-084 to an implementation agent in worktree `auto-pdf` (branch `feat/ara-084-auto-pdf`), quoting the user: "Download PDF feature is currently not working well. We need to overhaul the experience there. I need to click Get PDF manually. However if the PDF is available it should get it automatically and do the summary generation etc. as well." ARA-083, ARA-085 and ARA-086 ran in sibling worktrees; ReaderGate, the upload components and the metadata section of ingestion belong to ARA-086.
+
+Diagnosis used read-only queries and logs from the running `ara` stack. It held four retrieval jobs. One arXiv paper downloaded. A Wiley paper failed `unsupported_source` twice, 7 seconds apart, at the same `pdfdirect` URL: the UI offered "Retry download" for a deterministic allowlist failure, and no link to the PDF that its message told the user to download in a browser. A paper with no listed PDF failed `unavailable` ("Provider discovery is temporarily unavailable.") rather than `no_pdf_link`. Logs showed Semantic Scholar answering 429 on every lookup (4 of 4). Any lookup warning turned "no PDF listed" into a generic outage with no wait, so each retry hit the same limit. That job's payload also lacked `discovery_warnings`, because a no-candidate finish never checkpointed them. After a download, the reader called the PDF "uploaded", and both views added "continues in the background" text. Summaries always needed a click.
+
+Decisions:
+- Automatic retrieval reuses the durable request table. Each paper has one automatic request UUID (UUIDv5 of the paper ID), queued in the save transaction after the paper row lock, so duplicate or concurrent saves, deliveries and restarts replay one job. Qualifying papers list a PDF or have a DOI. A paper with any earlier retrieval job is never retried automatically. Papers saved earlier use `POST /papers/{id}/retrieve-fulltext/automatic`, which the workspace calls once; GETs stay read-only. A deliberate request after a rate-limited failure is delayed until the reported wait ends.
+- Automatic summaries hook the ingestion transaction that first marks a document ready: `became_ready = document.status != "ready"`, then `queue_automatic_summary` in `summarization.py`. Re-ingestion of ready documents never qualifies. The decision reads only settings and PostgreSQL (local status through `model_dto`, the hosted key, today's reservations against one hosted call), so no Ollama HTTP runs inside the transaction. When the saved default is blocked, nothing starts and there is no fallback. `GET /summaries` reports the reason as `blocked`. A per-document request UUID and the existence of any summary job keep it to one per document.
+- The UI shows one status line while retrieval runs ("Looking for an open PDF", "Downloading the PDF from arXiv", "Saving the PDF"), with no buttons. Failures get a plain title and only the actions that can help; Try again appears for transient and network-dependent outcomes and waits out a reported limit. The summary card refetches jobs when the PDF becomes ready, says when the summary will start, and shows `blocked`.
+
+Red → green, in order:
+1. `test_rate_limited_lookup_reports_the_providers_wait_not_an_outage` failed with `{'outcome': 'unavailable', 'retry_after': None} != {'outcome': 'rate_limited', 'retry_after': 45}`. Discovery now records each provider's Retry-After and checkpoints warnings (commit 5e1deea).
+2. The seven tests in `test_automatic_fulltext_integration.py` failed with `assert 0 == 1` (no job on save), `assert 404 == 200` (no automatic endpoint) and `KeyError: 'job_id'`. After the save hook and endpoint, six passed. The wait test then failed on its own assertion (`available_at` ≈ now rather than ≥ now + 110 s), and `reported_wait` fixed it (ef7cf4d).
+3. `test_status_names_the_host_a_download_is_coming_from` failed with `KeyError: 'source_host'` (84fdc53).
+4. `test_automatic_summary_integration.py` failed 6 of 7: missing `automatic_summary_request`/`queue_automatic_summary`, `KeyError: 'blocked'`, and `not enough values to unpack (expected 1, got 0)` for the ready local default. The reindex test passed before implementation, as a regression guard (975be77). A later test for a paper still waiting for its PDF failed with `TypeError: 'NoneType' object is not subscriptable` (06a50b8).
+5. Frontend: the rewritten `FullTextAccess.test.tsx` failed 14 of 20, including "Unable to find an element with the text: Looking for an open PDF" and a completed handoff that still rendered "PDF downloaded. Processing its pages continues in the background.". `SummaryCard.automatic.test.tsx` failed 4 of 4 on missing copy. Removing only the ready-transition refetch made the follow-the-job test fail with `Unable to find role="progressbar" and name "Summary progress"`; restoring it passed. `fulltext-copy.test.ts` failed with `waitText is not a function` before wait formatting. Three older tests encoded the replaced behaviour ("without posting", "A summary can be generated when the PDF finishes processing."); they were updated to the new expectations (ef8ccfd).
+
+Corrections and errors: a Ruff `--fix`/`format .` run reformatted two unrelated files (`development_worker.py`, `test_pdf_parser_structured.py`), which were restored, after which only changed files were formatted. A long-line finding was resolved by shortening reasons. Draft copy saying a site "doesn't allow automatic downloads" was inaccurate for an allowlist miss and became "Automatic downloads aren't enabled for this site". The Playwright MCP browser was unavailable (no Chrome install), and a Python mock API could not accept connections on this host. The visual check therefore used a Node mock, the worktree's Vite server on spare ports and the frontend's own Playwright Chromium. The resulting screenshots led to shorter access guidance and minute-based waits.
+
+Verification: isolated backend `ara-autopdf-test` passed Ruff and 922 tests in 150.85 s (baseline 905 in 147.36 s). Frontend `npm run check` passed: strict tsc, ESLint and 489 tests in 65 files (19.57 s). `npm run build` passed with the existing chunk-size warning. The OpenAPI contract was regenerated. `e2e/fulltext.spec.ts` now expects automatic retrieval and a summary after download, but it was not run here (shared fixed ports); the lead runs browser regression at integration.
+
+Open items: ReaderGate (ARA-086) still titles the processing view after a download handoff "PDF uploaded. Processing continues in the background.". Its full-weight upload dropzone sits under the retrieval progress, and the header badge says "PDF needed" during retrieval; the lead has been told. Automatic summaries with a hosted default spend from the daily budget without a click. A local default that is ready in PostgreSQL but has an offline runtime starts a summary job that then fails visibly. The default host allowlist still excludes publishers such as Wiley; widening it is a policy decision and was not changed. No merge, rebase or push.
+
+**PDF source decision (ARA-087).**
+- **The user's question.** The user asked why the app keeps a list of download hosts when a DOI should lead to the PDF.
+- **The lead's answer.** A DOI resolves to the publisher's landing page, not to a PDF. The allowlist came from ARA-019's design, not from the user. Public-destination, TLS and bounds checks already guard the server. The list only adds publisher-courtesy and exposure limits.
+- **Pricing check.** The lead checked OpenAlex's current pricing. A free key gives $1 a day; single-work lookups are free. The content endpoint serves about 60M cached open-access PDFs at about $0.01 each. The user's `.env` has neither an OpenAlex nor a Semantic Scholar key, which fits the observed Semantic Scholar 429s.
+- **The decision.** PDFs come only from OpenAlex's stored copies. When there is no stored copy, or the paper is paywalled, the app shows the DOI link and the user uploads. The user is obtaining a key.
+- **Ticket.** ARA-087 deletes the allowlist and third-party host downloading.
+
+**Upload-to-library matching added to ARA-086.**
+- **The request.** The user asked that an uploaded PDF matching a library paper be flagged as a match. If the library paper has no PDF, the upload is attached to it. If it already has one, the user is asked whether to replace it. The user's words: "if there is the same paper on the library let's indicate the user there is match. If that one on the library has no PDFs attached apply the PDF, if there is PDF attached ask user to replace".
+- **Current behaviour.** Ingestion only appends the warning "PDF DOI matches another paper; reconcile bibliographic records manually." and keeps a duplicate paper.
+- **The ARA-086 brief now adds:**
+  - matching by DOI or arXiv ID, or a strict title match;
+  - attaching to a matched paper that has no PDF;
+  - Replace or Cancel when the matched paper already has a PDF;
+  - per-row decisions in multi-file uploads;
+  - late matches found by background enrichment;
+  - a plain warning when an upload into a specific paper belongs to a different paper.
+- **Constraints.** No automatic summary or other paid work starts while a decision is pending, and the pending state is durable in PostgreSQL.
+
+## 2026-10-09 — ARA-086 upload overhaul and accurate metadata
+
+The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat/ara-086-upload-metadata`. The ticket came from the user's feedback: the "processing continues in the background" popup was confusing, an uploaded paper was titled `paper.dvi`, and OpenAlex (default) or Semantic Scholar should supply the metadata, with local extraction as the fallback and resilience to rate limits. Tests ran in the isolated `ara-upload-test` project. The baseline was 905 backend tests passing in 150.66 s.
+
+**Diagnosis of `paper.dvi`** (read-only access to `ara`):
+- The paper's row had `title=paper.dvi` with provenance `pdf`. Its authors and year came from `llm`.
+- The original (`sec18-han.pdf`, USENIX Security 2018) was copied to a scratch directory outside the repository. Its Info dictionary had `title: paper.dvi`, an empty author and `creator: dvips(k) 5.997`.
+- `extract()` copied the Info title verbatim. The first page is a USENIX cover page with the real title set at 24 pt.
+- A read-only OpenAlex `title.search` found W2889518255 with the same title, year 2018, venue "USENIX Security Symposium" and the surname Han. Semantic Scholar's `/paper/search/match` found it too, but its abstract was elided.
+
+**Decisions:**
+- **Parser.**
+  - An Info title is dropped when it is a file name, an application prefix, an identifier, a placeholder or a file stem.
+  - An Info title is also dropped when the first two pages do not print it.
+  - Otherwise the title is the first page's largest horizontal text in the top 60%. Rotated text, such as arXiv's 20 pt margin stamp, is skipped. The text must be at least 1.15 times the size of the body text, the size that carries the most characters.
+  - Embedded DOIs (Info subject/keywords and XMP) win over DOIs in the text. The arXiv ID from page 1 becomes a clue.
+- **Lookup acceptance.**
+  - A title hit needs a normalized-title difflib ratio of at least 0.9, or a prefix of 5 or more words. An author surname must also agree (a listed author, or a surname of 3+ letters printed on the first pages), or the year.
+  - An identifier hit must be the paper printed on the first pages, because a DOI in the text can be a reference's.
+  - Provider values replace values from `pdf` or `llm`, never `manual` ones.
+  - A record that confirms the printed title keeps the PDF's capitalisation.
+  - Venue lives in the linked record's snapshot, so no migration was needed.
+- **Durability.**
+  - A `metadata` job is queued in the commit that makes the document ready. It is queued only for papers without a provider record, and once per document.
+  - The chosen source goes first, then the other one.
+  - Retries wait the larger of the longest Retry-After and a 60 s or 120 s backoff, capped at 30 min. The job stops at the existing 3-attempt constraint and keeps the PDF values; Details offers "Look up again".
+  - `retry_locked` gained an optional `delay_seconds`.
+- **UX.**
+  - Uploads go through XMLHttpRequest, so progress is real.
+  - One step list (Uploading, Reading pages, Finding paper details, Ready) appears in the dropzone, the reader gate, Details and library rows. The gate says "Preparing the PDF" and never "uploaded", so retrieved PDFs read correctly.
+  - Home and library open the picker directly and take drops anywhere on the page. The library accepts several files, each with its own row.
+  - A duplicate opens the existing paper with a note. Untitled papers show their file name.
+  - The header keeps "Ready to read" and adds a quiet "Finding paper details" note. When the lookup settles, the paper and library refresh in place.
+
+**Red → green, with the actual failures:**
+- **First run of the new backend tests:** 52 failed and 2 passed. The failures were:
+  - `AssertionError: assert 'paper.dvi' == 'A Bad Dream:... Are Sleeping'`, which reproduces the bug;
+  - `ImportError: cannot import name 'artifact_title'`;
+  - `AttributeError: 'AcademicSearch' object has no attribute 'by_arxiv'` and `… 'match_title'`;
+  - `ModuleNotFoundError: No module named 'app.services.metadata'`;
+  - `KeyError: 'duplicate'`;
+  - a 422 for `kind=metadata`.
+- **The first parser version broke two existing tests.** `test_pdf_upload_child_extraction…` failed with `'Abstract Gro...PDF evidence.' == 'Original PDF Title'`, and `test_configured_metadata_fallback…` with `'Traceable Re...da Researcher' == 'Traceable Research Systems'`. Pages set in one font size had their body lines joined into a "title". A new one-size test failed the same way, and the body-size rule (`12ad2ca`) fixed all three.
+- **Semantic Scholar's live `openAccessPdf.url` is `""`.** The arXiv test failed with `assert '' is None`, so the empty value now becomes `null`.
+- **Duplicate flag.** The existing duplicate-upload test was updated for the intended `duplicate: true` contract change.
+- **A wrong test, not a code fault.** The fallback test first stayed `queued` because its Semantic Scholar record had no agreeing author. The rejection was correct, so the fixture data was fixed.
+- **Frontend red:** 25 failed and 61 passed, plus a missing-module failure. The messages included `Unable to find role="list" and name "Preparation steps"`, `… role="region" and name "Metadata source"`, `Unable to find a label with the text of: PDF files` and `expected 'metadata' to be 'Paper details lookup'`.
+- **A settings test was itself wrong.** It used `getByRole` before the data loaded, and was corrected to `findByRole`.
+- **One edit in ARA-084's file.** `FullTextAccess.test.tsx` lost one line, the now-unneeded "Upload PDF" confirm click. ARA-084 was messaged beforehand.
+- **The live check found a real fault.** Anonymous Semantic Scholar answered 429 after OpenAlex had found no match, so lookups of unknown papers retried for minutes. The new test `test_the_chosen_source_answering_no_match_is_final…` failed with `assert ('queued' == 'completed')`, run in isolation. Only the chosen source's transient failure now schedules a retry (`176a15d`).
+- **The same live run changed the status display.** The paper showed amber "Finding paper details" instead of "Ready to read" while it was readable. Tests asserting "Ready to read" plus the note went red first, then green.
+- **File name while untitled.** It went red with `AttributeError: 'PaperDetail' object has no attribute 'file_name'`, then green.
+- **The polite step announcement** went red with `Unable to find … Uploading … [aria-live="polite"]`, then green.
+- **Test-after, labelled honestly.** The retry eligibility of an exhausted lookup was implemented before a test named it. Its API test passed at once. Removing `PROVIDER_RATE_LIMITED` from the retryable codes made it fail with `assert 409 == 202`, and the file was then restored.
+
+**Agent process errors:**
+- A `ruff format app` run reformatted the unrelated, already-unformatted `app/jobs/development_worker.py`. It was reverted with `git checkout`.
+- A focused pytest ran while the isolated live stack's dispatcher and worker were up against the same test database. The stack was stopped and the test re-run in isolation, with the same red result. Later tests always ran with the stack stopped.
+- The Playwright MCP browser was missing Chrome. The live check used the frontend's own Playwright Chromium from a scratch script.
+- One scripted edit failed its exact-match assertion after ruff had reformatted the file. It was redone against the new text.
+
+**Verification:**
+- Backend: 962 passed in 153.50 s, Ruff clean.
+- Frontend: `npm run check` passed with 501 tests, and `npm run build` passed with the existing over-500 kB chunk warning.
+- Live check on the isolated stack with the real APIs, uploading the user's PDF from home:
+  - the workspace opened in 87 ms;
+  - the header first showed `sec18-han.pdf`, then the printed title;
+  - about 11 s after it was readable, OpenAlex filled the authors, 2018, the venue and the abstract without a reload.
+- An arXiv-stamped synthetic PDF matched by its arXiv ID. An unknown synthetic title kept the PDF values. A repeated PDF showed "Already in your library".
+- `e2e/upload.spec.ts` passed 3/3 against that stack, on its own port with `--no-deps`. The full fixture-stack browser suite, including the updated E2E-03, is left to the lead.
+
+**Open:**
+- OpenAlex's record for the arXiv DOI of "Attention Is All You Need" reports 2025 and a different DOI, and a lookup copies that.
+- The paid LLM metadata step in ingestion still runs when authors are missing, which is often redundant now.
+- The sidebar still says "Untitled paper" while a PDF is read; it is outside ARA-086's files.
+
+**Multi-paper chats ticketed (ARA-088).** The user asked whether one chat could include several selected papers and appear under each of them. The lead surveyed chat scoping and found that chats pin one paper and one document, retrieval and citation validation are per document, and the workspace reader assumes one PDF. The lead called the feature doable but cross-cutting. It needs a migration plus a link table, cross-document retrieval with per-paper quotas (the hard part), paper-labelled citations, reader switching and a local-budget split. The lead's estimate, based on this round's observed agent times, was about 1.5–2.5 hours of one Opus agent. The user asked for a ticket only, while they decide; ARA-088 is planned and not started.
+
+**Citation highlight check (ARA-089).**
+- **The question.** The user asked whether clicking a citation could highlight the cited text.
+- **What the lead found.** Highlighting already exists. A read-only Playwright run against the user's running app clicked 9 citations in 3 papers, and every one reported "Highlighted the cited passage".
+- **The real problems,** visible in the screenshots:
+  - a faint pale-yellow highlight;
+  - the reader centres the page, not the passage;
+  - no use of the stored block bboxes when text matching fails (23 of 27 stored citations have boxes).
+- **Next step.** The user approved a ticket and a Sonnet agent.
+- **Separate finding.** Existing papers processed before ARA-086, such as the user's `paper.dvi`, keep their old titles; ARA-086 fixes only new processing.
+
+**Open models moved behind a flag and frozen (ARA-090); multi-document RAG standard for ARA-088.**
+- **The decision.** The user decided open models can't be managed well right now. Everything related to them moves behind an experimental flag, with no open-model surface when it's off, and open-model development is frozen to free time for features such as ARA-088. ARA-080 and ARA-081 are deferred, and AGENTS.md records the freeze.
+- **The user's data.** A read-only check of the user's data found nothing that depends on open models: all 6 papers use the default OpenAI embedding profile and all answers came from hosted models.
+- **A correction.** The user assumed OpenAI's small/medium/large embeddings are compatible. They are not mutually compatible: there is no "medium"; small is 1536-dimensional and large 3072-dimensional; and separately trained models produce different vector spaces even at equal length. One index needs one model, and switching re-embeds.
+- **ARA-088's design.** It now follows the industry pattern: one shared index filtered by document metadata, hybrid retrieval with RRF and reranking, per-document coverage, and LlamaIndex-style sub-question decomposition for comparisons. It favours a library-wide embedding model over per-paper overrides.
+
+**User decisions on embeddings and ARA-088 (2026-10-09).**
+- **Embedding model.** One library-wide embedding model replaces the per-paper choice. OpenAI small and large are both offered, with a clear warning that switching re-embeds the whole library (ARA-091, run in parallel with ARA-090).
+- **ARA-088 timing.** It starts after ARA-090 and ARA-091 land.
+- **Reader tabs.** A citation to another paper opens that PDF in a closable reader tab.
+- **Routing.** A multi-paper chat's URL uses the first paper in its list.
+- **Code check.** The lead confirmed embeddings are dimensionless HALFVEC with document-scoped exact scans, so the small profile needs no ANN index change.
+
+## 2026-10-09 — ARA-087 OpenAlex-only PDF retrieval
+
+The lead resumed the ARA-084 agent for ARA-087 in worktree `openalex-pdf` (branch `feat/ara-087-openalex-pdf`, off the integration branch with ARA-083/084/085). The user had decided: "We will use OpenAlex's thing. If it is not available on OpenAlex or behind Paywall we will present the DOI link to users and they will have to manually upload." `.env` held no OpenAlex or Semantic Scholar key. ARA-086 still owned `academic.py`, ingestion metadata and the upload UI.
+
+The OpenAlex facts were checked against the documentation and two unauthenticated probes. help.openalex.org documents the content endpoint (`content.openalex.org/works/{id}.pdf?api_key=`), the `has_content`/`content_urls` work fields, the 429 and `X-RateLimit-*` headers (with `X-RateLimit-Reset` in seconds until midnight UTC), and the R2 endpoint `a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com` with bucket `openalex-pdfs`. The pages disagree on corpus size and keyless allowance. The content endpoint answered `401 {"error":"API key required"}` without a key. A free DOI lookup (cost 0 in `X-RateLimit-Cost-USD`) returned `has_content {pdf: true}` and `content_urls`; the arXiv DOI of "Attention Is All You Need" resolved to a work whose primary DOI differs, so lookups trust OpenAlex's resolution rather than requiring DOI equality. The redirect to signed storage could not be observed without a key. The allowed storage hosts are therefore the documented R2 endpoint in path and virtual-host style, without wildcards, and remain unverified live.
+
+Decisions:
+- A new `integrations/openalex_content.py` holds `stored_work` (calling `AcademicSearch.request` unchanged for the free lookup) and `ContentDownloader`. The downloader sends requests straight to the pinned `PublicPDFTransport`, so no httpx client logs a URL carrying the key or a signature. The key goes only to `content.openalex.org`, including after a merged-work redirect. Redirects to any other host, or over plain HTTP, end `unsafe_url`.
+- Outcomes are `not_stored`, `api_key_required`, `rate_limited` (wait from `Retry-After`, else `X-RateLimit-Reset`, capped at a day), `unavailable`, `invalid_pdf` and `unsafe_url`. Lookup failures finish the job once instead of entering the job retry path.
+- Without a key, nothing is queued, the manual request returns 409 and the status reports `api_key_configured: false`.
+- Deleted as dead code: the host allowlist (config, Compose, `.env.example`), `pdf_download.py`, `fulltext_discovery.py`, attempt recording, the status fields `availability`/`locations`/`attempts`/`last_checked_at`/`source_host`, `DownloadResult.final_url`, the browser PDF, publisher and Semantic Scholar links, Find/Get PDF, VPN guidance, and the tests and fixtures for them. Old acquisition JSON still renders, and unknown old outcomes get a generic message with the DOI link.
+
+Red → green, in order:
+1. The 32 tests in `tests/test_openalex_content.py` failed with `ModuleNotFoundError: No module named 'app.integrations.openalex_content'`; all passed after the downloader was written. Six lookup tests then failed with `ImportError: cannot import name 'stored_work'` and passed after `stored_work`.
+2. Rewritten `test_fulltext_jobs.py`: 18 failed, 6 passed, including `assert 'unavailable' == 'downloaded'` and `'no_pdf_link' == 'api_key_required'`. After the service rewrite, the deletions and the resource wiring, it and the content tests passed (63).
+3. `test_automatic_fulltext_integration.py`: a keyless save still queued (`{'job_id': '…'} != {'job_id': None}`), `KeyError: 'api_key_configured'`, and the duplicate-save test found no job (`assert 0 == 1`). All passed after the key gate, the `findable` rule and the new status.
+4. Compose infrastructure: `'' is not true` (no fixture key) and `'FULLTEXT_ALLOWED_HOSTS' unexpectedly found`; both passed once Compose dropped the policy and the browser stack set a fixture key.
+5. Fixture server: `404 != 401`, `(404, None) != (429, '2')` and others; 25 fixture tests passed after the rewrite.
+6. Frontend: `FullTextAccess.test.tsx` and `fulltext-copy.test.ts` failed 14 of 20. Going green exposed a real defect: the DOI fallback rendered while the status query was still pending, which would flash the fallback before automatic retrieval started and dropped the key note. The fix renders nothing until the status arrives. The ARA-084 workspace test failed on the removed "Find PDF" button and was rewritten for the keyless DOI case. A screenshot then showed "Try again in 60 minutes" for a 3,598-second wait. A new case failed with `Expected "1 hour" Received "60 minutes"` and was fixed (5f357c7).
+
+Errors and corrections: the first red run of the rewritten Compose test used `assertNotIn` on the composed environment, so its failure printed every variable value, including the developer's hosted API key from the worktree `.env`, into local tool output. Nothing was written to files or commits. The assertions now compare names only. Whether to rotate that key is the user's call. A Python mock server could not accept connections on this macOS host, so the visual check reused the Node mock and the worktree Vite server on spare ports. Pre-existing formatter drift in unrelated files was left alone.
+
+Verification: isolated backend `ara-oapdf-test` passed Ruff and 916 tests in 156.95 s (baseline 941 in 157.33 s; old downloader, discovery and attempt tests deleted, 39 content/lookup tests added). Frontend `npm run check` passed: strict tsc, ESLint and 506 tests in 69 files (25.03 s). `npm run build` passed. Fixture tests passed 25, infrastructure 15, and the OpenAPI contract was regenerated. `e2e/fulltext.spec.ts` was rewritten for content, limit-then-retry, spent allowance, unusable/unsafe links and the 390 px DOI fallback, but not run (shared fixed ports).
+
+Not verified: a live download with the user's key, the real redirect host and status, real 429 headers, per-download cost, and whether `content_urls`/`has_content` ever disagree with the content endpoint. No merge, rebase or push.
+
+## 2026-10-09 — ARA-089 obvious and robust citation highlights
+
+**Scope.** Frontend only, on `feat/ara-089-citation-highlight`, in `citation-region.ts`, `PdfViewer.tsx`, `PdfReader.tsx`, `pdf-viewer.css`, `index.css` and their tests. No backend change.
+
+**Decisions:**
+- **Fallback order** is text match, then the stored boxes, then page-only. The new outcome `'region'` reads "Outlined the cited region on page N." Its visible note says the exact text could not be found.
+- **Box conversion.** I checked the real conventions before writing the unit tests. For PDFs made with PyMuPDF (plain, CropBox, rotated 90/180/270), PyMuPDF block boxes are relative to the CropBox and are NOT rotated with the page. A rotated page therefore needs the rotation applied. Each point goes to PDF user space (`view[0] + x`, `view[3] - y`), then through pdf.js `viewport.convertToViewportPoint`, which handles rotation and offset. The result is stored as percentages of the page.
+- **Percentages mean zoom needs no re-measuring.** The outline is an absolutely positioned child of the page wrapper, so it stays aligned at any zoom.
+- **Context styling.** The earlier test "context lines carry no tint" was a deliberate decision about stripes on the 3,200-character chunk. I kept its intent (no background on context) and replaced the test. Context now gets a thin dotted underline, which is `text-decoration`, not a background.
+- **Strong highlight.** It uses the full `--evidence` tint plus a 2 px inset edge line. The new token `--evidence-edge` (oklch 0.58 0.13 75) measures 4.4:1 on white. Pages stay white paper in both themes, so the token has one value, as `--evidence` does.
+
+**Red → green (observed):**
+- `citation-region.test.ts` (7 tests) first failed with `Failed to resolve import "./citation-region"`. The next run failed with `TypeError: PageViewport is not a constructor`, because pdfjs-dist exports `PageViewport` as a type only. The test now uses a small replica of the scale-1 transform. The replica was checked against the real viewport in a scratch node run. It then went green.
+- `pdf-viewer-css.test.ts`: 4 new or changed tests failed, e.g. `expected '/* PDF reader (ARA-037). Pages stay w…' to match /\[data-citation-region\]…/`. They went green after the CSS and token change.
+- `PdfViewer.test.tsx` region block: 7 of 10 failed, e.g. `expected "vi.fn()" to be called with arguments: [ 'region' ]`. After implementing, 3 still failed, and each was fixed:
+  - `expected '10.000000000000005%' to be '10%'`, fixed by rounding percentages;
+  - a redraw test (`expected <div data-citation-region …> not to be <div …>`), fixed by keying outlines by jump nonce;
+  - `expected "vi.fn()" to be called 1 times, but got 2 times`. This was a test bug: the zoom test passed a new `highlight` object on each render, which restarts the jump. It now passes a stable one.
+- **Test-after.** The `workspace.test.tsx` test for the region copy was written after `PdfReader.tsx` was changed, so it passed immediately. It was not run red.
+
+**Errors and corrections:**
+- `npm run check` failed lint (`react-hooks/set-state-in-effect`) on my first clearing approach. I replaced it by hiding outlines whose nonce differs from the current jump.
+- `sed` with `|` in the replacement failed for the debug patch. I used a Python edit instead.
+- `nohup` could not detach under the harness. I started Vite as a plain background job and killed it at the end.
+
+**Visual verification** (Vite on port 5191, read-only against the user's dev API, Playwright Chromium, light and dark; screenshots are in the scratchpad and not committed):
+- **Highlight.** The strong sentences are a clearly visible amber with an edge line, and the context lines have a dotted underline. Both are readable on dense pages.
+- **Centring.** The passage centre was 0 px from the reader centre after settling on all 12 cold and warm clicks across the 3 papers. It is clamped when the passage is near the very top (page 1: -189 and -319 px). The ticket's claim that the reader scrolls only to the page did not reproduce. `markPage` already centred the first strong mark. What looked wrong in the screenshots was most likely the smooth scroll still moving: the offset reads about -170 to -330 px at 300 ms and 0 by 1.5 s.
+- **Box fallback.** I forced text matching to fail with a local, uncommitted toggle, since reverted. Stored boxes were outlined on pages 1, 2, 3, 7 and 15 of 3 papers, aligned with the text blocks. The paper "Attention Is All You Need" has no boxes on its chat citations (`bboxes: []`, older chunks), so those correctly stayed page-only. The other two papers' chats carry boxes on every citation (15 of 15 and 8 of 8).
+- **Clean and stable.** A second citation cleared the first (marks and outlines). After zooming twice, the outline and marks kept their page percentage (50.82 % and 59.44 % from the left), and the passage stayed in view (about 100 px off-centre).
+- **Real-PDF geometry.** PDFs made with PyMuPDF (plain, cropped, rotated 90/180/270, cropped and rotated) put the pdf.js text baseline inside the converted region in all 6 cases.
+
+**Verification:** `npm run check` passed with 73 files and 551 tests, and `npm run build` passed with the existing over-500 kB warning.
+
+**Open:**
+- No rotated PDF in the app.
+- Cited boxes sprawl across several blocks for a 3,200-character chunk, so the outline shows the whole chunk, not the claim's sentence. Only the first box is centred.
+- A citation spanning pages is text-matched on its first page only.
+
+**Fade-out (user request after the first round: "it stuck forever").**
+- **Behaviour.** A highlight pulses, holds for `HOLD_MS` (4 s), fades for `FADE_MS` (1.5 s), then is removed. The constants are in `highlight-lifetime.ts`.
+  - Marks, context underlines and outlines fade through CSS transitions, driven by `data-citation-fade="out"` on the reader. The transition is declared only in the fade state, so highlights still appear instantly.
+  - Under reduced motion the attribute is never set, and the highlight is removed after the same hold.
+  - At the end of the fade the same clean-up as a new citation runs. The request is marked `expired`, so a text layer redrawn by a zoom cannot bring the highlight back.
+  - A re-click stops the old timers first.
+  - Hovering a mark pauses the countdown, with the time left kept. Leaving resumes it. Arriving during the fade restores full strength and gives about 1 s once the pointer leaves. Outlines let the pointer through, so hovering one is a rectangle test on `pointermove`.
+- **Red first (fake timers).** 11 new `PdfViewer` tests failed on the real assertions: `expected null to be 'out'` and `expected [ …(3) ] to deeply equal []`. The first run before the constants file existed failed with `Failed to resolve import "./highlight-lifetime"`. They went green after the implementation.
+- **CSS.** The fade-state rule test failed first with `expected '' to match /background-color:\s*transparent/`.
+- **Corrections.** The new transparent-background fade rule tripped the older "context has no background" test. I narrowed that regex to "no non-transparent background". The Page stub in the test now takes `width` as a dependency to simulate a zoom redraw.
+- **Test flakiness.** One full `npm run check` under machine load showed 4 failed files (4 tests). I did not capture which. A re-run of the whole suite passed, with 73 files and 564 tests.
+- **Live check** (Vite on port 5191, read-only):
+  - **Hold:** at 2.5 s there were 5 strong and 8 context marks, with the full tint `oklch(0.93 0.13 96 / 0.75)`.
+  - **Fade:** at about 4.8 s the fade state was on, with the tint at about 0.26 alpha.
+  - **After:** at about 7 s no marks remained, and the screenshot shows a clean page except for the PDF's own link boxes.
+  - **Hover:** with the pointer on a mark for 8.8 s the highlight stayed. After the pointer left, the fade began about 3 s later and the highlight was gone by 6.5 s.
+
+### Follow-up: XMP, the LLM reversal, library matching and retrieval wording
+
+After the first round, the lead fast-forwarded the branch to the integration branch, which already contained ARA-083, ARA-084 and ARA-085. The follow-up was built on that state. Its baseline was 998 backend tests (that run also picked up the first, unfinished XMP tests) and 530 frontend tests.
+
+**Scope changes from the user, relayed by the lead:**
+- Read XMP.
+- No GROBID.
+- Remove LLM metadata extraction. The user then reversed this ("Let's keep the LLM based metadata extraction intact then. I think it makes sense."). Nothing had been removed, so nothing needed restoring.
+- Keep the LLM step on the saved default model and effort.
+- Match uploads to library papers, with the user's request: "if there is the same paper on the library let's indicate the user there is match. If that one on the library has no PDFs attached apply the PDF, if there is PDF attached ask user to replace."
+- From ARA-084's agent:
+  - name the processing view without a source;
+  - demote uploading while automatic retrieval runs;
+  - say a PDF is on its way in the header badge and the composer.
+- ARA-087 (OpenAlex-only retrieval) was noted, so no UI was built around publisher or VPN states.
+
+**Decisions:**
+- **XMP ranking.** The XMP `dc:title` ranks above the Info title. Both pass the junk filter and must be printed on the first pages to beat the printed title. `dc:creator` fills a missing author. `prism:doi` or `dc:identifier` is the first DOI clue. `prism:publicationName` becomes a venue clue that breaks ties between title matches. Cover and publication dates give the year; file dates never do.
+- **LLM step and catalog lookup.** The inline LLM step keeps its gating. The catalog lookup runs after it and reads the LLM's title and DOI as clues, so the order is unchanged. When a new upload matches a library paper by local identifiers, the LLM step is skipped. That paper already has its bibliography, and the pending case must not spend money. This narrows, not widens, when the model runs. The LLM provenance still records `settings.default_model` rather than the saved default it actually used; that predates this ticket and was left unchanged.
+- **Matching.**
+  - Only uploads without a target paper are matched; the ingest payload carries `new_paper`.
+  - Identity checks run in order: DOI, then arXiv DOI, then the strict title rule.
+  - No PDF on the matched paper: the upload is attached in the ingest commit, so ARA-084's automatic-summary hook fires for that paper (`active_document_id` equals the document).
+  - A PDF on the matched paper: ingestion stops before storing pages. The document stays `processing` and is never marked ready, so the summary hook, index reconciliation (which covers ready documents only) and the catalog lookup are never reached.
+  - Replace re-ingests the document on the library paper, so all paid work flows through the normal ready transition after the choice.
+  - Cancel deletes the placeholder, its document by cascade, and the stored original.
+- **Late matches.** A late match records the same pending state. Attaching a document that is already ready indexes it for its new paper and calls `queue_automatic_summary` once. Its chats and summaries move with it.
+- **Storage of match state.** State is keyed rows in `model_configurations`: `upload_match:`, `paper_redirect:` and `pdf_doi_owner:`. No migration was needed.
+- **Visibility of pending uploads.** Pending placeholders leave `GET /papers`, so the library, sidebar and picker do not show them, and appear under `GET /uploads/matches` instead. While a placeholder is still processing, before its match is known, it does appear as a new paper.
+- **Wording.** The processing badge reads "Preparing PDF". While retrieval runs, the header reads "Getting PDF", the composer reads "You can ask questions once the PDF is ready.", and the dropzone becomes "Upload your own copy instead". The edits to `ConversationComposer`'s callers were limited to the gate argument.
+
+**Red → green:**
+- **XMP:** `'Module While... Are Sleeping' == 'A Bad Dream:...'` (the Info title had won) and `KeyError: 'venue'`. The DOI-from-XMP tests passed at once, because the raw packet was already scanned for a DOI.
+- **Venue tie-break:** `TypeError: Clues.__init__() got an unexpected keyword argument 'venue'`.
+- **LLM characterization test.** The test pinning the saved default model and effort passed at once, because the behaviour already existed. Hardcoding the settings default made it fail with `'gpt-5.6-luna' == 'gpt-5.6-terra'`, and the original was restored.
+- **Matching:** 7 failed and 1 passed. The failures included the model being called (`assert [{'input': 'E...6-luna', ...}] == []`) and `'PaperDetail' object has no attribute 'upload_match'`.
+- **One intended behaviour change.** The old DOI-dedup test expected a new upload of a library paper to stay a duplicate. It now covers a new version uploaded into an existing paper, which keeps its target and reports `pdf_doi_owner`.
+- **Frontend:** 8 failed. The failures included `Unable to find … This PDF matches …`, `… role="region" and name "Library match"`, `… Getting PDF` and `… role="region" and name "Needs your choice"`.
+- **Live-check finding.** The live check showed the library still listing the placeholder as "Processing PDF" after it had joined a paper. A test for the list refreshing on settle went red (`Unable to find … Preparing PDF`), then green once settling refreshed every paper query.
+
+**Agent process errors:**
+- A new test name exceeded the line length; the just-made local commit was amended before anything else used it.
+- A row check treated mockApi's empty-collection default as a redirected paper. Real payloads always carry `id`, and the check now requires one.
+- Two full frontend runs on a machine with load average 17–18 timed out in unrelated suites and in the first lazy route load of the new test file. The failing files passed when run alone and in repeated runs, and the new file's first route wait was lengthened.
+
+**Live check** (isolated stack, real OpenAlex, the user's PDF copied read-only from `ara` and removed afterwards):
+- The USENIX paper was saved from OpenAlex, then the PDF was uploaded from home. It matched by the strict title rule (OpenAlex's lowercase title against the printed one, plus the surname Han) and was attached. The browser landed on the saved paper with the note.
+- A byte-different copy uploaded in the library showed "Matches “A bad dream…”, which already has a PDF" with Replace PDF and Cancel, while the API listing held one paper.
+- Replace re-read the copy on the saved paper, and the library still held one paper.
+
+**Crossed messages.** The lead's resume message ("library matching not yet implemented") was sent before the report above. The branch had not been reset, and matching, the retrieval wording and the saved-default LLM test were already on it (`9b53e7b`, `5ed5c8b`, `e7567a7`, `238104f`, `0df528e`).
+- **One further change.** The composer for a paper whose PDF is being read used to say "Questions open when the PDF finishes processing." It now uses the same words as during retrieval: "You can ask questions once the PDF is ready." (`2c7dde4`).
+- **Red, then green.** The updated expectation in `ConversationPane.states.test.tsx` failed first with `Unable to find … You can ask questions once the PDF is ready.`
+
+**Decisions after ARA-086's follow-up (2026-10-10).**
+- **The LLM skip.** ARA-086 skips the LLM metadata step when an upload matches a library paper. The user had asked to keep that step intact, so the lead raised it. The lead recommended keeping the skip: the matched placeholder is absorbed and its metadata discarded, so the call would only cost money. Unmatched PDFs keep the unchanged fallback. The user agreed.
+- **The settings-table workaround.** The lead recommended moving upload-match state out of the prefixed `model_configurations` rows. The reasons:
+  - there are no foreign keys, so orphan rows and dangling redirects can occur;
+  - the library listing uses a string-prefix NOT IN filter;
+  - per-upload state is mixed into the settings table.
+  The user approved ARA-092, which uses migration 0009 after ARA-091's 0008 and comes before ARA-088. The workaround came from the lead's no-migration rule for this round.
+
+**ARA-091 implemented: one library-wide embedding model (2026-10-09).**
+- **Order, red first.** Tests were written before code and run in the isolated `ara-embed-test` Compose project. First run: 13 failed, 54 passed across the retrieval files. Failing assertions included `KeyError: 'openai-3-small'`, `assert 'PaperRetrievalUpdate' not in {...}`, `assert 200 == 405` (the per-paper PUT still existed) and `assert 404 == 200` for the missing estimate route. Implementation then ran the focused set green except for the migration, schema and endpoint-list tests: the migration test first failed on my own fixture row (`null value in column "metadata_provenance"`), the schema test needed the migrated database, and the contracts test still listed the removed PUT. All three were corrected. The full suite then passed: 1005 passed in 190 s.
+- **Frontend red.** `retrieval-settings.test.tsx` and `search-index.test.tsx` went red first (5 failed: no `Search model` radiogroup, no `alertdialog` titled "Re-embed the whole library?", and the ready-index test still found the per-paper "Change model" button). After the components changed, the settings and index files passed (57 tests), then `npm run check` passed with 72 files and 532 tests, and `npm run build` succeeded.
+- **Catalog.** Added `openai-3-small` (1536 dimensions, 8191 input tokens, $0.02 per million). The price and limit come from several third-party price pages; I did not check OpenAI's own pricing page, so confirm before relying on the dollar figure.
+- **Transition and pruning.** Changing the library setting still calls `reconcile_indexes`, which queues one embed job per ready document through the existing durable jobs. `ready_index` already prefers the library model and otherwise serves any ready index, so a document keeps answering from its old vectors, or from keyword search if it has none. New `prune_other_models` deletes other models' vectors and index rows only after the library model's index is ready, either when its embed job finishes (not for a staged rebuild, and only if the chunk set is still current) or when a later reconcile sees it already ready. It skips any model with a queued or running job, so an in-flight job never writes into a deleted row.
+- **Per-paper override removed.** Deleted the PUT route, `PaperRetrievalUpdate`, `PaperRetrieval.source`, `effective_profile()` (callers use `default_profile`), the model column and the frontend selector with its tests. Migration `0008_library_embeddings` drops `papers.retrieval_profile`. Papers with an override follow the library setting; startup reconcile queues their new index and prunes the old one. The upgrade test starts at `0007_feature_merge` with an overridden paper and checks the column is gone, both papers remain and the library setting is untouched.
+- **Estimate and dialog.** New `GET /retrieval/reindex-estimate?profile=` counts ready documents without a ready index for that model, sums their stored chunk token counts and multiplies by the catalog price. Settings shows it in a stock `AlertDialog` before `PUT /retrieval/settings` is sent; Cancel sends nothing.
+- **Not done or not verified.** No Playwright run (the brief excludes it; no e2e spec used the per-paper selector). No live OpenAI call: embeddings of the small model were exercised only through the in-process fixture, which now derives vector size from the model name. The full-suite image build tagged `ara-backend:development`, which the user's dev stack also uses, as the existing test script always does.
+- **Readiness bug found by the lead.** `services/health.py` pinned `SCHEMA_REVISION` to `0007_feature_merge`, so a stack migrated to 0008 would never report ready. My suite missed it because `test_fulltext_integration.py` stamps `alembic_version` from that same constant. Red first: `tests/test_schema_revision.py` failed with `assert ['0008_library_embeddings'] == ['0007_feature_merge']`. Fixed by setting the constant to 0008; the test now guards drift against the single Alembic head. Stamping 0007 had also left the shared test volume inconsistent (`DROP COLUMN` failed on re-migrate), so I reset only the `ara-embed-test` volumes. After that: 1006 passed, plus a readiness check on the migrated database.
+
+**ARA-092 implemented: upload-match state in tables (2026-10-09).**
+- **Schema.** Migration `0009_upload_match_tables` adds `upload_matches` (key `placeholder_paper_id`; foreign keys to the placeholder, library paper and document, all `ON DELETE CASCADE`; checked `matched_by` and `found_by`), `paper_redirects` (key `old_paper_id`, a plain UUID because the placeholder row is deleted on attach; `paper_id` cascades) and `documents.doi_owner_paper_id` (`ON DELETE SET NULL`). Each foreign key has an index.
+- **Data move.** The migration reads the prefixed `model_configurations` rows in Python, copies those whose papers and documents still exist, drops orphans and keys that are not UUIDs, then deletes every prefixed row. Unknown `matched_by`/`found_by` values fall back to the code's defaults (`doi`, `ingest`). The downgrade writes the three prefixed row kinds back before dropping the structures.
+- **Service.** `upload_match.py` now stores state in the tables. `library_papers()` is `NOT EXISTS` on `upload_matches` and `GET /uploads/matches` uses the matching `EXISTS`. Locking, the advisory key `upload_match:<placeholder>` and idempotency (`ON CONFLICT`) are unchanged. `SCHEMA_REVISION` is `0009_upload_match_tables`.
+- **One behaviour difference by design.** If the library paper is deleted while a match is pending, the cascade removes the match, so the placeholder is listed as an ordinary paper at once. Before, it stayed hidden behind an orphan row. The in-lock "library deleted meanwhile" branch of `resolve` remains for races.
+- **Red → green.**
+  - The migration test first failed with `Extra items in the left set: 'upload_matches' 'paper_redirects'`, after one fixture error of my own (`null value in column "warnings"`) was corrected.
+  - The seven integration tests failed with `ImportError: cannot import name 'UploadMatch' from 'app.models.research'` (and `PaperRedirect`), plus `'Document' object has no attribute 'doi_owner_paper_id'`.
+  - The pinned-head assertions in `test_fulltext_migration.py` and `test_library_embedding_migration.py` failed with `assert '0008_library_embeddings' == '0009_upload_match_tables'`.
+  - After the migration, models and service: 38 passed across the focused files. Full suite: 1005 passed in 204 s. Frontend `npm run check`: 574 tests passed; `npm run build` succeeded.
+- **Contract.** `generated.ts` regenerated from `app.openapi()` is identical to the committed file. `docs/api-contract.md` now names the tables and the new head.
+- **Process notes.** Running `ruff format` on the whole tree also reformatted two unrelated files (`development_worker.py`, `test_pdf_parser_structured.py`); I reverted them. The test count differs from the 1006 logged for ARA-091 by an amount I did not trace (997 plus my 8 new tests is 1005).
+- **Not verified.** The migration ran only on isolated test databases, not on the user's development data. There is no Playwright run.
+- **Alembic `path_separator` warning.** `test_schema_revision.py` run with `-W error::DeprecationWarning` failed first (1 failed, 1 passed, `alembic/util/messaging.py:83: DeprecationWarning`). Adding `path_separator = os` to `alembic.ini` made it pass (2 passed). `prepend_sys_path = .` has no separator in it, so it resolves as before, and `migrate` ran cleanly. The full suite then reported 1005 passed with no warnings summary. The fix was first committed in `624c010` without this red run and journal line; the red was reproduced afterwards by restoring the old `alembic.ini` temporarily.
+
+**2026-10-09: open models behind `EXPERIMENTAL_OPEN_MODELS` (ARA-090).** An Opus agent built it on `feat/ara-090-open-models-flag`, testing in its own `ara-flag-test` project. The user's running `ara` stack and its volumes were not touched.
+
+**Decisions:**
+- **Where the flag lives.** `experimental_open_models` in `core/config.py`, default false. The browser learns it from a new `GET /api/v1/features` (`{open_models}`). `/settings` was ruled out because its body is also the PUT schema, and `/health/ready` reports readiness, not features.
+- **Gate at the boundaries.** One small module, `app/integrations/open_models.py`, holds the checks. They sit in the catalog routes, route mounting, job dispatch and lease recovery, the embedding factory and the chat, summary and model-availability entry points. The frozen open-model code is unchanged.
+- **Stored state is reported, not hidden.** A saved local default model, search model or reranker comes back from the catalogs as an unavailable entry with `OPEN_MODELS_DISABLED`. The composer and Settings can then name it and ask for a hosted model, instead of silently picking a paid one. `PUT /retrieval/settings` keeps an unchanged saved local value, so changing the other field still saves.
+- **Keyword search for a local paper.** A paper on a local search model searches by keywords even when a hosted index exists, so no paid query embedding happens without the user's choice.
+- **Held, not settled.** The dispatcher publishes nothing to the `local-models` and `local-generation` lanes, and lease recovery skips those jobs, so unsettled downloads, deletions and local summaries keep their state. Startup model preparation does not run. Embed jobs for a local profile, which ingestion still queues, settle as unavailable through the existing mechanism; the startup reconcile queues them again when the flag returns.
+- **Tests.** An autouse fixture sets `EXPERIMENTAL_OPEN_MODELS` from a new `open_models` marker, and the test stack pins the flag off. Existing open-model tests keep their assertions and run with the flag on. Frontend tests turn it on with a mocked `GET /features`.
+- **Compose.** `ollama` and `model-worker` sit under the `open-models` profile; nothing depends on them and the `ollama-models` volume stays declared. The browser stack sets the flag on, and its model worker already ignores profiles. `generated.ts` comes from the flag-on schema, so it still describes the four model routes.
+
+**Red → green, with the actual failures:**
+- **Backend.** Baseline 998 passed. The 14 new tests first ran 13 failed and 1 passed (the readiness check, which already held). The failures included `AttributeError: 'Settings' object has no attribute 'experimental_open_models'`, `assert 202 == 404` for a model download, `assert 'hybrid' == 'keyword'` for a paper on Qwen3, `assert 'qwen3-rerank-0.6b' is None` for the saved reranker and `TypeError: dispatch_once() got an unexpected keyword argument 'open_models'`. After the gate they passed.
+- **Existing open-model tests.** With the flag off by default, 99 of them failed, with `OPEN_MODELS_DISABLED` or missing local catalog rows. They were marked, 20 whole modules and 45 tests in 12 mixed modules, and passed unchanged.
+- **Three test adaptations.** The hosted `/models` unit test failed with `AttributeError: 'types.SimpleNamespace' object has no attribute 'sessions'`, because the route now reads the saved default; the test now supplies it. A local validation test passed `SimpleNamespace()` without settings, so it gained settings, and the gate now reads the flag only for local keys. The two dispatcher readiness tests needed the flag in their fake settings and `**options` on their fake recovery.
+- **Frontend.** The 8 new tests first ran 7 failed and 1 passed (the flag-on case). Examples: `expected document not to contain element, found <input` for the local radio in Settings, and `expected [ 'GPT-5.6 Lunagpt-5.6-luna', …(1) ] to deeply equal [ 'GPT-5.6 Lunagpt-5.6-luna' ]` in the composer menu. Then 37 existing local-model tests needed the feature reported on, and one Activity empty-state test now expects the flag-off copy.
+- **Two wrong frontend assertions.** `Found multiple elements with the text: Open models are turned off…` came from the reason showing in both the row and the reasoning note, so the test now checks the row's description. `Unable to find … role "status" and name "Selection"` came from the open menu hiding the page, so the test closes it first.
+- **Compose.** The new infrastructure tests failed 3 of 4 against the pre-change compose files, for example `{'ollama', 'model-worker'} is not false`. After profiling, four existing checks failed with `KeyError: 'model-worker'`, `KeyError: 'ollama'` and `[] != ['ollama']`, and now ask for the profile. One of them, in `test_compose_fulltext.py`, belongs to ARA-087's area; it gained one environment line. `scripts/test-stack.py config` now checks both profile states, and failed against the old compose with `expected set(), got {'ollama'}`.
+
+**Agent process errors:**
+- The session scratchpad is shared with other agents. A log named `full2.log` collected another agent's `ara-embed-test` build output beside this run's result. Evidence moved to its own folder.
+- One focused run used `-p no:logging`, which removed `caplog` and produced a false `fixture 'caplog' not found` error. Later runs kept logging on.
+- Ruff caught two over-long lines in the new code; they were rewritten.
+
+**Verification:**
+- Backend: 1012 passed in 166.13 s with Ruff clean (`scripts/test-stack.py test`).
+- Frontend: `npm run check` passed with 538 tests in 73 files, and `npm run build` passed with the existing chunk-size warning.
+- Infrastructure: 19 tests passed.
+- `docker compose config` lists neither service by default and both with the profile; the test stack pins the flag off and the browser stack turns it on.
+- A live flag-off test stack started healthy without Ollama. `/health/ready` checked only the database, storage and Redis; `/features` said `false`; the catalogs were hosted only; and a model download returned 404.
+
+**Not run:** the Playwright suite, left to the lead on its fixed ports, and a live flag-on stack with real Ollama weights.
+
+**ARA-090 merged with the UX feedback round (2026-10-09).** The lead asked this agent to merge `feat/ux-feedback-round` (`7fb04ee`: ARA-086, ARA-087, ARA-089, ARA-091) into the flag branch, as a one-time exception to the no-merge rule. The merge commit is `aea2946`.
+- **Conflicts.** There were nine conflicted files:
+  - `routes/retrieval.py`: the per-paper PUT and its open-model refusal were dropped; ARA-091's prices were kept beside the hidden local install key; a rebuild is still refused while the library model is local.
+  - `SearchIndexPanel.tsx`: ARA-091's version, without this branch's Build/Rebuild guard.
+  - `ProfileOptions.tsx`: no "Use default" row; local rows stay hidden or frozen, and their price copy is hidden while the flag is off.
+  - `README.md`: ARA-087's OpenAlex-only text, with open models still in one Experimental section.
+  - The journal: both entries kept.
+  - Four tests renamed by ARA-091: the merge kept the new names and the `open_models` markers.
+- **Rewritten test.** The test for a paper on a local profile became "the library default is a local profile". ARA-091 removed `papers.retrieval_profile`.
+- **New gate, red first.** `GET /retrieval/reindex-estimate` priced a local model while the flag was off, failing with `assert (200 == 409)`. It now returns 409 `OPEN_MODELS_DISABLED` (`0155947`), and stays free with the flag on.
+- **Re-embed dialog.** The Settings re-embed dialog never asks for a local model while the flag is off, because local rows cannot be chosen there. Its new test passed at once, so it is a characterization test.
+- **Catalog growth.** Two flag tests first failed only because the hosted catalog now includes `openai-3-small`, and their expectations were updated.
+- **One mixed test.** In the full run, ARA-091's mixed estimate test failed on its local line, because local estimates are now refused while off. It now runs with the flag on.
+- **Verification.** Backend: 1013 passed in 192.73 s, with Ruff clean. Frontend: `npm run check` passed with 583 tests, and `npm run build` passed. Infrastructure: 19 passed. A live flag-off test stack served hosted-only catalogs, refused the local estimate and returned 404 for a model download.
+- **Warnings.** Both came from the merged branch: an alembic `DeprecationWarning` in `test_schema_revision.py` and a react-refresh lint warning on `priceLabel`. At the lead's request, `priceLabel` moved from `ProfileOptions.tsx` to a sibling `profile-format.ts`, and `npx eslint .` now reports no problems. This was a refactor, so lint was its only check; 583 tests and the build still pass.
+
+**Context window decision (ARA-093).**
+- **The question.** The user asked why the app doesn't use each model's native window (about 1M).
+- **What the lead found:**
+  - The window exists only as one shared constant, not as per-model catalog data.
+  - The 64K working budget acts as a fill target, not a pure ceiling. Evidence packing adds same-section neighbours until the budget is full, and history stays verbatim until it reaches 25% of the budget.
+  - Raising the ceiling would therefore raise spend per question.
+- **Industry practice:**
+  - OpenAI file search retrieves about 16K tokens.
+  - Claude Projects switches to retrieval near the window.
+  - NotebookLM stresses retrieval and ranking despite a 1M window.
+  - Scite and SciSpace use retrieval and publish no token figures.
+- **The decision.** The user kept 64K "unless we decide" otherwise. ARA-093 is limited to putting each model's window and limits in the catalog, with no change in behaviour. Full text when it fits, as Claude Projects does, was noted as a later option for multi-paper chats.
+
+**Retrieval orchestration decided (2026-10-10).**
+- **Context strategy.** After comparing NotebookLM, Claude Projects, Open Notebook (lfnovo/open-notebook) and the research, the user kept retrieval for every answer, to preserve the value of the retrieval stack. Whole-paper mode was rejected. The user wants the context budget to follow the model window and the logic to follow published principles, with no feature flag keeping two implementations.
+- **Lead's corrections to earlier claims.** The packer is capped at 16 passages averaging 333 tokens, so the user's real answers averaged 6.8K input tokens. They were not filling a 64K "fill target", and our evidence is smaller than OpenAI file search's ~16K. Earlier statements calling the budget a fill target and claiming ~37K of evidence were wrong.
+- **Design.** Written to `docs/plans/retrieval-orchestration.md`:
+  - W derived from the window, with a 272K price-tier cap;
+  - history H = min(32K, 25% of W);
+  - a conservative first pass (≤24 passages, ≤16K) with pruning, never padding;
+  - per-paper floors and sub-questions;
+  - strongest-first-and-last ordering;
+  - section summaries;
+  - one Self-Route-style wider retry;
+  - map-reduce on small windows.
+- **Tickets.** ARA-093 implements the budgets, ARA-088 multi-paper chats, and ARA-094 the evidence changes (ARA-079 folded in). No check set is possible, so these are research-backed but unmeasured on the user's papers.
+
+**No paper cap in multi-paper chats (2026-10-10).** The user expected an unlimited number of papers per chat. The 5-paper cap was the lead's own carry-over from the frozen local-model budget and was never approved. The ARA-088 agent was told to remove the cap and design for any N:
+- one filtered search across the chat's documents, with a fixed candidate pool;
+- per-paper floors while they fit, then routing by relevance, always keeping papers the question names;
+- sub-questions only for targeted papers;
+- chip and tab overflow in the UI;
+- a 30-paper test.
+The design doc is updated.
+
+## 2026-10-10 - ARA-093 hosted catalog and window budgets
+
+**Catalog.** `integrations/hosted_catalog.py` holds one `HostedModel` per GPT-5.6 model: window, native maximum output, answer reserve (policy, 4,000), prices for input, cached input, cache write and output, the 272K price-tier boundary, reasoning levels and encoding, with the model-page URL as source. `HOSTED_WINDOW`, `HOSTED_OUTPUT_TOKENS`, `PRICES`, `HOSTED_REASONING_EFFORTS` and `OUTPUT_LIMIT` were deleted, not mirrored, so tests that patched them now patch the catalog.
+
+**Verified against OpenAI (read-only fetches, 2026-10-10).**
+- Each model page (`developers.openai.com/api/docs/models/gpt-5.6-{sol,terra,luna}`) gives a 1,050,000 window, 128,000 maximum output and reasoning levels none to max.
+- Input, cached input and output per million tokens: Sol 4, 0.4, 20; Terra 2, 0.2, 12; Luna 0.2, 0.02, 1.2.
+- Prompts over 272K input tokens bill the whole request at 2x input and 1.5x output.
+- The prompt-caching guide says GPT-5.6 cache writes bill at 1.25x the uncached rate, that reads and writes are subsets of `input_tokens`, and that usage reports `cached_tokens` and `cache_write_tokens` in `input_tokens_details`.
+- The cache-write prices are derived (1.25x), not listed on the pages. The pages give max input as 922,000, which this app never approaches. The reasoning headroom per effort is the app's own policy, not an OpenAI figure.
+
+**Budget.** W = min(window - answer reserve - reasoning headroom - 512 safety, price-tier boundary); H = min(32K, 25% of W); the shares of H are summary 15, recent turns 70 and recall 15 percent, and evidence keeps the rest. The planner reads at most a quarter of H (capped at its existing 1,500). The compaction trigger and summary target already read the recent and summary shares, so they follow H. `HOSTED_WORKING_CONTEXT_TOKENS` was removed from settings, Compose, `.env.example` and the README. W is 272,000 for every real model and effort. For synthetic entries: 16,384 at low effort gives W 10,848 and H 2,712; 128,000 at none gives 123,488 and 30,872; 1,050,000 gives 272,000 and 32,000. The share percentages and the planner quarter are my choices within the design; they are not measured.
+
+**Cached-token pricing.** `services/costs.py` splits `input_tokens` into uncached, cached and cache-write at the catalog rates. An implausible count (negative, non-integer, or reads plus writes above the input) is ignored, so a call is never priced cheaper than it was. The planner's recorded usage now keeps `input_tokens_details`. The daily-ledger reservation stays an uncached upper bound, because cache hits are unknown before the call.
+
+**Order and evidence (TDD).**
+- The new tests in `tests/test_hosted_catalog.py` were written first. The first run failed with 19 `ImportError: cannot import name 'hosted_catalog'` errors; the other 8 tests passed on that run (they exercise code that already existed, or only needed the module they import lazily).
+- After the catalog and budgets were in, a parameter in my own test was wrong (history at 128K with the max effort is a quarter of W, not 32K); it failed with `assert 26776 == 32000` and I corrected the test.
+- The cache-write test failed first with `Decimal('0.00128') == Decimal('0.00138')`, then passed.
+- The compose test for the removed setting failed with `'HOSTED_WORKING_CONTEXT_TOKENS' unexpectedly found` before the setting was deleted.
+- Tests that assumed the 64K budget failed for that reason: `test_ai.py` (over-budget prompt), `test_context_registry.py` (profile, `model_limits`, configuration, hosted prompt, the removed setting), `test_ollama_llm.py` (`model_limits`), `test_provider_messages.py` (oversized list), `test_context_assembly.py` (`allocate` now takes H), `test_chat_reservation_integration.py` and `test_chat_usage_integration.py` (planner usage keeps its cache counts), and the ContextMeter frontend test. `test_local_models_contracts.py` needed `context_window` because the field is now required.
+
+**Meter and contract.** The meter already showed the budget as the total with the native window as secondary text, so only its fixtures changed. `Model.context_window` lost its 1,050,000 default and is required; `/models` reports the catalog window. `generated.ts` was regenerated with open models on, so it differs by that one field.
+
+**Verification.** Backend `test-stack.py test` in isolated project `ara-catalog-test`: 1048 passed in 204.19 s. Ruff check clean. Frontend `npm run check`: 583 passed; `npm run build` passed.
+
+**Not done or unverified.** Evidence selection (16 passages) is unchanged for ARA-094. OpenAI's tier multipliers are recorded in the catalog comment but not modelled in cost, because no request exceeds 272K. The cache-write rate is applied to the `cache_write_tokens` count that the SDK model reports; I have not seen a live response with a non-zero value.
+
+**Live OpenAlex check (ARA-087, 2026-10-10).**
+- **Setup.** The user added an OpenAlex API key to the main `.env`. The lead copied only that key, without printing it, into the integration worktree's `.env`. The lead then started an isolated `ara-live` Compose project on ports 8011/5181, with no OpenAI key, the open-models flag off and fresh volumes.
+- **Download path.** Live search worked. Saving "Attention Is All You Need" (W2626778328) downloaded OpenAlex's stored PDF automatically within about 3 s. This confirms the real redirect host is accepted, which had previously been inferred only from documentation. The 11-page document became ready, and the automatic summary was blocked with MODEL_NOT_CONFIGURED, with no fallback.
+- **Fallback path.** An IEEE paper (W3163652268) ended `not_stored` without contacting any other host.
+- **Logs and UI.** Logs show the key only as `[REDACTED]`. Screenshots of both workspaces showed the intended copy.
+- **Cost.** One content download, about $0.01 of the user's free daily allowance.
+
+**User test stack on a copy of the dev library (2026-10-10).**
+- **What was copied.** At the user's request, the lead made read-only copies of the dev database (`pg_dump`) and the dev PDFs (3 objects via the MinIO client). They were restored into the isolated `ara-live` project, which runs `feat/ux-feedback-round` on ports 5181/8011. The user's OpenAI and OpenAlex keys were copied into the lead-only integration worktree's `.env`, without being printed.
+- **Migrations.** Migrations 0008 and 0009 ran on the real-data copy: 0007 → 0009, with 6 papers, 6 chats, 12 messages and 2 summaries preserved. This rehearses the eventual merge into main.
+- **Smoke check.** The existing chat rendered with its 37 citation chips, and the composer adopted the chat's model (ARA-083).
+- **Isolation.** The dev stack and its data were not touched. The copy contains private data and lives only in the session scratchpad, outside git.
+
+**ARA-088 implemented: chats over several library papers (2026-10-10).** An Opus agent built it on `feat/ara-088-multi-paper-chats`, testing only in its own `ara-multi-test` Compose project. The user's `ara` stack was not touched. ARA-093 ran in parallel; this branch changed `services/context.py` and `services/memory.py` only where noted below.
+
+**Decisions:**
+- **Schema.** Migration `0010_chat_papers` adds `chat_papers (chat_id, paper_id, document_id, ordinal, added_at)`: primary key `(chat_id, paper_id)`, unique `(chat_id, ordinal)`, chat and paper keys cascading. It backfills ordinal 0 from `chat_sessions.paper_id/document_id`, then drops both columns, so there is one path. The downgrade restores them from each chat's lowest ordinal. `SCHEMA_REVISION` is `0010_chat_papers`, and the three migration tests that pinned the head now compare with that constant.
+- **Last paper.** The old foreign key deleted a chat with its paper, and the test cleanup relied on it: after the migration, `delete(Paper)` left chats without papers and the chat list failed with `IndexError`. A trigger, `chat_papers_last_paper`, now deletes a chat when its last link goes. An app-level helper in the upload-match discard path was written first and removed in favour of the trigger. The API still refuses to remove the last paper (`LAST_CHAT_PAPER`).
+- **API.** `POST /chats {paper_ids (1–5), title?}` replaces `POST /papers/{id}/chats`. `POST /chats/{id}/papers` pins the paper's active PDF at that moment; `DELETE /chats/{id}/papers/{paper}` returns the chat with its new first paper; `GET /chats/{id}` lets a stale link find the chat. `Chat` has `paper_id` (the first paper, the canonical URL) and `papers`; `document_id` and `ChatSummary.paper_title` are gone. History names each cited document's paper (`Citation.paper_id`) when it is read, so citations to removed papers still name them; stored snapshots are unchanged. The upload-match attach moves `chat_papers` links.
+- **Retrieval (design steps 1, 2, 3, 6, 7 and the grouping of 8).** The retrievers take `(document, chunk set)` scopes: one SQL search spans the chat's papers and a window function keeps each paper's own top 30. The any-word keyword fallback runs per paper. One embedding model serves every paper; a paper without a ready index of that model is searched by keywords with a note ("Searched 1 of 2 papers by keywords…"). With several papers the planner runs on the first question too, and its schema gains `sub_questions` (`{paper, question}`, at most five, one kept per listed paper). Each sub-question is searched only in its paper and fused with the shared searches (LlamaIndex Sub-Question Query Engine). The reranker's head takes papers in turns. Packing gives each paper a floor of `FLOOR = 2` passages in relevance order; the first paper whose floor does not fit, and every less relevant one, is routed out, the most relevant paper always keeps what fits, and the note says how many papers answered. Evidence is grouped under `Paper N: title (first author et al., year)` headers, titles cut at 150 characters and sub-questions at 300. Pruning, the 24-passage first pass, strongest-first-and-last order, the retry and section summaries stay with ARA-094; the cap stays 16 passages. Map-reduce was not built, because multi-paper chats refuse local models while they are frozen. Each constant cites its source in code and in the design doc's new "Several papers as built" section.
+- **Context and memory edits (ARA-093's files).** `context.py`: `answer_instructions` takes the list of papers (the one-paper text is unchanged), `paper_label` and `COMPARE_RULES` were added, `assemble_answer_prompt` takes `papers`, and `INSTRUCTIONS_VERSION` is 4. `allocate` and the shares are untouched. `memory.py`: only the planner (instructions, schema, `SubQuestion`, `QueryPlan.sub_questions`, `plan_query(papers=)`, 80 output tokens per paper for sub-questions) and the one-line `memory_shares` call. The history thresholds are untouched. Budgets come from the profile; nothing assumes 64K.
+- **Other files.** `summarization.py` passes `{document_id}` to the shared citation validator and stores summary citations without `paper_id`. Root `tests/fixtures`: `create_pdf.py --second` writes a second synthetic paper, and the fixture model cites the first passage of each paper group.
+- **Frontend.** The home and chat composers share the @ picker: typing @ at the start of a word opens it and returns the cursor afterwards. Chosen papers show "Added. Choose again to remove." and five is the cap. Every chat shows its papers as chips under the switcher. A chip opens that paper's summary in a dialog; its × removes the paper, never the last one. Chats over several papers stack no summary cards. A chat lives at its first paper's address: opening it from another of its papers, removing the URL's paper, or a link from a paper it no longer covers (found by `GET /chats/{id}`) moves it there. Citation chips in multi-paper chats name their paper ("Karpukhin 2020 · p. 4"), including removed papers fetched by id. A citation to another paper opens its PDF in a reader tab or focuses that tab; each tab keeps its position and controls (the toolbar is portalled into the header), and any tab but the last closes. A local model in a multi-paper chat gets the footnote "Chats over several papers need a hosted model. Choose one below." The older per-paper chat list fallback and its test were deleted.
+
+**Red → green, with the actual failures:**
+- **Migration.** `relation "chat_papers" does not exist`, then green. The drift guard failed with `['0010_chat_papers'] == ['0009_upload_match_tables']` and the pinned heads with `'0010_chat_papers' == '0009_upload_match_tables'` until the constant moved.
+- **API.** Four of the new tests failed with `405 Method Not Allowed` for `POST /chats` and `KeyError: 'id'`. The deleted-paper test then failed with `assert <ChatSession …> is None` until the trigger. `GET /chats/{id}` was written before its test was run; its red (405) was reproduced by removing the route temporarily.
+- **Packing and retrievers.** Five failed with `pack_evidence() got an unexpected keyword argument 'headers'`; then 17 passed with the existing packing tests. The retriever file failed throughout with `PaperRetriever.__init__() missing 1 required positional argument: 'chunk_set'`; then 10 passed, including the per-paper top-k and per-paper any-word cases.
+- **Citations.** The citation change was made before its test ran; restoring the old validator gave 5 failures (`The model cited a source outside the supplied document evidence`), then 40 passed.
+- **Answers, planner, instructions.** The answer tests were written first but first run after the answer path changed. Restoring the committed `chat.py`, `pipeline.py`, `memory.py` and `context.py` reproduced 3 failures (`'ChatSession' object has no attribute 'document_id'` twice; `('LOCAL_MODEL_NOT_READY', 409) == ('MULTI_PAPER_LOCAL', 409)`). The planner and instruction tests, against the restored files, failed on the schema missing `sub_questions`, `plan_query() got an unexpected keyword argument 'papers'`, `'fallback' == 'model'` and `cannot import name 'COMPARE_RULES'`; then 77 passed.
+- **My wrong assumption.** I expected one embedding request for all texts; the embedder sends one per text. The assertion now checks the texts and the single model.
+- **Regression found by the full suite.** 27 summary tests failed (`'failed' == 'completed'`, `SUMMARY_FAILED`): summarization passed a UUID where the validator now takes a set. After the fix those files passed (70) and the suite passed with 1044.
+- **Budget test.** Five papers with ~400-token passages and summaries, history just under the compaction threshold, and a five-sub-question plan. At the profile's budget and at a shrunk 6,000-token profile, both the planner and answer requests stay within `input_budget`, no summary text appears, and every answering paper has at least two passages; the shrunk case routes. It passed at first run because the packing already existed; with `FLOOR = 0` the shrunk case fails `all(count >= 2 …)`.
+- **Mixed embedding models.** This test passed at first run. Letting vector search cross models made it fail.
+- **Frontend.** Composer, picker and recent-items: 3 failed (`onMention` not called; no "Added" text; `detail` undefined). Multi-paper chat: 8 failed (`Unable to find role="list" and name "Papers in this conversation"`, the "Question about these papers" textbox, the "Sources" group and the "Karpukhin 2020" chip). One test of mine queried a chip that appears both inline and in Sources and was narrowed to the Sources group. The home journey failed against the old `HomePage` with `Unable to find role="option" and name /Dense passage retrieval/`, and the new-conversation case failed the same way against the old `NewConversation`. Reader tabs failed with `Unable to find role="tablist" and name "Open PDFs"`. After the implementation one tab click did nothing: in jsdom, react-resizable-panels took the pointerdown for its handle. The test now moves the handle away, as `workspace.test.tsx` does. Focus return failed `toHaveFocus` and the local-model gate failed `Unable to find … need a hosted model`; both then passed. The fixture's grouped-citation unittest failed against the old fixture.
+
+**Agent process errors:**
+- I ran focused tests while the baseline suite ran in the same project. The baseline reported 1017 passed and 4 failed: two from my in-progress migration, two metadata tests broken by concurrent cleanup. Both passed alone. Runs did not overlap after that.
+- The new test helper flushed a chat and its links together and hit `chat_papers_chat_id_fkey`: without ORM relationships the unit of work does not order them. It now flushes the chat first and is async.
+- My test volumes were reset once (`test-stack.py reset --reset-data --project-name ara-multi-test`) because downgrading over link-less chats would have failed.
+
+**Verification:** Backend 1045 passed in 211.5 s with Ruff clean (baseline 1021 collected). Frontend `npm run check`: 597 tests in 77 files; `npm run build` passed with the existing chunk-size warning. Fixture unittests: 26 OK. `generated.ts` was regenerated from the flag-on `app.openapi()`.
+
+**Not verified:** the Playwright journey `e2e/multi-paper.spec.ts` (not run; it needs `create_pdf.py --second`), live OpenAI calls, and a visual check in a browser. The floors, routing and sub-questions follow the design and published practice but are not measured on the user's papers.
+
+**ARA-088 merge and scope correction (2026-10-10, same agent).**
+- **Merge of ARA-093.** The lead asked for `feat/ux-feedback-round` (`874db2a`) to be merged into this branch, as a one-time exception to the no-merge rule (`e8fe675`). There were two conflicts:
+  - `services/context.py`: ARA-093's history shares of H (15/70/15) were kept together with this branch's `INSTRUCTIONS_VERSION` "4".
+  - The journal: ARA-093's entries and the lead's no-cap note were kept, with this section last.
+  `memory.py` merged cleanly: ARA-093's planner room from H, alongside this branch's sub-questions. One ARA-093 test, `test_hosted_catalog.py`, called `assemble_answer_prompt(paper=…)` and failed with `TypeError … unexpected keyword argument 'paper'`; it now passes `papers=[…]`. After the merge: backend 1072 passed, frontend 597. The regenerated `generated.ts` was identical to the merged file. Budgets now come from ARA-093's profile (W up to the 272K tier, H = min(32K, 25% W)); this branch hardcodes neither.
+- **The user's correction.** There is no limit on papers per chat. The 5 was the lead's carry-over from the frozen local budget, and the user expected unlimited. Design for any N:
+  - **Search.** Search stays one filtered query per list. Each list holds at most `TOP_K` = 30 passages and each paper at most max(2, ⌈30/N⌉), so the pool and the statements do not grow with N.
+  - **Batched reads.** Admission reads papers, PDFs and authors in two queries; ready indexes are read with one window query, and opening fallbacks with one.
+  - **Kept papers.** Papers the question names (full title, or "Surname Year" as chips show) and sub-question targets are kept and answer first. Named papers without a sub-question share one search.
+  - **Floors.** Other papers need a whole floor, and at most 16/2 = 8 answer.
+  - **Planner.** It lists at most 20 papers, named first, and keeps at most five sub-questions. Open Notebook's Ask strategy says "you can add up to five searches" (`open_notebook/graphs/ask.py`; fetched and read for this). The 20 is a derived design choice, not measured.
+  - **System prompt.** It states only the number of papers; evidence headers name the answering ones.
+  - **UI.** The picker has no limit. Chips beyond three collapse into "+N more", a list with summary and remove buttons, in the chat and in the composers. The reader tab strip scrolls.
+- **Red, then green:**
+  - The API tests failed with `List should have at most 5 items after validation, not 6` (422) and `409 == 200`.
+  - Retrievers failed with `assert 12 == 4` (per-paper top k, unbounded) and `4 == 2`.
+  - Packing failed with `pack_evidence() got an unexpected keyword argument 'kept'`.
+  - The instruction test failed with `assert (4971 - 219) <= 1`: 300 papers listed against 3.
+  - The planner failed with `plan_query() got an unexpected keyword argument 'named'`.
+  - The 30-paper statement counts failed with `assert 19 == 73` (retrieval) and `29 == 110` (admission), and the planner list with `assert (30 <= 20)`.
+  - After the implementation, the 30-paper answer test failed with `assert 14 <= (16 // 2)`. Papers with a single candidate had been admitted with one passage each. They now need a whole floor, unless named. A later unit test showed that a one-candidate paper stopped admission for every paper after it (`['A'] == ['A', 'C']`); it is now skipped.
+  - The existing `test_given_no_ready_index…` caught a regression of mine: `profile None == None` let every paper count as vector-searched (`'built' in 'Searched by keywords because the search model is unavailable…'`). A `DISTINCT ON` that SQLAlchemy reported deprecated became a window query.
+  - My keyword test query matched only one passage per paper; it now uses a word with several matches.
+  - The comparative answer test's assertion that titles appear in the system prompt now checks the evidence headers instead.
+  - Frontend: the picker allowed a sixth paper only after the change (`not.toHaveAttribute aria-disabled`). `PaperChips` was missing (`Element type is invalid`). The 15-paper chat listed 15 chips instead of 4.
+- **Process error.** Running `ruff format app tests` reformatted two unrelated files (`development_worker.py`, `test_pdf_parser_structured.py`); both were restored from the index.
+- **Verification.** Backend 1080 passed in 218.3 s with Ruff clean. Frontend `npm run check` passed with 599 tests in 77 files, and `npm run build` passed. Fixture unittests: 26 OK.
+- **Not verified:**
+  - The Playwright journey has not been run.
+  - No live OpenAI calls were made.
+  - The UI has had no visual check.
+  - Name detection is literal: a paraphrased title or an author mentioned without a year is not a named paper.
+- **@ mentions (follow-up the same day).** The lead's resume message, written before the report above, asked to keep papers named "by title or an @ mention in this turn". The backend already matched "@Karpukhin 2020" once punctuation was stripped. The composer now inserts "@Surname Year" (the full title when there is no author or year) at the @ when a paper is added by typing @, then returns the cursor after it. The new frontend expectations failed first: the chat composer's value stayed `How does ` instead of `How does @Khattab 2020 `, and the home question stayed empty instead of `@Karpukhin 2020 `. New unit tests for name detection (`tests/test_named_papers.py`) passed at their first run, since the rule already existed. Removing the "Surname Year" rule made 2 of the 3 fail, and it was restored.
+- **Final counts after the @ mention change:** backend 1083 passed in 220.1 s with Ruff clean; frontend `npm run check` 599 tests in 77 files; `npm run build` passed with the existing chunk-size warning.
+- **Picker follow-up (user feedback, 2026-10-10).** The user called "Added. Choose again to remove." bad UX and asked for citation-style details.
+  - Selection is now shown the stock cmdk/shadcn way: `data-checked`, which lights `CommandItem`'s own check icon, and `aria-checked`. cmdk already uses `aria-selected` for the highlighted row, so the chosen state cannot use it. Choosing a checked row still removes it, with no helper text.
+  - Rows show the title (two lines at most) and a citation line from `lib/paper-names.ts`: "Vaswani", "Vaswani & Shazeer" or "Vaswani et al.", then the year, then the venue. `PaperDetail.venue` already comes from the linked provider record (ARA-086), so the backend did not change. Missing parts are skipped; a paper with none shows no line, and the old "Ready to ask" filler is gone. Papers that are not ready show their status ("Preparing PDF", "PDF needed").
+  - Search also matches author names, year and venue, through cmdk's `keywords`.
+  - The summary dialog's byline uses the same `citationLine`, so the old `paperByline` is removed. Chips and @ mentions keep "Surname Year", built on the same `surname` helper.
+  - **Red, then green.** `authorShort is not a function` and `citationLine is not a function`. The picker failed with `toHaveAttribute("data-checked", "true")` and a missing citation line. The chat composer test failed with `aria-checked` missing. Then 19 passed.
+  - **Counts.** `npm run check`: 603 tests in 78 files. `npm run build` passed with the existing chunk-size warning.
+- **@ mention bugs from the lead's browser check (2026-10-10).**
+  - **Home.** Home inserted no mention while no paper was chosen yet: my guard required asking mode, so the value stayed `Compare `.
+  - **Silent removal.** In the chat and new-chat composers, choosing an already-included paper after typing @ skipped the mention and toggled the paper off.
+  - **Fix.** Both now go through one hook, `components/composer/use-paper-mention.ts`. Typed @ opens the picker with the placeholder "Mention a paper". Choosing a paper adds it if it is new and always inserts `@Surname Year `; choosing a checked one only mentions it, and nothing is ever removed. The @ button opens "Find a paper in your library", which still toggles. Removal stays with the chip ×, the "+N more" list and that button.
+  - **Red, then green.** The home test failed with value `Compare ` instead of `Compare @Karpukhin 2020 `. The new-chat test failed with `@Karpukhin 2020 or ` instead of `… or @Author 2024 `, because the paper was removed instead of mentioned. The chat test failed with `Unable to find … placeholder text of: Mention a paper`. Then 166 passed across the affected files.
+  - **Counts.** `npm run check`: 605 tests in 78 files. `npm run build` passed with the existing chunk-size warning.
+- **Picker byline redesign (user feedback: "Why the middle dot? And the venue info is missing.").**
+  - **Byline.** The joined "A · year · venue" string is gone. `citationLine` now returns parts, and `components/paper/PaperCitation.tsx` sets them in APA/Harvard style: "Han et al. (2018), *USENIX Security Symposium*", "Han et al. (2018)", "Han et al., *Venue*", "2018, *Venue*", a single part alone, or no line at all. The year uses tabular figures. Only the italic venue (`<cite>`) truncates, with the full name in `title`, so authors and year stay visible.
+  - **Venue data.** Venue comes from `PaperDetail.venue` (the provider record). Older papers lack it until another agent's backfill lands, so both cases render.
+  - **Status.** Rows without a ready PDF keep their citation line and show `DocumentStatusBadge` on the right, instead of status text in place of the line. The summary dialog byline uses the same component.
+  - **Contrast.** Muted text measured 4.73:1 on the light popover but only 4.34:1 on the light highlighted row (`--muted`). On highlighted rows the line therefore switches to `foreground` at 70%, 7.33:1 light and 7.82:1 dark. Dark muted text is 5.83:1 on the highlighted row and 6.91:1 on the popover. `citation-contrast.test.ts` computes these from the `index.css` tokens. It passed at its first run, because it measures tokens rather than the component.
+  - **Red, then green.** `Failed to resolve import "./PaperCitation"`. `expected 'Vaswani et al. · 2017 · NeurIPS' to deeply equal { authors: … }`. The picker row lacked "Vaswani et al. (2017), NeurIPS". The dialog lacked "Karpukhin & Oguz (2020)".
+  - **Counts.** `npm run check`: 618 tests in 80 files. `npm run build` passed with the existing chunk-size warning.
+
+**Paper deletion and metadata editing (ARA-095).** The user asked why papers cannot be deleted or their metadata edited. The lead checked the code. Deletion was never built: there is no endpoint and no UI. Editing exists only in the workspace Details tab (Edit) and covers title, authors, year, DOI and abstract, but not venue. It is not reachable from the Library, and "Look up again" appears only after a failed lookup. The user approved ARA-095, assigned to an Opus agent, in parallel with ARA-094.
+
+**Mention pills (ARA-096).** The user found that deleting the inserted "@Han 2018" text left the paper attached, and asked for entity pills instead of text. The lead proposed atomic inline pills synced with attachments:
+- in an existing chat, papers mentioned in the draft are added only on send;
+- mentions of papers already in the chat only focus the question;
+- structured mention IDs replace literal "@Surname Year" matching.
+The user chose TipTap (with its Mention extension) over Lexical or a hand-built contenteditable. The work went to an Opus agent.
+
+**Workspace redesign (ARA-097).**
+- **The request.** The user asked to remove the PDF/Details tabs and the Search index from the main view, to put detailed paper information (including Metadata sources) behind a circled-i control, and to make the PDF area own display, replacement and deletion of the PDF.
+- **The design.** The lead designed it with the impeccable skill (Operate mode, the "Category Standard" design system). The ⓘ opens a Google Drive-style details sheet that keeps the PDF visible; the section order is in the ticket. The reader toolbar gains a PDF menu with file facts and Open, Download, Replace and Remove. Mobile becomes Chat | PDF.
+- **Defects added.** The screenshots showed two more defects, now in the ticket: horizontal overflow of chat answers at 390px, and the sticky paper-chip row showing text through it.
+- **Sequencing.** ARA-097 starts after ARA-095 lands, because it reuses deletion, editing and storage cleanup.
+
+## 2026-10-10 - ARA-095 paper deletion and complete metadata editing
+
+An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in its own `ara-delete-test` Compose project. The user's `ara` and `ara-live` stacks were not touched. No migration was written: deletion uses the existing cascades and the `chat_papers_last_paper` trigger. ARA-094 ran in parallel, so `rag/*`, `services/summarization.py` and the answer path in `services/chat.py` were left alone; only `expire` is imported from `services/chat.py`.
+
+**Decisions:**
+- **One deletion service.** `services/deletion.py` serves `DELETE /papers/{id}`, `POST /papers/delete` (one transaction for several papers) and the upload-match Cancel, which used to delete the placeholder and then remove its object inline. Previews are `GET /papers/{id}/deletion-preview` and `POST /papers/deletion-preview`; they count PDFs, summaries, chats deleted, chats that keep other papers, work that stops, and whether a chat is answering.
+- **Locks.** Identity locks first (`upload_match:` for the papers and their placeholders, `doi:`, `source:`, `pdf:`), then the affected chats, then the papers, in ID order. A chat with a live answer refuses the deletion with 409 `CHAT_BUSY`, as chat deletion does.
+- **In-flight work.** The deletion commit fails the papers' queued and running jobs with `PAPER_DELETED` and no lease, which fences their workers out. Job rows are taken `SKIP LOCKED`: ingest takes its job row before a DOI lock while a metadata lookup takes them the other way round, so waiting on job rows could deadlock. A skipped job settles itself: ingest now locks the document's paper before writing, retrieval maps `PAPER_NOT_FOUND` to `PAPER_DELETED` instead of `FULLTEXT_INVALID_PDF`, and a lookup checks the paper before asking any provider. Summary and index jobs were already safe (no rows written) and keep their own codes.
+- **Storage.** One `storage_cleanup` job per deletion, queued in the same commit. Object keys are per document, and sha256 is unique, so two papers never share an object; the job still keeps any key a live document names. Storage errors wait 30 s, then 60 s, then fail with the retryable `STORAGE_UNAVAILABLE`. A PDF still `uploading` delays the job 300 s, past the 120 s ingest grace, because the upload stores its object after committing the row.
+- **Held uploads.** Deleting a library paper that an upload is waiting on releases the upload as its own paper. Before, the cascade removed the match and left the placeholder stuck in "processing". The release reuses the attach path's continuation (`continue_upload`).
+- **Venue.** Papers have no venue column, so a manual venue is stored as `metadata_provenance.venue = {source: manual, value}` and read before the provider record.
+- **Look up again.** `POST /papers/{id}/metadata-lookup` queues a refresh at any time for a paper with a title, DOI or record. It returns a lookup that is already queued or running instead of starting another. When it runs, it reads the saved record first, trusts a DOI the user typed, replaces provider and PDF values but never manual ones, and keeps the existing backoff. The scope started as DOI or record only; I widened it to titles so that an upload whose first lookup gave up can still be retried from Details, which used the job retry route before.
+- **UI.** Library rows have a Checkbox, Select all with a selection toolbar, and a DropdownMenu with Edit details, Look up details again and Delete…. The same menu is in the workspace header. The AlertDialog lists what goes from the preview, keeps Cancel focused, stays disabled while a chat answers, and its button says "Delete paper" or "Delete N papers". A deleted paper's URL redirects to the Library with a note. Activity shows stopped work as Cancelled, names the paper without a link, and keeps it out of Failed.
+
+**Red, then green:**
+- **Deletion API.** 7 failed with `405 Method Not Allowed`, `404 == 200` and `KeyError: 'answering'`, then passed.
+- **Code written before its tests.** The cleanup job, job settlement and the upload release went in with the deletion service before their tests existed. I reproduced each red afterwards by stubbing it out:
+  - storage: 5 failed (`assert (None is not None)`, `'NoneType' object has no attribute 'id'`);
+  - settlement and release: 4 failed (`('queued', 'queued', None) == ('failed', 'failed', 'PAPER_DELETED')`). Without the fence, a summary ran on to `MODEL_NOT_CONFIGURED`.
+- **Runners.** 6 failed before the fix:
+  - ingest: `AttributeError: 'NoneType' object has no attribute 'paper_id'` at `ingestion.py:368`, and `DOCUMENT_NOT_FOUND`;
+  - retrieval: `FULLTEXT_INVALID_PDF`, twice;
+  - lookup: `('completed', None)`;
+  - Activity: `paper_title` None.
+- **Changed expectation.** The existing Cancel test failed with `DID NOT RAISE S3Error` once cleanup became a job. It now runs the job.
+- **Metadata.** 5 failed (venue `extra_forbidden` 422, lookup 404), then passed. The wider scope failed twice with `409 LOOKUP_UNAVAILABLE`, then passed.
+- **Frontend.**
+  - Library: 7 failed (`Unable to find role="button" and name "Actions for …"`, the select checkboxes, the note).
+  - Workspace: 3 failed (no POST to `/metadata-lookup`, missing helper text, missing header actions).
+  - Activity: 2 failed (`Cancelled`, `Deleted PDF cleanup`).
+  - The venue editor and redirect tests passed on their first run because the library tests had driven that code already.
+- **My mistakes.**
+  - One library assertion matched the sidebar's link too, so it was scoped to `main`.
+  - A test array type failed `tsc`.
+- **Test-after.** The 404 coverage for summaries, retrieval, chats, PATCH, lookup and download passed at once; that behaviour already existed.
+
+**Visual check.** I seeded the test database, served it with an API container on 8095 and Vite on 5195, and screenshotted it with the project's Playwright library (light, dark, 390 px). That found:
+- a tick instead of a dash for a partial selection;
+- "1 PDF, with their text";
+- a 403 `ORIGIN_NOT_ALLOWED` for my dev-server origin, which was environment-only and solved by passing `CORS_ORIGINS` to that container.
+
+**Process error.** `ruff format app` reformatted `development_worker.py` again; I restored it.
+
+**Verification.** Backend 1109 passed in 242.51 s with Ruff clean (baseline 1080). Frontend `npm run check`: 611 tests in 79 files (baseline 599 in 77). `npm run build` passed with the existing chunk-size warning. `generated.ts` was regenerated from the flag-on `app.openapi()`.
+
+**Not verified:**
+- The Playwright spec `e2e/library-manage.spec.ts` was not run; it was only type-checked on its own.
+- No live provider calls were made.
+- Real concurrent races were not run; the skip-locked path is simulated by deleting the paper with plain SQL.
+- Clicking a saved citation to a deleted paper opens the reader's error notice rather than a page; its excerpt still reads.
+
+**Addition from the user, the same day: a one-time metadata refresh.** The lead found that all 6 papers in a migrated copy of the user's library had no venue. They were saved or read before ARA-086. One upload, with no provider record, was still titled `paper.dvi`. The user asked for a durable refresh that runs once per existing paper. The lead also asked that the edit, lookup and delete pieces be reusable for ARA-097, and that the storage cleanup be callable for a single PDF.
+- **Design.**
+  - `queue_backfill` runs at API startup in `prepare_search`, before re-indexing. Under an identity lock it queues one `metadata` job with `refresh: "backfill"` for each library paper that has a provider record or a ready PDF, 3 s apart. It commits the `model_configurations` row `metadata_backfill` with them, so later startups queue nothing.
+  - Look up again (`refresh: "again"`) takes the same job path.
+  - **Saved papers** read their record again by ID.
+  - **Uploads without a record** have their stored PDF read again by `parse_in_child(..., layout=False)`. The layout model is skipped because both passes extract the metadata alike. The PDF's values replace earlier PDF values and fill missing ones, and the clues are checkpointed (`reread: true`), so a retry never parses twice.
+  - **Precedence.** A backfill keeps ARA-086's rule and also fills empty fields, with a venue counting as empty when no record names one. Look up again replaces every value except manual ones.
+- **Cleanup.** `queue_storage_cleanup(session, documents)` now holds the cleanup enqueue, so ARA-097 can remove one PDF.
+- **Red, then green:**
+  - The backfill tests failed with `ImportError: cannot import name 'queue_backfill'` (five), and the Look up again variant with `assert 0 == 1`: the PDF was not read again. All 6 then passed.
+  - The single-PDF cleanup test failed with `ImportError: cannot import name 'queue_storage_cleanup'`, then passed.
+  - My first version of a test helper deleted every job and hit `documents_ingest_job_id_fkey`; it now deletes only lookups.
+- **Full suite.**
+  - First run: 1 failed and 1115 passed. The failure was `test_integration.py::test_real_redis_worker_canary_end_to_end`: "Real Redis worker did not complete canary within 30 seconds".
+  - It passed alone twice (7 s each). A second full run passed with 1116 in 252.80 s and Ruff clean.
+  - I take it as a timing failure under load, since about 46 test containers were running on the machine; I did not investigate further.
+- **Not verified:** that a re-ingest sees the queued backfill and queues no second lookup. This follows from `queue_lookup`'s existing check of earlier jobs for the document, but no test covers it. The refresh has also not run against the user's library or live catalogs.
+
+**Follow-up after the merge (same day).** The lead merged ARA-095 at `5001423` (merge `1e30b1b`), before the refresh commits, so the automatic refresh appeared to be missing. It is in `f32965d`, `3791436` and `52494fa` on this branch.
+- **New test.** I added one test that drives the refresh through `prepare_search`:
+  - the first start queues exactly one refresh for each existing paper, spaced out;
+  - a second start queues nothing;
+  - against the fixture catalog, the saved paper gains its venue and keeps its edited title;
+  - the `paper.dvi` upload, matched by arXiv ID, ends with the record's title (provenance `openalex`), venue and authors.
+- **Red, then green.** Against the merged code (`metadata.py`, `reindex.py` and `ingestion.py` restored from `5001423` for the run) it failed with `assert [] == ['4a84882b-…', …]`: startup queued nothing. On the branch head all 7 refresh tests passed.
+- **Verification.** Full backend 1117 passed in 254.17 s, Ruff clean. The frontend is unchanged since its 611-test check.
+**Remove PDF semantics decided by the user (ARA-097).**
+- **The agent's proposal.** The ARA-097 agent asked how Remove PDF should treat chats pinned to that PDF. It proposed tombstone rows that would lock those chats.
+- **The lead's first call.** The lead first decided that chats should follow the paper's current PDF, using a migration, and told the user. That reversed the established pinned semantics.
+- **The user's correction.** "Yes, even if the PDF is removed continue older chats as is. You can do migrations if you want."
+- **Final semantics.**
+  - Chats keep their pinned PDF forever, after Replace as before.
+  - Remove PDF detaches the paper's active PDF, deleting only documents no chat pins.
+  - Pinned documents stay fully intact so their chats keep working.
+  - Garbage collection deletes a document when it is neither active nor pinned.
+  - Re-uploading the same file re-activates a kept document.
+- **Agent instructed.** The agent was told to delete any tombstone or re-pin code. No migration is expected.
+
+## 2026-10-10 - ARA-094 relevance-driven evidence, section summaries (ARA-079) and one wider retry
+
+An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` from `d02a988`, testing only in its own `ara-evidence-test` Compose project. The user's `ara` and `ara-live` stacks were not touched. Design: `docs/plans/retrieval-orchestration.md`, steps 2–5 and 8–11, now recorded under "Evidence as built".
+
+**Not measured.** Every threshold below follows published practice or is marked as a design choice. None is measured on the user's papers: the user decided against a check set.
+
+**Decisions:**
+- **Prune (step 4).** After reranking, candidates scoring below 0.5 × the best score are dropped, and so are unscored ones (past the reranker's head of 40, or a failed call). Nothing is padded (Jin et al., ICLR 2025).
+  - The first two candidates always remain, and each named paper keeps its first two.
+  - Without reranker scores nothing is pruned, because fusion ranks are not relevance judgements.
+  - The 0.5 is my design choice: it is the relevance predicate's own boundary when the top passage scores 1.0.
+- **First pass (step 5).** At most 24 passages and min(16K, E) tokens (OpenAI file search: up to 20 chunks within 16K; Anthropic Contextual Retrieval: rerank to 20). `MAX_PASSAGES` (16) is deleted, not kept behind a flag. Floors and routing derive from the cap, so up to 12 papers answer. The reservation ceiling is the costliest 24 passages or summaries, within 16K.
+- **Order (step 9).** Paper groups go strongest first, second strongest last, weakest in the middle (Lost in the Middle; Jin et al.; LlamaIndex LongContextReorder). Pages stay in order within a paper, so a one-paper chat keeps page order.
+- **Classification and expansion (steps 1 and 8).** The planner schema gains `question_type` (lookup, broad, comparative), after LlamaIndex RouterQueryEngine and Adaptive-RAG (NAACL 2024).
+  - Selected chunks grow small-to-big, one step on each side at a time, each paper within an equal share of the budget.
+  - A lookup takes the neighbours; a broad question and the retry take the whole section.
+  - The first question of a one-paper chat is still not planned (unchanged, to avoid a call and its latency), so it counts as a lookup.
+- **Section summaries (ARA-079).**
+  - Migration `0011_section_summaries` adds `section_summaries` (cascading from `document_sections`, so a new reading drops them) and `section_summary_embeddings`. `SCHEMA_REVISION` moved.
+  - Each top-level body section with at least two passages gets one summary of at most 100 words (near RAPTOR's 131-token average; the 100 is mine). A durable `section_summaries` job writes them with the saved default model and effort, as ARA-084 does: no other model, and nothing when `summary_blocker` refuses.
+  - The job is queued where chunks are persisted, so new readings and late library matches get one, and by a startup backfill for ready active PDFs of the current chunk set. Each reading is queued at most once, in any state.
+  - Each summary must cite its section's passages and is validated against them; a reply that does not is skipped. Usage is stored per summary, and the job result has `usage` and `cost_usd`.
+  - An interrupted paid call is never repeated, and retry is refused with `NEW_GENERATION_REQUEST_REQUIRED`.
+  - Summaries are embedded with the library model at the end of the job, by the index job of a new library model, and pruned with the chunks.
+- **How summaries are cited.** Summaries are searched beside chunks for every question (RAPTOR's collapsed tree, which beat chunk-only retrieval on QASPER).
+  - I did not limit them to broad questions: a first question is not planned, and broad questions such as "list the limitations" are most often first questions.
+  - In the prompt a summary reads `Section summary · <section> · p. <pages>` with its source chunks' handles inside it, and it has no handle of its own (prompt version 5 says so).
+  - Its source chunks become citable, even when not sent as passages. They are read only from the chat's pinned PDFs and current chunk sets.
+  - Every citation therefore stays a real chunk and page of that paper, and validation is unchanged and strict.
+- **Retry (step 10, adapting Self-Route, EMNLP 2024).**
+  - *Trigger.* An `insufficient` first answer, provided wider retrieval adds passages. The retry uses a bar of 0.25, 48 passages and whole sections, up to E, from the same candidate pool, so there are no new searches or reranking calls.
+  - *Streaming.* The producer now maps handles itself. The stream emits `widening`, the consumer drops the first attempt, and only the final answer is saved. A request UUID replay returns it without generating.
+  - *Cost.* The retry is reserved on the daily ledger; a spent budget keeps the first answer. The first call's usage is `retrieval.billed.first_answer`, priced under answers.
+- **Small windows (step 7).**
+  - *Trigger.* A comparison, or the retry, over several papers whose selection at its own target (16K; 32K for the retry) exceeds E.
+  - *Reading.* The server emits `mapping` and reads each paper in its own call within W; handles run on across papers. It then streams the answer from the notes, citing only handles the notes cite.
+  - *Cost.* Each call is reserved and recorded in `billed.map`.
+  - Every hosted window is 1M, so only a synthetic 16K entry exercises this.
+- **Observability (step 11).** `RetrievalSummary` gains `pruned`, `evidence_tokens`, `summaries_used`, `question_type`, `retried` and `map_reduce`. The trace adds `pass`, `prune {ratio, top, bar, pruned}`, `selected_scores`, `summaries` and `first_pass`. Details shows the tokens, summaries used, passages left out, the widened search and per-paper reading. Activity names the job.
+
+**Red → green (observed):**
+- **Baseline.** 1080 passed in 226.88 s.
+- **Prune and caps.** 11 failed with `No module named 'app.rag.selection'` and `EvidenceResult.__init__() got an unexpected keyword argument 'scores'`. The thirty-paper test then failed with `cannot import name 'MAX_PASSAGES'`; it now asserts 12 answering papers.
+- **Ordering.** `['A', 'A', 'B', 'B', 'C', 'C'] == ['C', 'C', 'B', 'B', 'A', 'A']`; the old chat-order test was rewritten on purpose. A second test failed with `['A', 'B', 'C', 'D'] == ['D', 'A', 'C', 'B']`.
+- **Expansion and classification.** `pack_evidence() got an unexpected keyword argument 'reach'` (3 tests). The planner tests failed 5 times (`'QueryPlan' object has no attribute 'question_type'`, a schema without `question_type`, `'fallback' == 'model'`). Then `retrieve_evidence() got an unexpected keyword argument 'question_type'`. The chat wiring test passed at first run because I had wired it first; deleting the line reproduced `'lookup' == 'broad'`.
+- **Retry.** 5 failed (`assert 1 == 2` calls, `KeyError: 'retried'`, reservations `assert (1 == 1 and 1 == 2)`).
+- **Map-reduce.** `assert (0 == 2)` and `KeyError: 'map_reduce'`.
+  - My fixture cited only paper 1, which I fixed.
+  - The retry-at-16K test showed `widen()` compared packs only at E, so a small window never retried. It now also counts the retry's own target when several papers are in reach.
+  - ARA-088's shrunk-budget test failed with `not enough values to unpack`: map calls hit its stream-only fixture. It now expects five per-paper reads; this is an intended change.
+- **Section summaries.**
+  - The migration failed with `relation "section_summaries" does not exist`, and readiness failed with `'unavailable' == 'ok'` until I migrated my test database.
+  - The service failed with `No module named 'app.services.section_summaries'`.
+  - The backfill failed with `0 == 2` because my seed used a non-current chunk set; the test was corrected.
+  - The 7 wiring tests failed, starting with the hook rejecting `resources`. ARA-070's hook test then needed its fake hook to accept that argument.
+  - Packing failed with `cannot import name 'citable'`.
+  - Retrieval failed with `KeyError: 'summary-vector'` and with no completed answer.
+  - The first implementation raised `UnmappedInstanceError` because it read a column attribute through an instance; it is now read from the class.
+  - The rules test failed, and so did the ceiling test (`259 <= 208`).
+  - The scoping test passed at first run; removing the scope filter reproduced a foreign chunk becoming citable.
+- **Frontend.**
+  - *Initial red.* `Unable to find … Searching more widely…`, `expected [ …(5) ] to deeply equal [ …(8) ]`, `… to include 'Read each paper…'` and `'section summaries' to be 'Section summaries for search'`.
+  - *After regenerating `generated.ts`.* tsc required the new fields in a test fixture. `sse.test.ts` failed because zod defaults added fields to a fixture that lacked them; the fixture now carries what the server always sends.
+
+**Verification:**
+- **Backend.** `test-stack.py test`: 1134 passed in 234.34 s with Ruff clean, and again after the final refactor: 1134 passed in 241.37 s, Ruff clean (baseline 1080).
+- **Frontend.** `npm run check` passed with 603 tests in 77 files, and `npm run build` passed with the existing chunk-size warning.
+- **Contract.** `generated.ts` was regenerated from the flag-on `app.openapi()`; it differs only by the new fields and job kind.
+
+**Agent process notes.** The full suite runs in the same project as focused runs, so I ran nothing else during it. Sources were checked by read-only fetches: RAPTOR's collapsed tree, QASPER and 131-token summaries; Adaptive-RAG's NAACL 2024 classifier; LlamaIndex's RouterQueryEngine and LongContextReorder pages.
+
+**Not verified:**
+- No Playwright run and no live OpenAI call.
+- No visual browser check.
+- Section summaries were not generated for real papers, so their cost on the user's library is unknown. The order of magnitude is one paper summary per PDF.
+- ARA-079's original local small-model case is not exercised while open models are frozen.
+
+**Section summaries now ground through their passages (ARA-079/094 follow-up).**
+- **The user's question.** The user asked why section summaries were needed and how they are cited. The lead explained:
+  - they came from ARA-079, bundled into the approved retrieval plan without separate discussion;
+  - they answer broad questions under retrieval-always, as in RAPTOR, LlamaIndex hierarchical retrieval and GraphRAG global search.
+- **A gap the lead found.** Reading `rag/packing.py`, the lead saw that a summary's unselected source chunks received handles without their text being sent. Grounding was indirect: claim → summary → passage.
+- **The user's choice.** The user chose "summaries route, passages ground": send the summary's key source passages as real evidence and strip markers to unsent chunks. The ARA-094 agent was resumed for it.
+
+**Summaries route, passages ground: implemented (2026-10-10, ARA-094 agent).**
+- **Merge.** At the lead's request I merged `feat/ux-feedback-round` into `feat/ara-094-evidence`. The branch was an ancestor, so it fast-forwarded to `54144ca` (ARA-095 and the lead's `continue_upload` fix included), with no merge commit.
+- **The user's choice.** A selected section summary now brings up to `MAX_SUMMARY_SOURCES` = 4 of the passages it cites as ordinary evidence, with their own handles and full text. This is RAPTOR's tree traversal: from a selected summary node to its top children.
+  - *Source order.* Best reranker score first, then the order the summary cites them.
+  - *Bounds.* Sources are added after floors and right after their summary in the relevance fill. They stay within the paper's equal share and the pass's caps.
+  - *The 4.* A design choice. RAPTOR's summaries average 5.7 children on QASPER (6.7 overall), and a summary with its passages stays within a fifth of the 24-passage first pass.
+- **No handle without its text.**
+  - Markers to passages that were not sent are stripped.
+  - `citable()` is now only the passages sent whole, so the old cite-only handles are gone, and citing an unsent passage fails as an unknown handle (`UNGROUNDED_OUTPUT`).
+  - The rules say to cite only passages shown in full (prompt version 6).
+  - The retry and map-reduce pack the same way.
+- **Red → green.**
+  - *Rewritten summary tests: 5 failed.*
+    - `['summary', 'text'] == ['summary', …, 'text', 'text']` (no sources sent);
+    - `cannot import name 'MAX_SUMMARY_SOURCES'`;
+    - a summary whose sources did not fit kept a cite-only `S1` (`[Passage(… S1 …)] == []`);
+    - `assert (4 < 4)` (sources ignored the paper's share);
+    - the rules text.
+  - *Tests written after the change, proven red on the old code.* I restored the previous `packing.py` and `pipeline.py` from HEAD and ran these four; all failed, and the new code was then put back. The four were the validation test (`DID NOT RAISE LLMError`), the cap test (a handle's passage text was not in the evidence), the retry test (source texts not sent) and the integration test where only the summary matches the search (`'We index every passage … Okapi weighting.' in 'Paper passages: …'` was false). That last test checks that every cited passage's text was in the prompt, on its real page.
+  - *Green.* 180 passed across the retrieval and chat suites; Ruff flagged one long line, since fixed.
+- **Verification.** The full backend after the merge: 1180 passed in 252.84 s, Ruff clean. The frontend did not change, so it was not re-run.
+- **Not verified.** No live OpenAI call, no Playwright run. The cap of 4 is not measured on the user's papers.
+
+## 2026-10-10 - ARA-098 PDF state icons (phase 1)
+
+- **Scope.** Frontend only. Added one shared `PdfStateIcon` (`components/paper/PdfStateIcon.tsx`, labels in `pdf-state.ts`) and used it in the Library rows, the sidebar Papers list and the command palette. Library rows now use `PaperCitation` and have no status badge. DESIGN.md documents the icon and removes PDF state from the green and amber tints.
+- **Red.** `PdfStateIcon.test.tsx` failed first because the module did not exist. Then the library and shell tests failed with `Unable to find an accessible element with the role "img" and name "No PDF yet"` and `Unable to find an element with the text: Vaswani et al. (2017)`.
+- **Green.** After implementation one full `npx vitest run` passed 646 of 646. Two later full runs, made while Vite and a seed server ran, each had one or two timeouts in unrelated files (library-manage, workspace, a palette test); those files passed 36 of 36 when rerun alone.
+- **Correction.** My first icon test guessed the lucide class name `lucide-file-question-mark`; the real class is `lucide-file-question`. This was a test bug, not a component bug.
+- **Decision.** In the sidebar and palette the icon is not a tab stop, because the row is already the stop, so its tooltip opens on hover only there. Its label becomes part of the link name, so two sidebar tests now match by regex.
+- **Visual round.** Chromium from the project's Playwright, a seeded stub API and Vite on port 5198. Light, dark, 1100px and 390px: no horizontal overflow, the venue truncates first, the red failed icon and muted question icon read clearly, and the tooltip shows on hover. Screenshots stayed outside the repo.
+- **Pending.** Phase 2 after ARA-096 and ARA-097 merge: picker, workspace header, deleting the old badge components, and the e2e text.
+
+## 2026-10-10 — ARA-096 paper mention pills with TipTap
+
+An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pills` worktree and tested only in its own Compose project, `ara-pills-test`. The user's `ara` and `ara-live` stacks were not touched. Baseline: backend 1083 passed with Ruff clean; frontend `npm run check` 618 tests in 80 files.
+
+**Packages.** TipTap 3.31.4, pinned exactly in `package.json` and the lockfile: `@tiptap/core`, `react`, `pm`, `extension-document`, `extension-paragraph`, `extension-text`, `extension-hard-break`, `extension-mention`, `suggestion` and `extensions`. In TipTap 3, `@tiptap/extension-history` and `@tiptap/extension-placeholder` only re-export `UndoRedo` and `Placeholder` from `@tiptap/extensions`, so that package is installed directly instead of the two wrappers. There is no starter kit. Every added package is MIT, including ProseMirror; `docs/third-party-notices.md` lists them. The main chunk grew from 466.25 kB (gzip 140.69 kB) to 811.37 kB (gzip 247.94 kB). A sourcemap breakdown showed TipTap core with its command set and the ProseMirror view, model, transform, state, commands and history modules, and no unexpected library.
+
+**Decisions:**
+- **Editor.** One composer for the home, new-chat and chat views. Enter sends, Shift+Enter adds a hard break, and Cmd/Ctrl+Enter still sends, as before. Paste is plain text with line breaks, cut to the room left under the limit. A change that would pass `maxLength` is refused whole, so a pill is never cut. Autosize, placeholder (`aria-placeholder` too), disabled state (`contenteditable=false` plus `aria-disabled`) and the context meter slot are kept.
+- **Lint-driven structure.** eslint-plugin-react-hooks 7 rejects refs passed into the editor's construction (`react-hooks/refs`) and writes to `editor.storage` (`react-hooks/immutability`). The editor's settings (label, placeholder, limit, whether @ mentions) therefore live in a ProseMirror plugin state, updated by meta transactions from an effect. The editor reports Enter and @ through editor events, which the component handles with `useEffectEvent`.
+- **@ and pills.** The official Mention node opens the existing `PaperPicker` through `@tiptap/suggestion` when @ starts a word; an email address types normally. The paper picked replaces the @ with an atomic pill showing the file icon and `mentionName`, with `role="img"`, `aria-roledescription="paper"` and `citationText` ("Karpukhin & Oguz (2020). Dense passage retrieval.") as its name. Backspace (the Mention option `deleteTriggerWithBackspace`) and a new Delete shortcut remove a pill whole. Behaviour change: a picker closed without a pick now leaves the typed @ as text and dismisses the suggestion, where the textarea swallowed the @; this also lets an @ start a word.
+- **Attachment sync.** On the home screen and in a new chat, `useDraftPapers` chooses the papers the pills mention plus those added with the @ button. A pill-only paper leaves with its last pill, and removing a paper (its chip ×, the "+N more" list or the button) also removes its pills. In an existing chat, typing @ only inserts a pill; the send carries `mentions`, and the chips show the chat's papers only. Decision beyond the plan: removing a paper from an existing chat also removes its pills from the draft, as on home, because a remaining pill would add it back on send.
+- **Server.** `ChatInput.mentions` is a list of `{paper_id, label, start, end}`. Spans count code points of the trimmed content and must match their labels, in order and without overlaps (otherwise 422). `prepare()` adds missing mentioned papers with `add_mentioned` in the transaction that stores the question; replays return before it, and a replay with other mentions is a 409. The local-model refusal counts mentioned papers. Mentioned papers join the named papers by id (`named_in`). Typed titles and "Surname Year" detection is unchanged; `named_papers` had no @-specific code (its normalization dropped the @), so only the test for "@Surname Year" text was removed. Mentions are stored in `configuration` and returned as `Message.mentions` through an `AliasPath`. No migration.
+- **Stream.** The SSE citation schema now keeps `paper_id`, so the client accepts a citation to a paper that the question itself added.
+
+**Red → green, with the actual failures:**
+- **Backend.** 12 failed first: `'ChatInput' object has no attribute 'mentions'`; five `DID NOT RAISE ValidationError`; `cannot import name 'named_in'`; `'Prepared' object has no attribute 'mentioned'`; links missing the mentioned paper; a DELETE of it answering 404 `CHAT_PAPER_NOT_FOUND`; `DID NOT RAISE AppError`; and `('LOCAL_MODEL_NOT_READY', 409) == ('MULTI_PAPER_LOCAL', 409)`. Then 15 passed. Three were my own test bugs, not product failures: two overlapping spans in one question, `AppError.status` instead of `status_code`, and `QueryPlan` missing its required fields. Mutation check: committing the add in its own transaction failed the rollback and local-model tests.
+- **Composer.** Against the textarea (with the serializer stubbed), 12 of 14 failed: six `This element is not a composer editor`, missing pill roles, missing `aria-multiline`/`aria-disabled`, `onSend` lacking mentions, and the IME case submitting after `compositionstart`. Then 15 passed (the Backspace/Delete test split in two). Mutation checks: without the Delete shortcut, or without the limit filter, the matching test failed.
+- **lib/mentions and citationText.** `Failed to resolve import "./mentions"` and `citationText is not a function`, then green.
+- **Features.** The first run of the rewritten home, chat and history tests, before the wiring, had 15 failures: the 10 new or rewritten pill tests (their messages were not read one by one), two existing focus tests (`toHaveFocus`, TipTap's delayed autofocus, below) and three existing workspace-opening tests that hit the 3 s timeout and passed when run again. After the wiring, removing the paper-id allowance in the stream failed the cited-new-paper test (`toHaveTextContent`).
+
+**Agent errors and corrections:**
+- My first controlled Composer dropped typed characters (`"lieoe"` for `"line one"`). A passive effect from an earlier render compared a stale `value` with a newer editor state and reset the content. Every draft the editor reports is now remembered, and a returning echo is ignored.
+- TipTap's `autofocus` waits for a timer, which broke the skip-link test; the composer now focuses on mount, and after the first full suite found `view['focus']` thrown by an editor not yet mounted, waits for TipTap's `mount` event in that case.
+- jsdom delivered a queued `selectionchange` between placing a caret and a key press, so one pill test was flaky. `deletePill` now places the caret and dispatches the key in one step. Typing after a click can land elsewhere in jsdom, so one assertion no longer depends on where typed text lands.
+- TipTap's injected ProseMirror CSS is unlayered and sets `font-feature-settings: "liga" 0`, which would have dropped Geist's `ss01`/`cv11` in the composer; `.ProseMirror.composer-editor` restores them.
+- The existing e2e `multi-paper.spec.ts` used `fill()` after picking with @, which would replace the pill and its paper; it now types after the pill.
+
+**Tests.** jsdom got `elementFromPoint` and `Range` geometry stubs in `src/test/setup.ts`. `src/test/editor.ts` reads the editor's draft from its DOM node (`editorOf`, `draftIn`, `textIn`, `isEditable`), and `deletePill` uses the editor's own selection command, because jsdom has no layout for arrow keys or clicks. userEvent typing works through ProseMirror's DOM observer. Existing tests that read `toHaveValue`, `toBeEnabled` or `toBeDisabled` on the composer now use these helpers.
+
+**Verification.** Backend 1094 passed in 232.66 s, Ruff clean. Frontend `npm run check`: 637 tests in 82 files. One of the two final runs was under heavy machine load (77 s against a 35 s baseline) and timed out the first, cold workspace test; alone, that test takes 1.0–1.5 s on both the baseline and this branch. `npm run build` passed with the existing chunk-size warning. `generated.ts` was regenerated from the flag-on `app.openapi()`; its diff has only the mention fields.
+
+**Not verified:** the Playwright specs (`e2e/mention-pills.spec.ts` and the updated `multi-paper.spec.ts`; not run, by instruction); a visual check in a browser (the MCP browser needs a Chrome install, and Playwright was not to be run); real IME input; mobile virtual keyboards; and actual screen reader output.
+
+**Follow-up fixes (lead's check on real data).** Four forward commits-worth of changes, each red first.
+- *Early title wrap.* The cause was `text-balance` on the Library title, which evens out line lengths, so a two-line title wraps near half the row. It is now `text-pretty`. Red: the row test asserted the heading lacks `text-balance` and failed. Checked in Chromium: the long title now uses the full row.
+- *Clipped italic.* The truncating venue gets `pr-[0.15em]`. Red: `PaperCitation.test.tsx` expected the class and failed. The closing parenthesis in "arXiv (Cornell University)" is visible in light and dark.
+- *Tab stops.* Library icons are decorative and not focusable; the link's name carries the state ("Title, PDF attached"). Red: the row test failed with `Unable to find an accessible element with the role "link" and name "Attention is all you need, PDF attached"`. About 15 other Library test queries that matched a link by exact title now match by `^Title, `.
+- *Double announcement.* The tooltip content is `aria-hidden`. Red: a new test found no hidden tooltip. Full run afterwards: 647 of 647, tsc and eslint clean. An earlier full run in this round had flaky timeouts that passed on rerun.
+
+**Mention pills only, with titles, hover × and citation card (ARA-096 follow-up).**
+- **Trigger.** The home composer showed each @-mentioned paper twice: as a chip above the editor and as an inline pill.
+- **The user's decision.** Pills only; the pill shows the paper title rather than "Surname Year"; hovering highlights it and shows a remove × at the top-right corner; hovering also shows the short citation.
+- **The lead's design** (impeccable skill, Operate mode):
+  - no composer chips, and the @ button inserts a pill;
+  - a title truncated near 28ch;
+  - highlight plus a corner × on hover or node selection;
+  - a HoverCard with PaperCitation and the full title;
+  - tap-to-select on touch;
+  - history pills without the ×;
+  - the chat-scope paper row in existing chats unchanged.
+- **Handover.** The ARA-096 agent was resumed for it.
+
+## 2026-10-10 - ARA-099 ara. wordmark
+
+- Prompt: wire the lead's outlined wordmark into the sidebar, favicon, title and docs.
+- Red first: two new shell tests (link named `ara.`, mark when collapsed) and `index-html.test.ts` failed with `Unable to find an accessible element with the role "link" and name "ara."` and a title mismatch. Green after `AraBrand.tsx`, the sidebar header, `public/favicon.svg` and `index.html`.
+- Visual error: the first screenshots showed the wordmark about 16px wide, because the shadcn menu button forces `size-4` on child svgs. Fixed with `h-[26px]! w-auto!`; a second round showed it crisp in light, dark, collapsed and at 390px. The first stub-API attempt rendered a blank page; running without stubs (502s) worked for the sidebar check.
+- Playwright MCP could not find Chrome, so screenshots used the project's own Playwright Chromium.
+
+**ARA-099 addendum, PNG favicon fallbacks.** Red: the extended `index-html.test.ts` failed with `expected '<!doctype html>...' to contain '<link rel="icon" type="image/png" siz...'`. `branding/render_icons.mjs` renders the SVG with the frontend's Playwright. First render of the 32px icon was opaque RGB (white corners); `omitBackground: true` made it RGBA. The touch icon is an opaque square without rounded corners.
+
+**ARA-099 path drift guard.** `AraBrand.test.tsx` compares the inlined paths and viewBoxes to `branding/*.svg`. My first red attempt used a sed that silently did not apply, so the test passed; a corrected edit then failed both cases with `expected 'M89.0 9Q53.1 9...' to be 'M89.0 9Q53.0 9...'`, and restoring the file made it pass.
+
+## 2026-10-10 - ARA-097 workspace without tabs, the ⓘ details sheet and Remove PDF
+
+An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 merge, `1e30b1b`), and later merged `feat/ux-feedback-round` (`7fbcf96`) into it at the lead's request. Backend tests ran only in its own `ara-workspace-test` Compose project, and the browser check in a separate `ara-wsvisual-test` project, removed afterwards. The user's `ara` and `ara-live` stacks were not touched. Before any edit it ran the impeccable design context for `PaperWorkspacePage.tsx` and read the craft floor; after the UI work, the mechanical detector found nothing in the changed files. No migration and no new dependency.
+
+**Decisions:**
+- **No tabs.** The reader is a section named "PDF reader" that shows the PDF or the existing ReaderGate states. Narrow screens get Chat and PDF, and an old `?view=details` link opens Chat. `DetailsPanel.tsx`, `readerTab`/`setReaderTab` and `MobilePdfView` are deleted.
+- **ⓘ sheet.** "Paper details" sits beside the title and badge, and ARA-095's ⋯ menu left the header; Library rows keep theirs. The sheet is a stock Sheet:
+  - right, 440px, on desktop, with a transparent overlay (new `overlayClassName` on `SheetContent`), so the PDF stays legible;
+  - bottom, `100dvh − 2rem`, on mobile.
+  - Sections: citation (running text, so a long venue wraps; new `wrap` on `PaperCitation`) and authors; Edit details and Look up again (`LookupNotice` takes the other actions as children), with DOI and record links; the abstract (`ClampedText`, extracted from `PaperCard`); identifiers in mono with copy; "Where this information came from" (`MetadataSources` as a field → source list); Advanced (`SearchIndexPanel`, now the Collapsible itself); Delete paper (`DeletePapersDialog`).
+- **PDF menu.** The toolbar centres paging and zoom and ends with ⋮ "PDF options". Its label shows the file name, pages · size and Uploaded or Downloaded from OpenAlex, from the new `GET /documents/{id}`. Open original and Download apply to any PDF; Replace PDF and Remove PDF apply only to the workspace paper's current one.
+  - Replace hands the new job to the reader through the router state the gate already reads.
+  - Remove's AlertDialog is fed by `GET /papers/{id}/pdf/removal-preview`, keeps Cancel focused, waits while a chat answers, and moves focus to the reader afterwards.
+- **Remove PDF, final semantics.**
+  - My first build emptied a pinned PDF and left a "removed" row, and chats that used it were locked. The lead relayed the user's correction: "even if the PDF is removed continue older chats as is"; Replace keeps today's pins. That design was replaced with forward commits and its tests deleted.
+  - Now `DELETE /papers/{id}/pdf` only nulls `active_document_id`. A PDF a chat pins stays whole, and the chat keeps asking. In the frontend, a chat pinned to an earlier PDF skips the paper's PDF gate, and the earlier-PDF banner offers "Add a new PDF" when the paper has none.
+  - **Detached PDFs.** `delete_detached` deletes PDFs that are no paper's current PDF and no chat pins. It removes summaries, then the row (section summaries cascade), fails their jobs with `PDF_REMOVED` (skip-locked) and queues `queue_storage_cleanup`. It runs after Remove PDF, `DELETE /chats/{id}` and `DELETE /chats/{id}/papers/{pid}`, with the `pdf:` identity locks taken before the chat lock.
+  - **Uploading the same bytes again.** A ready, non-current PDF of the target paper becomes current again (`duplicate: false`). From the home page that happens only when its paper has no PDF.
+- **Defects, real causes.**
+  - **Answer overflow.** The assistant message is a `grid` whose implicit track grew to its widest unbreakable content. Measured at 390px on seeded long answers, the thread's `scrollWidth` was 1257 against a `clientWidth` of 390, from a 748px link, a 744px inline identifier, a 506px table and a code block. `grid-cols-1` brought it to 390.
+  - **Chip row.** It is not sticky in CSS. The thread's 24px top mask faded text right under the transparent chips. The chips are now `bg-background`, and the thread draws a hairline while scrolled.
+
+**Red, then green:**
+- **Backend, first build.** 13 failed (`assert 404 == 204`, `KeyError: 'answering'`). The ingest guard was written before its test; stubbing it out showed `('completed', None, None) == ('failed', 'PDF_REMOVED', None)`.
+- **Backend, correction.** The rewritten 17 tests failed 11:
+  - the pinned PDF was emptied: `('failed', 'removed/…') == ('ready', …)`;
+  - `'pdf_removed' not in …`;
+  - re-upload gave a new id;
+  - `KeyError: 'deleted_pdfs'`;
+  - `assert <Document …> is None` ×3 for the garbage-collection paths;
+  - deletion preview `0 == 1`.
+  After the change, two re-upload tests failed with my own fixture error: seeded PDFs had no ingest job, so the response was `UPLOAD_IN_PROGRESS`. With the re-activation stubbed out, they failed with `True is False` and `None == …`.
+- **Frontend, first build.** 42 failed first (`… "Paper details"`, `"PDF options"`, `"Advanced"`, region `"PDF reader"`). Then my test mistakes: the computed description drops the nbsp; the Replace hand-off race; the h1 behind the modal sheet; `home.test.tsx`'s tabpanel. Removed-PDF chat: 4 failed. Overflow and chips: 3 failed (`grid-cols-1`, `bg-background`, `border-t …`). Venue: `not.toHaveClass("truncate")`. The tooltip passed in jsdom with user-event, then failed with raw pointer events. Focus after removal failed twice.
+- **Frontend, correction.**
+  - The pinned chat kept asking: `Unable to find … "This conversation uses an earlier PDF of this paper."`.
+  - The dialog's new copy and items failed.
+  - The banner failed: `Unable to find … "Add a new PDF"`.
+  - The new-conversation test passed at its first run, since that gate already existed.
+  - Activity showed work stopped by Remove PDF as Failed; `isCancelledJob` now counts `PDF_REMOVED` as well, so it shows as Cancelled. Its test failed first with `Unable to find … Cancelled`.
+  - My first gate skipped the PDF checks for every existing chat; an existing test caught it ("queued question … processing"). The gate now skips them only when the chat's PDF is not the paper's current one.
+
+**Merges.** The second merge (`574b547`, ARA-098's Library fixes) conflicted only in this journal. The lead's last message asked for the dialog line "Conversations that use this PDF keep using it. New questions need a new PDF."; the test failed on the old wording, then passed. In the first merge, conflicts came in DESIGN.md (both sections kept), README (integration text plus the details sheet), the contract, the journal (this section kept last) and `ConversationThread.tsx`. For `ConversationThread.tsx`, ARA-096's mention-aware gate was kept, with my option until it was replaced. Section summaries cascade from documents; `queue_storage_cleanup` replaced my own enqueue.
+
+**Visual check.** Fixture PDFs were seeded through the API, with chats holding long links, identifiers, a wide table, a code block and an eight-turn two-paper chat. They ran on an API at 8097 and Vite at 5197 and were screenshotted with the project's Playwright library. The shots are in the session scratch directory.
+- **Round 1.** Desktop light and dark, and 390px light and dark. Phone document and thread were 390 wide; focus returned to ⓘ after Esc, close and an outside click. It found the "PDF options" tooltip staying over the open menu (the menu opens on pointerdown, so the click that cancels Radix's pending tooltip never lands) and a truncated venue.
+- **Round 2.** Both fixes were confirmed, along with Remove PDF end to end under the first design, and focus falling to `BODY` after removal (fixed, jsdom only). The final semantics were not screenshotted: the check was bounded to two rounds.
+
+**Verification:**
+- **Backend:** `test-stack.py test --project-name ara-workspace-test`: Ruff "All checks passed!", 1209 passed in 275.14 s after the second merge (baseline before the branch: 1112 passed in 252.32 s).
+- **Frontend:** `npm run check` was clean with 685 tests in 89 files after the second merge (the integration branch adds ARA-094/096/098 tests). `npm run build` passed with the existing chunk-size warning.
+- **Contract:** `generated.ts` was regenerated from the flag-on `app.openapi()`.
+
+**Not verified:**
+- The updated Playwright specs (`e2e/workspace.spec.ts`, `e2e/fulltext.spec.ts`) were type-checked only.
+- No live OpenAlex download was made.
+- No real concurrent races were run.
+- The final Remove PDF semantics and focus after removal were not seen in a browser.
+
+### 2026-10-10 — Lead: the user rejected ARA-097's details sheet (ARA-101)
+
+I approved ARA-097's design, which put every paper detail behind ⓘ in a side sheet, bibliography included, and I merged it at `bbf480a` after a browser check that judged only whether it worked. The user rejected it: "ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." My error was reading the earlier request ("This kind of detailed info should go to modal") as covering the bibliography too. The user meant only the behind-the-scenes details. ARA-101 moves the bibliography back above the PDF and makes ⓘ a small modal for provenance, identifiers and the search index. The user also asked why "Ready to read" was still on the paper page. ARA-098 phase 2a had held that header until ARA-097 merged, and it went in at `2b368e1`. A browser check on the test copy then found no "Ready to read" text, and only the "No PDF yet" icon on a paper without a PDF.
+
+### 2026-10-10 — ARA-102: summary card shows only the summary
+
+User feedback: the summary card showed a "Uses <model> with <effort>" line with no summary, and a "Version n of m", model, reasoning and timestamp line with one. Test first: three assertions failed on the old card (the Uses line, the model/effort/time text, and the version menu). After the change they passed (23 tests in the summary folder). Removed: the version menu, the selected-version state, the metadata row and `formatTimestamp` (its only consumer was the time line). Kept: `GenerationMeta` and `effortText`, which chat messages use. Regeneration from the card is gone with the version menu. The card shows the latest summary and no Generate control once one exists. The three e2e specs that asserted version buttons were updated but not run. `local-models.spec.ts` no longer regenerates a summary on a shared fixture paper, so its check of the saved reasoning default on a new summary is weaker; the lead should decide whether to restore that through an API call. Commit `6bd1170`.
+
+### 2026-10-10 — ARA-102: regenerate icon beside the summary heading
+
+The user asked for a way to regenerate the summary now that the version menu is gone. Test first: three tests (icon present only with a summary, a click requests a summary with the current settings, disabled while a summary job runs) failed as missing-button errors. The icon is an icon-xs ghost button using RefreshCw, labelled "Regenerate summary" with a tooltip. It reuses start(), spins while a job or request is in flight, and keeps the current summary visible. One of the new tests was missing an await on the async query and was fixed before the green run. Commit 323c58dc4b6174df5664327b77c0169378c8ee5f.
+
+### 2026-10-10 — ARA-102: e2e regenerates through the heading icon
+
+E2E-04 (conversation) and E2E-12 (local models) no longer reuse a stored summary on later runs. They regenerate through the "Regenerate summary" button and wait for the stored summary count to rise before checking content. Not run: the spec needs the live stack. Commit 94a33f21ca59d6383b91662ec1ea9b8c966cadff.
+
+### 2026-10-10 — ARA-103: paper actions behind a hover "…" in the sidebar
+
+**Request.** "In the sidebar, for papers, can we show the "..." thing to show controls for papers? They should appear on hover."
+
+**Design.** `PaperActions` gained an optional `trigger?: 'button' | 'sidebar'` (default `button`, so Library and workspace call sites are unchanged). `'sidebar'` renders a `SidebarMenuAction showOnHover` and opens the menu to the right, as `SidebarRecent` does. `SidebarPapers` renders it after each row's link and passes `onDeleted`, which navigates to `/` only when the route starts with `/papers/<that id>`. The row link already gets right padding from the primitive when a menu action exists, and the action is hidden in the icon-collapsed sidebar.
+
+**Red.** The four new tests in `components/shell/sidebar-paper-actions.test.tsx` failed 4 of 4 with `Unable to find an accessible element with the role "button" and name "Actions for “Attention is all you need”"`. After the change they passed 4 of 4.
+
+**Verification and errors.** My first `tsc` run failed on an unused `json` import in the new test; removed it. `sed -i` with a BSD flag failed, so I used the editor. Full `npm run check` showed one or two 5 s timeouts per run (library-manage "When Delete is chosen", the Ctrl+K palette test); each passed alone or with its folder (library-manage 7/7, shell 22/22). I did not run a pre-change baseline to prove those were already load-flaky. `npm run build` passed. Hover reveal and truncation were not seen in a browser.
+
+## 2026-10-10 - ARA-101 paper metadata above the PDF; ⓘ keeps only provenance and the search index
+
+The user rejected ARA-097's details sheet: "You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." The lead assigned it to the same agent, on `feat/ara-101-paper-header` from `feat/ux-feedback-round` (`32528d0`), with the impeccable skill loaded (Operate mode, the existing design system). No backend change and no new dependency. ARA-097's tabless reader, PDF menu and Remove PDF behaviour stay as they were.
+
+**Decisions:**
+- **Paper header.** `PaperHeader` lays the old Details tab out as a reading header on the paper ground, with a hairline below. It shows the title (1.125rem semibold), every author, the year and italic venue (`PaperCitation` with `wrap` and no authors, since the full list is just above), DOI and record links, the abstract in `ClampedText`, and the DOI-owner note. Edit details and ⓘ sit at the title's top right. A field the paper lacks is left out; a missing abstract says so.
+- **Scrolling.** The header scrolls away with the document. `PdfViewer` takes a `header` and renders it as the first child of its own scroll column, pinned `sticky left-0` so a wide zoom doesn't carry it sideways; the controls bar sits outside that column and stays put. Before choosing, I read `PdfViewer`:
+  - every page offset is `offsetIn`, a bounding-rect difference with the root, so pages below a header are found where they are;
+  - page tracking probes 30% down the root, so the header only means page 1 reads as current a little longer;
+  - zoom anchoring and the lazy pages are relative to pages, not to the root's top.
+
+  The collapsing-row fallback was not needed. `PdfReader`'s Suspense fallback shows the same header above page placeholders while pdf.js loads.
+- **No PDF and reader tabs.** `ReaderGate` puts the header above its ways to get a PDF, and its own Abstract section is deleted. A reader tab gets the header of its tab's paper, because `PdfReader` and `ReaderGate` already receive that paper.
+- **ⓘ.** `PaperSourcesDialog` is a centred `Dialog` named "Sources and search index". It holds:
+  - `MetadataSources`, which now always renders and takes Look up again as children;
+  - the identifiers with copy;
+  - `SearchIndexPanel`, now a plain section: the dialog is the "advanced" place, so the Collapsible is gone;
+  - Delete paper, shown only for the workspace's own paper (`useOptionalWorkspace`).
+
+  `LookupNotice` lost its children slot, which only the sheet used.
+- **Removed.** `PaperDetailsSheet.tsx`, the ⓘ in the top bar, and the `overlayClassName` prop that only the sheet used (`sheet.tsx` is back to `bf1daea`). The top bar keeps the title beside ARA-098's `PaperPdfStatus`.
+
+**Red, then green:**
+- **New tests.** `paper-header.test.tsx` (13 tests) failed with `Unable to find role="heading" and name "Evidence based research"` (no level-2 header). The new `PdfViewer` test (citation jump with a header) failed with `Unable to find … heading "Traceable Research Systems"`.
+- **My first green attempt failed for two reasons.**
+  - The dialog's search index read `{items: []}` from the unmocked retrieval route (`Cannot read properties of undefined (reading 'some')`), so the dialog tests now mock it.
+  - jsdom's `clientHeight` is 0, so `flushPendingPage` returned early and the jump never scrolled. With a 600px viewer, the test now shows the jump landing at page 2's offset below the 320px header (1344).
+- **Existing tests that changed.**
+  - The top-bar title now shares its name with the header's h2, so `shell.test.tsx` asks for level 1.
+  - `workspace.test.tsx`'s stub renders the header, and its edit tests use the header's Edit details.
+  - `search-index.test.tsx` and `open-models-flag.test.tsx` no longer expand Advanced.
+- **Narrow header.** It failed `toHaveClass("sr-only @md:not-sr-only")`, then passed.
+
+**Visual check.** My Vite ran on 5198 against the test copy's API on 8011, read-only: the script logged any non-GET request, and none was made. Nothing was edited, looked up, removed or deleted. Screenshots are in the session scratch directory (`shots101/`).
+- **Round 1 (desktop light and dark, 390px light and dark).** The header and the dialog looked as intended, with no horizontal overflow. The PDF's region measured 592/592 on desktop and 390/390 on a phone, and the phone dialog was 358 × 697 inside 390 × 844. The no-PDF state shows the abstract once. Scrolling 1800px moved the header off and the page number to 3.
+
+  Found: at 390px the Edit details label squeezed the title into four lines. Fixed with a container query: below 28rem the label becomes screen-reader text beside its pencil.
+- **Round 2.** The title got 288px at 390px. Focus returned to ⓘ after Esc. A citation chip ("Source, Han 2018, page 7, …") jumped to page 7, marked the passage in view and announced "Highlighted the cited passage on page 7.". Zoom in and Fit width kept page 7, and scrolling to the top showed the header and page 1 again.
+
+**Verification.** `npm run check` was clean: typecheck and lint, 690 tests in 91 files. `npm run build` passed with the existing chunk-size warning. The mechanical design detector found nothing in the changed files. The backend was not changed, so its suite was not run.
+
+**Not verified:**
+- The updated `e2e/workspace.spec.ts` was type-checked but not run.
+- The other-paper reader tab was not seen in a browser: the test copy has no chat that cites a second paper from another paper's workspace. It is covered by the unit test.
+
+### 2026-10-10 — Lead: Library test collided with the sidebar paper menu (ARA-103)
+
+After ARA-101 merged (`58ae56b`), `library-manage.test.tsx` failed once with "Found multiple elements with the role \"button\" and name \"Actions for “Attention is all you need”\"". ARA-103 gave each sidebar Papers row the same `PaperActions` menu and label as the Library row. Whenever the sidebar's papers query resolved before the Library's, the test's screen-wide query found both buttons. The test's `rowActions` helper now looks inside `main`. Three full-file runs then passed 7/7. The same file's "link to a deleted paper" test failed in two whole-file runs while the machine's load average was about 15 to 17, with several agents running suites. It then passed 5/5 alone and 3/3 in whole-file runs, so I'm treating it as load-sensitive, not broken. It gets rechecked in the final quiet full run.
+
+### 2026-10-10 - ARA-104: chat history behind a History icon, with relative times
+
+The user asked for relative times in the conversation switcher and a less verbose "Conversations about this paper". Test first: `relative-time.test.ts` failed with a missing module, and the 11 `ChatSwitcher.test.tsx` cases failed against the old dropdown (`Tests 11 failed (11)`). Built as directed: the title menu keeps Rename and Delete (none for an unsaved chat), a lucide History icon opens a Popover with cmdk rows (title, optional latest question, compact time, check on the open chat), and a filter shows only above 7 chats. Times are "now", "12m", "3h", "2d", then "Oct 2" or "Oct 2, 2025", with `<time>` title for the exact moment and a screen-reader span for the long form. The helper lives in `src/lib/relative-time.ts`; the Activity files were left for ARA-100 and `FullTextAccess` still imports the old `useNow`.
+
+Deviations: (1) the popover's accessible name is "Chat history for this paper", the only place "this paper" appears. (2) The check column from the stock CommandItem stays reserved so the times align in one column. (3) Without a filter, the list itself takes focus on open so arrow keys work. (4) The filter is found by placeholder in tests, because the shared InputGroup and cmdk input both expose a combobox role. Mobile: the first shot had the popover touching the left edge; `collisionPadding={16}` fixed it. Old switcher tests were rewritten for the new list, and the two date-precision and empty-state tests were removed as covered by the new ones. Not run: the Playwright spec update.
+
+**ARA-096 follow-up built: pills only, titled, with hover × and citation card (2026-10-10, same agent).** `feat/ux-feedback-round` (`30e53be`) was merged into the branch first; it fast-forwarded. The impeccable design context (DESIGN.md, the src-frontend surface brief) and the craft floor were read before any UI edit.
+- **As built.**
+  - **Composer.** The home and new-chat chip rows are gone. Attachments are the papers the pills mention; a new chat always includes its own paper. The @ button inserts a pill: at the caret when the question gave focus to a control of its own form, otherwise at the end. In an existing chat it adds nothing before sending, and the client's add-paper path is removed.
+  - **Pill.** The pill's label, which is also the question text and the server span, is the title. It is cut to 300 characters, or falls back to "Surname Year" when there is no title. It renders at 13 px with the attached-PDF `PdfStateIcon` (new `tooltip={false}`, so no second popup) and is cut near 28ch with an ellipsis.
+  - **PaperPill.** One component serves the editor (a React node view; the Mention node is selectable) and history. Hover or node selection highlights it and shows a 16 px round × at the top right with a larger hit area. The × keeps focus and removes the pill and the space after it. A HoverCard opens after 300 ms or on selection with `PaperCitation`, plus the full title when it is cut, and closes on Escape and blur. The title is the accessible name and the plain-text citation the description; history pills are images without the ×.
+- **Red → green.**
+  - `mentionLabel`/`shortCitation is not a function`, then 5 passed.
+  - PdfStateIcon: `not.toHaveAttribute("data-slot", "tooltip-trigger")`, then 12 passed.
+  - PaperPill: unresolved import, then green after a test fix. `user.click` moves the pointer onto the × first, which user-event reports to React as leaving the pill, so the press is dispatched directly.
+  - Composer, against the committed editor: 5 failed (four `Unable to find … role "group" … "Dense passage retrieval"`, one `Cannot read properties of null (reading 'insert')`). Then 18 passed, after awaiting the React node view, which draws a tick later.
+  - App, chat and history: `Unable to find role="group" … "Traceable research systems"`, `Failed to resolve import "./pill"`, `citationText is not a function`. Then green.
+  - The server test for a title label passed at first run; it is a regression guard, since the server only checks spans.
+- **Browser round** (Playwright's Chromium driving a temporary Vite harness with stubbed data; light, dark and 390 px; harness deleted).
+  - **Late picker close.** Typing "with @" straight after a pick left the @ typed with no picker in 3 of 8 runs. The first picker's close arrived 200–500 ms late with a stale `open`, dismissed the new suggestion and moved focus. A ref now tracks the live session; `use-paper-mention.test.ts` failed on the previous hook (`expected "vi.fn()" to not be called at all, but actually been called 1 times`) and passes now, and the browser runs went to 0 of 8.
+  - **Focus delay.** Focus came back about 50 ms after a pick. Inserting a pill now focuses the question synchronously.
+  - **History surface.** History pills shared the bubble's quiet surface and lost their edge, most visibly in dark mode. They now sit on the paper tone (`surface="paper"`, red first).
+  - **Checked and fine.** Pills are 20 px tall on the 15 px line, keep the Geist features, wrap whole at 390 px with no horizontal overflow, and the arrow keys select the pill.
+  - **Harness artefact.** Back-to-back key presses through CDP can outrun Chrome's asynchronous `selectionchange`, so ProseMirror's selection lags; keys paced like typing behave.
+- **Verification.** Backend 1193 passed in 266.91 s with Ruff clean. `npm run check`: 678 tests in 87 files. `npm run build` passed; the main chunk went from 742.77 to 758.51 kB (gzip 224.56 to 228.97 kB).
+- **Not verified:** the Playwright specs (updated: editor pills are groups, plus an @-button journey); real touch devices; IME; screen reader output.
+
+**Phase 2 (header, picker, deletion).** After ARA-097 merged, the workspace header got `PaperPdfStatus`: no icon when the PDF is ready, the state icon otherwise, and automatic retrieval shows as the preparing state (the old "Getting PDF" text is gone). Red: `Unable to find role="img" and name "Preparing PDF…"`. After ARA-096 merged, the @ picker rows use `PdfStateIcon` in place of `FileText` and the badge. A blocked row names its reason ("No PDF yet. Add one to ask about this paper.") in its option name and its icon is decorative; ready rows keep a labelled icon, because an existing test pins a row's text to the title alone. Red: `toHaveAccessibleName` failed and the badge was still present. `DocumentStatusBadge`, `document-state.ts`, `PaperStatusBadge` and their test case are deleted; a grep finds no remaining use. Visual round of the open picker against the real-data copy on :8011, read-only: light, dark and 390px, no overflow, state icons match the sidebar; blocked rows are dimmed as disabled options.
+
+
+**ARA-101 follow-up (2026-10-10): an Abstract heading and a quieter search index.**
+- **The request.** After ARA-101 merged (`58ae56b`), the user asked: "Can we have a heading/title for abstract?" While at it, the lead asked to tidy the ⓘ dialog's search index. It had a middle dot ("64 passages · 32 sections"), the model id shown twice, and a green "Ready" pill. The work went on `feat/ara-101b-abstract-heading` from `58ae56b`.
+- **What changed.**
+  - `PaperHeader` puts a small `h3` "Abstract" (`text-sm font-medium`) in a tight group with the abstract. When there is no abstract, the heading stays above "No abstract is available for this paper yet.", which reads better than a gap.
+  - `SearchIndexPanel` says it in one sentence: "Searching 64 passages in 32 sections with OpenAI text-embedding-3-large." A ready index adds nothing.
+  - Building shows a spinner line, "Building the index", with the progress bar.
+  - Failure keeps its alert, and unavailable or missing keep their notes. Rebuild index stays.
+  - The `Badge` and its tone table are gone.
+- **Red, then green.** 9 tests failed first:
+  - `Unable to find … heading "Abstract"` ×2;
+  - `Unable to find … "Searching 212 passages in 14 sections with OpenAI text-embedding-3-large."` ×2;
+  - `"Building the index"` ×2;
+  - the `Failed` and `Unavailable` pills still present ×2;
+  - the open-models flag sentence ×1.
+
+  Then 29 passed.
+- **Visual check, read-only against :8011 through Vite on 5198.** No non-GET request was made.
+  - Desktop light: the heading sits under the links, grouped with the abstract.
+  - At 390px: no overflow, and the dialog is 358 × 633 within 390 × 844.
+  - The index sentence wraps cleanly.
+- **Verification.** `npm run check` passed with 695 tests in 92 files, and `npm run build` passed with the existing chunk-size warning.
+  - Run alone, `library-manage.test.tsx`'s Delete test fails on this base with `Found multiple elements with the role "button" and name "Actions for “Attention is all you need”"`. ARA-103's sidebar row menu also matches that name. `feat/ux-feedback-round` has since changed that test, so the merge brings the fix. This branch does not touch it.
+- **The PDF heading, the same day.** The user also asked: "Also for the PDF part, can we have a heading / title as well?"
+  - `PdfHeading` is an `h3` "PDF" in the Abstract heading's style. The file name (`paper.file_name`) follows it in muted text, with no separator glyph.
+  - `PdfReader` passes it to `PdfViewer` with the paper header, so it sits above page 1 and scrolls with the document. The controls bar stays the only pinned element.
+  - With no ready PDF, `ReaderGate` puts the same heading first in its column. Its "Preparing the PDF" and "This PDF couldn't be processed" headings became `h4`, so the outline reads title, Abstract, PDF.
+  - An earlier PDF version keeps its "Showing an earlier PDF version" banner and gets no second label.
+  - **Red, then green.** The two new tests for the heading above the PDF and above the gate failed with `Unable to find … heading … /^PDF/` and `… "PDF"`. The test that an earlier version gets no extra heading passed at its first run, since nothing had added one yet. The citation-jump test, extended to pass the heading with the header, also passed at once: `PdfViewer` renders whatever header it is given.
+  - **Verification.** `npm run check` passed with 698 tests in 92 files, and `npm run build` passed.
+  - **Visual round.** It was read-only against :8011 at desktop light and 390px. The reader's headings read title, "Abstract", "PDF sec18-han.pdf" above a PDF, and title, "Abstract", "PDF" above the no-PDF states. Nothing overflows. A citation jump to page 7 still marked the passage in view, and scrolling to the top showed page 1.
+
+
+- **Merge, the model name and a reload bug, the same day.**
+  - **Merge.** `feat/ux-feedback-round` (`ba62a2a`) was merged in (`eb51d0b`); only the journal conflicted.
+  - **Model name.** The index sentence now breaks before the model name, not inside it ("text-embedding-" / "3-large"). The name is a `whitespace-nowrap` span (`a75bdca`). The test failed first with `Unable to find … "OpenAI text-embedding-3-large"`, then passed.
+  - **The reload bug.** The user reported: "on page refresh /paper/ scrolls to the PDF. It shouldn't do that." The lead could not reproduce it in headless Chromium.
+    - **Reproduced.** Playwright's headless Chromium starts with `--hide-scrollbars`, so scrollbars never take width there. With that flag removed and classic 15px scrollbars forced, a reload opened the reader at `scrollTop` 383 (1440px) and 421 (390px), past the header to page 1 (`shots101d/reload-scrollbars-*.png`). That matches macOS with "Show scroll bars: Always" or a mouse, and Windows.
+    - **Cause.** The lead's hypothesis was right. Once the pages render, the scrollbar narrows the viewer, so `pageWidth` changes a second time. The zoom-and-width anchor, which started at `{page: 1, offset: 0}`, then set `scrollTop` to page 1. The same anchor also drifted when zooming while reading the header: a negative fraction of page 1 does not survive a new page height.
+    - **Fix (`a8d2b44`).** The anchor can be page 0, the header region above page 1, with a pixel distance from the top. It starts there, `trackScroll` records it while above page 1, and a width change or zoom restores that distance. Mid-document it keeps the page and fraction as before. The viewer also gets `overflow-anchor: none`, so the browser's own scroll anchoring cannot fight it when the header changes height.
+    - **Red, then green.** A jsdom layout model stores `scrollTop`, page heights follow the width, and widths come through the ResizeObserver callback. Three tests failed first:
+      - a second width change on load moved the reader to `336` instead of 0;
+      - reading the header at 120px then resizing gave `124.35` instead of 120;
+      - the viewer lacked the `[overflow-anchor:none]` class.
+
+      A fourth test, keeping a quarter of the way into page 3 across a resize, passed before and after as the regression guard. The other 169 workspace tests, citation jumps included, stayed green.
+    - **Browser, after the fix.** The classic-scrollbar reload gives `scrollTop` 0 at 1440 and 390. Zoom in at the top stays at 0, and zoom in on page 3 stays on page 3. A citation jump still lands on page 7 with the passage marked in view, and the model name renders on one line (`shots101e/`).
+  - **Verification.** `npm run check` passed with 747 tests in 96 files after the merge, and `npm run build` passed.
+
+
+## 2026-10-10 - ARA-100 Remove the Activity page
+
+- Prompt: the user decided "I think we should remove the Activity page. It doesn't make sense in a product like this." The lead assigned the removal, the in-context checks and automatic recovery for storage cleanup.
+- **Frontend, red first.** `App.test.tsx` and `shell.test.tsx` were changed to expect no Activity link, `/jobs` and `/activity` redirecting home, and no palette action. Run before any implementation: 4 failed, 21 passed (the old nav link, the old redirect target and `Open activity` were still there). Then `features/activity/` was deleted, the route, sidebar item and palette entry removed. The catch-all route already sends unknown paths home, so no dedicated redirect exists.
+- **Deleted as Activity-only:** `relativeTime`/`absoluteTime`, `jobKindLabels`/`jobKindLabel` and `isCancelledJob` (and their tests), the open-models test that checked Activity hid model jobs, and the Activity step of E2E-10. `useNow`, which `FullTextAccess` still needs for its retry countdown, moved to `hooks/use-now.ts`. The `last_activity_at` chat field and `formatActivity` in ChatSwitcher are chat recency, not the page, and stay.
+- **Where each job kind lives now.** PDF retrieval, ingest and processing: the reader gate (`ReaderGate`, `FullTextAccess`) with retry. Summaries: `SummaryCard` (a failed job sets the card's error; regeneration is a new request). Metadata: `LookupNotice` and "Look up again" in Details. Local model downloads: Settings, only with `EXPERIMENTAL_OPEN_MODELS` on. Section summaries: no UI by design.
+- **Section-summary retry, verified in code, not fully automatic.** A run gets three attempts with backoff (`retry_locked`). After that the job stays failed: `queue_section_summaries` treats any job row for the same reading as done, and `POST /jobs/{id}/retry` refuses `section_summaries` (409 `NEW_GENERATION_REQUEST_REQUIRED`) so that uncertain paid inference is not replayed. Retrieval works without the summaries, and this behaviour predates ARA-100, so I left it and reported it to the lead rather than change a paid-inference policy.
+- **Storage cleanup recovery (design).** The existing mechanism is `recover()`, which the dispatcher runs at startup and then every `recovery_interval_seconds`. I added `revive_storage_cleanups` there. It selects `storage_cleanup` jobs that are `failed` with `STORAGE_UNAVAILABLE`, last updated at least 600 s ago, with `payload.revivals` below 48, under `FOR UPDATE SKIP LOCKED`. Each is reset like the manual retry (attempts 0, generation + 1, new outbox event) and its `revivals` counter is incremented. Why this and not a new job kind or a periodic scan elsewhere: it needs no migration, reuses the attempt/generation/outbox model, and is idempotent because the state change takes the job out of the query for concurrent recoveries, and a duplicate delivery of the old generation fails the fence. Permanent errors: removal now treats a 4xx S3 error other than 408 and 429 (credentials, bucket) as refused, failing the job at once with `STORAGE_REJECTED`, which recovery never selects. Transient outages are bounded by the cap of 48 revivals (about eight hours).
+- **Backend, red first.** `tests/test_storage_cleanup_recovery_integration.py` (5 tests) was written before the code. Run 1, before the constants existed: collection `ImportError: cannot import name 'STORAGE_MAX_REVIVALS'`. Run 2, with only the constants added: 3 failed, 2 passed (the two that assert nothing happens passed vacuously). Error corrected on the way: my first permanent-error test built `S3Error` with the response as the last argument, but minio takes the response first; the job then looked transient, which showed up as `'queued' != 'failed'`.
+
+- **ARA-100 merges and final checks.** Merged `feat/ux-feedback-round` three times (ARA-097, then ARA-101 to 104, then the picker and pills round). Conflicts were docs and the sidebar import line. `isCancelledJob` had no caller left and was deleted; ARA-104's `lib/relative-time` replaced my short-lived `hooks/use-now`, and `FullTextAccess` now imports `useNow` from it. A test that a cleanup queued by `pdf_removal.delete_detached` is revived was added after the merge; it passed on its first run, so there is no red for it. Final: backend 1215 passed, frontend 724 passed, build green.
+
+- **The PDF bar and one white reader, the same day.**
+  - **Merge.** `feat/ux-feedback-round` (`ea7dcab`) was merged in first (`67be56a`).
+  - **What the user asked.** "Also the PDF controls appear on top of the paper metadata. Why is that? It should stick to PDF itself right?" Then: "Also why the background color of the metadata section and PDF section are different? They should look coherent." The lead first relayed a muted ground for the whole column; the user corrected it: "No, I think they should have the white background like in the background of metadata part."
+  - **Why it looked that way.** The controls were a fixed row above the reader's scroll column, portalled from `ReaderDocuments`, so they sat above the paper header. The viewer's ground was `bg-muted` while the header was `bg-background` with a hairline.
+  - **The bar.** `PdfViewer` takes a `bar` and renders header, then bar, then page 1 in one scroll column. The bar is `sticky top-0` with `bg-background`, and a zero-height sentinel before it tells `trackScroll` when it has docked (`data-stuck`). Its bottom border is always there and only takes colour once docked, so docking never shifts the pages by a pixel. Paging subtracts the bar's height (a page lands 8px under it), and centring a citation uses the space below it. `PdfReader` builds the bar: `PdfHeading` with the file name (an earlier version's name comes from the document record the PDF menu already reads), then `PdfToolbar`, now a flex row ending with the menu. The toolbar slot in `ReaderDocuments` is gone. With no ready PDF the gate shows the heading alone.
+  - **One surface.** The viewer root and the page skeleton are `bg-background`. `PaperHeader` has no background, hairline or gutter of its own. Pages carry `ring-1 ring-border`; the stylesheet's page shadow was removed, because its unlayered rule would have overridden the ring. Header and bar sit in a column as wide as a page at the current zoom, never wider than the reader less its 16px gutters, so all three share one left edge. Below a 24rem bar the file name gives way to the controls.
+  - **Red, then green.**
+    - The first run of the new viewer tests stopped at a test bug, `ReferenceError: within is not defined`. After adding the import, four failed for real: no bar heading (`Unable to find … "PDF research.pdf"`), page 3 at `2348` instead of `2304` (no bar offset), no docked state, and a root without `bg-background`.
+    - The header tests failed three times: the bar was not found around the heading, the earlier version's bar was missing (`Unable to find … "PDF first-draft.pdf"`), and the header class was still `border-b bg-background`.
+    - Two test edits came before green. The hairline assertion changed from a `data-stuck:border-b` class to a transparent border that takes colour once docked, because a border that appears on docking would move every page by 1px. The header tests' viewer stand-in now wraps the bar in `[data-pdf-bar]`, as the real viewer does.
+    - After the change the viewer file passed 42 of 42, and the workspace folder passed 173 of 173.
+  - **Verification.** `npm run check` passed with 751 tests in 96 files, and `npm run build` passed with the existing chunk-size warning.
+  - **Visual round.** Read-only against :8011 through a private Vite on 5198, with classic scrollbars forced. There were no write requests. Screenshots are in `shots101f/`.
+    - At the top after a reload, `scrollTop` is 0, and the bar sits under the header (318px down on desktop).
+    - Going to page 3 docks the bar, page 3's top lands 8px under it, and the hairline shows.
+    - A citation jump lands on page 7 with the passage 399px (desktop) or 325px (390px) below the bar.
+    - The header title, the "PDF" heading and page 1 start at the same x in every variant: 272px on desktop and 16px at 390px. The no-PDF gate is aligned the same way.
+    - The root and the bar are `oklch(1 0 0)` in light mode and `oklch(0.145 0 0)` in dark mode. The docked hairline is `oklch(0.922 0 0)` in light and `oklch(1 0 0 / 0.1)` in dark.
+
+## 2026-10-10 - ARA-106 Quieter answer footer, headed context and cost card, plain model picker
+
+- Prompt: the user asked for the copy button at the answer's bottom right, no model, effort or Details line, a "Cost" heading like the context heading, no "Model window" text, a better form for "3%" than a middle dot, and no "Set as default" or "Model settings" in the model picker.
+- **Red first.** Four test files were changed before any implementation (ContextMeter, ModelSwitcher, open-models-flag, ConversationPane.standalone). Run: 6 failed, 28 passed. Failures were the missing Context heading, the missing plain local wording, the picker items still present, and the footer still showing model text with the copy button not last.
+- **Card design.** Both sections have the same small medium-weight heading. Context is a row with "12.4k of 272k tokens" muted on the left and the percentage as its own medium-weight value on the right, then a thin meter using the existing Progress component, red from 90% like the ring. Cost mirrors it: a Total row, then the breakdown rows. A local model reads "Local model, no charge". The reason for the row form is that it matches the breakdown rows, so the card has one rhythm. The ring's aria-label is unchanged.
+- **Error corrected on the way.** Removing `generation-meta.tsx` before its export line made the whole standalone test file fail to import; a first `sed -i` also failed on macOS (BSD sed needs `-i ''`). Two ConversationPane tests then failed because they asserted the old historical effort labels, and were updated to assert those labels are gone.
+- **Verification.** `npm run check`: 715 passed in 90 files. `npm run build` passed. Screenshots are listed in the ticket.

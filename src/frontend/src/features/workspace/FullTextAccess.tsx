@@ -1,17 +1,36 @@
 import { useEffect, useRef } from 'react'
-import { providerLabels, type Paper, type UploadAccepted } from '@/api/types'
-import { safeUrl } from '@/api/client'
+import { useMutationState, useQueryClient } from '@tanstack/react-query'
+import { ExternalLink, RotateCcw } from 'lucide-react'
+import { providerLabels, type AutomaticFullText, type Paper, type UploadAccepted } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
-import { useFullText, useRetrieveFullText } from '@/hooks/queries/fulltext'
+import { automaticFullTextKey, useAutomaticFullText, useFullText, useRetrieveFullText } from '@/hooks/queries/fulltext'
 import { doiLink } from '@/features/research/paper-format'
-import { jobStageLabel } from '@/components/jobs/job-labels'
-import { useNow } from '@/features/activity/relative-time'
-import { retrievalMessage, retryWait } from './fulltext-copy'
+import { useNow } from '@/lib/relative-time'
+import { retrievalFailure, retrievalProgress, retryWait, waitText } from './fulltext-copy'
 
+function RetrievalProgress({ label }: { label: string }) {
+  return (
+    <div role="status" className="grid gap-1">
+      <p className="flex items-center gap-2 text-sm font-medium"><Spinner aria-hidden="true" />{label}</p>
+      <p className="text-sm text-muted-foreground">The reader opens here as soon as the PDF is ready.</p>
+    </div>
+  )
+}
+
+/**
+ * Getting the paper's PDF from OpenAlex's stored copies (ARA-087): progress while retrieval runs by itself, else
+ * the DOI link and a request to upload the PDF. A paper saved before retrieval was automatic starts it once here;
+ * the server replays that request ever after.
+ */
 export function FullTextAccess({ paper, onAccepted }: { paper: Paper; onAccepted?: (accepted: UploadAccepted) => void }) {
+  const client = useQueryClient()
   const status = useFullText(paper.id)
   const retrieve = useRetrieveFullText(paper.id)
+  const { mutate: startAutomatic } = useAutomaticFullText(paper.id)
+  // Shared by every view of this paper, so the reader and the Details tab ask the server once.
+  const automatic = useMutationState({ filters: { mutationKey: automaticFullTextKey(paper.id) }, select: (mutation) => ({ status: mutation.state.status, data: mutation.state.data as AutomaticFullText | undefined, error: mutation.state.error }) }).at(-1)
   const job = status.data?.retrieval_job
   const handedOff = useRef<string | null>(null)
   const now = useNow(1000)
@@ -25,11 +44,16 @@ export function FullTextAccess({ paper, onAccepted }: { paper: Paper; onAccepted
       onAccepted({ paper_id: paper.id, document_id: documentId, job_id: ingestId })
     }
   }, [paper.id, paper.document_status, paper.active_document_id, job?.state, documentId, ingestId, onAccepted])
+  const keyed = status.data?.api_key_configured === true
+  const untried = status.isSuccess && !job && paper.document_status === 'metadata_only' && !paper.active_document_id
+  // OpenAlex finds the work from its saved record or from the DOI.
+  const qualifies = untried && keyed && (paper.sources.some((source) => source.provider === 'openalex') || !!paper.doi)
+  useEffect(() => {
+    if (qualifies && !client.getMutationCache().find({ mutationKey: automaticFullTextKey(paper.id) })) startAutomatic()
+  }, [client, paper.id, qualifies, startAutomatic])
+  // Until the started job is listed, the request itself is the progress.
+  const starting = qualifies && (!automatic || automatic.status === 'pending' || (automatic.status === 'success' && !!automatic.data?.job_id))
   const active = job?.state === 'queued' || job?.state === 'processing'
-  const direct = status.data?.locations?.some((location) => safeUrl(location.pdf_url)) || paper.sources.some((source) => safeUrl(source.pdf_url))
-  const semantic = safeUrl(paper.sources.find((source) => source.provider === 'semantic_scholar')?.external_url)
-  const publisher = safeUrl(status.data?.locations?.find((location) => location.host_type === 'publisher')?.landing_page_url) ?? doiLink(paper.doi)?.href
-  const failed = job?.state === 'failed'
   if (paper.document_status === 'ready') {
     const acquisition = status.data?.acquisition
     if (!acquisition) return null
@@ -39,22 +63,32 @@ export function FullTextAccess({ paper, onAccepted }: { paper: Paper; onAccepted
     return <p className="text-sm text-muted-foreground">{[provider && `Retrieved via ${provider}`, version, license && `License: ${license}`].filter(Boolean).join(' · ')}</p>
   }
   if (paper.active_document_id && documentId && paper.active_document_id !== documentId) return null
-  if (job?.state === 'completed' && documentId && ingestId && paper.document_status !== 'failed') return <p role="status" className="text-sm text-muted-foreground">PDF downloaded. Processing its pages continues in the background.</p>
-  if (!paper.sources.length && !paper.doi) return null
-  return <div className="grid gap-3">
-    {active && <><p role="status" className="text-sm font-medium">{jobStageLabel(job)}</p><p className="text-sm text-muted-foreground">This continues in the background. You can leave this page.</p></>}
-    {failed && <>
-      <div role="alert" className="grid gap-3">
-      <p className="text-sm">{retrievalMessage(job.result?.outcome)}</p>
-      {['blocked', 'access_required'].includes(String(job.result?.outcome)) && <p className="text-sm text-muted-foreground">If your university provides access, connect to its network or supported VPN and retry. The app downloads using the network of the computer running its backend. Browser sign-in does not sign the app in; you can download there and upload here.</p>}
+  if (job?.state === 'completed' && documentId && ingestId && paper.document_status !== 'failed') return <RetrievalProgress label="Opening the PDF" />
+  if (active || starting) return <RetrievalProgress label={retrievalProgress(job)} />
+  // Until the status arrives it is unknown whether retrieval will start, so offer nothing yet.
+  if (status.isPending) return null
+  const paperLink = doiLink(paper.doi)?.href
+  // Without a DOI there is nothing to open, so the reader's upload is the only step.
+  if (!paperLink) return null
+  const failure = job?.state === 'failed' ? retrievalFailure(job.result?.outcome, job.error?.message) : null
+  const retry = () => retrieve.mutate({ request_id: crypto.randomUUID() })
+  return (
+    <div className="grid gap-3">
+      <div role={failure ? 'alert' : undefined} className="grid gap-1">
+        {failure && <p className="text-sm font-medium">{failure.title}</p>}
+        <p className="text-sm text-muted-foreground">{[failure?.detail, 'Open the paper from its DOI, download the PDF and upload it here.'].filter(Boolean).join(' ')}</p>
       </div>
-      {wait > 0 && <p className="text-sm text-muted-foreground">Try again in {wait} seconds.</p>}
-    </>}
-    <div className="flex flex-wrap items-center gap-2">
-      <Button size="sm" disabled={retrieve.isPending || active || status.isPending || wait > 0} onClick={() => retrieve.mutate({ request_id: crypto.randomUUID() })}>{active || retrieve.isPending ? 'Finding PDF…' : failed ? 'Retry download' : direct ? 'Get PDF' : 'Find PDF'}</Button>
-      {semantic && <Button asChild variant="ghost" size="sm"><a href={semantic} target="_blank" rel="noreferrer">Open Semantic Scholar</a></Button>}
-      {publisher && <Button asChild variant="ghost" size="sm"><a href={publisher} target="_blank" rel="noreferrer">Open publisher</a></Button>}
+      {wait > 0 && <p className="text-sm text-muted-foreground">Try again in {waitText(wait)}.</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button asChild variant="outline" size="sm"><a href={paperLink} target="_blank" rel="noreferrer">Open the paper<ExternalLink data-icon="inline-end" aria-hidden="true" /></a></Button>
+        {failure?.retry && keyed && (
+          <Button variant="ghost" size="sm" disabled={retrieve.isPending || wait > 0} onClick={retry}>
+            {retrieve.isPending ? <Spinner data-icon="inline-start" aria-hidden="true" /> : <RotateCcw data-icon="inline-start" aria-hidden="true" />}Try again
+          </Button>
+        )}
+      </div>
+      {status.data?.api_key_configured === false && <p className="text-xs text-muted-foreground">Add an OpenAlex API key on the server to download stored PDFs automatically.</p>}
+      <ErrorNotice error={retrieve.error ?? automatic?.error ?? status.error} />
     </div>
-    <ErrorNotice error={retrieve.error ?? status.error} />
-  </div>
+  )
 }

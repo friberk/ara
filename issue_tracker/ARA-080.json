@@ -19,7 +19,7 @@
     "Integration tests with the Ollama fixture: idle unload, busy model kept, keyword fallback with note.",
     "Opt-in live check: IFM 7B with Qwen3 Embedding 8B under 12 GiB, with zero OOM events."
   ],
-  "status": "planned",
+  "status": "deferred",
   "related_files": [
     "compose.yaml",
     "src/backend/app/integrations/embeddings.py",
@@ -30,6 +30,6 @@
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09; the limit is documented in the README. Evidence: Phase 0 S1 co-residency measurements in docs/superpowers/specs/2026-10-09-rag-context-design.md.",
+  "verification": "Planned on 2026-10-09; the limit is documented in the README. Evidence: Phase 0 S1 co-residency measurements in docs/superpowers/specs/2026-10-09-rag-context-design.md. Deferred on 2026-10-09: the user froze open-model development and moved open models behind the EXPERIMENTAL_OPEN_MODELS flag (ARA-090).",
   "updated_at": "2026-10-09"
 }

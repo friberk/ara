@@ -15,7 +15,8 @@ from app.schemas.ai import ChatInput, ModelPage
 from app.services import chat
 from tests.test_ai_integration import local_fixture, paper_fixture
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 async def install_alias_controls(resources):
@@ -58,8 +59,7 @@ async def test_given_legacy_setting_when_listing_aliases_then_raw_save_and_summa
     app = create_app(resources.settings)
     app.state.resources = resources
     preference = {"default_model": spec.key, "reasoning_effort": effort}
-    # Saving only the chat defaults keeps the default memory model (ARA-077).
-    saved = {**preference, "memory_model": "gpt-5.6-luna"}
+    saved = preference
     body = {"model": spec.key, "reasoning_effort": effort, "request_id": str(uuid4())}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"

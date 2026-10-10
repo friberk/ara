@@ -31,7 +31,6 @@ class Paper(Base):
     doi: Mapped[str | None] = mapped_column(String(300))
     normalized_doi: Mapped[str | None] = mapped_column(String(300), unique=True)
     active_document_id: Mapped[UUID | None]
-    retrieval_profile: Mapped[str | None] = mapped_column(String(40))
     metadata_provenance: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -78,6 +77,41 @@ class Document(Base):
     acquisition: Mapped[dict | None] = mapped_column(JSONB)
     parser: Mapped[str | None] = mapped_column(String(40))
     chunk_set: Mapped[str | None] = mapped_column(String(80))
+    # An upload into a chosen paper whose DOI another paper owns (ARA-092).
+    doi_owner_paper_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("papers.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UploadMatch(Base):
+    """An upload held for the user's choice because it is a library paper (ARA-086, ARA-092)."""
+
+    __tablename__ = "upload_matches"
+    __table_args__ = (
+        CheckConstraint("matched_by IN ('doi','arxiv','title')", name="upload_match_matched_by"),
+        CheckConstraint("found_by IN ('ingest','lookup')", name="upload_match_found_by"),
+    )
+    placeholder_paper_id: Mapped[UUID] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True
+    )
+    library_paper_id: Mapped[UUID] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    matched_by: Mapped[str] = mapped_column(String(10))
+    found_by: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PaperRedirect(Base):
+    """Where a retired placeholder's upload went. The old ID names no paper any more."""
+
+    __tablename__ = "paper_redirects"
+    old_paper_id: Mapped[UUID] = mapped_column(primary_key=True)
+    paper_id: Mapped[UUID] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -146,13 +180,31 @@ class ChatSession(Base):
         CheckConstraint("title_source IN ('default','auto','manual')", name="chat_title_source"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    paper_id: Mapped[UUID] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"))
-    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"))
     title: Mapped[str] = mapped_column(String(200), default="Paper discussion")
     title_source: Mapped[str] = mapped_column(
         String(20), default="default", server_default="default"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatPaper(Base):
+    """A library paper in a chat and the PDF pinned for it when it joined (ARA-088).
+
+    The paper with the lowest ordinal is the chat's first paper; its page is the chat's URL.
+    Deleting a chat's last link deletes the chat (trigger `chat_papers_last_paper`).
+    """
+
+    __tablename__ = "chat_papers"
+    __table_args__ = (UniqueConstraint("chat_id", "ordinal", name="uq_chat_paper_ordinal"),)
+    chat_id: Mapped[UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    paper_id: Mapped[UUID] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), index=True)
+    ordinal: Mapped[int]
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ChatMessage(Base):

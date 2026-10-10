@@ -169,11 +169,135 @@ export interface paths {
         get: operations["detail_api_v1_papers__paper_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Paper
+         * @description Delete the paper and what hangs off it (services/deletion.py); a repeat answers 404.
+         */
+        delete: operations["delete_paper_api_v1_papers__paper_id__delete"];
         options?: never;
         head?: never;
         /** Edit */
         patch: operations["edit_api_v1_papers__paper_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/metadata-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Look Up Again
+         * @description Look the paper up again in the metadata source; edited fields stay (ARA-095).
+         */
+        post: operations["look_up_again_api_v1_papers__paper_id__metadata_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Deletion
+         * @description What deleting the paper removes; nothing changes (ARA-095).
+         */
+        get: operations["preview_deletion_api_v1_papers__paper_id__deletion_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Deletions
+         * @description The combined preview for several papers; unknown IDs are listed as missing.
+         */
+        post: operations["preview_deletions_api_v1_papers_deletion_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Several
+         * @description Delete several papers in one transaction; papers already gone are listed as missing.
+         */
+        post: operations["delete_several_api_v1_papers_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/pdf/removal-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Pdf Removal
+         * @description What removing the paper's PDF changes; nothing changes (ARA-097).
+         */
+        get: operations["preview_pdf_removal_api_v1_papers__paper_id__pdf_removal_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Pdf
+         * @description Remove every PDF of the paper (services/pdf_removal.py); a repeat changes nothing.
+         */
+        delete: operations["remove_pdf_api_v1_papers__paper_id__pdf_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/papers/{paper_id}/fulltext": {
@@ -210,6 +334,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/papers/{paper_id}/retrieve-fulltext/automatic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retrieve Fulltext Automatically
+         * @description Start retrieval for a paper saved before automatic retrieval or without a key at the time;
+         *     every repeat replays it.
+         */
+        post: operations["retrieve_fulltext_automatically_api_v1_papers__paper_id__retrieve_fulltext_automatic_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents": {
         parameters: {
             query?: never;
@@ -221,6 +366,26 @@ export interface paths {
         put?: never;
         /** Upload Pdf */
         post: operations["upload_pdf_api_v1_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facts
+         * @description The file facts the reader's PDF menu shows (ARA-097).
+         */
+        get: operations["facts_api_v1_documents__document_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -253,6 +418,26 @@ export interface paths {
         };
         /** Excerpt */
         get: operations["excerpt_api_v1_documents__document_id__chunks__chunk_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Features
+         * @description Server features the browser adapts to; open models are experimental (ARA-090).
+         */
+        get: operations["features_api_v1_features_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -348,24 +533,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/papers/{paper_id}/chats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chats */
-        get: operations["list_chats_api_v1_papers__paper_id__chats_get"];
-        put?: never;
-        /** Create Chat */
-        post: operations["create_chat_api_v1_papers__paper_id__chats_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/chats": {
         parameters: {
             query?: never;
@@ -375,6 +542,65 @@ export interface paths {
         };
         /** Recent Chats */
         get: operations["recent_chats_api_v1_chats_get"];
+        put?: never;
+        /**
+         * New Chat
+         * @description A chat over one or more ready library papers, each pinned to its active PDF.
+         */
+        post: operations["new_chat_api_v1_chats_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}/papers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Include Paper */
+        post: operations["include_paper_api_v1_chats__chat_id__papers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}/papers/{paper_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Exclude Paper
+         * @description The response's `paper_id` is the chat's first paper after the removal. A PDF the chat was
+         *     the last to use, and that is not its paper's current PDF, goes with it (ARA-097).
+         */
+        delete: operations["exclude_paper_api_v1_chats__chat_id__papers__paper_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chats */
+        get: operations["list_chats_api_v1_papers__paper_id__chats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -390,10 +616,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read Chat
+         * @description One chat with its papers; its URL is /papers/{paper_id}/chats/{id}.
+         */
+        get: operations["read_chat_api_v1_chats__chat_id__get"];
         put?: never;
         post?: never;
-        /** Delete Chat */
+        /**
+         * Delete Chat
+         * @description PDFs this chat was the last to use, and that are not their paper's current PDF, go with
+         *     it (ARA-097).
+         */
         delete: operations["delete_chat_api_v1_chats__chat_id__delete"];
         options?: never;
         head?: never;
@@ -410,6 +644,29 @@ export interface paths {
         };
         /** List Messages */
         get: operations["list_messages_api_v1_chats__chat_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat Usage
+         * @description Context used by the latest answer against the selected model's input budget, and spend.
+         *
+         *     The budget is computed for `model` and `reasoning_effort` exactly as an answer sizes its
+         *     prompt, so the meter follows the composer's selection; no runtime call is made.
+         */
+        get: operations["chat_usage_api_v1_chats__chat_id__usage_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -506,6 +763,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/retrieval/reindex-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reindex Estimate
+         * @description Papers and tokens a switch to `profile` would embed, priced from stored chunk counts.
+         */
+        get: operations["reindex_estimate_api_v1_retrieval_reindex_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/papers/{paper_id}/retrieval": {
         parameters: {
             query?: never;
@@ -515,8 +792,7 @@ export interface paths {
         };
         /** Read Paper Retrieval */
         get: operations["read_paper_retrieval_api_v1_papers__paper_id__retrieval_get"];
-        /** Update Paper Retrieval */
-        put: operations["update_paper_retrieval_api_v1_papers__paper_id__retrieval_put"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -558,10 +834,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/metadata/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Settings */
+        get: operations["read_settings_api_v1_metadata_settings_get"];
+        /** Update Settings */
+        put: operations["update_settings_api_v1_metadata_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/uploads/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending Matches */
+        get: operations["pending_matches_api_v1_uploads_matches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/uploads/{paper_id}/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide */
+        post: operations["decide_api_v1_uploads__paper_id__match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AutomaticFullText */
+        AutomaticFullText: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Job Id */
+            job_id?: string | null;
+        };
         /** Body_upload_pdf_api_v1_documents_post */
         Body_upload_pdf_api_v1_documents_post: {
             /** File */
@@ -586,11 +924,8 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Document Id
-             * Format: uuid
-             */
-            document_id: string;
+            /** Papers */
+            papers: components["schemas"]["IncludedPaper"][];
             /** Title */
             title: string;
             /**
@@ -604,8 +939,47 @@ export interface components {
              */
             created_at: string;
         };
-        /** ChatCreate */
+        /** ChatContext */
+        ChatContext: {
+            /** Used Tokens */
+            used_tokens: number | null;
+            /** Input Budget */
+            input_budget: number;
+            /** Window */
+            window: number;
+            /** Model */
+            model: string;
+        };
+        /**
+         * ChatCost
+         * @description USD as decimal strings priced from the catalogs. Only recorded calls count.
+         */
+        ChatCost: {
+            /** Total */
+            total: string;
+            /** Answers */
+            answers: string;
+            /** Planning */
+            planning: string;
+            /** Compaction */
+            compaction: string;
+            /** Embeddings */
+            embeddings: string;
+            /** Reranking */
+            reranking: string;
+            /** Local */
+            local: boolean;
+            /** Unrecorded Turns */
+            unrecorded_turns: number;
+        };
+        /**
+         * ChatCreate
+         * @description The papers a new chat covers, in order, any number of them (ARA-088); the first one's
+         *     page is the chat's URL.
+         */
         ChatCreate: {
+            /** Paper Ids */
+            paper_ids: string[];
             /**
              * Title
              * @default Paper discussion
@@ -631,6 +1005,18 @@ export interface components {
             request_id: string;
             /** Content */
             content: string;
+            /** Mentions */
+            mentions?: components["schemas"]["PaperMention"][];
+        };
+        /** ChatLink */
+        ChatLink: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
         };
         /** ChatMemoryOut */
         ChatMemoryOut: {
@@ -659,6 +1045,14 @@ export interface components {
             /** Items */
             items: components["schemas"]["Chat"][];
         };
+        /** ChatPaperAdd */
+        ChatPaperAdd: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+        };
         /** ChatRename */
         ChatRename: {
             /** Title */
@@ -676,11 +1070,8 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Document Id
-             * Format: uuid
-             */
-            document_id: string;
+            /** Papers */
+            papers: components["schemas"]["IncludedPaper"][];
             /** Title */
             title: string;
             /**
@@ -693,8 +1084,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Paper Title */
-            paper_title: string | null;
             /**
              * Last Activity At
              * Format: date-time
@@ -709,6 +1098,11 @@ export interface components {
         ChatSummaryPage: {
             /** Items */
             items: components["schemas"]["ChatSummary"][];
+        };
+        /** ChatUsage */
+        ChatUsage: {
+            context: components["schemas"]["ChatContext"];
+            cost: components["schemas"]["ChatCost"];
         };
         /**
          * ContextUsage
@@ -753,11 +1147,71 @@ export interface components {
              * @default low
              */
             reasoning_effort: string;
+        };
+        /** DeletedPapers */
+        DeletedPapers: {
+            /** Deleted */
+            deleted: string[];
+            /** Missing */
+            missing: string[];
+        };
+        /**
+         * DeletionPreview
+         * @description What deleting these papers removes; reading it changes nothing (ARA-095).
+         */
+        DeletionPreview: {
+            /** Papers */
+            papers: components["schemas"]["PaperLink"][];
+            /** Missing */
+            missing: string[];
+            /** Pdfs */
+            pdfs: number;
+            /** Summaries */
+            summaries: number;
+            /** Deleted Chats */
+            deleted_chats: components["schemas"]["ChatLink"][];
+            /** Updated Chats */
+            updated_chats: components["schemas"]["ChatLink"][];
+            /** Active Jobs */
+            active_jobs: number;
+            /** Answering */
+            answering: boolean;
+        };
+        /**
+         * DocumentDetail
+         * @description One PDF's file facts, for the reader's PDF menu (ARA-097).
+         */
+        DocumentDetail: {
             /**
-             * Memory Model
-             * @default gpt-5.6-luna
+             * Id
+             * Format: uuid
              */
-            memory_model: string;
+            id: string;
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** File Name */
+            file_name: string;
+            /** Page Count */
+            page_count: number | null;
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "uploading" | "processing" | "ready" | "failed";
+            /** Acquisition */
+            acquisition: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** EmbeddingProfileOut */
         EmbeddingProfileOut: {
@@ -783,6 +1237,11 @@ export interface components {
             unavailable_reason?: string | null;
             /** Local Model Key */
             local_model_key?: string | null;
+            /**
+             * Price Per Million
+             * @default 0
+             */
+            price_per_million: number;
         };
         /** EmbeddingProfilePage */
         EmbeddingProfilePage: {
@@ -792,6 +1251,14 @@ export interface components {
             default_profile: string;
             /** Rerankers */
             rerankers?: components["schemas"]["RerankerOut"][];
+        };
+        /**
+         * Features
+         * @description Server features the browser adapts to (ARA-090).
+         */
+        Features: {
+            /** Open Models */
+            open_models: boolean;
         };
         /** FullTextAccepted */
         FullTextAccepted: {
@@ -805,36 +1272,6 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
-        };
-        /** FullTextAttemptView */
-        FullTextAttemptView: {
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "openalex" | "semantic_scholar";
-            /** Source Label */
-            source_label: string;
-            /** Version */
-            version?: string | null;
-            /** Is Oa */
-            is_oa?: boolean | null;
-            /** License */
-            license?: string | null;
-            /** Response Status */
-            response_status?: number | null;
-            /**
-             * Outcome
-             * @enum {string}
-             */
-            outcome: "downloaded" | "access_required" | "blocked" | "not_found" | "rate_limited" | "unavailable" | "invalid_pdf" | "unsafe_url" | "unsupported_source" | "no_pdf_link" | "already_attached" | "superseded";
-            /** Reason */
-            reason: string;
-            /**
-             * Checked At
-             * Format: date-time
-             */
-            checked_at: string;
         };
         /** FullTextInput */
         FullTextInput: {
@@ -872,22 +1309,13 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Availability
-             * @enum {string}
-             */
-            availability: "open_copy_reported" | "publisher_link_only" | "unknown";
-            /** Locations */
-            locations?: components["schemas"]["FullTextLocation"][];
+            /** Api Key Configured */
+            api_key_configured: boolean;
             retrieval_job?: components["schemas"]["JobStatus"] | null;
             /** Document Id */
             document_id?: string | null;
             /** Ingest Job Id */
             ingest_job_id?: string | null;
-            /** Last Checked At */
-            last_checked_at?: string | null;
-            /** Attempts */
-            attempts?: components["schemas"]["FullTextAttemptView"][];
             /** Acquisition */
             acquisition?: {
                 [key: string]: unknown;
@@ -915,6 +1343,33 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * IncludedPaper
+         * @description A library paper in a chat, with the PDF pinned for it when it joined (ARA-088).
+         */
+        IncludedPaper: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Title */
+            title: string | null;
+            /** First Author */
+            first_author: string | null;
+            /** Year */
+            year: number | null;
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
         };
         /** Installation */
         Installation: {
@@ -1022,6 +1477,14 @@ export interface components {
             paper_title?: string | null;
             readonly error: components["schemas"]["JobError"] | null;
         };
+        /** MatchDecision */
+        MatchDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "attach" | "discard";
+        };
         /** Message */
         Message: {
             /**
@@ -1056,11 +1519,25 @@ export interface components {
             context?: components["schemas"]["ContextUsage"] | null;
             /** Grounding */
             grounding?: ("supported" | "insufficient") | null;
+            /** Mentions */
+            mentions?: components["schemas"]["PaperMention"][];
         };
         /** MessagePage */
         MessagePage: {
             /** Items */
             items: components["schemas"]["Message"][];
+        };
+        /**
+         * MetadataSettings
+         * @description Which catalog uploaded PDFs are looked up in first (ARA-086).
+         */
+        MetadataSettings: {
+            /**
+             * Source
+             * @default openalex
+             * @enum {string}
+             */
+            source: "openalex" | "semantic_scholar";
         };
         /** Model */
         Model: {
@@ -1108,10 +1585,7 @@ export interface components {
              * @default true
              */
             supports_structured_output: boolean;
-            /**
-             * Context Window
-             * @default 1050000
-             */
+            /** Context Window */
             context_window: number;
         };
         /** ModelOperationInput */
@@ -1144,6 +1618,8 @@ export interface components {
             abstract: string | null;
             /** Doi */
             doi: string | null;
+            /** Venue */
+            venue?: string | null;
             /** Sources */
             sources: components["schemas"]["SearchResult"][];
             /**
@@ -1157,6 +1633,47 @@ export interface components {
             metadata_provenance: {
                 [key: string]: unknown;
             };
+            /** File Name */
+            file_name?: string | null;
+            upload_match?: components["schemas"]["UploadMatch"] | null;
+            pdf_doi_owner?: components["schemas"]["PaperLink"] | null;
+        };
+        /**
+         * PaperIds
+         * @description Papers to preview or delete together (ARA-095).
+         */
+        PaperIds: {
+            /** Paper Ids */
+            paper_ids: string[];
+        };
+        /** PaperLink */
+        PaperLink: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /**
+         * PaperMention
+         * @description A library paper a question mentions with a composer pill (ARA-096). `label` is the pill's
+         *     text, which the question holds at [start, end): Unicode code points of the trimmed content,
+         *     as Python indexes strings.
+         */
+        PaperMention: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Label */
+            label: string;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
         };
         /** PaperPage */
         PaperPage: {
@@ -1175,6 +1692,8 @@ export interface components {
             abstract?: string | null;
             /** Doi */
             doi?: string | null;
+            /** Venue */
+            venue?: string | null;
         };
         /** PaperRetrieval */
         PaperRetrieval: {
@@ -1187,11 +1706,6 @@ export interface components {
             document_id: string | null;
             /** Effective Profile */
             effective_profile: string;
-            /**
-             * Source
-             * @enum {string}
-             */
-            source: "default" | "paper";
             /** Parser */
             parser: string | null;
             /** Chunk Count */
@@ -1208,15 +1722,23 @@ export interface components {
             /** Indexes */
             indexes: components["schemas"]["RetrievalIndexOut"][];
         };
-        /** PaperRetrievalUpdate */
-        PaperRetrievalUpdate: {
-            /** Profile */
-            profile: string | null;
-            /**
-             * Request Id
-             * Format: uuid
-             */
-            request_id: string;
+        /**
+         * PdfRemovalPreview
+         * @description What removing the paper's PDF changes; reading it changes nothing (ARA-097).
+         */
+        PdfRemovalPreview: {
+            /** Deleted Pdfs */
+            deleted_pdfs: number;
+            /** Kept Pdfs */
+            kept_pdfs: number;
+            /** Summaries */
+            summaries: number;
+            /** Chats */
+            chats: components["schemas"]["ChatLink"][];
+            /** Active Jobs */
+            active_jobs: number;
+            /** Answering */
+            answering: boolean;
         };
         /** RebuildInput */
         RebuildInput: {
@@ -1225,6 +1747,22 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+        };
+        /**
+         * ReindexEstimate
+         * @description What switching the library embedding model would re-embed (ARA-091).
+         */
+        ReindexEstimate: {
+            /** Profile */
+            profile: string;
+            /** Papers */
+            papers: number;
+            /** Tokens */
+            tokens: number;
+            /** Price Per Million */
+            price_per_million: number;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number;
         };
         /**
          * RerankerOut
@@ -1305,6 +1843,8 @@ export interface components {
             standalone_query?: string | null;
             /** Search Queries */
             search_queries?: string[];
+            /** Sub Questions */
+            sub_questions?: string[];
             /**
              * Passages Found
              * @default 0
@@ -1315,6 +1855,33 @@ export interface components {
              * @default 0
              */
             passages_used: number;
+            /**
+             * Pruned
+             * @default 0
+             */
+            pruned: number;
+            /**
+             * Evidence Tokens
+             * @default 0
+             */
+            evidence_tokens: number;
+            /**
+             * Summaries Used
+             * @default 0
+             */
+            summaries_used: number;
+            /** Question Type */
+            question_type?: ("lookup" | "broad" | "comparative") | null;
+            /**
+             * Retried
+             * @default false
+             */
+            retried: boolean;
+            /**
+             * Map Reduce
+             * @default false
+             */
+            map_reduce: boolean;
             /**
              * Limited By Context
              * @default false
@@ -1403,6 +1970,8 @@ export interface components {
             is_open_access?: boolean | null;
             /** Locations */
             locations?: components["schemas"]["FullTextLocation"][];
+            /** Venue */
+            venue?: string | null;
             /** Saved Paper Id */
             saved_paper_id?: string | null;
         };
@@ -1447,6 +2016,8 @@ export interface components {
             is_open_access?: boolean | null;
             /** Locations */
             locations?: components["schemas"]["FullTextLocation"][];
+            /** Venue */
+            venue?: string | null;
         };
         /** Summary */
         Summary: {
@@ -1489,10 +2060,22 @@ export interface components {
             /** Summary Id */
             summary_id?: string | null;
         };
+        /** SummaryBlock */
+        SummaryBlock: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Model */
+            model: string;
+            /** Reasoning Effort */
+            reasoning_effort: string;
+        };
         /** SummaryPage */
         SummaryPage: {
             /** Items */
             items: components["schemas"]["Summary"][];
+            blocked?: components["schemas"]["SummaryBlock"] | null;
         };
         /** ThinkingControls */
         ThinkingControls: {
@@ -1518,6 +2101,36 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+            /**
+             * Duplicate
+             * @default false
+             */
+            duplicate: boolean;
+        };
+        /**
+         * UploadMatch
+         * @description A new upload that is this library paper; it waits for Replace/Attach or Cancel (ARA-086).
+         */
+        UploadMatch: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Title */
+            title: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Matched By
+             * @enum {string}
+             */
+            matched_by: "doi" | "arxiv" | "title";
+            /**
+             * Found By
+             * @enum {string}
+             */
+            found_by: "ingest" | "lookup";
         };
         /** ValidationError */
         ValidationError: {
@@ -1544,6 +2157,8 @@ export interface components {
              * Format: uuid
              */
             document_id: string;
+            /** Paper Id */
+            paper_id?: string | null;
             /** Page */
             page: number;
             /** Page End */
@@ -1636,7 +2251,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 paper_id?: string | null;
-                kind?: ("ingest" | "summary" | "fulltext" | "model_download" | "model_delete") | null;
+                kind?: ("ingest" | "summary" | "section_summaries" | "fulltext" | "metadata" | "model_download" | "model_delete") | null;
                 active?: boolean | null;
             };
             header?: never;
@@ -1932,6 +2547,35 @@ export interface operations {
             };
         };
     };
+    delete_paper_api_v1_papers__paper_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     edit_api_v1_papers__paper_id__patch: {
         parameters: {
             query?: never;
@@ -1955,6 +2599,194 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PaperDetail"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    look_up_again_api_v1_papers__paper_id__metadata_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_deletion_api_v1_papers__paper_id__deletion_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_deletions_api_v1_papers_deletion_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperIds"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_several_api_v1_papers_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperIds"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedPapers"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_pdf_removal_api_v1_papers__paper_id__pdf_removal_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PdfRemovalPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_pdf_api_v1_papers__paper_id__pdf_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -2033,6 +2865,37 @@ export interface operations {
             };
         };
     };
+    retrieve_fulltext_automatically_api_v1_papers__paper_id__retrieve_fulltext_automatic_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomaticFullText"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_pdf_api_v1_documents_post: {
         parameters: {
             query?: never;
@@ -2053,6 +2916,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    facts_api_v1_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetail"];
                 };
             };
             /** @description Validation Error */
@@ -2125,6 +3019,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    features_api_v1_features_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
                 };
             };
         };
@@ -2336,6 +3250,139 @@ export interface operations {
             };
         };
     };
+    recent_chats_api_v1_chats_get: {
+        parameters: {
+            query?: {
+                paper_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummaryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_chat_api_v1_chats_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    include_paper_api_v1_chats__chat_id__papers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatPaperAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exclude_paper_api_v1_chats__chat_id__papers__paper_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_chats_api_v1_papers__paper_id__chats_get: {
         parameters: {
             query?: never;
@@ -2367,50 +3414,13 @@ export interface operations {
             };
         };
     };
-    create_chat_api_v1_papers__paper_id__chats_post: {
+    read_chat_api_v1_chats__chat_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                paper_id: string;
+                chat_id: string;
             };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Chat"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    recent_chats_api_v1_chats_get: {
-        parameters: {
-            query?: {
-                paper_id?: string | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -2421,7 +3431,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatSummaryPage"];
+                    "application/json": components["schemas"]["ChatSummary"];
                 };
             };
             /** @description Validation Error */
@@ -2517,6 +3527,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_usage_api_v1_chats__chat_id__usage_get: {
+        parameters: {
+            query: {
+                model: string;
+                reasoning_effort: string;
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatUsage"];
                 };
             };
             /** @description Validation Error */
@@ -2747,13 +3791,13 @@ export interface operations {
             };
         };
     };
-    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
+    reindex_estimate_api_v1_retrieval_reindex_estimate_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                paper_id: string;
+            query: {
+                profile: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -2764,7 +3808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaperRetrieval"];
+                    "application/json": components["schemas"]["ReindexEstimate"];
                 };
             };
             /** @description Validation Error */
@@ -2778,7 +3822,7 @@ export interface operations {
             };
         };
     };
-    update_paper_retrieval_api_v1_papers__paper_id__retrieval_put: {
+    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2787,11 +3831,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PaperRetrievalUpdate"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -2867,6 +3907,121 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChatMemoryState"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_metadata_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataSettings"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_metadata_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_matches_api_v1_uploads_matches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperPage"];
+                };
+            };
+        };
+    };
+    decide_api_v1_uploads__paper_id__match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperDetail"];
+                };
+            };
+            /** @description The upload was discarded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

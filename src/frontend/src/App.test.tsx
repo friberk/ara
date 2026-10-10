@@ -2,10 +2,13 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { renderApp } from '@/test/render'
 import { mockApi, noContent } from '@/test/fetch-routes'
 import { peekQuestion } from '@/lib/pending-questions'
+import { deletePill, textIn } from '@/test/editor'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const readyPaper = { id: 'p1', title: 'Traceable research systems', authors: ['Ada Researcher'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
-const chat = { id: 'c1', paper_id: 'p1', document_id: 'd1', title: 'Which datasets were used?', title_source: 'auto', created_at: '2026-10-08T10:00:00Z', paper_title: readyPaper.title, last_activity_at: '2026-10-08T12:00:00Z', message_count: 2, last_question_preview: 'Which datasets were used?' }
+const otherPaper = { ...readyPaper, id: 'p2', title: 'Dense passage retrieval', authors: ['Vladimir Karpukhin'], year: 2020, active_document_id: 'd2' }
+const included = (paper: typeof readyPaper) => ({ paper_id: paper.id, document_id: paper.active_document_id, title: paper.title, first_author: paper.authors[0], year: paper.year, added_at: '2026-10-08T10:00:00Z' })
+const chat = { id: 'c1', paper_id: 'p1', papers: [included(readyPaper)], title: 'Which datasets were used?', title_source: 'auto', created_at: '2026-10-08T10:00:00Z', last_activity_at: '2026-10-08T12:00:00Z', message_count: 2, last_question_preview: 'Which datasets were used?' }
 const search = { id: 's1', provider: 'openalex', query: 'graph transformers', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T11:00:00Z' }
 afterEach(() => vi.unstubAllGlobals())
 
@@ -13,7 +16,8 @@ test('Given the home route, Then the workspace navigation and the research compo
   mockApi({})
   const { user } = renderApp('/')
   const nav = screen.getByRole('navigation', { name: 'Workspace' })
-  for (const name of ['New research', 'Library', 'Activity']) expect(within(nav).getByRole('link', { name })).toBeVisible()
+  for (const name of ['New research', 'Library']) expect(within(nav).getByRole('link', { name })).toBeVisible()
+  expect(within(nav).queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Settings' })).toBeVisible()
   expect(screen.getByRole('heading', { name: 'What are you researching?' })).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Research topic' })).toBeVisible()
@@ -38,27 +42,64 @@ test('Given an empty composer, Then Search papers stays disabled and Shift+Enter
   expect(screen.getByRole('button', { name: 'Search papers' })).toBeDisabled()
   const input = screen.getByRole('textbox', { name: 'Research topic' })
   await user.type(input, 'first{Shift>}{Enter}{/Shift}second')
-  expect(input).toHaveValue('first\nsecond')
+  expect(textIn(input)).toBe('first\nsecond')
 })
 
-test('Given a library paper chosen in the composer, When a question is asked, Then a chat opens with the question queued once', async () => {
+test('Given library papers mentioned in the composer, When a question is asked, Then one chat over them opens at its first paper with the question queued once', async () => {
   const { calls } = mockApi({
-    'GET /papers': { items: [readyPaper] },
+    'GET /papers': { items: [readyPaper, otherPaper] },
     'GET /papers/p1': readyPaper,
     'GET /models': { items: [luna] },
     'GET /settings': { default_model: luna.key, reasoning_effort: 'low' },
-    'POST /papers/p1/chats': { id: 'c9', paper_id: 'p1', document_id: 'd1', title: 'Paper discussion', created_at: '2026-10-08T12:00:00Z' },
+    'POST /chats': { id: 'c9', paper_id: 'p1', papers: [included(readyPaper), included(otherPaper)], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T12:00:00Z' },
   })
   const { user } = renderApp('/')
+  // The @ button puts a pill at the caret; pills are the attachments, with no chip row (ARA-096).
   await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
   await user.click(await screen.findByRole('option', { name: /Traceable research systems/ }))
-  const question = screen.getByRole('textbox', { name: 'Question about this paper' })
+  const first = screen.getByRole('textbox', { name: 'Question about this paper' })
+  expect(await within(first).findByRole('group', { name: 'Traceable research systems' })).toHaveAccessibleDescription('Researcher (2024)')
+  await waitFor(() => expect(first).toHaveFocus())
+  // Typing @ opens the same picker; the paper picked becomes a pill where @ was typed.
+  await user.type(first, '@')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  const question = screen.getByRole('textbox', { name: 'Question about these papers' })
+  expect(await within(question).findByRole('group', { name: 'Dense passage retrieval' })).toHaveAccessibleDescription('Karpukhin (2020)')
+  await waitFor(() => expect(question).toHaveFocus())
+  expect(screen.queryByRole('button', { name: /^Remove |^Stop asking/ })).not.toBeInTheDocument()
   await waitFor(() => expect(screen.getByRole('button', { name: /^Model: GPT-5.6 Luna/ })).toBeEnabled())
   await user.type(question, 'Which datasets were used?')
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
-  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/papers/p1/chats')).toBe(true))
-  expect(peekQuestion('c9')).toMatchObject({ content: 'Which datasets were used?', settings: { model: luna.key, reasoning_effort: 'low' } })
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/chats')).toBe(true))
+  expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] })
+  expect(peekQuestion('c9')).toMatchObject({
+    content: 'Traceable research systems Dense passage retrieval Which datasets were used?',
+    mentions: [{ paper_id: 'p1', label: 'Traceable research systems', start: 0, end: 26 }, { paper_id: 'p2', label: 'Dense passage retrieval', start: 27, end: 50 }],
+    settings: { model: luna.key, reasoning_effort: 'low' },
+  })
   expect(peekQuestion('c9')?.request_id).toMatch(/^[0-9a-f-]{36}$/)
+})
+
+test('Given a topic typed on home, When @ picks a paper, Then its pills choose it, and deleting the last pill returns to search', async () => {
+  mockApi({
+    'GET /papers': { items: [readyPaper, otherPaper] },
+    'GET /models': { items: [luna] },
+    'GET /settings': { default_model: luna.key, reasoning_effort: 'low' },
+  })
+  const { user } = renderApp('/')
+  await user.type(screen.getByRole('textbox', { name: 'Research topic' }), 'Compare @')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  const question = screen.getByRole('textbox', { name: 'Question about this paper' })
+  await waitFor(() => expect(textIn(question)).toBe('Compare Dense passage retrieval '))
+  // A second pill for the same paper: still one paper.
+  await user.type(question, 'and @')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  await waitFor(() => expect(within(question).getAllByRole('group', { name: 'Dense passage retrieval' })).toHaveLength(2))
+  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBe(question)
+  deletePill(question, 1)
+  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBe(question)
+  deletePill(question, 0)
+  expect(screen.getByRole('textbox', { name: 'Research topic' })).toBe(question)
 })
 
 function recentRoutes(title: { value: string }) {

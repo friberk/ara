@@ -1,13 +1,14 @@
+import { isEditable } from '@/test/editor'
 import { screen, waitFor, within } from '@testing-library/react'
 import { json, mockApi } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
 // Runs against the real content module (ARA-035): inline chips and the source list are named "Source, page N".
-import { assistantMessage, ask, chatRow, citation, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
+import { assistantMessage, ask, chatRow, citation, included, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
 import { paperChatsKey } from './use-paper-chats'
 
 afterEach(() => vi.unstubAllGlobals())
 
-test.each(['default', 'on'])('Given saved native %s aliases High, When a new message is sent, Then it requests high and past aliases keep historical labels', async (reasoning) => {
+test.each(['default', 'on'])('Given saved native %s aliases High, When a new message is sent, Then it requests high and past answers stay readable without a reasoning label', async (reasoning) => {
   const local = { ...luna, key: 'native', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } }
   const legacy = [assistantMessage('old-preset', 'Earlier runtime preset response.', { model: local.key, reasoning_effort: 'default' }), assistantMessage('old-enabled', 'Earlier enabled response.', { model: local.key, reasoning_effort: 'on' })]
   const answer = assistantMessage('new-high', 'New explicit response.', { model: local.key, reasoning_effort: 'high' })
@@ -22,8 +23,9 @@ test.each(['default', 'on'])('Given saved native %s aliases High, When a new mes
   await ask(user, 'What changed?')
   await screen.findByText('New explicit response.')
   expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ model: local.key, reasoning_effort: 'high' })
-  expect(screen.getByText('Runtime preset')).toBeVisible()
-  expect(screen.getByText('Reasoning enabled')).toBeVisible()
+  expect(screen.getByText('Earlier runtime preset response.')).toBeVisible()
+  expect(screen.queryByText('Runtime preset')).not.toBeInTheDocument()
+  expect(screen.queryByText('Reasoning enabled')).not.toBeInTheDocument()
   expect(calls.some((call) => call.method === 'PUT')).toBe(false)
 })
 
@@ -112,7 +114,7 @@ test('Given a paper with no chats under StrictMode, When a suggested question is
   const { calls } = mockApi({
     ...settings,
     'GET /chats': () => json({ items: created ? [chatRow('c9', { title: 'What datasets are used?' })] : [] }),
-    'POST /papers/p1/chats': () => { created = true; return json({ id: 'c9', paper_id: 'p1', document_id: 'd1', title: 'Paper discussion', created_at: '2026-10-08T12:00:00Z' }, 201) },
+    'POST /chats': () => { created = true; return json({ id: 'c9', paper_id: 'p1', papers: [included(paper)], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T12:00:00Z' }, 201) },
     'GET /chats/c9/messages': () => json({ items: answered ? [userMessage('u9', 'What datasets are used?'), answer] : [] }),
     'POST /chats/c9/messages/stream': () => { answered = true; return sse([['message.started', { message_id: 'm9' }], ['message.delta', { text: answer.content }], ['message.completed', answer]]) },
   })
@@ -126,7 +128,8 @@ test('Given a paper with no chats under StrictMode, When a suggested question is
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c9'))
   expect(await screen.findByText('The Orion-12 dataset is used.')).toBeVisible()
   await new Promise((resolve) => setTimeout(resolve, 50))
-  expect(calls.filter((call) => call.method === 'POST' && call.path === '/papers/p1/chats')).toHaveLength(1)
+  expect(calls.filter((call) => call.method === 'POST' && call.path === '/chats')).toHaveLength(1)
+  expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1'] })
   const stream = calls.filter((call) => call.path === '/chats/c9/messages/stream')
   expect(stream).toHaveLength(1)
   expect(stream[0]?.body).toMatchObject({ content: 'What datasets are used?', model: luna.key, reasoning_effort: 'low' })
@@ -136,7 +139,7 @@ test('Given a metadata-only paper, Then the composer is disabled and the footnot
   mockApi(settings)
   mount('/papers/p1', { value: { ...paper, document_status: 'metadata_only', active_document_id: null } })
   expect(await screen.findByText('Attach a PDF to ask questions about this paper.')).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
+  expect(isEditable(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe(false)
   // Finish review: no dead controls. Questions are offered once the PDF is ready; the summary card offers the next step.
   expect(screen.queryByRole('group', { name: 'Suggested questions' })).not.toBeInTheDocument()
   expect(await within(screen.getByRole('article', { name: 'Paper summary' })).findByRole('button', { name: 'Attach PDF' })).toBeEnabled()
@@ -145,13 +148,13 @@ test('Given a metadata-only paper, Then the composer is disabled and the footnot
 test('Given several chats, When another is chosen in the switcher, Then its URL opens and an earlier PDF is marked', async () => {
   mockApi({
     ...settings,
-    'GET /chats': { items: [chatRow('c1', { title: 'Research question', last_question_preview: 'What was measured?' }), chatRow('c2', { title: 'Older discussion', document_id: 'd0', last_activity_at: '2026-10-07T12:00:00Z' })] },
+    'GET /chats': { items: [chatRow('c1', { title: 'Research question', last_question_preview: 'What was measured?' }), chatRow('c2', { title: 'Older discussion', papers: [included(paper, { document_id: 'd0' })], last_activity_at: '2026-10-07T12:00:00Z' })] },
   })
   const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: /Research question/ }))
-  const older = await screen.findByRole('menuitemradio', { name: /Older discussion/ })
+  await user.click(await screen.findByRole('button', { name: 'Chat history' }))
+  const older = await screen.findByRole('option', { name: /Older discussion/ })
   expect(older).toHaveTextContent('Earlier PDF')
-  expect(screen.getByRole('menuitemradio', { name: /Research question/ })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('option', { name: /Research question/ })).toHaveAttribute('aria-current', 'true')
   await user.click(older)
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c2'))
   await user.click(screen.getByRole('button', { name: 'New conversation' }))
@@ -208,9 +211,9 @@ test('Given legacy chats on the default title, Then the switcher names them like
     },
   })
   const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: 'What is this paper about?' }))
-  expect(await screen.findByRole('menuitemradio', { name: /^What is this paper about\?/ })).toHaveAttribute('aria-checked', 'true')
-  expect(screen.getByRole('menuitemradio', { name: /^Paper discussion/ })).toHaveTextContent('No questions yet')
+  await user.click(await screen.findByRole('button', { name: 'Chat history' }))
+  expect(await screen.findByRole('option', { name: /^What is this paper about\?/ })).toHaveAttribute('aria-current', 'true')
+  expect(screen.getByRole('option', { name: /^Paper discussion/ })).toHaveTextContent('No questions yet')
 })
 
 test('Given auto-titled chats, Then a row repeats its question only when a later question differs', async () => {
@@ -224,14 +227,14 @@ test('Given auto-titled chats, Then a row repeats its question only when a later
     },
   })
   const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: 'What datasets are used' }))
-  const single = await screen.findByRole('menuitemradio', { name: /^What datasets are used/ })
+  await user.click(await screen.findByRole('button', { name: 'Chat history' }))
+  const single = await screen.findByRole('option', { name: /^What datasets are used/ })
   expect(single.textContent?.match(/What datasets are used/g)).toHaveLength(1)
-  expect(screen.getByRole('menuitemradio', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
+  expect(screen.getByRole('option', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
 })
 
 test('Given the open chat uses an earlier PDF, Then the switcher label marks it and says so in its accessible name', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Old PDF chat', document_id: 'd0' })] } })
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Old PDF chat', papers: [included(paper, { document_id: 'd0' })] })] } })
   mount('/papers/p1/chats/c1')
   const trigger = await screen.findByRole('button', { name: 'Old PDF chat, earlier PDF' })
   expect(within(trigger).getByText('Earlier PDF')).toBeVisible()

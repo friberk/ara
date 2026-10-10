@@ -48,9 +48,10 @@ test('Given a server that cannot report memory yet, Then the usual footnote show
 })
 
 test('Given a summary written by another model, Then the footnote names the chat model selected in the composer, never the summarizer', async () => {
-  // Hosted chats are summarized by a fixed summarizer; what must fit is the model that answers (lead decision, 2026-10-09).
+  // What must fit is the model of the chat, which also writes the summary (ARA-083); a summary stored by another model is not named.
   const sol = { ...luna, key: 'gpt-5.6-sol', model_id: 'gpt-5.6-sol', display_name: 'Sol' }
-  mockApi({ 'GET /models': { items: [luna, sol] }, 'GET /settings': { default_model: sol.key, reasoning_effort: 'low' }, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': history, 'GET /chats/c1/memory': { memory: { ...memory, model: luna.key }, total_messages: 24 } })
+  const answeredBySol = { items: [userMessage('u1', 'What recall did BM25 reach?'), assistantMessage('m1', 'BM25 reached 71.2 recall.', { model: sol.key })] }
+  mockApi({ 'GET /models': { items: [luna, sol] }, 'GET /settings': { default_model: sol.key, reasoning_effort: 'low' }, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': answeredBySol, 'GET /chats/c1/memory': { memory: { ...memory, model: luna.key }, total_messages: 24 } })
   mount('/papers/p1/chats/c1')
   expect(await screen.findByText('Earlier messages are summarized to fit Sol.')).toBeVisible()
   expect(screen.queryByText(/fit Luna/)).not.toBeInTheDocument()

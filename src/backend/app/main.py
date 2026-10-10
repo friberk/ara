@@ -22,8 +22,10 @@ from app.routes.fulltext import router as fulltext_router
 from app.routes.history import router as history_router
 from app.routes.jobs import router
 from app.routes.local_models import router as local_models_router
+from app.routes.metadata import router as metadata_router
 from app.routes.research import router as research_router
 from app.routes.retrieval import router as retrieval_router
+from app.routes.uploads import router as uploads_router
 from app.services.dispatcher import dispatcher_loop
 from app.services.health import readiness
 from app.services.reindex import prepare_search
@@ -103,7 +105,7 @@ def create_app(
             "code": exc.code,
             "message": exc.message,
             "request_id": request.state.request_id,
-            "details": [],
+            "details": exc.details,
         }
         headers = {}
         if exc.retry_after is not None:
@@ -141,15 +143,20 @@ def create_app(
             status_code=200 if healthy else 503,
         )
 
-    app.include_router(router(settings.app_env == "development"))
+    open_models = settings.experimental_open_models
+    app.include_router(router(settings.app_env == "development", open_models=open_models))
     app.include_router(research_router)
     app.include_router(fulltext_router)
     app.include_router(documents_router)
     app.include_router(ai_router)
-    app.include_router(local_models_router)
+    if open_models:
+        # Model downloads and deletions exist only while open models are on (ARA-090).
+        app.include_router(local_models_router)
     app.include_router(chat_router)
     app.include_router(history_router)
     app.include_router(retrieval_router)
+    app.include_router(metadata_router)
+    app.include_router(uploads_router)
     return app
 
 

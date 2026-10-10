@@ -1,11 +1,12 @@
 // Test-after coverage (ARA-036 TDD audit): behaviour that shipped before any test covered it. Each test was
 // confirmed by breaking the behaviour it covers, watching the test fail, and restoring the code.
+import { isEditable, textIn } from '@/test/editor'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { testClient } from '@/test/render'
 import { json, mockApi } from '@/test/fetch-routes'
 import { queryKeys } from '@/lib/query-keys'
 import { queueQuestion } from '@/lib/pending-questions'
-import { ask, assistantMessage, chatRow, mount, paper, settings, userMessage } from './pane-test-kit'
+import { ask, assistantMessage, chatRow, included, mount, paper, settings, userMessage } from './pane-test-kit'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
@@ -31,10 +32,10 @@ test('Given a question sent with Enter, Then one answer is requested and the com
   const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': controlledStream().handler })
   const { user } = mount('/papers/p1/chats/c1')
   const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
-  await waitFor(() => expect(input).toBeEnabled())
+  await waitFor(() => expect(isEditable(input)).toBe(true))
   await user.type(input, 'Sent with Enter{Enter}')
   await waitFor(() => expect(calls.filter((call) => call.path === '/chats/c1/messages/stream')).toHaveLength(1))
-  expect(input).toHaveValue('')
+  expect(textIn(input)).toBe('')
 })
 
 test('Given an answer starting, Then it reads "Preparing a response…" and screen readers hear it start and finish', async () => {
@@ -109,33 +110,6 @@ test('Given an interrupted answer with no text, Then it says no answer was saved
   expect(within(await screen.findByRole('article', { name: 'Assistant message' })).getByText('No answer was saved.')).toBeVisible()
 })
 
-test('Given chats from today, this year and last year, Then each row shows its last activity at the right precision', async () => {
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-10-08T15:00:00Z'))
-  const today = '2026-10-08T12:00:00Z'
-  const thisYear = '2026-03-02T12:00:00Z'
-  const lastYear = '2025-06-30T12:00:00Z'
-  mockApi({
-    ...settings,
-    'GET /chats': { items: [chatRow('c1', { title: 'Today chat', last_activity_at: today }), chatRow('c2', { title: 'Spring chat', last_activity_at: thisYear }), chatRow('c3', { title: 'Old chat', last_activity_at: lastYear })] },
-  })
-  const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: 'Today chat' }))
-  const format = (iso: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, options).format(new Date(iso))
-  expect(await screen.findByRole('menuitemradio', { name: /^Today chat/ })).toHaveTextContent(format(today, { hour: 'numeric', minute: '2-digit' }))
-  const spring = screen.getByRole('menuitemradio', { name: /^Spring chat/ })
-  expect(spring).toHaveTextContent(format(thisYear, { month: 'short', day: 'numeric' }))
-  expect(spring).not.toHaveTextContent('2026')
-  expect(screen.getByRole('menuitemradio', { name: /^Old chat/ })).toHaveTextContent(format(lastYear, { month: 'short', day: 'numeric', year: 'numeric' }))
-})
-
-test('Given a paper with no chats, Then the switcher says there are none yet', async () => {
-  mockApi(settings)
-  const { user } = mount('/papers/p1')
-  await user.click(await screen.findByRole('button', { name: 'New conversation', expanded: false }))
-  expect(await screen.findByRole('menuitem', { name: 'No conversations yet' })).toBeInTheDocument()
-})
-
 test('Given the history still loading, Then a loading placeholder stands in for the thread', async () => {
   mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': never })
   mount('/papers/p1/chats/c1')
@@ -177,14 +151,14 @@ test('Given a paper whose PDF failed, Then the composer explains how to enable q
   mockApi(settings)
   mount('/papers/p1', { value: { ...paper, document_status: 'failed' } })
   expect(await screen.findByText('PDF processing failed. Attach a text-based PDF to ask questions.')).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
+  expect(isEditable(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe(false)
 })
 
 test('Given the server refuses a new chat, Then the reason is shown inline', async () => {
-  mockApi({ ...settings, 'POST /papers/p1/chats': () => json({ code: 'DOCUMENT_NOT_READY', message: 'Upload and process a paper PDF before starting a chat' }, 409) })
+  mockApi({ ...settings, 'POST /chats': () => json({ code: 'PAPER_NOT_READY', message: '“Evidence based research” needs a processed PDF before you can ask about it.' }, 409) })
   const { user } = mount('/papers/p1')
   await ask(user, 'Can I start?')
-  expect(await screen.findByRole('alert')).toHaveTextContent('Upload and process a paper PDF before starting a chat')
+  expect(await screen.findByRole('alert')).toHaveTextContent('“Evidence based research” needs a processed PDF before you can ask about it.')
 })
 
 test('Given a new chat, Then its thread opens and asks at once, without waiting for the chat list to refetch', async () => {
@@ -192,7 +166,7 @@ test('Given a new chat, Then its thread opens and asks at once, without waiting 
   const { calls } = mockApi({
     ...settings,
     'GET /chats': () => (listCalls++ === 0 ? json({ items: [] }) : never()),
-    'POST /papers/p1/chats': () => json({ id: 'c9', paper_id: 'p1', document_id: 'd1', title: 'Paper discussion', created_at: '2026-10-08T12:00:00Z' }, 201),
+    'POST /chats': () => json({ id: 'c9', paper_id: 'p1', papers: [included(paper)], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T12:00:00Z' }, 201),
     'POST /chats/c9/messages/stream': controlledStream().handler,
   })
   const { user } = mount('/papers/p1')
@@ -235,6 +209,6 @@ test('Given a queued question while an answer is still processing, Then it waits
   const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [userMessage('u1', 'First'), assistantMessage('m1', '', { state: 'processing' })] } })
   queueQuestion('c1', { content: 'Queued behind an answer', settings: { model: 'gpt-5.6-luna', reasoning_effort: 'low' } })
   mount('/papers/p1/chats/c1')
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toHaveValue('Queued behind an answer'))
+  await waitFor(() => expect(textIn(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe('Queued behind an answer'))
   expect(calls.some((call) => call.path.endsWith('/messages/stream'))).toBe(false)
 })

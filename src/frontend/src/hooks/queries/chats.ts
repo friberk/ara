@@ -12,12 +12,34 @@ export function useChats(filters: { paperId?: string | null; limit?: number } = 
   })
 }
 
-export function useCreateChat(paperId: string) {
+/** One chat with its papers, for a link from a paper the chat may no longer cover. */
+export function useChat(chatId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.chats.detail(chatId ?? ''),
+    queryFn: ({ signal }) => api<ChatSummary>(`/chats/${chatId}`, { signal }),
+    enabled: !!chatId,
+    retry: false,
+  })
+}
+
+/** A chat over one or more ready library papers; the first one's page is the chat's URL. */
+export function useCreateChat() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (title?: string) => api<Chat>(`/papers/${paperId}/chats`, json('POST', title ? { title } : {})),
+    mutationFn: ({ paperIds, title }: { paperIds: string[]; title?: string }) => api<Chat>('/chats', json('POST', { paper_ids: paperIds, ...(title ? { title } : {}) })),
     onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.chats.all }),
   })
+}
+
+/**
+ * Removes a paper; the response names the chat's new first paper. Papers join a chat with the question whose pills
+ * mention them (ARA-096), so the client no longer adds them on their own.
+ */
+export function useChatPapers(chatId: string) {
+  const client = useQueryClient()
+  const settled = () => void client.invalidateQueries({ queryKey: queryKeys.chats.all })
+  const remove = useMutation({ mutationFn: (paperId: string) => api<Chat>(`/chats/${chatId}/papers/${paperId}`, { method: 'DELETE' }), onSuccess: settled })
+  return { remove }
 }
 
 export function useRenameChat() {

@@ -1,9 +1,10 @@
 // Characterization tests written AFTER the implementation (ARA-036), for behaviour that shipped without a test
 // of its own. Each one was checked by temporarily breaking the behaviour it covers and watching it fail.
+import { textIn } from '@/test/editor'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { queueQuestion } from '@/lib/pending-questions'
 import { json, mockApi, noContent } from '@/test/fetch-routes'
-import { ask, assistantMessage, chatRow, citation, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
+import { ask, assistantMessage, chatRow, citation, included, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -18,18 +19,6 @@ function hangingStream(onAbort: () => void) {
     return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
   }
 }
-
-test('Given a server without GET /chats, Then the older per-paper list still opens the conversation', async () => {
-  mockApi({
-    ...settings,
-    'GET /chats': () => json({ code: 'NOT_FOUND', message: 'Not Found' }, 404),
-    'GET /papers/p1/chats': { items: [{ id: 'c1', paper_id: 'p1', document_id: 'd1', title: 'Older server chat', created_at: '2026-10-08T10:00:00Z' }] },
-    'GET /chats/c1/messages': { items: [userMessage('u1', 'Saved on an older server')] },
-  })
-  mount('/papers/p1/chats/c1')
-  expect(await screen.findByText('Saved on an older server')).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Older server chat' })).toBeVisible()
-})
 
 test('Given the provider fails mid-answer, Then its reason is shown inline and the answer is marked failed', async () => {
   let failed = false
@@ -122,8 +111,8 @@ test('Given an answer streaming, When another chat is opened, Then that stream i
   const { user } = mount('/papers/p1/chats/c1')
   await ask(user, 'Long question?')
   expect(await screen.findByText('Still writing')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'First chat' }))
-  await user.click(await screen.findByRole('menuitemradio', { name: /^Second chat/ }))
+  await user.click(screen.getByRole('button', { name: 'Chat history' }))
+  await user.click(await screen.findByRole('option', { name: /^Second chat/ }))
   await waitFor(() => expect(aborted).toBe(true))
   expect(calls.filter((call) => call.path.endsWith('/messages/stream'))).toHaveLength(1)
 })
@@ -132,13 +121,14 @@ test('Given a queued question for a paper whose PDF is processing, Then it waits
   const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] } })
   queueQuestion('c1', { content: 'Queued while processing', settings: { model: luna.key, reasoning_effort: 'low' } })
   mount('/papers/p1/chats/c1', { value: { ...paper, document_status: 'processing' } })
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toHaveValue('Queued while processing'))
-  expect(screen.getByText('Questions open when the PDF finishes processing.')).toBeVisible()
+  await waitFor(() => expect(textIn(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe('Queued while processing'))
+  // The same words as while retrieval brings the PDF: it is on its way (ARA-086).
+  expect(screen.getByText('You can ask questions once the PDF is ready.')).toBeVisible()
   expect(calls.some((call) => call.path.endsWith('/messages/stream'))).toBe(false)
 })
 
 test('Given a chat on an earlier PDF, Then the footnote says which PDF its answers use', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { document_id: 'd0' })] } })
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { papers: [included(paper, { document_id: 'd0' })] })] } })
   mount('/papers/p1/chats/c1')
   expect(await screen.findByText('This conversation uses an earlier PDF of this paper.')).toBeVisible()
 })

@@ -1,17 +1,21 @@
-import { Link, useLocation } from 'react-router-dom'
-import { Activity, BookOpenText, FileText, Library, Search, Settings, SquarePen } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Library, Search, Settings, SquarePen } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
   SidebarMenuItem, SidebarMenuSkeleton, SidebarRail, useSidebar,
 } from '@/components/ui/sidebar'
+import { AraMark, AraWordmark } from '@/components/brand/AraBrand'
+import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { usePapers } from '@/hooks/queries/papers'
+import { PaperActions } from '@/features/library/PaperActions'
 import { SidebarRecent } from './SidebarRecent'
 
 function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
   const papers = usePapers('', { pageSize: 6 })
   const location = useLocation()
+  const navigate = useNavigate()
   const items = papers.data?.pages[0]?.items ?? []
   if (papers.isError || (!papers.isPending && !items.length)) return null
   return (
@@ -23,10 +27,15 @@ function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
           <SidebarMenuItem key={paper.id}>
             <SidebarMenuButton asChild isActive={location.pathname.startsWith(`/papers/${paper.id}`)} tooltip={paper.title ?? 'Untitled paper'}>
               <Link to={`/papers/${paper.id}`} onClick={onNavigate} title={paper.title ?? undefined}>
-                <FileText aria-hidden="true" className="text-sidebar-foreground/60" />
+                <PdfStateIcon state={paper.document_status} focusable={false} />
                 <span>{paper.title ?? 'Untitled paper'}</span>
               </Link>
             </SidebarMenuButton>
+            <PaperActions
+              paper={paper}
+              trigger="sidebar"
+              onDeleted={() => { if (location.pathname.startsWith(`/papers/${paper.id}`)) navigate('/') }}
+            />
           </SidebarMenuItem>
         ))}
       </SidebarMenu>
@@ -36,21 +45,22 @@ function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
 
 export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const location = useLocation()
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile, setOpenMobile, state } = useSidebar()
+  const iconOnly = state === 'collapsed' && !isMobile
   const close = () => { if (isMobile) setOpenMobile(false) }
   const links = [
     { to: '/library', label: 'Library', icon: Library },
-    { to: '/activity', label: 'Activity', icon: Activity },
   ]
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Research Assistant">
-              <Link to="/" onClick={close}>
-                <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground dark:bg-foreground dark:text-background"><BookOpenText className="size-4" aria-hidden="true" /></span>
-                <span className="truncate font-semibold tracking-tight">Research Assistant</span>
+            <SidebarMenuButton size="lg" asChild tooltip="ara.">
+              <Link to="/" onClick={close} aria-label="ara.">
+                {iconOnly
+                  ? <AraMark decorative className="mx-auto h-6! w-auto! shrink-0" />
+                  : <AraWordmark decorative className="h-[26px]! w-auto! shrink-0" />}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

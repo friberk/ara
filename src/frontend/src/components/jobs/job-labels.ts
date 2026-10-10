@@ -1,6 +1,5 @@
 import type { Job } from '@/api/types'
 
-export const jobKindLabels: Record<string, string> = { fulltext: 'PDF retrieval', ingest: 'PDF processing', summary: 'Paper summary', model_download: 'Model download', model_delete: 'Model weights deletion' }
 const stageLabels: Record<string, string> = {
   queued: 'Waiting to start',
   processing: 'Reading the PDF',
@@ -8,7 +7,9 @@ const stageLabels: Record<string, string> = {
   fetching_pdf: 'Downloading the PDF',
   storing_pdf: 'Saving the PDF',
   extracting_metadata: 'Extracting title, authors and abstract',
+  finding_metadata: 'Finding paper details',
   summarizing: 'Summarizing sections',
+  summarizing_sections: 'Summarizing each section',
   combining: 'Combining the summary',
   retry_wait: 'Waiting to retry',
   inventory: 'Checking installed weights',
@@ -24,7 +25,6 @@ const stageLabels: Record<string, string> = {
   failed: 'Failed',
 }
 
-export function jobKindLabel(kind: string) { return jobKindLabels[kind] ?? kind.replaceAll('_', ' ') }
 export function jobStageLabel(job: Pick<Job, 'state' | 'stage'>) {
   if (job.state === 'completed') return 'Completed'
   if (job.state === 'failed') return 'Processing failed'

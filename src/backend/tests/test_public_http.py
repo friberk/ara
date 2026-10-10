@@ -9,9 +9,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 from httpcore._backends.anyio import AnyIOBackend
 
-from app.integrations.pdf_download import PDFDownloader
-from app.schemas.fulltext import FullTextCandidate
-from app.schemas.research import FullTextLocation
+from app.integrations.openalex_content import ContentDownloader
+
+STORAGE = "a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com"
 
 
 class LoopbackTLSTransport(httpx.AsyncHTTPTransport):
@@ -21,7 +21,7 @@ class LoopbackTLSTransport(httpx.AsyncHTTPTransport):
     handle_async_request = httpx.AsyncHTTPTransport.handle_async_request
 
 
-async def test_real_tls_validates_original_hostname_and_separates_shared_ip_hosts(tmp_path):
+async def test_real_tls_validates_each_hops_original_hostname(tmp_path):
     cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
     await asyncio.to_thread(
         subprocess.run,
@@ -35,9 +35,9 @@ async def test_real_tls_validates_original_hostname_and_separates_shared_ip_host
             "-days",
             "1",
             "-subj",
-            "/CN=arxiv.org",
+            "/CN=content.openalex.org",
             "-addext",
-            "subjectAltName=DNS:arxiv.org",
+            "subjectAltName=DNS:content.openalex.org",
             "-keyout",
             str(key),
             "-out",
@@ -53,6 +53,12 @@ async def test_real_tls_validates_original_hostname_and_separates_shared_ip_host
             pass
 
         def do_GET(self):
+            if self.path.startswith("/works/W1.pdf"):
+                self.send_response(302)
+                self.send_header("Location", f"https://{STORAGE}/openalex-pdfs/W1.pdf?X-Amz=1")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             content = b"%PDF-1.7\nTLS fixture"
             self.send_response(200)
             self.send_header("Content-Type", "application/pdf")
@@ -93,23 +99,12 @@ async def test_real_tls_validates_original_hostname_and_separates_shared_ip_host
         transport._pool._network_backend = LocalBackend()
         return transport
 
-    downloader = PDFDownloader(
-        ["arxiv.org", "aclanthology.org"], resolver=Resolver(), transport_factory=factory
-    )
+    downloader = ContentDownloader(resolver=Resolver(), transport_factory=factory)
     try:
-        for host, outcome in [("arxiv.org", "downloaded"), ("aclanthology.org", "unavailable")]:
-            url = f"https://{host}/paper.pdf"
-            result = await downloader.fetch(
-                FullTextCandidate(
-                    provider="openalex",
-                    external_id="W123",
-                    source_label="OpenAlex",
-                    url=url,
-                    location=FullTextLocation(),
-                )
-            )
-            assert result.outcome == outcome
-        assert names == ["arxiv.org", "aclanthology.org"]
+        assert (await downloader.fetch("W2", "fixture-key")).outcome == "downloaded"
+        # OpenAlex's certificate does not cover its storage host, so that hop must fail TLS.
+        assert (await downloader.fetch("W1", "fixture-key")).outcome == "unavailable"
+        assert names == ["content.openalex.org", "content.openalex.org", STORAGE]
     finally:
         await downloader.aclose()
         await asyncio.to_thread(server.shutdown)

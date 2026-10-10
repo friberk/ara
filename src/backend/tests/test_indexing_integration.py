@@ -13,7 +13,7 @@ from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import DocumentChunk, ModelConfiguration
 from app.models.retrieval import ChunkEmbedding, RetrievalIndex
 from app.repositories.jobs import claim
-from tests.support.papers import CHUNK_SET, OPENAI, QWEN, seed_paper
+from tests.support.papers import CHUNK_SET, OPENAI, QWEN, SMALL, seed_paper, use_library_profile
 from tests.support.providers import ollama_fixture, openai_fixture
 
 pytestmark = pytest.mark.integration
@@ -197,6 +197,7 @@ async def test_given_time_budget_spent_when_embedding_then_job_continues_without
     assert len(providers["openai"]) == 3
 
 
+@pytest.mark.open_models
 async def test_given_profile_switch_while_answering_then_old_index_serves_until_new_is_ready(
     resources, providers, monkeypatch
 ):
@@ -264,6 +265,7 @@ async def test_given_missing_openai_key_when_embedding_then_index_is_unavailable
     assert providers["openai"] == []
 
 
+@pytest.mark.open_models
 async def test_given_uninstalled_local_model_when_embedding_then_index_is_unavailable(
     resources,
 ):
@@ -280,6 +282,7 @@ async def test_given_uninstalled_local_model_when_embedding_then_index_is_unavai
     assert (await load(resources, BackgroundJob, job_id)).state == "completed"
 
 
+@pytest.mark.open_models
 async def test_given_busy_local_runtime_when_embedding_then_job_waits_without_attempts(
     resources, providers, monkeypatch
 ):
@@ -312,6 +315,7 @@ async def test_given_busy_local_runtime_when_embedding_then_job_waits_without_at
     assert (await load(resources, RetrievalIndex, index_id)).state == "queued"
 
 
+@pytest.mark.open_models
 async def test_given_local_profile_when_indexing_then_each_admission_embeds_few_passages(
     resources, providers, monkeypatch
 ):
@@ -373,15 +377,12 @@ async def test_given_provider_failure_when_attempts_run_out_then_index_fails(
     assert (await load(resources, BackgroundJob, job_id)).state == "failed"
 
 
-async def test_given_profile_choices_when_chunks_persist_then_hook_indexes_effective_profile(
-    resources,
-):
+async def test_given_library_model_when_chunks_persist_then_hook_indexes_that_model(resources):
     from app.rag.hooks import after_chunks_persisted
 
-    default_paper, default_document = await seed_paper(resources)
-    override_paper, override_document = await seed_paper(resources, retrieval_profile=OPENAI)
+    _, document = await seed_paper(resources)
     async with resources.sessions() as session, session.begin():
-        await after_chunks_persisted(session, document_id=default_document)
+        await after_chunks_persisted(session, document_id=document)
     async with resources.sessions() as session, session.begin():
         session.add(
             ModelConfiguration(
@@ -389,17 +390,83 @@ async def test_given_profile_choices_when_chunks_persist_then_hook_indexes_effec
             )
         )
     async with resources.sessions() as session, session.begin():
-        await after_chunks_persisted(session, document_id=default_document)
-        await after_chunks_persisted(session, document_id=override_document)
+        await after_chunks_persisted(session, document_id=document)
         await after_chunks_persisted(session, document_id=None)
     async with resources.sessions() as session:
         indexes = (
             await session.execute(select(RetrievalIndex.document_id, RetrievalIndex.profile))
         ).all()
     assert sorted((str(d), p) for d, p in indexes) == sorted(
-        [
-            (str(default_document), OPENAI),
-            (str(default_document), QWEN),
-            (str(override_document), OPENAI),
-        ]
+        [(str(document), OPENAI), (str(document), QWEN)]
     )
+
+
+async def index_profiles(resources, document_id):
+    async with resources.sessions() as session:
+        return sorted(
+            (
+                await session.scalars(
+                    select(RetrievalIndex.profile).where(RetrievalIndex.document_id == document_id)
+                )
+            ).all()
+        )
+
+
+async def test_given_library_switch_when_new_index_is_ready_then_old_model_is_pruned(
+    resources, providers, monkeypatch
+):
+    from app.rag import indexing
+
+    _, document_id = await seed_paper(resources)
+    _, first_job = await ensure(resources, document_id, OPENAI)
+    await run_job(resources, first_job)
+    await use_library_profile(resources, SMALL)
+    _, second_job = await ensure(resources, document_id, SMALL)
+    monkeypatch.setattr(indexing, "WORK_SECONDS", 0)
+    await run_job(resources, second_job)
+    # Half-built: the old model still serves and nothing is pruned yet.
+    assert await serving(resources, document_id, SMALL) == OPENAI
+    assert await index_profiles(resources, document_id) == sorted([OPENAI, SMALL])
+    assert await embedding_count(resources, document_id, OPENAI) == 5
+    monkeypatch.setattr(indexing, "WORK_SECONDS", 240)
+    await run_job(resources, second_job)
+    assert await serving(resources, document_id, SMALL) == SMALL
+    assert await index_profiles(resources, document_id) == [SMALL]
+    assert await embedding_count(resources, document_id, OPENAI) == 0
+    assert await embedding_count(resources, document_id, SMALL) == 5
+    assert providers["openai"][-1]["model"] == "text-embedding-3-small"
+
+
+async def test_given_a_ready_library_index_when_reconciling_then_stale_models_are_pruned_once(
+    resources, providers
+):
+    from app.rag.indexing import reconcile_indexes
+
+    resources.settings.openai_api_key = SecretStr("http-fixture-only")
+    _, document_id = await seed_paper(resources)
+    _, old_job = await ensure(resources, document_id, OPENAI)
+    await run_job(resources, old_job)
+    await use_library_profile(resources, SMALL)
+    assert await reconcile_indexes(resources) == 1
+    assert await reconcile_indexes(resources) == 0  # a duplicate run queues nothing more
+    async with resources.sessions() as session:
+        new_job = await session.scalar(
+            select(BackgroundJob.id).where(BackgroundJob.payload["profile"].astext == SMALL)
+        )
+    await run_job(resources, new_job)
+    # A late reconcile (startup) is harmless and leaves only the library model.
+    assert await reconcile_indexes(resources) == 0
+    assert await index_profiles(resources, document_id) == [SMALL]
+    assert await embedding_count(resources, document_id, OPENAI) == 0
+
+
+async def test_given_no_index_for_the_new_model_then_questions_keep_the_old_vectors(
+    resources, providers
+):
+    _, document_id = await seed_paper(resources)
+    _, job = await ensure(resources, document_id, OPENAI)
+    await run_job(resources, job)
+    await use_library_profile(resources, SMALL)
+    await ensure(resources, document_id, SMALL)  # queued, not yet embedding
+    assert await serving(resources, document_id, SMALL) == OPENAI
+    assert await index_profiles(resources, document_id) == sorted([OPENAI, SMALL])

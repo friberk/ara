@@ -1,0 +1,63 @@
+{
+  "id": "ARA-084",
+  "title": "Retrieve available PDFs automatically and summarize them without clicks",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "A metadata-only paper with a known PDF location shows 'Get PDF', and the user must click it, wait for processing, then click 'Generate summary'. Status copy such as 'PDF downloaded. Processing its pages continues in the background.' adds confusion. User feedback on 2026-10-09: \"Download PDF feature is currently not working well. We need to overhaul the experience there. I need to click Get PDF manually. However if the PDF is available it should get it automatically and do the summary generation etc. as well.\"",
+  "dependencies": [
+    "ARA-019",
+    "ARA-083"
+  ],
+  "acceptance_criteria": [
+    "Given a paper saved to the library whose provider metadata lists an open-access PDF, or that has an identifier allowing discovery, when it is saved, then one durable full-text retrieval job starts without a click, and duplicate saves or deliveries never start a second one.",
+    "Given a metadata-only paper saved before this change that has never had a retrieval attempt, when its workspace opens, then retrieval starts once automatically; after a failure, retries stay manual and respect the provider's reported wait.",
+    "Given any document that finishes processing (downloaded or uploaded), when it becomes ready, then one summary job starts automatically with the saved default model and effort, once per document.",
+    "Given the default model is local and not ready, or hosted generation is unconfigured or over budget, when auto-summary would start, then nothing falls back to a paid model and the summary card offers Generate summary with the reason.",
+    "Given the automatic flow is running, when the user watches the workspace, then one progress story shows (finding PDF, downloading from the source, reading pages, summarizing) without 'continues in the background' boilerplate or a manual Get PDF button, and the reader opens without a reload.",
+    "Given no PDF is available, access is blocked or the source is rate limited, when retrieval ends, then the UI says so plainly and offers retry (after the wait), the publisher link and upload."
+  ],
+  "test_cases": [
+    "Backend: save enqueues exactly one retrieval job; duplicate save and redelivery are idempotent; no automatic retry loop after failure.",
+    "Backend: document ready enqueues one summary job with the saved defaults; local-not-ready and budget/unconfigured cases enqueue nothing paid.",
+    "Frontend: FullTextAccess and SummaryCard states for automatic retrieval, automatic summary, failure and wait.",
+    "Browser regression for the provider PDF journey, run at integration."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/repositories/fulltext.py",
+    "src/backend/app/routes/fulltext.py",
+    "src/backend/app/routes/research.py",
+    "src/backend/app/schemas/fulltext.py",
+    "src/backend/app/services/fulltext.py",
+    "src/backend/app/services/fulltext_discovery.py",
+    "src/backend/app/services/summarization.py",
+    "src/backend/app/services/ingestion.py",
+    "src/backend/app/routes/ai.py",
+    "src/backend/app/schemas/ai.py",
+    "src/backend/tests/test_automatic_fulltext_integration.py",
+    "src/backend/tests/test_automatic_summary_integration.py",
+    "src/backend/tests/test_fulltext_jobs.py",
+    "src/frontend/src/features/workspace/FullTextAccess.tsx",
+    "src/frontend/src/features/workspace/fulltext-copy.ts",
+    "src/frontend/src/hooks/queries/fulltext.ts",
+    "src/frontend/src/hooks/queries/summaries.ts",
+    "src/frontend/src/features/summary/SummaryCard.tsx",
+    "src/frontend/src/api/generated.ts",
+    "src/frontend/src/api/types.ts",
+    "src/frontend/e2e/fulltext.spec.ts",
+    "docs/api-contract.md",
+    "README.md",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [
+    "5e1deeaf4ad424795d60ffa5826f99c18f8acf24",
+    "ef7cf4dc9c3d21e9776f7ec3fdd0812f8c61c4ed",
+    "84fdc53cc15ae44ac5e749b2eacb1ed14ff7b471",
+    "975be77f59f951666aa2c55f21b6f8a8a06b4c63",
+    "06a50b8acbaca633702e1ac1d5bd26d1cf0cda09",
+    "ef8ccfdb8396674effa3d206c485217959367f59"
+  ],
+  "pull_requests": [],
+  "verification": "Implemented on feat/ara-084-auto-pdf from 1d789dc. Isolated backend (ara-autopdf-test): Ruff passed; 922 passed in 150.85s (baseline 905 passed in 147.36s). Frontend: strict tsc, ESLint and 489 Vitest tests passed (65 files, 19.57s); production build passed (existing chunk-size warning). OpenAPI contract regenerated with openapi-typescript. Each behaviour change was observed red first (assertions recorded in the journal). Read-only dev-stack evidence: four retrieval jobs, Semantic Scholar 429 on every lookup, two identical unsupported_source retries and one 'unavailable' result for a paper with no listed PDF. A canned-API visual check covered progress, failure, rate-limit (dark), mobile and summary states. The provider PDF Playwright spec was updated for automatic retrieval but not run here (shared fixed ports); browser regression runs at integration. No migration, merge or push. Not yet complete: after a download hands off to ReaderGate (ARA-086's file, left unchanged), its processing heading still reads 'PDF uploaded. Processing continues in the background.', which the fifth criterion excludes; the lead was notified to settle it with ARA-086 at integration. Lead closure on 2026-10-10 in integration at bbf480a: the remaining criterion is met. After a retrieved PDF hands off to the reader, ReaderGate shows 'Preparing the PDF', the same heading as an upload. A grep of src/ and e2e/ finds no 'PDF uploaded' or 'Processing continues in the background' text (ARA-086's ReaderGate rewrite removed it). OpenAlex PDF retrieval itself was verified live under ARA-087.",
+  "updated_at": "2026-10-10"
+}

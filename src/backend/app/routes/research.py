@@ -3,10 +3,30 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy import select
 
+from app.core.errors import AppError
 from app.integrations.academic import AcademicSearch
+from app.integrations.openalex_content import api_key
 from app.models.research import Paper
+from app.repositories.fulltext import enqueue_automatic
+from app.repositories.jobs import job_statuses
 from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
-from app.schemas.research import PaperDetail, PaperPage, PaperPatch, Provider, SavePaper, SearchPage
+from app.schemas.jobs import JobStatus
+from app.schemas.research import (
+    DeletedPapers,
+    DeletionPreview,
+    PaperDetail,
+    PaperIds,
+    PaperPage,
+    PaperPatch,
+    PdfRemovalPreview,
+    Provider,
+    SavePaper,
+    SearchPage,
+)
+from app.services.deletion import delete_papers, deletion_preview
+from app.services.metadata import queue_refresh
+from app.services.pdf_removal import removal_preview, remove_pdfs
+from app.services.upload_match import library_papers
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
 
@@ -36,6 +56,8 @@ async def save(body: SavePaper, request: Request, response: Response):
     )
     async with resources.sessions() as session, session.begin():
         paper, created = await save_canonical(session, canonical)
+        # The job commits with the paper: OpenAlex's stored PDF is fetched without a click.
+        await enqueue_automatic(session, paper.id, enabled=api_key(resources.settings) is not None)
         response.status_code = 201 if created else 200
         return await paper_detail(session, paper.id)
 
@@ -48,7 +70,14 @@ async def library(
     offset: int = Query(default=0, ge=0),
 ):
     async with request.app.state.resources.sessions() as session:
-        statement = select(Paper.id).order_by(Paper.created_at.desc()).limit(limit).offset(offset)
+        # Uploads waiting for a match decision are listed by GET /uploads/matches (ARA-086).
+        statement = (
+            select(Paper.id)
+            .where(library_papers())
+            .order_by(Paper.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if q:
             statement = statement.where(Paper.title.ilike(f"%{q}%"))
         ids = (await session.scalars(statement)).all()
@@ -65,3 +94,63 @@ async def detail(paper_id: UUID, request: Request):
 async def edit(paper_id: UUID, body: PaperPatch, request: Request):
     async with request.app.state.resources.sessions() as session, session.begin():
         return await patch_paper(session, paper_id, body)
+
+
+@router.post("/papers/{paper_id}/metadata-lookup", response_model=JobStatus, status_code=202)
+async def look_up_again(paper_id: UUID, request: Request):
+    """Look the paper up again in the metadata source; edited fields stay (ARA-095)."""
+    async with request.app.state.resources.sessions() as session, session.begin():
+        job = await queue_refresh(session, paper_id)
+        return (await job_statuses(session, [job]))[0]
+
+
+@router.get("/papers/{paper_id}/deletion-preview", response_model=DeletionPreview)
+async def preview_deletion(paper_id: UUID, request: Request):
+    """What deleting the paper removes; nothing changes (ARA-095)."""
+    async with request.app.state.resources.sessions() as session:
+        preview = await deletion_preview(session, [paper_id])
+    if preview.missing:
+        raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+    return preview
+
+
+@router.post("/papers/deletion-preview", response_model=DeletionPreview)
+async def preview_deletions(body: PaperIds, request: Request):
+    """The combined preview for several papers; unknown IDs are listed as missing."""
+    async with request.app.state.resources.sessions() as session:
+        return await deletion_preview(session, body.paper_ids)
+
+
+@router.delete("/papers/{paper_id}", status_code=204, response_class=Response)
+async def delete_paper(paper_id: UUID, request: Request):
+    """Delete the paper and what hangs off it (services/deletion.py); a repeat answers 404."""
+    resources = request.app.state.resources
+    async with resources.sessions() as session, session.begin():
+        deleted, _ = await delete_papers(session, resources, [paper_id])
+    if not deleted:
+        raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+    return Response(status_code=204)
+
+
+@router.post("/papers/delete", response_model=DeletedPapers)
+async def delete_several(body: PaperIds, request: Request):
+    """Delete several papers in one transaction; papers already gone are listed as missing."""
+    resources = request.app.state.resources
+    async with resources.sessions() as session, session.begin():
+        deleted, missing = await delete_papers(session, resources, body.paper_ids)
+    return DeletedPapers(deleted=deleted, missing=missing)
+
+
+@router.get("/papers/{paper_id}/pdf/removal-preview", response_model=PdfRemovalPreview)
+async def preview_pdf_removal(paper_id: UUID, request: Request):
+    """What removing the paper's PDF changes; nothing changes (ARA-097)."""
+    async with request.app.state.resources.sessions() as session:
+        return await removal_preview(session, paper_id)
+
+
+@router.delete("/papers/{paper_id}/pdf", status_code=204, response_class=Response)
+async def remove_pdf(paper_id: UUID, request: Request):
+    """Remove every PDF of the paper (services/pdf_removal.py); a repeat changes nothing."""
+    async with request.app.state.resources.sessions() as session, session.begin():
+        await remove_pdfs(session, paper_id)
+    return Response(status_code=204)

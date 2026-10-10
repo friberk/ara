@@ -1,5 +1,6 @@
 import type { ChatSummary, SearchHistoryItem } from '@/api/types'
 import { providerLabels } from '@/api/types'
+import { chatPapersLabel } from '@/lib/paper-names'
 
 export type RecentItem =
   | { kind: 'chat'; id: string; title: string; detail: string | null; href: string; at: string; chat: ChatSummary }
@@ -19,7 +20,7 @@ export function chatDisplayTitle(chat: Pick<ChatSummary, 'title' | 'title_source
 /** Chats with messages and searches, interleaved by their latest activity, newest first. */
 export function mergeRecent(chats: ChatSummary[], searches: SearchHistoryItem[], limit = 15): RecentItem[] {
   const items: RecentItem[] = [
-    ...chats.filter((chat) => chat.message_count > 0).map((chat) => ({ kind: 'chat' as const, id: chat.id, title: chatDisplayTitle(chat), detail: chat.paper_title, href: chatHref(chat), at: chat.last_activity_at, chat })),
+    ...chats.filter((chat) => chat.message_count > 0).map((chat) => ({ kind: 'chat' as const, id: chat.id, title: chatDisplayTitle(chat), detail: chatPapersLabel(chat.papers), href: chatHref(chat), at: chat.last_activity_at, chat })),
     ...searches.map((search) => ({ kind: 'search' as const, id: search.id, title: search.query, detail: providerLabels[search.provider], href: searchHref(search), at: search.last_searched_at, search })),
   ]
   // Defensive at the data boundary: a row without a timestamp sorts last instead of breaking the sidebar.

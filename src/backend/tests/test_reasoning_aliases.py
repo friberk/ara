@@ -6,10 +6,14 @@ import pytest
 
 from app.core.config import Settings
 from app.integrations import llm
+from app.integrations.hosted_catalog import HOSTED_MODELS
 from app.integrations.model_catalog import local_spec
 from app.main import create_app
 from app.schemas.ai import Model
 from app.services.local_models import model_dto
+
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
 
 KEY = "ifm-k2-horizon-7b"
 
@@ -180,10 +184,10 @@ def test_given_malformed_validation_when_listing_then_no_aliases(data):
     assert selection(data).reasoning_aliases == {}
 
 
-@pytest.mark.parametrize("key", list(llm.HOSTED_REASONING_EFFORTS))
+@pytest.mark.parametrize("key", list(HOSTED_MODELS))
 def test_given_hosted_model_when_listing_then_efforts_remain_individual_and_aliases_empty(key):
     model = llm.validate_selection(key, "max")
-    assert model.reasoning_efforts == list(llm.HOSTED_REASONING_EFFORTS[key])
+    assert model.reasoning_efforts == list(HOSTED_MODELS[key].reasoning_efforts)
     assert model.reasoning_aliases == {}
 
 

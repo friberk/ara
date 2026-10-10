@@ -1,0 +1,32 @@
+{
+  "id": "ARA-102",
+  "title": "Summary card shows only the summary: no model line, no version menu",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"I like the summary box we are having currently. But it is having some problems. 1) When we don't have the summary delete the text part where it says \"Uses GPT-5.6 Luna with low reasoning\" 2) When we have the summary, don't show the \"Version 1 of 1\" \"GPT-5.6 Luna\" \"Low reasoning\" \"Oct 9 ...\" stuff. It should be just the summary for now.\" The summaries API keeps its versions; the card shows the latest one.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given a ready paper without a summary, when the card shows Generate summary, then no 'Uses <model> with <effort>' text appears.",
+    "Given a paper with one or more summaries, when the card shows, then it shows the heading, the latest summary and its sources with Show full summary. There is no version menu, model name, reasoning effort or timestamp.",
+    "Given the codebase, when this lands, then the version menu, the selected-version state and any helpers only they used are deleted, with their tests. Helpers used elsewhere stay.",
+    "Given the existing card states (progress, failure, needs PDF, retrieving, blocked, earlier PDF), when they occur, then they behave as before.",
+    "Given a paper with a summary, When the user asks to regenerate it, Then a refresh icon beside the Summary heading starts a new summary with the current settings, the current summary stays visible while progress shows, the icon is disabled while a summary job runs, and the card shows the newest summary when it finishes. User request: \"In summary always show the latest one, maybe next to summary heading we can put a refresh icon to regenerate\"."
+  ],
+  "test_cases": [
+    "No-summary card has no 'Uses' line.",
+    "Summary card has no 'Version', model, effort or time text, and shows the latest summary when there are several.",
+    "A refresh icon is present only with a summary, calls the generate request with the current settings, and is disabled while a summary job runs."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/features/summary/SummaryCard.tsx"
+  ],
+  "commits": [
+    "6bd1170ef4ed7029a84003aa16c412909f41e31b",
+    "323c58dc4b6174df5664327b77c0169378c8ee5f",
+    "94a33f21ca59d6383b91662ec1ea9b8c966cadff"
+  ],
+  "pull_requests": [],
+  "verification": "Red (before SummaryCard.tsx changed): `npx vitest run src/features/summary` -> Test Files 2 failed | 4 passed (6); Tests 3 failed | 21 passed (24). Failures: 'Given no summary yet, Then Generate summary shows with no model or effort line' (found 'Uses Luna with low reasoning'); 'Given no summary, When Generate summary is pressed ...' (found the Luna span); 'Given two summary versions, Then only the latest shows ...' (found the Version 2 of 2 button). Green: `npx vitest run src/features/summary` -> Test Files 6 passed (6); Tests 23 passed (23). `npm run check` -> exit 0: eslint clean, tsc -b clean, Vitest Test Files 91 passed (91), Tests 689 passed (689). `npm run build` -> exit 0. E2E specs (conversation, fulltext, local-models) were edited but not run; they need the live stack. Regenerate icon (second commit 323c58dc4b6174df5664327b77c0169378c8ee5f): red `npx vitest run src/features/summary/SummaryCard.test.tsx` -> Tests 3 failed | 6 passed (9), all three failing on 'Unable to find ... button ... Regenerate summary'. After the component change, one test had a missing await on the async button query; it was fixed, and a rerun gave the green result below. Green: `npx vitest run src/features/summary` -> Test Files 6 passed (6); Tests 26 passed (26). `npm run check` -> exit 0: eslint and tsc clean, Vitest 91 files, 692 tests passed. `npm run build` -> exit 0. E2E (commit 94a33f21ca59d6383b91662ec1ea9b8c966cadff): conversation.spec.ts E2E-04 and local-models.spec.ts E2E-12 now regenerate through the 'Regenerate summary' button when a summary exists, and wait for the stored summary count to rise before checking content. Not run (needs the live stack); tsc -b and eslint on the three e2e specs exit 0. Final check: `npm run check` -> exit 0, Vitest 91 files, 692 tests passed. `npm run build` -> exit 0. Focused summary tests: 6 files, 26 tests passed.",
+  "updated_at": "2026-10-10"
+}

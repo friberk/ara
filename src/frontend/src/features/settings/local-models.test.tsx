@@ -11,10 +11,12 @@ const defaults = { default_model: luna.key, reasoning_effort: 'low' }
 const job = { id: 'b24b9f87-6035-4f72-b5f8-850d10d9fc57', kind: 'model_download', state: 'queued', stage: 'queued', progress: 0, attempts: 0, generation: 1, result: null, error_code: null, error_message: null, available_at: '2026-10-08T22:00:00Z', created_at: '2026-10-08T22:00:00Z', updated_at: '2026-10-08T22:00:00Z', error: null, model_key: local.key }
 const stale: Model = { ...local, unavailable_code: 'LOCAL_MODEL_REVALIDATION_REQUIRED', unavailable_reason: 'Verify this model for the current runtime.', installation: { ...installation, state: 'ready', weights_present: true } }
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+// Local model tests run with open models on, as the server reports them (ARA-090).
+const openModels = { 'GET /features': { open_models: true } }
 
 test('Given the model settings anchor, When data arrives, Then the controls scroll into view and receive focus', async () => {
   const scroll = vi.spyOn(Element.prototype, 'scrollIntoView')
-  mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, local] }, 'GET /settings': defaults })
   renderApp('/settings#local-models')
   const heading = await screen.findByRole('heading', { name: 'Local models' })
   const section = document.getElementById('local-models')
@@ -25,7 +27,7 @@ test('Given the model settings anchor, When data arrives, Then the controls scro
 
 test('Given verification in progress, When weights become ready, Then the persistent live status announces completion', async () => {
   let model: Model = { ...local, installation: { ...installation, state: 'verifying', weights_present: true, job_id: job.id } }
-  mockApi({ 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
   const { client } = renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   const status = within(row).getByRole('status')
@@ -37,7 +39,7 @@ test('Given verification in progress, When weights become ready, Then the persis
 })
 
 test('Given missing local weights, Then Settings exposes their identity, size and a download action', async () => {
-  mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, local] }, 'GET /settings': defaults })
   renderApp('/settings')
   expect(await screen.findByRole('heading', { name: 'Local models' })).toBeVisible()
   const row = screen.getByRole('region', { name: `Manage ${local.display_name}` })
@@ -50,7 +52,7 @@ test('Given missing local weights, Then Settings exposes their identity, size an
 
 test('Given an accepted download, When Settings is remounted, Then durable progress returns without another download', async () => {
   let model = local
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...openModels,
     'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults,
     [`POST /models/${local.key}/download`]: () => { model = { ...local, installation: { ...installation, state: 'downloading', completed_bytes: 1398054725, job_id: job.id } }; return json(job, 202) },
   })
@@ -68,7 +70,7 @@ test('Given an accepted download, When Settings is remounted, Then durable progr
 
 test('Given a downloading model, When paused and resumed, Then each operation uses the existing durable job', async () => {
   let model: Model = { ...local, installation: { ...installation, state: 'downloading', completed_bytes: 1000, job_id: job.id } }
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...openModels,
     'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults,
     [`POST /jobs/${job.id}/pause`]: () => { model = { ...model, installation: { ...installation, completed_bytes: 1000, job_id: job.id, state: 'paused' } }; return json({ ...job, state: 'paused', stage: 'paused' }, 202) },
     [`POST /jobs/${job.id}/resume`]: () => { model = { ...model, installation: { ...installation, completed_bytes: 1000, job_id: job.id, state: 'queued' } }; return json(job, 202) },
@@ -80,7 +82,7 @@ test('Given a downloading model, When paused and resumed, Then each operation us
 })
 
 test('Given unknown transfer size, Then progress is indeterminate rather than an invented percentage', async () => {
-  mockApi({ 'GET /models': { items: [{ ...local, installation: { ...installation, state: 'downloading', total_bytes: null, completed_bytes: 1024, job_id: job.id } }] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [{ ...local, installation: { ...installation, state: 'downloading', total_bytes: null, completed_bytes: 1024, job_id: job.id } }] }, 'GET /settings': defaults })
   renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
@@ -88,7 +90,7 @@ test('Given unknown transfer size, Then progress is indeterminate rather than an
 })
 
 test('Given transferred weights awaiting verification, Then model selection remains unavailable', async () => {
-  mockApi({ 'GET /models': { items: [luna, { ...local, installation: { ...installation, state: 'verifying', weights_present: true, completed_bytes: installation.download_bytes, job_id: job.id } }] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, { ...local, installation: { ...installation, state: 'verifying', weights_present: true, completed_bytes: installation.download_bytes, job_id: job.id } }] }, 'GET /settings': defaults })
   renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByText('Preparing model')).toBeVisible()
@@ -99,7 +101,7 @@ test('Given transferred weights awaiting verification, Then model selection rema
 test('Given default local weights, When deletion is confirmed, Then Settings preserves the saved default', async () => {
   let model: Model = { ...local, status: 'available', unavailable_reason: null, installation: { ...installation, state: 'ready', weights_present: true } }
   const localDefaults = { default_model: local.key, reasoning_effort: 'default' }
-  const { calls, fetchMock } = mockApi({
+  const { calls, fetchMock } = mockApi({ ...openModels,
     'GET /models': () => json({ items: [luna, model] }), 'GET /settings': localDefaults,
     [`DELETE /models/${local.key}/installation`]: () => { model = local; return json({ ...job, kind: 'model_delete', state: 'completed' }, 202) },
   })
@@ -117,7 +119,7 @@ test('Given default local weights, When deletion is confirmed, Then Settings pre
 })
 
 test('Given a failed download, When retry fails, Then its safe error is shown inline', async () => {
-  mockApi({
+  mockApi({ ...openModels,
     'GET /models': { items: [luna, { ...local, installation: { ...installation, state: 'failed', job_id: job.id, error: { code: 'MODEL_DOWNLOAD_FAILED', message: 'Download stopped. Try again.' } } }] }, 'GET /settings': defaults,
     [`POST /jobs/${job.id}/retry`]: () => json({ code: 'MODEL_RUNTIME_UNAVAILABLE', message: 'Ollama is unavailable. Check its service and retry.' }, 503),
   })
@@ -130,7 +132,7 @@ test('Given a failed download, When retry fails, Then its safe error is shown in
 test('Given installed weights requiring preparation, When Settings polls readiness, Then selection enables without a maintenance action', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   let model = stale
-  const { calls } = mockApi({ 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
+  const { calls } = mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
   const { client, unmount } = renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).queryByRole('button', { name: /Verify/ })).not.toBeInTheDocument()
@@ -149,7 +151,7 @@ test('Given installed weights requiring preparation, When Settings polls readine
 
 test('Given queued preparation of retained weights, Then Settings shows background readiness without download controls or byte progress', async () => {
   const verifyingInstallation: ModelInstallation = { ...installation, state: 'queued', weights_present: true, job_id: job.id, completed_bytes: installation.download_bytes, operation: 'verify' }
-  mockApi({ 'GET /models': { items: [luna, { ...local, installation: verifyingInstallation }] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, { ...local, installation: verifyingInstallation }] }, 'GET /settings': defaults })
   renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByText('Preparing model')).toBeVisible()
@@ -164,7 +166,7 @@ test('Given queued preparation of retained weights, Then Settings shows backgrou
 
 test('Given active verification, Then the live status announces preparation and the transfer bar is absent', async () => {
   const verifyingInstallation: ModelInstallation = { ...installation, state: 'verifying', weights_present: true, job_id: job.id, completed_bytes: installation.download_bytes, operation: 'verify' }
-  mockApi({ 'GET /models': { items: [luna, { ...local, installation: verifyingInstallation }] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, { ...local, installation: verifyingInstallation }] }, 'GET /settings': defaults })
   renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByRole('status')).toHaveTextContent('Preparing model')
@@ -176,7 +178,7 @@ test('Given active verification, Then the live status announces preparation and 
 test('Given queued preparation, When verification starts, Then the persistent live status announces the new readiness phase', async () => {
   const preparingInstallation: ModelInstallation = { ...installation, state: 'queued', weights_present: true, job_id: job.id, operation: 'verify' }
   let model: Model = { ...local, installation: preparingInstallation }
-  mockApi({ 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
   const { client } = renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   const status = within(row).getByRole('status')
@@ -189,7 +191,7 @@ test('Given queued preparation, When verification starts, Then the persistent li
 
 test('Given preparation failed, When retried, Then the recovery action names preparation and uses the failed durable job', async () => {
   const failedInstallation: ModelInstallation = { ...installation, state: 'failed', weights_present: true, job_id: job.id, operation: 'verify', error: { code: 'LOCAL_MODEL_VERIFICATION_FAILED', message: 'Model preparation failed. Retry preparation.' } }
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...openModels,
     'GET /models': { items: [luna, { ...local, installation: failedInstallation }] }, 'GET /settings': defaults,
     [`POST /jobs/${job.id}/retry`]: { ...job, stage: 'verifying' },
   })
@@ -204,7 +206,7 @@ test('Given preparation failed, When retried, Then the recovery action names pre
 
 test('Given verification found missing weights, When Download is chosen, Then a new explicit download starts without retrying verification', async () => {
   const failedInstallation: ModelInstallation = { ...installation, state: 'failed', weights_present: false, job_id: job.id, operation: 'verify', error: { code: 'MODEL_WEIGHTS_MISSING', message: 'Model weights are missing. Download them again to use this model.' } }
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...openModels,
     'GET /models': { items: [luna, { ...local, installation: failedInstallation }] }, 'GET /settings': defaults,
     [`POST /models/${local.key}/download`]: { ...job, id: 'new-download-job' },
   })
@@ -219,7 +221,7 @@ test('Given verification found missing weights, When Download is chosen, Then a 
 
 test('Given deletion failed, When retried, Then the recovery action names deletion and retries its owning job without downloading', async () => {
   const failedInstallation: ModelInstallation = { ...installation, state: 'failed', weights_present: true, job_id: job.id, operation: 'delete', error: { code: 'LOCAL_MODEL_DELETE_FAILED', message: 'Could not delete model weights. Retry deletion.' } }
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...openModels,
     'GET /models': { items: [luna, { ...local, installation: failedInstallation }] }, 'GET /settings': defaults,
     [`POST /jobs/${job.id}/retry`]: { ...job, kind: 'model_delete', stage: 'deleting' },
   })
@@ -232,7 +234,7 @@ test('Given deletion failed, When retried, Then the recovery action names deleti
 })
 
 test('Given retained weights and an offline runtime, Then Settings explains the unavailable service without claiming preparation is running', async () => {
-  mockApi({ 'GET /models': { items: [luna, { ...stale, unavailable_code: 'LOCAL_RUNTIME_UNAVAILABLE', unavailable_reason: 'The local model runtime is unavailable.' }] }, 'GET /settings': defaults })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, { ...stale, unavailable_code: 'LOCAL_RUNTIME_UNAVAILABLE', unavailable_reason: 'The local model runtime is unavailable.' }] }, 'GET /settings': defaults })
   renderApp('/settings')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByRole('alert')).toHaveTextContent('The local model runtime is unavailable')

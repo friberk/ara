@@ -9,6 +9,8 @@ import { ModelSwitcher } from './ModelSwitcher'
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const unavailable = { ...luna, key: 'unavailable-exact', model_id: 'unavailable-exact', display_name: 'Unavailable model', status: 'unavailable', reasoning_efforts: [] }
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+// Local model tests run with open models on, as the server reports them (ARA-090).
+const openModels = { 'GET /features': { open_models: true } }
 
 function Selection() { const { settings } = useGenerationSettings(); return <output aria-label="Selection">{`${settings.model}/${settings.reasoning_effort}`}</output> }
 // Submenus are driven by keyboard: jsdom pointer events do not follow Radix's submenu pointer grace.
@@ -28,7 +30,6 @@ test.each(['default', 'on'])('Given saved %s aliases High, Then the composer sho
   const { calls } = mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
-  expect(screen.getByRole('menuitem', { name: 'Default model' })).toHaveAttribute('aria-disabled', 'true')
   act(() => screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus())
   await user.keyboard('{ArrowRight}')
   const high = await screen.findByRole('menuitemradio', { name: 'High' })
@@ -52,7 +53,7 @@ test('Given verified boolean-only reasoning, When toggled in the composer, Then 
 
 test('Given unavailable named reasoning metadata, Then the composer preserves its choice and cannot modify reasoning', async () => {
   const local = { ...luna, key: 'native-pending', provider: 'ollama', status: 'unavailable', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: 'Preparing model automatically.' }
-  mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'low' } })
+  mockApi({ ...openModels, 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'low' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: /^Model:/ }))
   expect(screen.getByLabelText('Selection')).toHaveTextContent('native-pending/low')
@@ -66,7 +67,7 @@ const localMissing = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', mo
 test('Given an installed model preparing automatically, When server polling reports readiness, Then the composer permits its selection', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   let model = { ...localMissing, unavailable_code: 'LOCAL_MODEL_REVALIDATION_REQUIRED', unavailable_reason: 'Preparing this model automatically.', installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
-  mockApi({ 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   const { user, client, unmount } = mount()
   await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
   const item = screen.getByRole('menuitemradio', { name: /K2 Horizon 7B/ })
@@ -83,7 +84,7 @@ test('Given an installed model preparing automatically, When server polling repo
 })
 
 test('Given missing local weights, When explored by keyboard, Then the explanation is discoverable and selection is guarded', async () => {
-  mockApi({ 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
   const item = await screen.findByRole('menuitemradio', { name: /K2 Horizon 7B/ })
@@ -93,11 +94,10 @@ test('Given missing local weights, When explored by keyboard, Then the explanati
   await user.keyboard('{Enter}')
   expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/low')
   expect(item).toHaveAttribute('aria-disabled', 'true')
-  expect(screen.getByRole('menuitem', { name: 'Model settings' })).toHaveAttribute('href', '/settings#local-models')
 })
 
 test('Given deleted default weights, Then the selected model remains visible and no hosted model replaces it', async () => {
-  mockApi({ 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: localMissing.key, reasoning_effort: 'default' } })
+  mockApi({ ...openModels, 'GET /models': { items: [luna, localMissing] }, 'GET /settings': { default_model: localMissing.key, reasoning_effort: 'default' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: /^Model: K2 Horizon 7B/ }))
   expect(screen.getByLabelText('Selection')).toHaveTextContent('ifm-k2-horizon-7b/default')
@@ -116,15 +116,17 @@ test('Given unavailable and supported models, Then exact IDs and reasoning capab
   expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/high')
 })
 
-test('Given a changed selection, When Set as default is chosen, Then the exact model and effort are saved', async () => {
-  const { calls } = mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'PUT /settings': { default_model: luna.key, reasoning_effort: 'high' } })
+test('Given the picker is open, Then it offers models and reasoning only, with no default or settings shortcuts', async () => {
+  const { calls } = mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
-  expect(screen.getByRole('menuitem', { name: 'Default model' })).toHaveAttribute('aria-disabled', 'true')
   await chooseEffort(user, 'High')
   await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Set as default' }))
-  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: luna.key, reasoning_effort: 'high' }))
+  expect(await screen.findByRole('menuitemradio', { name: /GPT-5.6 Luna/ })).toBeVisible()
+  expect(screen.queryByRole('menuitem', { name: /default/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: 'Model settings' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
 })
 
 test('Given a model that cannot stream, When choosing a chat model, Then it is disabled with the reason', async () => {
@@ -153,19 +155,6 @@ test('Given models are still loading, Then the switcher is disabled and says so'
   expect(await screen.findByRole('button', { name: 'Model: Loading models' })).toBeDisabled()
 })
 
-test('Given saving the default fails, Then the menu stays open and explains the error inline', async () => {
-  // Errors stay inline (DESIGN.md: toasts are for success only).
-  mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'PUT /settings': () => new Response(JSON.stringify({ code: 'SETTINGS_UNAVAILABLE', message: 'Settings could not be saved. Try again.' }), { status: 503, headers: { 'Content-Type': 'application/json' } }) })
-  const { user } = mount()
-  await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
-  await chooseEffort(user, 'High')
-  await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Set as default' }))
-  const menu = await screen.findByRole('menu')
-  expect(await within(menu).findByRole('alert')).toHaveTextContent('Settings could not be saved. Try again.')
-})
-
-
 test('Given a verified local thinking model, When choosing explicit levels, Then aliases stay out of its menu and named IDs are kept', async () => {
   const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high', 'research'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
   mockApi({ 'GET /models': { items: [luna, local] }, 'GET /settings': { default_model: local.key, reasoning_effort: 'default' } })
@@ -182,7 +171,7 @@ test('Given a verified local thinking model, When choosing explicit levels, Then
 test('Given local and hosted models, When switching between them, Then their reasoning options remain separate', async () => {
   const hosted = { ...luna, reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }
   const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }
-  mockApi({ 'GET /models': { items: [hosted, local] }, 'GET /settings': { default_model: hosted.key, reasoning_effort: 'xhigh' } })
+  mockApi({ ...openModels, 'GET /models': { items: [hosted, local] }, 'GET /settings': { default_model: hosted.key, reasoning_effort: 'xhigh' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: 'Model: GPT-5.6 Luna, Extra high reasoning' }))
   await chooseEffort(user, 'Max')

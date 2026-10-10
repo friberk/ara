@@ -2,7 +2,9 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from '@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
-// Paper workspace (ARA-037) against the isolated e2e stack: synthetic research.pdf and fixture model responses.
+// Paper workspace (ARA-037, ARA-097) against the isolated e2e stack: synthetic research.pdf and fixture model responses.
+// The reader has no tabs; the paper's bibliography heads the PDF, ⓘ keeps its sources and search index (ARA-101), and the
+// PDF's actions are in the reader's menu.
 const pdfPath = process.env.E2E_PDF_PATH ?? '/tmp/ara-fixtures/research.pdf'
 const title = 'Traceable Research Systems'
 type Paper = { id: string; document_status: string; active_document_id: string | null }
@@ -52,6 +54,13 @@ async function firstCitation(page: Page): Promise<{ chip: Locator; cited: number
   return { chip, cited: Number(/\d+/.exec(name)?.[0]) }
 }
 const noHorizontalOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+/** The thread scrolls by itself, so it is measured too: an answer once widened it past a 390px screen (ARA-097). */
+const threadFits = (page: Page) => page.getByRole('region', { name: 'Conversation' }).evaluate((thread) => thread.scrollWidth <= thread.clientWidth)
+const reader = (page: Page) => page.getByRole('region', { name: 'PDF reader' })
+async function pdfMenu(page: Page) {
+  await reader(page).getByRole('button', { name: 'PDF options' }).click()
+  return page.getByRole('menu')
+}
 
 test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, then metadata is extracted and the pages render', async ({ page, request }) => {
   expect(existsSync(pdfPath), 'Generate the synthetic research.pdf before browser checks').toBeTruthy()
@@ -59,33 +68,48 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
   await page.goto(`/papers/${paper.id}`)
   const accepted = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/documents')
   if (paper.document_status === 'metadata_only') {
-    const reader = page.getByRole('tabpanel', { name: 'PDF' })
-    await expect(reader.getByText('Attach the PDF to read, summarize and ask')).toBeVisible()
-    await reader.getByLabel('PDF file').setInputFiles(pdfPath)
-    await reader.getByRole('button', { name: 'Upload PDF', exact: true }).click()
-    await expect(reader.getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
+    await expect(reader(page).getByText('Attach the PDF to read, summarize and ask')).toBeVisible()
+    // Choosing the file uploads it at once (ARA-086); one step list follows it until the reader opens.
+    await reader(page).getByLabel('PDF file').setInputFiles(pdfPath)
+    await expect(reader(page).getByRole('list', { name: 'Preparation steps' })).toBeVisible()
+    await expect(reader(page).getByText(/in the background/i)).toHaveCount(0)
   } else {
     // The fixture paper is the only one and earlier browser tests may already have attached research.pdf; identical
-    // bytes are deduplicated, so attach a byte-distinct copy as a new version from Details instead.
-    await page.getByRole('tab', { name: 'Details' }).click()
-    const details = page.getByRole('tabpanel', { name: 'Details' })
+    // bytes are deduplicated, so a byte-distinct copy replaces it from the reader's PDF menu instead (ARA-097).
+    await (await pdfMenu(page)).getByRole('menuitem', { name: 'Replace PDF…' }).click()
+    const replace = page.getByRole('dialog', { name: 'Replace the PDF' })
     const copy = Buffer.concat([await readFile(pdfPath), Buffer.from(`\n% e2e ${crypto.randomUUID()}\n`)])
-    await details.getByLabel('PDF file').setInputFiles({ name: 'research-new-version.pdf', mimeType: 'application/pdf', buffer: copy })
-    await details.getByRole('button', { name: 'Upload PDF', exact: true }).click()
-    await expect(details.getByText('PDF uploaded. Processing continues in the background.')).toBeVisible()
-    await page.getByRole('tab', { name: 'PDF' }).click()
+    await replace.getByLabel('PDF file').setInputFiles({ name: 'research-new-version.pdf', mimeType: 'application/pdf', buffer: copy })
+    await expect(replace).toHaveCount(0)
+    await expect(reader(page).getByRole('list', { name: 'Preparation steps' })).toBeVisible()
   }
   const { document_id: documentId } = await (await accepted).json() as { document_id: string }
-  await expect(page.getByRole('link', { name: 'Open original PDF' })).toHaveAttribute('href', `/api/v1/documents/${documentId}/download`, { timeout: 45_000 })
-  await expect(page.getByText('Ready to read', { exact: true })).toBeVisible()
+  // A ready PDF shows no status; the reader's page field proves it opened, and the header icon is gone.
+  await expect(page.getByLabel('Page number')).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByRole('heading', { level: 1 }).locator('..').getByRole('img')).toHaveCount(0)
   await expect(page.getByLabel('Page number')).toHaveValue('1')
   await expect(page.getByText('/ 3', { exact: true })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
-  await page.getByRole('tab', { name: 'Details' }).click()
-  const details = page.getByRole('tabpanel', { name: 'Details' })
-  await expect(details.getByRole('heading', { name: title })).toBeVisible()
-  await expect(details.getByText('Ada Researcher')).toBeVisible()
-  await expect(details.getByRole('heading', { name: 'Metadata sources' })).toBeVisible()
+  const menu = await pdfMenu(page)
+  await expect(menu.getByRole('menuitem', { name: 'Open original' })).toHaveAttribute('href', `/api/v1/documents/${documentId}/download`)
+  await expect(menu.getByText('3 pages', { exact: false })).toBeVisible()
+  await page.keyboard.press('Escape')
+  // The bibliography is the first thing in the PDF's scroll column, and ⓘ holds only what lies behind it.
+  // Inside the app's main region a <header> has no landmark role, so it is found by its heading.
+  const header = page.getByRole('region', { name: 'PDF document' }).locator('header').filter({ has: page.getByRole('heading', { level: 2, name: title }) })
+  await expect(header.getByRole('heading', { level: 2, name: title })).toBeVisible()
+  await expect(header.getByText('Ada Researcher')).toBeVisible()
+  const info = header.getByRole('button', { name: 'Sources and search index' })
+  await info.click()
+  const details = page.getByRole('dialog', { name: 'Sources and search index' })
+  await expect(details.getByRole('heading', { name: 'Where this information came from' })).toBeVisible()
+  await expect(details.getByText('Ada Researcher')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(info).toBeFocused()
+  // Reading on scrolls the header away while the controls bar stays.
+  await page.getByRole('region', { name: 'PDF document' }).evaluate((viewer) => { viewer.scrollTop = viewer.scrollHeight })
+  await expect(header).not.toBeInViewport()
+  await expect(page.getByLabel('Page number')).toBeVisible()
 })
 
 test('Given a cited summary, when a citation chip is clicked, then the reader jumps to the page and marks the passage', async ({ page, request }) => {
@@ -107,21 +131,23 @@ test('Given a cited summary, when a citation chip is clicked, then the reader ju
   await expect(citedPage.locator('[data-citation-highlight]').first()).toBeVisible()
 })
 
-test('Given a narrow screen, then Chat, PDF and Details are tabs and a citation opens the PDF at its page', async ({ page, request }) => {
+test('Given a narrow screen, then Chat and PDF are segments, the paper header and ⓘ fit, and a citation opens the PDF at its page', async ({ page, request }) => {
   const paper = await readyPaper(request)
   await citedSummary(request, paper)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/papers/${paper.id}`)
   await expect(page.getByRole('tab', { name: 'Chat', selected: true })).toBeVisible()
+  await expect(page.getByRole('tab')).toHaveText(['Chat', 'PDF'])
   expect(await noHorizontalOverflow(page)).toBeTruthy()
-  await page.getByRole('tab', { name: 'Details' }).click()
-  await expect(page).toHaveURL(/[?&]view=details/)
-  await expect(page.getByRole('tabpanel', { name: 'Details' }).getByText('Ada Researcher')).toBeVisible()
-  await page.reload()
-  await expect(page.getByRole('tab', { name: 'Details', selected: true })).toBeVisible()
+  expect(await threadFits(page)).toBeTruthy()
   await page.getByRole('tab', { name: 'PDF' }).click()
   await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
   expect(await noHorizontalOverflow(page)).toBeTruthy()
+  await page.getByRole('button', { name: 'Sources and search index' }).click()
+  const details = page.getByRole('dialog', { name: 'Sources and search index' })
+  const box = await details.boundingBox()
+  expect(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 844).toBeTruthy()
+  await page.keyboard.press('Escape')
   await page.getByRole('tab', { name: 'Chat' }).click()
   await expect(page).not.toHaveURL(/view=/)
   const { chip, cited } = await firstCitation(page)
@@ -131,4 +157,23 @@ test('Given a narrow screen, then Chat, PDF and Details are tabs and a citation 
   await expect(page.getByLabel('Page number')).toHaveValue(String(cited))
   await expect(page.getByRole('group', { name: `Page ${cited}` }).locator('[data-citation-highlight]').first()).toBeVisible()
   expect(await noHorizontalOverflow(page)).toBeTruthy()
+})
+
+test('ARA-097 Given a ready paper, when its PDF is removed from the reader and uploaded again, then the reader returns to upload and then opens the new PDF', async ({ page, request }) => {
+  const paper = await readyPaper(request)
+  await page.goto(`/papers/${paper.id}`)
+  await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
+  await (await pdfMenu(page)).getByRole('menuitem', { name: 'Remove PDF…' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Remove this PDF?' })
+  await expect(confirm.getByRole('list', { name: 'What happens' })).toContainText('The reader goes back to uploading a PDF.')
+  await confirm.getByRole('button', { name: 'Remove PDF' }).click()
+  await expect(reader(page).getByText('Attach the PDF to read, summarize and ask')).toBeVisible()
+  await expect(page.getByText('PDF removed')).toBeVisible()
+  await expect(reader(page)).toBeFocused()
+  // The same file again is a new PDF, not a duplicate of the removed one.
+  await reader(page).getByLabel('PDF file').setInputFiles(pdfPath)
+  // A ready PDF shows no status; the reader's page field proves it opened, and the header icon is gone.
+  await expect(page.getByLabel('Page number')).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByRole('heading', { level: 1 }).locator('..').getByRole('img')).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
 })

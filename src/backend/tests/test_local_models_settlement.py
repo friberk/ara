@@ -12,7 +12,8 @@ from app.models.local_models import ModelInstallation
 from app.repositories.local_models import acquire_use, claim_model_job, recovery_operations
 from app.services.local_models import request_delete, request_download, run_model_job
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 KEY = "ifm-k2-horizon-3.7b"
 
 

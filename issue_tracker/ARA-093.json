@@ -1,0 +1,56 @@
+{
+  "id": "ARA-093",
+  "title": "Per-model limits in the hosted catalog; context budget derived from the model window",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Hosted model facts are scattered across the code:\n- context_registry.py has one HOSTED_WINDOW = 1_050_000 and one HOSTED_OUTPUT_TOKENS = 4000 for every hosted model;\n- llm.py keeps prices in a PRICES dict and reasoning levels in HOSTED_REASONING_EFFORTS;\n- the Model DTO defaults context_window to 1050000.\nThis contradicts the catalog-not-hardcoded rule. On 2026-10-10 the user asked to embed each model's native context window in the model catalog metadata and manage limits from it. After discussing cost and industry practice, they decided to keep the 64K working budget (HOSTED_WORKING_CONTEXT_TOKENS) unchanged for now. Industry practice bounds per-question context below the native window: OpenAI file search uses about 16K of retrieved context, and Claude Projects switches to retrieval near the window. This ticket is catalog-only, with no change in behaviour.\nRevised on 2026-10-10: the user wants the working budget W to follow the model window, not a fixed 64K. Design: docs/plans/retrieval-orchestration.md. W = min(X \u2212 answer reserve \u2212 reasoning reserve \u2212 safety, price-tier cap of 272K for GPT-5.6); history target H = min(32K, 25% of W); E = W \u2212 F \u2212 H. HOSTED_WORKING_CONTEXT_TOKENS is retired. Evidence selection (the 16-passage cap) is unchanged here; ARA-094 changes it. One implementation, no flags.",
+  "dependencies": [
+    "ARA-012",
+    "ARA-076",
+    "ARA-085"
+  ],
+  "acceptance_criteria": [
+    "Given the hosted catalog, when it is read, then each model has one entry: model id, display name, native context window, maximum output, input, cached-input and cache-write prices, the input price-tier boundary, reasoning levels and token encoding. HOSTED_WINDOW, HOSTED_OUTPUT_TOKENS, PRICES and HOSTED_REASONING_EFFORTS are derived from it or deleted.",
+    "Given each hosted model, when its values are recorded, then they are checked against OpenAI's documentation and the source is cited; unverifiable values are flagged, not assumed.",
+    "Given any chat model, when a prompt is assembled, then W = min(window \u2212 answer reserve \u2212 reasoning reserve \u2212 safety, price-tier cap), H = min(32K, 25% of W) and E = W \u2212 F \u2212 H, all computed from that model's catalog entry. HOSTED_WORKING_CONTEXT_TOKENS and its setting are removed.",
+    "Given history beyond H, when the chat continues, then compaction and recent-turn selection follow H, so small windows summarise sooner and large windows keep up to 32K verbatim.",
+    "Given synthetic catalog entries with X = 16K, 128K and 1M, when answer, planner and compaction prompts are assembled, then every size scales as in the design table and no request exceeds W.",
+    "Given a response whose usage reports cached input tokens, when cost is computed (ARA-085 meter, budget ledger), then cached tokens are priced at the cached-input rate from the catalog.",
+    "Given /models and the context meter, when they render, then the total is W for the selected model and the native window appears as secondary text, both from the catalog."
+  ],
+  "test_cases": [
+    "Catalog completeness; derived views; an unknown model raises as today.",
+    "Budget derivation at X = 16K, 128K and 1M; the price-tier cap; history H scaling and compaction thresholds.",
+    "Cached-token pricing in costs.",
+    "/models and meter totals per model."
+  ],
+  "status": "completed",
+  "related_files": [
+    "docs/plans/retrieval-orchestration.md",
+    "src/backend/app/core/config.py",
+    "src/backend/app/integrations/context_registry.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/routes/ai.py",
+    "src/backend/app/schemas/ai.py",
+    "src/backend/app/services/context.py",
+    "src/backend/app/services/costs.py",
+    "src/backend/app/services/memory.py",
+    "src/backend/app/integrations/hosted_catalog.py",
+    "src/backend/app/rag/rerank.py",
+    "src/backend/tests/test_hosted_catalog.py",
+    "src/frontend/src/api/generated.ts",
+    "docs/api-contract.md",
+    "README.md",
+    "compose.yaml",
+    ".env.example"
+  ],
+  "commits": [
+    "8d6c695",
+    "079651a",
+    "12618ea",
+    "e44bb33"
+  ],
+  "pull_requests": [],
+  "verification": "Backend full stack (isolated project ara-catalog-test): 1048 passed in 204.19 s, Ruff clean. Frontend npm run check: 583 passed; npm run build passed. Values checked against the OpenAI model pages and prompt-caching guide on 2026-10-10; cache-write prices are 1.25x derived. Tests written first (19 ImportError reds); see the 2026-10-10 ARA-093 section of the journal.",
+  "updated_at": "2026-10-10"
+}

@@ -95,6 +95,27 @@ class ExternalFixtureTests(unittest.TestCase):
         self.assertEqual(metadata["year"], 2024)
         self.assertEqual(metadata["authors"], ["Ada Researcher"])
 
+    def test_responses_cite_the_first_passage_of_each_paper_when_evidence_is_grouped(self):
+        """A chat over several papers (ARA-088) groups passages by paper; the fixture cites each."""
+        evidence = (
+            "Paper passages:\n\nPaper 1: Traceable Research Systems (Ada Researcher, 2024)\n"
+            "[S1] Results · p. 2\nAccuracy is 86 percent.\n\n[S2] Datasets · p. 2\nOrion-12.\n\n"
+            "Paper 2: Sparse Indexes for Lab Notebooks (Ben Analyst, 2023)\n"
+            "[S3] Results · p. 2\nAccuracy is 74 percent.\n"
+        )
+        body = json.dumps(
+            {"model": "gpt-5.6-luna", "input": [{"role": "user", "content": evidence}]}
+        ).encode()
+        request = urllib.request.Request(
+            self.base + "/v1/responses",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request) as response:
+            text = json.load(response)["output"][0]["content"][0]["text"]
+        self.assertIn("[S1][S3]", text)
+        self.assertNotIn("[S2]", text)
+
 
 if __name__ == "__main__":
     unittest.main()

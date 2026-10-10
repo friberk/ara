@@ -2,8 +2,9 @@
 // mutation-verified (each case fails when the behaviour it names is removed). react-pdf is replaced by a canvas-free
 // stand-in that renders a pdf.js-shaped text layer: one span[role=presentation] per line, a <br> at each line end
 // and .endOfContent once the layer is complete.
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Citation } from '@/api/types'
+import { FADE_MS, HOLD_MS } from './highlight-lifetime'
 import PdfViewer, { type PdfViewerProps } from './PdfViewer'
 
 const fixture = vi.hoisted(() => ({ pages: {} as Record<number, React.ReactNode[]>, failing: new Set<number>() }))
@@ -11,18 +12,19 @@ const fixture = vi.hoisted(() => ({ pages: {} as Record<number, React.ReactNode[
 vi.mock('react-pdf', async () => {
   const { useEffect } = await import('react')
   type DocumentStubProps = { children?: React.ReactNode; className?: string; onLoadSuccess?: (pdf: unknown) => void }
-  type PageStubProps = { pageNumber: number; onRenderTextLayerSuccess?: () => void; onRenderTextLayerError?: (error: Error) => void }
+  type PageStubProps = { pageNumber: number; width?: number; onRenderTextLayerSuccess?: () => void; onRenderTextLayerError?: (error: Error) => void }
   return {
     pdfjs: { GlobalWorkerOptions: {} },
     Document: function DocumentStub({ children, className, onLoadSuccess }: DocumentStubProps) {
-      useEffect(() => { onLoadSuccess?.({ numPages: 3, getPage: async () => ({ getViewport: () => ({ width: 612, height: 792 }) }) }) }, [onLoadSuccess])
+      useEffect(() => { onLoadSuccess?.({ numPages: 3, getPage: async () => ({ view: [0, 0, 612, 792], getViewport: () => ({ width: 612, height: 792, convertToViewportPoint: (x: number, y: number) => [x, 792 - y] }) }) }) }, [onLoadSuccess])
       return <div className={className}>{children}</div>
     },
-    Page: function PageStub({ pageNumber, onRenderTextLayerSuccess, onRenderTextLayerError }: PageStubProps) {
+    Page: function PageStub({ pageNumber, width, onRenderTextLayerSuccess, onRenderTextLayerError }: PageStubProps) {
       useEffect(() => {
         if (fixture.failing.has(pageNumber)) onRenderTextLayerError?.(new Error('Text layer failed'))
         else onRenderTextLayerSuccess?.()
-      }, [pageNumber, onRenderTextLayerSuccess, onRenderTextLayerError])
+      // width is a dependency because pdf.js redraws a text layer when the page size changes (zoom)
+      }, [pageNumber, width, onRenderTextLayerSuccess, onRenderTextLayerError])
       return (
         <div className="textLayer">
           {(fixture.pages[pageNumber] ?? []).flatMap((line, index) => [<span key={`line-${index}`} role="presentation">{line}</span>, <br key={`end-${index}`} role="presentation" />])}
@@ -44,6 +46,8 @@ class WidthObserver {
 
 const methodLines = ['Methodology', 'The method first extracts page text, then retrieves relevant', 'chunks and generates answers grounded in those passages.', 'Datasets', 'The experiment uses the Orion-12 dataset.']
 const cite = (page: number, excerpt: string): Citation => ({ chunk_id: `chunk-${page}`, document_id: 'doc-1', page, excerpt })
+const unmatched = 'The measured answer accuracy in this synthetic experiment is 86 percent of all cases.'
+const withBoxes = (citation: Citation, bboxes: number[][], page_end?: number): Citation => ({ ...citation, bboxes, page_end })
 const onMethod = cite(2, 'The method first extracts page text, then retrieves relevant\nchunks and generates answers grounded in those passages.')
 
 function renderViewer(highlight: PdfViewerProps['highlight']) {
@@ -187,5 +191,422 @@ describe('PdfViewer passage-level evidence (test-first)', () => {
     await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
     // The line's centre (1000 + 20 / 2) sits half the reader's height (600 / 2) below the top of the view.
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 710, behavior: 'smooth' })
+  })
+})
+
+describe('PdfViewer region fallback (ARA-089, test-first)', () => {
+  afterEach(() => vi.restoreAllMocks())
+  // PyMuPDF boxes: [page, x0, y0, x1, y1] in points, top-left origin; the stub page is 612 x 792.
+  const box = [2, 61.2, 79.2, 306, 158.4]
+  const regions = (page: number) => Array.from(screen.getByRole('group', { name: `Page ${page}` }).querySelectorAll<HTMLElement>('[data-citation-region]'))
+
+  test('Given text that cannot be found but stored boxes, Then the boxes are outlined on their page and the jump reports "region"', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    expect(onHighlight).toHaveBeenCalledTimes(1)
+    const [outline] = regions(2)
+    expect(outline).toBeDefined()
+    expect(outline!.style.left).toBe('10%')
+    expect(outline!.style.top).toBe('10%')
+    expect(outline!.style.width).toBe('40%')
+    expect(outline!.style.height).toBe('10%')
+    expect(outline).toHaveAttribute('data-citation-pulse')
+    expect(outline).toHaveAttribute('aria-hidden', 'true')
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given text that is found, Then the text is marked and the boxes are not drawn', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(onMethod, [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    expect(regions(2)).toHaveLength(0)
+  })
+
+  test('Given neither text nor boxes, Then nothing is drawn and the jump reports "page-only"', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), []), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('page-only'))
+    expect(regions(2)).toHaveLength(0)
+  })
+
+  test('Given boxes that do not fit any page, Then the jump reports "page-only"', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [[2, 5, 5]]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('page-only'))
+  })
+
+  test('Given the text layer fails, Then stored boxes still give a region', async () => {
+    fixture.failing.add(2)
+    const { onHighlight } = renderViewer({ citation: withBoxes(onMethod, [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    expect(regions(2)).toHaveLength(1)
+  })
+
+  test('Given a citation across two pages, Then each page gets the boxes that carry its number', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box, [2, 0, 700, 612, 790], [3, 0, 0, 612, 100]], 3), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    expect(regions(2)).toHaveLength(2)
+    expect(regions(3)).toHaveLength(1)
+  })
+
+  test('Given a second citation, Then the earlier outline and marks are cleared', async () => {
+    const { onHighlight, rehighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(1))
+    rehighlight({ citation: cite(3, 'Limitations\nTwelve examples do not establish performance.'), nonce: 2 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(2))
+    expect(regions(2)).toHaveLength(0)
+    expect(marked(3)).toEqual(['Limitations', 'Twelve examples do not establish performance.'])
+    rehighlight({ citation: withBoxes(cite(1, unmatched), [[1, 0, 0, 100, 100]]), nonce: 3 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(3))
+    expect(marked(3)).toEqual([])
+    expect(regions(1)).toHaveLength(1)
+  })
+
+  test('Given the same citation again, Then the outline is redrawn so it pulses again', async () => {
+    const citation = withBoxes(cite(2, unmatched), [box])
+    const { onHighlight, rehighlight } = renderViewer({ citation, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(1))
+    const first = regions(2)[0]
+    rehighlight({ citation, nonce: 2 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(2))
+    expect(regions(2)).toHaveLength(1)
+    expect(regions(2)[0]).not.toBe(first)
+  })
+
+  test('Given the zoom changes, Then the outline stays on the page at the same percentages', async () => {
+    const citation = withBoxes(cite(2, unmatched), [box])
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const highlight = { citation, nonce: 1 }
+    const element = (zoom: number) => <PdfViewer documentId="doc-1" zoom={zoom} navigation={null} highlight={highlight} {...handlers} />
+    const view = render(element(1))
+    await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('region'))
+    view.rerender(element(2))
+    expect(regions(2)).toHaveLength(1)
+    expect(regions(2)[0]!.style.left).toBe('10%')
+    expect(handlers.onHighlight).toHaveBeenCalledTimes(1)
+  })
+
+  test('Given the region lands, Then its vertical centre is scrolled to the centre of the reader', async () => {
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.hasAttribute('data-citation-region') ? new DOMRect(0, 1000, 300, 80) : new DOMRect(0, 0, 0, 0)
+    })
+    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo')
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    // centre 1000 + 80 / 2, less half the reader's height
+    await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 740, behavior: 'smooth' }))
+  })
+})
+
+describe('PdfViewer highlight lifetime (ARA-089, test-first, fake timers)', () => {
+  const box = [2, 61.2, 79.2, 306, 158.4]
+  const textual = onMethod
+  const boxed = withBoxes(cite(2, unmatched), [box])
+  const region = () => screen.getByRole('group', { name: 'Page 2' }).querySelectorAll('[data-citation-region]')
+  const fadeState = () => screen.getByRole('region', { name: 'PDF document' }).getAttribute('data-citation-fade')
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+  const start = async (citation: Citation) => {
+    const view = renderViewer({ citation, nonce: 1 })
+    await advance(50)
+    expect(view.onHighlight).toHaveBeenCalledTimes(1)
+    return view
+  }
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] }) })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  test('Given a text highlight, Then it holds, then fades out, then leaves no marks', async () => {
+    await start(textual)
+    await advance(HOLD_MS - 200)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    expect(fadeState()).toBeNull()
+    await advance(300)
+    expect(fadeState()).toBe('out')
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(FADE_MS)
+    expect(marked(2)).toEqual([])
+    expect(fadeState()).toBeNull()
+  })
+
+  test('Given a context mark, Then it fades and goes with the strong marks', async () => {
+    fixture.pages[2] = ['The method first extracts page text, then retrieves relevant', 'chunks. It generates answers grounded in those passages. The', 'experiment uses the Orion-12 dataset with twelve examples.']
+    const prose = fixture.pages[2] as string[]
+    const view = renderViewer({ citation: cite(2, prose.join('\n')), claim: 'The study evaluates on the Orion-12 dataset.', nonce: 1 })
+    await advance(50)
+    expect(view.onHighlight).toHaveBeenCalledWith('highlighted')
+    expect(marked(2, 'context')).toHaveLength(1)
+    await advance(HOLD_MS + FADE_MS + 50)
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given an outlined region, Then it fades and is removed after the same hold', async () => {
+    await start(boxed)
+    expect(region()).toHaveLength(1)
+    await advance(HOLD_MS + 50)
+    expect(fadeState()).toBe('out')
+    expect(region()).toHaveLength(1)
+    await advance(FADE_MS)
+    expect(region()).toHaveLength(0)
+  })
+
+  test('Given reduced motion, Then the highlight is removed after the hold with no fade', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({ matches: query.includes('reduce'), media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false }))
+    await start(textual)
+    await advance(HOLD_MS - 100)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(200)
+    expect(fadeState()).toBeNull()
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given a re-click during the hold, Then the clock restarts and the old timer does not remove the new highlight', async () => {
+    const { onHighlight, rehighlight } = await start(textual)
+    await advance(HOLD_MS - 500)
+    rehighlight({ citation: textual, nonce: 2 })
+    await advance(50)
+    expect(onHighlight).toHaveBeenCalledTimes(2)
+    await advance(HOLD_MS - 300)
+    expect(fadeState()).toBeNull()
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(FADE_MS + 500)
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given a re-click during the fade, Then the fade is cancelled and the highlight is whole again', async () => {
+    const { rehighlight } = await start(textual)
+    await advance(HOLD_MS + 500)
+    expect(fadeState()).toBe('out')
+    rehighlight({ citation: textual, nonce: 2 })
+    await advance(50)
+    expect(fadeState()).toBeNull()
+    await advance(FADE_MS)
+    expect(marked(2, 'strong')).toHaveLength(2)
+  })
+
+  test('Given a second citation during the hold, Then only the new passage remains and it fades on its own clock', async () => {
+    const { rehighlight } = await start(textual)
+    await advance(HOLD_MS - 500)
+    rehighlight({ citation: cite(3, 'Limitations\nTwelve examples do not establish performance.'), nonce: 2 })
+    await advance(50)
+    expect(marked(2)).toEqual([])
+    expect(marked(3, 'strong')).toHaveLength(2)
+    await advance(HOLD_MS + FADE_MS)
+    expect(marked(3)).toEqual([])
+  })
+
+  test('Given the pointer over a highlighted line, Then the countdown pauses and resumes on leave', async () => {
+    await start(textual)
+    const line = screen.getByText(methodLines[1]!)
+    await advance(HOLD_MS - 1000)
+    fireEvent.pointerOver(line)
+    await advance(HOLD_MS * 3)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    expect(fadeState()).toBeNull()
+    fireEvent.pointerOut(line)
+    await advance(900)
+    expect(fadeState()).toBeNull()
+    await advance(200)
+    expect(fadeState()).toBe('out')
+    await advance(FADE_MS)
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given the pointer arrives during the fade, Then the fade stops and the highlight returns to full strength', async () => {
+    await start(textual)
+    await advance(HOLD_MS + 500)
+    expect(fadeState()).toBe('out')
+    fireEvent.pointerOver(screen.getByText(methodLines[1]!))
+    expect(fadeState()).toBeNull()
+    await advance(FADE_MS * 3)
+    expect(marked(2, 'strong')).toHaveLength(2)
+  })
+
+  test('Given the pointer over an outlined region, Then the countdown pauses', async () => {
+    await start(boxed)
+    const outline = region()[0] as HTMLElement
+    vi.spyOn(outline, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 200, 50))
+    await advance(HOLD_MS - 500)
+    fireEvent.pointerMove(screen.getByRole('region', { name: 'PDF document' }), { clientX: 150, clientY: 120 })
+    await advance(HOLD_MS * 2)
+    expect(region()).toHaveLength(1)
+    fireEvent.pointerMove(screen.getByRole('region', { name: 'PDF document' }), { clientX: 5, clientY: 5 })
+    await advance(600 + FADE_MS)
+    expect(region()).toHaveLength(0)
+  })
+
+  test('Given the text layer is drawn again by a zoom, Then a highlight in its hold stays on the same clock, and a faded one is not brought back', async () => {
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const highlight = { citation: textual, nonce: 1 }
+    const element = (zoom: number) => <PdfViewer documentId="doc-1" zoom={zoom} navigation={null} highlight={highlight} {...handlers} />
+    const view = render(element(1))
+    await advance(50)
+    await advance(HOLD_MS - 1000)
+    view.rerender(element(2))
+    await advance(50)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(1000 + FADE_MS)
+    expect(marked(2)).toEqual([])
+    view.rerender(element(3))
+    await advance(50)
+    expect(marked(2)).toEqual([])
+    expect(fadeState()).toBeNull()
+  })
+})
+
+describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
+  /**
+   * A small layout model for jsdom: a 600px viewer whose scrollTop is stored, a 320px header, and pages as tall as the
+   * viewer sizes them (their style height, which follows the width), 16px apart with page 1 at 336. Widths are reported
+   * through `resize`, as the ResizeObserver would.
+   */
+  function layoutModel() {
+    const tops = new WeakMap<Element, number>()
+    const writes: number[] = []
+    let callback: ResizeObserverCallback | null = null
+    window.ResizeObserver = class {
+      constructor(next: ResizeObserverCallback) { callback = next }
+      observe() { queueMicrotask(() => callback?.([{ contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    const height = (element: HTMLElement) => parseFloat(element.style.height) || 0
+    const BAR = 44
+    const hasBar = () => !!document.querySelector('[data-pdf-bar]')
+    const pageTop = (page: number) => {
+      let top = 336 + (hasBar() ? BAR : 0)
+      for (const element of document.querySelectorAll<HTMLElement>('[data-pdf-page]')) {
+        if (Number(element.dataset.pdfPage) === page) break
+        top += height(element) + 16
+      }
+      return top
+    }
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.dataset.pdfPage ? height(this) : this.hasAttribute('data-pdf-bar') ? BAR : 0 })
+    vi.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) { return tops.get(this) ?? 0 })
+    vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) { tops.set(this, value); writes.push(value) })
+    vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(function (this: Element, options?: ScrollToOptions | number) {
+      if (typeof options === 'object' && options.top !== undefined) { tops.set(this, options.top); writes.push(options.top) }
+    })
+    const viewer = () => screen.getByRole('region', { name: 'PDF document' })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const scrolled = tops.get(viewer()) ?? 0
+      const page = Number((this as HTMLElement).dataset?.pdfPage)
+      if (page) return new DOMRect(0, pageTop(page) - scrolled, 800, height(this as HTMLElement))
+      if (this.tagName === 'HEADER') return new DOMRect(0, -scrolled, 800, 320)
+      if (this.hasAttribute('data-pdf-bar-sentinel')) return new DOMRect(0, 320 - scrolled, 800, 0)
+      const marked = this.closest('[data-pdf-page]')
+      if (marked && this.hasAttribute('data-citation-highlight')) return new DOMRect(0, pageTop(Number((marked as HTMLElement).dataset.pdfPage)) + 100 - scrolled, 600, 24)
+      return new DOMRect(0, 0, 800, 600)
+    })
+    return {
+      writes,
+      scrollTop: () => tops.get(viewer()) ?? 0,
+      pageTop,
+      BAR,
+      scrollTo: (top: number) => { tops.set(viewer(), top); fireEvent.scroll(viewer()) },
+      resize: (width: number) => act(() => { callback?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver) }),
+    }
+  }
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 250)))
+
+  test('Given the header and no citation, When the page width changes again on load (a scrollbar appears), Then the reader stays at the top, header first', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    await layout.resize(785)
+    await settle()
+    await layout.resize(770)
+    await settle()
+    expect(layout.scrollTop()).toBe(0)
+    expect(layout.writes.filter((top) => top !== 0)).toEqual([])
+    vi.restoreAllMocks()
+  })
+
+  test('Given the reader scrolled into page 3, When the width changes, Then page 3 stays in view at the same spot', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    // A quarter of the way into page 3; after the resize the pages are shorter, and the same quarter is kept.
+    const before = layout.pageTop(3)
+    const page = screen.getByRole('group', { name: 'Page 3' })
+    layout.scrollTo(before + parseFloat(page.style.height) / 4)
+    await waitFor(() => expect(handlers.onPageChange).toHaveBeenLastCalledWith(3))
+    await layout.resize(785)
+    await settle()
+    expect(layout.pageTop(3)).toBeLessThan(before)
+    expect(layout.scrollTop()).toBeCloseTo(layout.pageTop(3) + parseFloat(page.style.height) / 4, 5)
+    vi.restoreAllMocks()
+  })
+
+  test('Given the reader is reading the header, When the width changes, Then it keeps the same distance from the top', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    layout.scrollTo(120)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(null))))
+    await layout.resize(785)
+    await settle()
+    expect(layout.scrollTop()).toBe(120)
+    vi.restoreAllMocks()
+  })
+
+  test('Given the viewer, Then the browser does not anchor its scrolling, which the viewer does itself', () => {
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
+    expect(screen.getByRole('region', { name: 'PDF document' })).toHaveClass('[overflow-anchor:none]')
+  })
+
+  const bar = <div><h3>PDF <span>research.pdf</span></h3><div role="toolbar" aria-label="PDF controls" /></div>
+  const title = <header><h2>Traceable Research Systems</h2></header>
+
+  test('Given the header and the PDF bar, When a citation on page 2 is shown, Then the page lands just under the docked bar and the passage is centred in the space below it', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={{ citation: onMethod, nonce: 1 }} header={title} bar={bar} {...handlers} />)
+    await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('highlighted'))
+    const region = screen.getByRole('region', { name: 'PDF document' })
+    const pdf = within(region).getByRole('heading', { level: 3, name: 'PDF research.pdf' })
+    const docked = pdf.closest('[data-pdf-bar]') as HTMLElement
+    expect(docked).toHaveClass('sticky', 'top-0', 'bg-background')
+    expect(within(region).getByRole('heading', { name: 'Traceable Research Systems' }).compareDocumentPosition(docked) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(docked.compareDocumentPosition(screen.getByRole('group', { name: 'Page 1' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // First the page: its top just under the bar. Then the passage, centred in what the bar leaves visible.
+    expect(layout.writes).toContain(layout.pageTop(2) - layout.BAR - 8)
+    const passageTop = layout.pageTop(2) + 100
+    expect(layout.scrollTop()).toBe(passageTop + 12 - layout.BAR - (600 - layout.BAR) / 2)
+    expect(passageTop - layout.scrollTop()).toBeGreaterThanOrEqual(layout.BAR)
+    expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
+    vi.restoreAllMocks()
+  })
+
+  test('Given the PDF bar, When page 3 is asked for, Then page 3’s top lands just under the bar', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const view = render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={title} bar={bar} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    view.rerender(<PdfViewer documentId="doc-1" zoom={1} navigation={{ documentId: 'doc-1', page: 3, nonce: 1 }} highlight={null} header={title} bar={bar} {...handlers} />)
+    await waitFor(() => expect(layout.scrollTop()).toBe(layout.pageTop(3) - layout.BAR - 8))
+    vi.restoreAllMocks()
+  })
+
+  test('Given the PDF bar, Then it docks with a hairline only once the header has scrolled away', async () => {
+    const layout = layoutModel()
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={title} bar={bar} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    const docked = document.querySelector('[data-pdf-bar]') as HTMLElement
+    expect(docked).not.toHaveAttribute('data-stuck')
+    layout.scrollTo(900)
+    await waitFor(() => expect(docked).toHaveAttribute('data-stuck', 'true'))
+    // The border is always there and only takes a colour once docked, so docking never shifts the pages by a pixel.
+    expect(docked).toHaveClass('border-b', 'border-transparent', 'data-stuck:border-border')
+    layout.scrollTo(0)
+    await waitFor(() => expect(docked).not.toHaveAttribute('data-stuck'))
+    vi.restoreAllMocks()
+  })
+
+  test('Given the viewer, Then its ground is the app background, the same white as the paper header', () => {
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
+    const region = screen.getByRole('region', { name: 'PDF document' })
+    expect(region).toHaveClass('bg-background')
+    expect(region).not.toHaveClass('bg-muted')
   })
 })

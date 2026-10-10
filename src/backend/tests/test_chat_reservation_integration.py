@@ -6,8 +6,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from app.models.research import ChatMessage, ChatSession, GenerationReservation
+from app.models.research import ChatMessage, GenerationReservation
 from tests.support.answers import ask, first_handle, named, use_hosted
+from tests.support.chats import chat_with
 from tests.support.evidence import seed_structured
 from tests.support.models import hosted_responses
 
@@ -35,8 +36,7 @@ async def chat_with_history(resources) -> object:
     paper_id, document_id, _ = await seed_structured(resources, profile=None)
     earlier = now() - timedelta(minutes=5)
     async with resources.sessions() as session, session.begin():
-        chat = ChatSession(paper_id=paper_id, document_id=document_id, title="Discussion")
-        session.add(chat)
+        chat = await chat_with(session, (paper_id, document_id), title="Discussion")
         await session.flush()
         session.add_all(
             [
@@ -67,11 +67,10 @@ async def ledger_rows(resources) -> int:
 
 
 def counted(body) -> int:
-    from app.core.config import Settings
     from app.integrations.context_registry import hosted_profile
     from app.integrations.tokens import PromptMessage, count_messages
 
-    counter = hosted_profile(Settings(_env_file=None), body["model"]).counter
+    counter = hosted_profile(body["model"], "none").counter
     messages = [PromptMessage("system", body["instructions"])] + [
         PromptMessage("user" if item["role"] == "developer" else item["role"], item["content"])
         for item in body["input"]
@@ -91,12 +90,13 @@ async def test_given_hosted_question_when_preparing_then_the_reservation_bounds_
     _, events = await ask(resources, chat_id, "How does BM25 recall compare with dense vectors?")
     assert named(events, "message.completed")
     ((model, tokens),) = reserved
-    budget = hosted_profile(resources.settings, model).input_budget
+    budget = hosted_profile(model, "low").input_budget
     assert counted(calls[0]) <= tokens < budget
-    # The bound is realistic: well under a third of the 64k working window here.
+    # The bound is realistic: well under a third of the 272K working budget here.
     assert tokens < budget // 3
 
 
+@pytest.mark.open_models
 async def test_given_local_question_when_preparing_then_nothing_is_reserved(resources, reserved):
     from tests.test_ai_integration import local_fixture, paper_fixture
 

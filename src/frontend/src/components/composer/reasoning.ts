@@ -1,4 +1,4 @@
-import type { GenerationSettings, Model } from '@/api/types'
+import type { GenerationSettings, Message, Model } from '@/api/types'
 
 type ReasoningControls = { kind: 'levels' | 'boolean' | 'controlled'; options: string[] }
 
@@ -32,4 +32,12 @@ export function normaliseSettings(models: Model[], value: GenerationSettings): G
   const preset = canonicalEffort(model, 'default')
   const fallback = controls.options.includes(preset) ? preset : controls.options[0] ?? model.reasoning_efforts[0] ?? 'none'
   return { ...value, reasoning_effort: fallback }
+}
+
+/** The selection a chat's latest answer used, if that model is still available; otherwise null. */
+export function restoreChatSettings(models: Model[], messages: Pick<Message, 'role' | 'model' | 'reasoning_effort'>[]): GenerationSettings | null {
+  const last = [...messages].reverse().find((message) => message.role === 'assistant' && message.model)
+  const model = models.find((item) => item.key === last?.model)
+  if (!last?.model || !model || model.status === 'unavailable') return null
+  return normaliseSettings(models, { model: last.model, reasoning_effort: last.reasoning_effort ?? 'none' })
 }

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, json } from '@/api/client'
-import type { ChatMemoryState, EmbeddingProfilePage, PaperRetrieval, PaperRetrievalUpdate, RetrievalIndex, RetrievalSettings } from '@/api/types'
+import type { ChatMemoryState, EmbeddingProfilePage, PaperRetrieval, ReindexEstimate, RetrievalIndex, RetrievalSettings } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 
 export function isBuilding(index: RetrievalIndex) { return index.state === 'queued' || index.state === 'embedding' }
 
-/** Search models a paper can be indexed with, with install status. */
+/** Search models the library can be embedded with, with install status and price. */
 export function useEmbeddingProfiles() {
   return useQuery({ queryKey: queryKeys.retrieval.profiles, queryFn: ({ signal }) => api<EmbeddingProfilePage>('/retrieval/profiles', { signal }) })
 }
@@ -21,13 +21,14 @@ export function useSaveRetrievalSettings() {
     mutationFn: (value: RetrievalSettings) => api<RetrievalSettings>('/retrieval/settings', json('PUT', value)),
     onSuccess: (data) => {
       client.setQueryData(queryKeys.retrieval.settings, data)
-      // The profile page reports the default it follows.
+      // The profile page reports the model the library follows, and every paper re-embeds with it.
       void client.invalidateQueries({ queryKey: queryKeys.retrieval.profiles })
+      void client.invalidateQueries({ queryKey: ['retrieval', 'paper'] })
     },
   })
 }
 
-/** Which model a paper searches with and the state of its indexes; polls while any index is building. */
+/** The library model and the state of a paper's indexes; polls while any index is building. */
 export function usePaperRetrieval(paperId: string) {
   return useQuery({
     queryKey: queryKeys.retrieval.paper(paperId),
@@ -36,12 +37,13 @@ export function usePaperRetrieval(paperId: string) {
   })
 }
 
-// Each user action carries its own request id, so a replayed delivery returns the same result instead of building twice.
-export function useUpdatePaperRetrieval(paperId: string) {
-  const client = useQueryClient()
-  return useMutation({
-    mutationFn: ({ profile }: { profile: string | null }) => api<PaperRetrieval>(`/papers/${encodeURIComponent(paperId)}/retrieval`, json('PUT', { profile, request_id: crypto.randomUUID() } satisfies PaperRetrievalUpdate)),
-    onSuccess: (data) => client.setQueryData(queryKeys.retrieval.paper(paperId), data),
+/** What switching the library to `profile` would re-embed: papers, tokens and an estimated cost. Always read fresh. */
+export function useReindexEstimate(profile: string | null) {
+  return useQuery({
+    queryKey: queryKeys.retrieval.estimate(profile ?? ''),
+    queryFn: ({ signal }) => api<ReindexEstimate>(`/retrieval/reindex-estimate?profile=${encodeURIComponent(profile ?? '')}`, { signal }),
+    enabled: profile !== null,
+    gcTime: 0,
   })
 }
 

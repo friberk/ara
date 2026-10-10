@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import String, and_, cast, or_, select
 
 from app.core.errors import AppError
+from app.integrations.open_models import MODEL_OPERATIONS
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.models.research import Document
 from app.repositories.jobs import enqueue, job_statuses, now
@@ -12,21 +13,35 @@ from app.schemas.jobs import CanaryInput, JobPage, JobRetryInput, JobStatus, Mod
 from app.services.local_models import transition_job
 
 
-def router(development: bool) -> APIRouter:
+def router(development: bool, *, open_models: bool = True) -> APIRouter:
     routes = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+
+    def hidden(job: BackgroundJob | None) -> bool:
+        # Model operations do not exist while open models are off (ARA-090).
+        return job is not None and not open_models and job.kind in MODEL_OPERATIONS
 
     @routes.get("", response_model=JobPage)
     async def list_jobs(
         request: Request,
         limit: int = Query(default=50, ge=1, le=100),
         paper_id: UUID | None = None,
-        kind: Literal["ingest", "summary", "fulltext", "model_download", "model_delete"]
+        kind: Literal[
+            "ingest",
+            "summary",
+            "section_summaries",
+            "fulltext",
+            "metadata",
+            "model_download",
+            "model_delete",
+        ]
         | None = None,
         active: bool | None = None,
     ):
         statement = select(BackgroundJob).order_by(BackgroundJob.created_at.desc()).limit(limit)
         if kind is not None:
             statement = statement.where(BackgroundJob.kind == kind)
+        if not open_models:
+            statement = statement.where(BackgroundJob.kind.not_in(MODEL_OPERATIONS))
         if active is not None:
             # retry_wait is a stage of the queued state, so active jobs include it.
             states = ["queued", "processing", "paused"] if active else ["completed", "failed"]
@@ -36,7 +51,9 @@ def router(development: bool) -> APIRouter:
             statement = statement.where(
                 or_(
                     and_(
-                        BackgroundJob.kind.in_(["summary", "fulltext", "embed"]),
+                        BackgroundJob.kind.in_(
+                            ["summary", "section_summaries", "fulltext", "embed", "metadata"]
+                        ),
                         BackgroundJob.payload["paper_id"].astext == str(paper_id),
                     ),
                     and_(
@@ -67,6 +84,8 @@ def router(development: bool) -> APIRouter:
     async def retry_job(job_id: UUID, request: Request, body: JobRetryInput | None = None):
         async with request.app.state.resources.sessions() as lookup:
             local_job = await lookup.get(BackgroundJob, job_id)
+            if hidden(local_job):
+                raise AppError(404, "JOB_NOT_FOUND", "Job not found.")
             if local_job and local_job.kind in {"model_download", "model_delete"}:
                 if body is None or body.request_id is None:
                     raise AppError(
@@ -93,7 +112,7 @@ def router(development: bool) -> APIRouter:
                 raise AppError(
                     409, "JOB_NOT_RETRYABLE", "Only eligible failed jobs can be retried."
                 )
-            if job.kind == "summary":
+            if job.kind in {"summary", "section_summaries"}:
                 raise AppError(
                     409,
                     "NEW_GENERATION_REQUEST_REQUIRED",
@@ -105,6 +124,9 @@ def router(development: bool) -> APIRouter:
                 "STORAGE_UNAVAILABLE",
                 "PDF_PARSE_TIMEOUT",
                 "PDF_PARSE_FAILED",
+                # A metadata lookup that ran out of attempts while sources were busy (ARA-086).
+                "PROVIDER_RATE_LIMITED",
+                "PROVIDER_UNAVAILABLE",
             }:
                 raise AppError(
                     409, "JOB_NOT_RETRYABLE", "This failure needs a corrected upload or request."
@@ -124,19 +146,25 @@ def router(development: bool) -> APIRouter:
             await session.flush()
             return (await job_statuses(session, [job]))[0]
 
-    @routes.post("/{job_id}/pause", response_model=JobStatus, status_code=202)
-    async def pause_job(job_id: UUID, body: ModelOperationInput, request: Request):
-        return await transition_job(request.app.state.resources, job_id, "pause", body.request_id)
+    if open_models:
 
-    @routes.post("/{job_id}/resume", response_model=JobStatus, status_code=202)
-    async def resume_job(job_id: UUID, body: ModelOperationInput, request: Request):
-        return await transition_job(request.app.state.resources, job_id, "resume", body.request_id)
+        @routes.post("/{job_id}/pause", response_model=JobStatus, status_code=202)
+        async def pause_job(job_id: UUID, body: ModelOperationInput, request: Request):
+            return await transition_job(
+                request.app.state.resources, job_id, "pause", body.request_id
+            )
+
+        @routes.post("/{job_id}/resume", response_model=JobStatus, status_code=202)
+        async def resume_job(job_id: UUID, body: ModelOperationInput, request: Request):
+            return await transition_job(
+                request.app.state.resources, job_id, "resume", body.request_id
+            )
 
     @routes.get("/{job_id}", response_model=JobStatus)
     async def get_job(job_id: UUID, request: Request):
         async with request.app.state.resources.sessions() as session:
             job = await session.get(BackgroundJob, job_id)
-            if job is None:
+            if job is None or hidden(job):
                 raise HTTPException(status_code=404, detail="Job not found")
             return (await job_statuses(session, [job]))[0]
 

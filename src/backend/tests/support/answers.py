@@ -99,7 +99,7 @@ def offline_answer(monkeypatch, resources, model: str, effort: str):
 
     from app.integrations.context_registry import context_profile
     from app.models.research import ChatMessage
-    from app.rag.pipeline import EvidenceResult
+    from app.rag.pipeline import EvidenceResult, Scope
     from app.schemas.ai import RetrievalSummary
     from app.services import chat, memory
     from app.services.context import PaperHeader
@@ -138,10 +138,9 @@ def offline_answer(monkeypatch, resources, model: str, effort: str):
         assistant,
         replay=False,
         question="What accuracy?",
-        document_id=document_id,
-        chunk_set="offline",
+        scopes=[Scope(document_id, "offline")],
         retrieval_profile="openai-3-large",
-        paper=PaperHeader(title="Offline paper", authors=[], year=None),
+        papers=[PaperHeader(title="Offline paper", authors=[], year=None)],
         limits=limits,
         evidence_budget=limits.input_budget // 2,
     )

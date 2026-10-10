@@ -8,7 +8,9 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
+from xml.etree import ElementTree
 
 # Without these the layout model's import hangs under the address-space limit (ARA-071 S2).
 THREAD_TUNING = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "2", "MALLOC_ARENA_MAX": "2"}
@@ -19,6 +21,31 @@ CPU_SECONDS_LIMIT = 150
 # C0 controls other than tab, newline and carriage return, plus DEL. TeX math-extension fonts
 # encode big delimiters at code points 0 and 1, and PostgreSQL text rejects NUL.
 CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+DOI = re.compile(r"\b10\.\d{4,9}/[^\s<>\"\]]+", re.I)
+ARXIV = re.compile(r"\barXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
+# Info titles that name a file or a toolchain step rather than the paper (ARA-086).
+FILE_EXTENSION = re.compile(
+    r"\.(?:dvi|tex|ltx|pdf|ps|eps|docx?|rtf|odt|txt|md|indd|qxd|qxp|pages|pptx?|xlsx?|html?)$",
+    re.I,
+)
+APPLICATION = re.compile(r"(?:microsoft\s+)?(?:word|powerpoint|excel)\s+-\s", re.I)
+IDENTIFIER = re.compile(r"(?:doi|arxiv|pii|isbn|issn)\s*:", re.I)
+PLACEHOLDER = re.compile(
+    r"(?:untitled(?: document)?|document|title|paper|article|manuscript|draft|main|template|"
+    r"slides|presentation|layout|none|null|unknown|no title)(?:[\s_-]*\d+)?",
+    re.I,
+)
+PLACEHOLDER_AUTHOR = re.compile(
+    r"(?:user|admin(?:istrator)?|author|owner|unknown|anonymous|editor|ieee|acm|springer|"
+    r"elsevier|microsoft.*)\d*",
+    re.I,
+)
+# First-page lines that are never part of a title: stamps, links, venue and rights notices.
+NOT_TITLE = re.compile(
+    r"^(?:arxiv|doi|https?:|www\.|©|copyright|preprint|proceedings|published|accepted|received|"
+    r"vol\.|volume|issn|isbn)|@|https?://",
+    re.I,
+)
 
 
 def error(code: str, message: str) -> dict:
@@ -103,6 +130,136 @@ def legacy_markdown(path: str) -> list[tuple[str, list[dict]]]:
     return [(chunk["text"], []) for chunk in chunks]
 
 
+def squashed(text: str) -> str:
+    """Letters and digits only, so line breaks, hyphens and case never decide a comparison."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[\W_]+", "", ascii_text).lower()
+
+
+def artifact_title(value: str | None) -> bool:
+    """Whether a PDF Info title names a file, an application or a placeholder, not a paper."""
+    text = " ".join((value or "").split())
+    if sum(character.isalpha() for character in text) < 4 or "\\" in text:
+        return True
+    if FILE_EXTENSION.search(text) or APPLICATION.match(text) or IDENTIFIER.match(text):
+        return True
+    # A single token with separators or digits is a file stem, such as final_v2 or sec18-han.
+    return bool(PLACEHOLDER.fullmatch(text) or (" " not in text and re.search(r"[_/\d]", text)))
+
+
+def join_lines(lines: list[str]) -> str:
+    title = ""
+    for line in lines:
+        if title.endswith("-"):
+            # A hyphen before a lowercase continuation splits a word; otherwise it is a compound.
+            title = title[:-1] + line if line[:1].islower() else title + line
+        else:
+            title = f"{title} {line}" if title else line
+    return title
+
+
+def page_title(page) -> str | None:
+    """The first page's largest horizontal text near the top, as printed (ARA-086).
+
+    Rotated text such as arXiv's margin stamp is skipped. A title is set larger than the body
+    text (the size carrying most characters), and a group that does not read like a title
+    gives way to the next size down.
+    """
+    lines, weights = [], {}
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            dx, dy = line["dir"]
+            spans = [span for span in line["spans"] if span["text"].strip()]
+            if dx < 0.99 or abs(dy) > 0.01 or not spans:
+                continue
+            text = " ".join(storable("".join(span["text"] for span in spans)).split())
+            size = round(max(span["size"] for span in spans), 1)
+            weights[size] = weights.get(size, 0) + len(text)
+            x0, top, _, bottom = line["bbox"]
+            if (
+                top <= page.rect.height * 0.6
+                and re.search(r"[^\W\d_]", text)
+                and not NOT_TITLE.search(text)
+            ):
+                lines.append((top, x0, bottom, size, text))
+    if not lines:
+        return None
+    body = max(weights, key=weights.get)
+    lines.sort()
+    sizes = sorted({line[3] for line in lines if line[3] >= body * 1.15}, reverse=True)
+    for size in sizes[:3]:
+        group, end = [], None
+        for top, _, bottom, line_size, text in lines:
+            if abs(line_size - size) > 0.5:
+                if group:
+                    break
+                continue
+            if group and top - end > size * 1.2:
+                break
+            group.append(text)
+            end = bottom
+        title = join_lines(group)
+        words = title.split()
+        if 2 <= len(words) <= 40 and sum(character.isalpha() for character in title) >= 8:
+            return title
+    return None
+
+
+def choose_title(embedded: list[str | None], printed: str | None, first_pages: str) -> str | None:
+    """The first usable embedded title (XMP, then Info) that the first pages print; else the
+    printed title; else the first usable embedded one."""
+    usable = [title for title in embedded if title and not artifact_title(title)]
+    for title in usable:
+        if printed is None or squashed(title) in squashed(first_pages):
+            return title
+    return printed or next(iter(usable), None)
+
+
+DC = "http://purl.org/dc/elements/1.1/"
+RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+
+def xmp_fields(packet: str) -> dict:
+    """Clues from an XMP packet: dc title and creators, a DOI, the venue and the publication year.
+
+    A file's own dates (xmp:CreateDate and the like) are not publication dates and are ignored.
+    A malformed packet gives no clues rather than an error (ARA-086).
+    """
+    try:
+        root = ElementTree.fromstring(packet[:200_000].encode("utf-8"))
+    except (ElementTree.ParseError, ValueError):
+        return {}
+    fields = {}
+    for element in root.iter():
+        if not isinstance(element.tag, str) or not element.tag.startswith("{"):
+            continue
+        namespace, _, name = element.tag[1:].partition("}")
+        items = [" ".join(item.text.split()) for item in element.iter(f"{{{RDF}}}li") if item.text]
+        text = " ".join(storable("".join(element.itertext())).split())
+        prism = "prismstandard.org" in namespace
+        if namespace == DC and name == "title" and text:
+            fields.setdefault("title", storable(items[0] if items else text))
+        elif namespace == DC and name == "creator" and items:
+            fields.setdefault("creators", [storable(item) for item in items])
+        elif (namespace == DC and name == "identifier") or (prism and name == "doi"):
+            fields.setdefault("doi", text)
+        elif prism and name == "publicationName" and text:
+            fields.setdefault("venue", text)
+        elif prism and name in {"coverDate", "publicationDate", "coverDisplayDate"}:
+            year = re.search(r"\b(?:19|20)\d{2}\b", text)
+            if year:
+                fields.setdefault("year", int(year[0]))
+    return fields
+
+
+def xmp_packet(document) -> str:
+    try:
+        packet = document.get_xml_metadata()
+    except Exception:
+        return ""
+    return packet if isinstance(packet, str) else ""
+
+
 def extract(document) -> dict:
     pages, total = [], 0
     for index, page in enumerate(document):
@@ -115,10 +272,24 @@ def extract(document) -> dict:
         return error("OCR_REQUIRED", "No readable text found. Upload a text PDF; OCR is disabled.")
     first = "\n".join(page["text"] for page in pages[:2])
     metadata = document.metadata or {}
-    title = storable(metadata.get("title") or "").strip() or None
+    packet = xmp_packet(document)
+    xmp = xmp_fields(packet)
+    info_title = " ".join(storable(metadata.get("title") or "").split()) or None
+    title = choose_title([xmp.get("title"), info_title], page_title(document[0]), first)
     author = storable(metadata.get("author") or "").strip()
-    authors = [x.strip() for x in re.split(r";|\s+and\s+", author) if x.strip()]
-    doi = re.search(r"\b10\.\d{4,9}/[^\s<>\"\]]+", first, re.I)
+    names = [x.strip() for x in re.split(r";|\s+and\s+", author)] if author else []
+    authors = [
+        name
+        for name in (names if any(names) else xmp.get("creators", []))
+        if name and not PLACEHOLDER_AUTHOR.fullmatch(name) and not re.search(r"[\d\\/@]", name)
+    ]
+    # Publishers embed the paper's own DOI (XMP, Info); one in the text may be a reference's.
+    embedded = [xmp.get("doi"), metadata.get("subject"), metadata.get("keywords"), packet[:200_000]]
+    doi = next(
+        (found for text in embedded if isinstance(text, str) and (found := DOI.search(text))),
+        None,
+    ) or DOI.search(first)
+    arxiv = ARXIV.search(pages[0]["text"])
     year = re.search(
         r"(?:published|publication year|copyright|©)\s*[:(]?\s*((?:19|20)\d{2})\b",
         first,
@@ -133,8 +304,10 @@ def extract(document) -> dict:
         "metadata": {
             "title": title,
             "authors": authors,
-            "year": int(year[1]) if year else None,
+            "year": xmp.get("year") or (int(year[1]) if year else None),
             "doi": doi[0].rstrip(".,;) ").lower() if doi else None,
+            "arxiv_id": arxiv[1] if arxiv else None,
+            "venue": xmp.get("venue"),
             "abstract": abstract[1].strip() if abstract else None,
         },
         "pages": pages,

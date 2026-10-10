@@ -8,6 +8,9 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 
 def test_given_host_endpoint_when_configuring_local_provider_then_hosted_urls_remain_guarded():
     settings = Settings(
@@ -224,7 +227,7 @@ def test_given_local_model_when_budgeting_then_output_and_safety_are_reserved():
 
     resources = SimpleNamespace(settings=Settings(_env_file=None))
     assert model_limits(resources, "ifm-k2-horizon-7b") == (3072, 2048)
-    assert model_limits(resources, "gpt-5.6-luna") == (64000, 4000)
+    assert model_limits(resources, "gpt-5.6-luna") == (272_000, 4000)
     assert validate_selection("ifm-k2-horizon-7b", "default").provider == "ollama"
 
 
@@ -350,7 +353,9 @@ async def test_given_unavailable_local_model_when_validating_then_safe_failure_w
 
     monkeypatch.setattr(local_models, "ensure_local_available", unavailable)
     with pytest.raises(LLMError) as failure:
-        await validate_model_available(SimpleNamespace(), "ifm-k2-horizon-7b", "default")
+        await validate_model_available(
+            SimpleNamespace(settings=Settings(_env_file=None)), "ifm-k2-horizon-7b", "default"
+        )
     assert failure.value.code == "LOCAL_MODEL_NOT_READY" and failure.value.status == 409
 
 

@@ -28,8 +28,10 @@ from app.integrations.llm import (
     validate_model_available,
 )
 from app.integrations.model_catalog import local_spec
+from app.integrations.open_models import offered_reranker
 from app.models.research import (
     ChatMessage,
+    ChatPaper,
     ChatSession,
     Document,
     ModelConfiguration,
@@ -42,19 +44,23 @@ from app.rag.citations import (
     normalize_source_markers,
     passage_citations,
 )
-from app.rag.indexing import effective_profile
-from app.rag.pipeline import evidence_ceiling, retrieve_evidence
+from app.rag.indexing import default_profile
+from app.rag.pipeline import Scope, evidence_ceiling, retrieve_evidence
+from app.rag.selection import RETRY_PASS
+from app.repositories.chats import with_cited_papers
 from app.repositories.jobs import now
 from app.repositories.local_models import use_held
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
-from app.services import memory
+from app.services import map_reduce, memory
+from app.services.chat_papers import add_mentioned, named_papers, pinned
 from app.services.context import (
     INSTRUCTIONS_VERSION,
     RECALL_SHARE,
     SUMMARY_SHARE,
     PaperHeader,
     assemble_answer_prompt,
+    paper_label,
 )
 from app.services.memory import AnswerMemory, QueryPlan
 
@@ -126,6 +132,7 @@ async def replayed(session, chat_id: UUID, body) -> tuple[ChatSession, ChatMessa
     if (
         user is None
         or user.content != body.content
+        or user.configuration.get("mentions", []) != mentions_json(body)
         or replay.model != body.model
         or replay.reasoning_effort != body.reasoning_effort
     ):
@@ -135,13 +142,10 @@ async def replayed(session, chat_id: UUID, body) -> tuple[ChatSession, ChatMessa
     return chat, replay
 
 
-async def paper_header(session, paper: Paper) -> PaperHeader:
-    authors = await session.scalars(
-        select(PaperAuthor.name)
-        .where(PaperAuthor.paper_id == paper.id)
-        .order_by(PaperAuthor.ordinal)
-    )
-    return PaperHeader(title=paper.title, authors=list(authors), year=paper.year)
+MULTI_PAPER_LOCAL = (
+    "Chats over several papers need a hosted model. Choose a hosted model, or remove papers "
+    "to ask a local model."
+)
 
 
 @dataclass
@@ -151,21 +155,70 @@ class Prepared:
     assistant: ChatMessage
     replay: bool
     question: str = ""
-    document_id: UUID | None = None
-    chunk_set: str | None = None
+    # The chat's papers in order, each with its pinned PDF and that PDF's chunk set.
+    scopes: list[Scope] = field(default_factory=list)
     retrieval_profile: str | None = None
     reranker: str | None = None
-    paper: PaperHeader | None = None
+    papers: list[PaperHeader] = field(default_factory=list)
+    # Indexes into `papers` of the papers the question mentions with pills (ARA-096).
+    mentioned: list[int] = field(default_factory=list)
     history: list[ChatMessage] = field(default_factory=list)
     limits: ContextProfile | None = None
     evidence_budget: int = 0
 
 
+async def chat_scopes(session, chat_id: UUID) -> tuple[list[Scope], list[PaperHeader]]:
+    """The chat's papers with their pinned PDFs, which must be ready and indexed by chunks.
+
+    Two queries for any number of papers: the links with their PDFs and papers, then authors.
+    """
+    rows = (
+        await session.execute(
+            select(ChatPaper, Document, Paper)
+            .join(Document, Document.id == ChatPaper.document_id)
+            .join(Paper, Paper.id == ChatPaper.paper_id)
+            .where(ChatPaper.chat_id == chat_id)
+            .order_by(ChatPaper.ordinal)
+        )
+    ).all()
+    authors: dict[UUID, list[str]] = {}
+    for paper_id, name in await session.execute(
+        select(PaperAuthor.paper_id, PaperAuthor.name)
+        .where(PaperAuthor.paper_id.in_([paper.id for _, _, paper in rows]))
+        .order_by(PaperAuthor.paper_id, PaperAuthor.ordinal)
+    ):
+        authors.setdefault(paper_id, []).append(name)
+    scopes, headers = [], []
+    for number, (_, document, paper) in enumerate(rows, start=1):
+        if document.status != "ready" or document.chunk_set is None:
+            raise HTTPException(
+                409,
+                "This paper is being prepared for the new search. Try again in a minute."
+                if document.status == "ready"
+                else "The selected document is not ready",
+            )
+        header = PaperHeader(title=paper.title, authors=authors.get(paper.id, []), year=paper.year)
+        label = f"Paper {number}: {paper_label(header)}" if len(rows) > 1 else ""
+        scopes.append(Scope(document.id, document.chunk_set, label))
+        headers.append(header)
+    return scopes, headers
+
+
+def mentions_json(body) -> list[dict]:
+    return [mention.model_dump(mode="json") for mention in body.mentions]
+
+
 async def prepare(resources, chat_id: UUID, body) -> Prepared:
+    mentioned = [mention.paper_id for mention in body.mentions]
     async with resources.sessions() as session, session.begin():
         _, replay = await replayed(session, chat_id, body)
+        # Mentioned papers join the chat with this question.
+        several = len({link.paper_id for link in await pinned(session, chat_id)} | {*mentioned}) > 1
     if replay is not None:
         return Prepared(replay, replay=True)
+    # Open models are frozen (ARA-090), so multi-paper evidence is built for hosted models only.
+    if several and local_spec(body.model):
+        raise LLMError("MULTI_PAPER_LOCAL", MULTI_PAPER_LOCAL, 409)
     # Local validation calls the runtime, so it never runs while the chat row is locked.
     selection = await validate_model_available(resources, body.model, body.reasoning_effort)
     configuration = await generation_configuration(resources, body.model, body.reasoning_effort)
@@ -182,14 +235,9 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             )
         ):
             raise HTTPException(409, "Another answer is already processing in this chat")
-        document = await session.get(Document, chat.document_id)
-        if document is None or document.status != "ready" or document.chunk_set is None:
-            raise HTTPException(
-                409,
-                "This paper is being prepared for the new search. Try again in a minute."
-                if document is not None and document.status == "ready"
-                else "The selected document is not ready",
-            )
+        # Same transaction as the question: a refusal below adds nothing, and replays return above.
+        order = await add_mentioned(session, chat_id, mentioned)
+        scopes, headers = await chat_scopes(session, chat_id)
         history = list(
             (
                 await session.scalars(
@@ -199,15 +247,14 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
                 )
             ).all()
         )
-        paper = await session.get(Paper, chat.paper_id)
-        header = await paper_header(session, paper)
-        profile, _ = await effective_profile(session, paper)
+        profile = await default_profile(session)
         stored = await session.get(ModelConfiguration, "retrieval")
         reranker = RetrievalSettings.from_stored(stored.value if stored else None).reranker
+        reranker = offered_reranker(resources.settings, reranker)
         # Sizing without evidence raises CONTEXT_LIMIT (413) before anything is stored.
         sizing = assemble_answer_prompt(
             profile=limits,
-            paper=header,
+            papers=headers,
             history=history,
             memory_summary=None,
             recalled=[],
@@ -215,7 +262,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             question=body.content,
             retrieved_for=None,
         )
-        ceiling = await evidence_ceiling(session, document.id, document.chunk_set, limits.counter)
+        ceiling = await evidence_ceiling(session, scopes, limits.counter)
         await reserve(resources, body.model, prompt_bound(limits, sizing, ceiling, body.content))
         await memory.defer_compaction(session, chat_id)
         user = ChatMessage(
@@ -227,6 +274,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             model=None,
             reasoning_effort=None,
             citations=[],
+            configuration={"mentions": mentions_json(body)} if body.mentions else {},
             request_id=body.request_id,
             created_at=now(),
         )
@@ -254,11 +302,11 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             assistant,
             replay=False,
             question=body.content,
-            document_id=chat.document_id,
-            chunk_set=document.chunk_set,
+            scopes=scopes,
             retrieval_profile=profile,
             reranker=reranker,
-            paper=header,
+            papers=headers,
+            mentioned=sorted({order.index(paper_id) for paper_id in mentioned}),
             history=history,
             limits=limits,
             evidence_budget=sizing.allocation.evidence,
@@ -289,7 +337,25 @@ async def plan_for_answer(resources, prepared: Prepared, remembered: AnswerMemor
         history=remembered.history,
         memory_summary=remembered.summary[1] if remembered.summary else None,
         question=prepared.question,
+        papers=prepared.papers,
+        named=named_in(prepared, prepared.question) if len(prepared.papers) > 1 else (),
     )
+
+
+def named_in(prepared: Prepared, text: str) -> list[int]:
+    """Papers the question names: its pills by paper id (ARA-096), and full titles or
+    "Surname Year" typed as plain text (ARA-088)."""
+    return sorted({*prepared.mentioned, *named_papers(text, prepared.papers)})
+
+
+def kept_papers(prepared: Prepared, plan: QueryPlan) -> list[int]:
+    """Papers this answer always keeps: those the question or its standalone form names, and
+    the targets of a comparison's sub-questions (ARA-088)."""
+    if len(prepared.papers) < 2:
+        return []
+    asked = f"{prepared.question}\n{plan.standalone_question}"
+    targets = [index for index, _ in plan.sub_questions]
+    return sorted({*named_in(prepared, asked), *targets})
 
 
 async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory, plan, evidence):
@@ -298,7 +364,7 @@ async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory
         return []
     window = assemble_answer_prompt(
         profile=prepared.limits,
-        paper=prepared.paper,
+        papers=prepared.papers,
         history=remembered.history,
         memory_summary=remembered.summary,
         recalled=[],
@@ -341,31 +407,47 @@ async def save(
         message.content, message.state = content, state
         message.lease_expires_at = now() + LEASE if state == "processing" else None
         if citations is not None:
-            message.citations = [item.model_dump(mode="json") for item in citations]
+            message.citations = [
+                item.model_dump(mode="json", exclude={"paper_id"}) for item in citations
+            ]
         if usage is not None:
             message.usage = usage
         if grounding is not None:
             message.grounding = grounding
         await session.flush()
-        return Message.model_validate(message).model_dump(mode="json")
+        (saved,) = await with_cited_papers(session, [Message.model_validate(message)])
+        return saved.model_dump(mode="json")
 
 
-async def record_evidence(resources, message_id, evidence, usage) -> None:
-    """How the evidence was found, stored before any provider call."""
+async def record_evidence(resources, message_id, evidence, usage, planner=None, calls=None) -> None:
+    """How the evidence was found, stored before any provider call.
+
+    `billed` keeps the tokens of the calls made for this answer besides the answer itself, which
+    the chat's cost meter prices; `calls` adds earlier answer calls, such as the first attempt
+    of a retried answer."""
     async with resources.sessions() as session, session.begin():
         message = await leased(session, message_id)
-        message.retrieval = {**evidence.summary.model_dump(mode="json"), "trace": evidence.trace}
+        billed = {
+            **evidence.trace.get("billed", {}),
+            **({"planner": planner} if planner else {}),
+            **(calls or {}),
+        }
+        message.retrieval = {
+            **evidence.summary.model_dump(mode="json"),
+            "trace": evidence.trace,
+            "billed": billed,
+        }
         message.context = usage.model_dump(mode="json")
         message.lease_expires_at = now() + LEASE
 
 
-def grounded(content: str, transducer: HandleTransducer, passages, document_id: UUID):
+def grounded(content: str, transducer: HandleTransducer, passages, document_ids: set[UUID]):
     """Canonical content, its citations and grounding; unsupported citations fail."""
     try:
         if transducer.unknown:
             raise ValueError("The answer cited a handle that was not supplied.")
         content = normalize_source_markers(content)
-        citations = passage_citations(content, passages, document_id)
+        citations = passage_citations(content, passages, document_ids)
     except ValueError:
         raise LLMError(
             "UNGROUNDED_OUTPUT", "The answer cited unavailable source evidence."
@@ -441,13 +523,31 @@ async def stream_answer(
             )
         return
     content, completed, client, task = "", False, None, None
-    evidence, transducer = None, None
     queue = asyncio.Queue(maxsize=32)
     last_checkpoint = asyncio.get_running_loop().time()
 
+    def slots_for():
+        return nullcontext() if inference_slot else generation_slots(resources, assistant.model)
+
+    async def generate(assembled, citable) -> HandleTransducer:
+        """Stream one attempt into the queue, its handles already mapped to source markers."""
+        transducer = HandleTransducer(HandleMap(citable))
+        await queue.put(("attempt", None))
+        await queue.put(("status", "generating"))
+        async with slots_for():
+            async for delta in client.stream_messages(
+                assistant.model, assistant.reasoning_effort, assembled.messages
+            ):
+                if text := transducer.feed(delta):
+                    await queue.put(("delta", text))
+        if tail := transducer.flush():
+            await queue.put(("delta", tail))
+        return transducer
+
     async def produce():
-        """Plan, retrieve and generate; the consumer turns stages and deltas into events."""
-        nonlocal client, evidence
+        """Plan, retrieve and generate, retrying once more widely when the first answer reports
+        insufficient evidence; the consumer turns stages and deltas into events."""
+        nonlocal client
         try:
             if wait_for_slot:
                 await admit_after_wait(
@@ -464,43 +564,114 @@ async def stream_answer(
             await queue.put(("status", "retrieving"))
             evidence = await retrieve_evidence(
                 resources,
-                document_id=prepared.document_id,
-                chunk_set=prepared.chunk_set,
+                scopes=prepared.scopes,
                 preferred_profile=prepared.retrieval_profile,
                 queries=plan.search_queries,
                 question=plan.standalone_question,
                 budget=prepared.evidence_budget,
                 counter=prepared.limits.counter,
                 reranker=prepared.reranker,
+                sub_questions=plan.sub_questions,
+                kept=kept_papers(prepared, plan),
                 on_stage=lambda stage: queue.put(("status", stage)),
+                question_type=plan.question_type,
             )
             if plan.standalone_question != prepared.question:
                 evidence.summary.standalone_query = plan.standalone_question
-            assembled = assemble_answer_prompt(
-                profile=prepared.limits,
-                paper=prepared.paper,
-                history=remembered.history,
-                memory_summary=remembered.summary,
-                recalled=await recalled_turns(resources, prepared, remembered, plan, evidence),
-                evidence_block=evidence.block,
-                question=prepared.question,
-                retrieved_for=plan.standalone_question,
-            )
-            await record_evidence(resources, assistant.id, evidence, assembled.usage)
-            await queue.put(("evidence", HandleMap(evidence.passages)))
+            recalled = await recalled_turns(resources, prepared, remembered, plan, evidence)
+
+            def assemble():
+                return assemble_answer_prompt(
+                    profile=prepared.limits,
+                    papers=prepared.papers,
+                    history=remembered.history,
+                    memory_summary=remembered.summary,
+                    recalled=recalled,
+                    evidence_block=evidence.block,
+                    question=prepared.question,
+                    retrieved_for=plan.standalone_question,
+                )
+
+            async def mapped(assembled, billed: dict):
+                """A comparison, or the retry, that wants more evidence than E reads each paper
+                in its own call and answers from their notes (step 7)."""
+                wide = (
+                    evidence.evidence_pass is RETRY_PASS
+                    or plan.question_type == "comparative"
+                    or bool(plan.sub_questions)
+                )
+                if not (
+                    wide
+                    and len(evidence.target_papers()) > 1
+                    and evidence.wanted() > assembled.allocation.evidence
+                ):
+                    return assembled, evidence.citable
+                await queue.put(("status", "mapping"))
+                positions = {document: n for n, document in enumerate(evidence.documents)}
+                asked = dict(plan.sub_questions)
+                found = await map_reduce.read_papers(
+                    resources,
+                    client,
+                    model=assistant.model,
+                    effort=assistant.reasoning_effort,
+                    limits=prepared.limits,
+                    evidence=evidence,
+                    papers={doc: prepared.papers[n] for doc, n in positions.items()},
+                    questions={
+                        doc: asked.get(n, plan.standalone_question) for doc, n in positions.items()
+                    },
+                    room=assembled.allocation.evidence,
+                    slots=lambda: slots_for(),
+                )
+                evidence.summary.map_reduce = True
+                billed.setdefault("map", []).extend(found.calls)
+                assembled = assemble_answer_prompt(
+                    profile=prepared.limits,
+                    papers=prepared.papers,
+                    history=remembered.history,
+                    memory_summary=remembered.summary,
+                    recalled=recalled,
+                    evidence_block=lambda room: found.block(
+                        prepared.limits.counter, evidence.headers, room
+                    ),
+                    question=prepared.question,
+                    retrieved_for=plan.standalone_question,
+                    evidence_label=map_reduce.NOTES_LABEL,
+                )
+                await record_evidence(
+                    resources, assistant.id, evidence, assembled.usage, plan.billed, billed
+                )
+                return assembled, found.citable
+
+            billed: dict = {}
+            assembled = assemble()
+            await record_evidence(resources, assistant.id, evidence, assembled.usage, plan.billed)
             selection = await validate_model_available(
                 resources, assistant.model, assistant.reasoning_effort
             )
             client = create_llm(resources, assistant.model, selection=selection)
-            await queue.put(("status", "generating"))
-            async with (
-                nullcontext() if inference_slot else generation_slots(resources, assistant.model)
-            ):
-                async for delta in client.stream_messages(
-                    assistant.model, assistant.reasoning_effort, assembled.messages
-                ):
-                    await queue.put(("delta", delta))
-            await queue.put(("done", None))
+            assembled, citable = await mapped(assembled, billed)
+            transducer = await generate(assembled, citable)
+            # Step 10 (adapting Self-Route, Li et al., EMNLP 2024): at most one retry, only when
+            # the model reports the evidence insufficient and wider retrieval adds passages.
+            if transducer.insufficient and evidence.widen():
+                first = {"model": assistant.model, **memory.billed_tokens(client.usage)}
+                assembled = assemble()
+                try:
+                    await reserve(resources, assistant.model, assembled.usage.input_tokens)
+                except LLMError as exc:
+                    if exc.code != "DAILY_BUDGET_EXCEEDED":
+                        raise
+                else:
+                    evidence.summary.retried = True
+                    billed["first_answer"] = first
+                    await queue.put(("status", "widening"))
+                    await record_evidence(
+                        resources, assistant.id, evidence, assembled.usage, plan.billed, billed
+                    )
+                    assembled, citable = await mapped(assembled, billed)
+                    transducer = await generate(assembled, citable)
+            await queue.put(("done", (transducer, citable)))
         except Exception as exc:
             await queue.put(("error", exc))
 
@@ -525,27 +696,26 @@ async def stream_answer(
             if kind == "error":
                 raise value
             if kind == "done":
+                transducer, citable = value
                 break
             if kind == "status":
                 yield event("message.status", {"message_id": str(assistant.id), "stage": value})
                 continue
-            if kind == "evidence":
-                transducer = HandleTransducer(value)
+            if kind == "attempt":
+                # A retry replaces the first attempt; only the final answer is kept.
+                content = ""
                 continue
-            text = transducer.feed(value)
-            if not text:
-                continue
-            content += text
+            content += value
             # Bound database writes while the final/disconnect paths always flush partial text.
             if asyncio.get_running_loop().time() - last_checkpoint >= 1:
                 await save(resources, assistant.id, content)
                 last_checkpoint = asyncio.get_running_loop().time()
-            yield event("message.delta", {"text": text})
-        if tail := transducer.flush():
-            content += tail
-            yield event("message.delta", {"text": tail})
+            yield event("message.delta", {"text": value})
         content, citations, grounding = grounded(
-            content, transducer, evidence.passages, prepared.document_id
+            content,
+            transducer,
+            citable,
+            {scope.document_id for scope in prepared.scopes},
         )
         final = await save(
             resources,
@@ -557,7 +727,13 @@ async def stream_answer(
             grounding=grounding,
         )
         completed = True
-        await memory.remember_turn(resources, assistant.session_id, assistant.id, assistant.model)
+        await memory.remember_turn(
+            resources,
+            assistant.session_id,
+            assistant.id,
+            assistant.model,
+            assistant.reasoning_effort,
+        )
         yield event("message.completed", final)
     except Exception as exc:
         safe = (

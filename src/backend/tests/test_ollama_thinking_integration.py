@@ -16,7 +16,8 @@ from app.schemas.ai import ChatInput
 from app.services import chat, summarization
 from tests.test_ai_integration import local_fixture, paper_fixture, summary_job_fixture
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 async def install_controls(resources):
@@ -45,8 +46,7 @@ async def test_given_native_controls_when_saving_then_validate_known_names_and_p
     app = create_app(resources.settings)
     app.state.resources = resources
     body = {"default_model": spec.key, "reasoning_effort": "deliberate"}
-    # Saving only the chat defaults keeps the default memory model (ARA-077).
-    saved = {**body, "memory_model": "gpt-5.6-luna"}
+    saved = body
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -186,10 +186,7 @@ async def test_given_saved_native_name_when_verified_controls_change_then_saving
         assert response.status_code == 422
         assert response.json()["code"] == "INVALID_REASONING"
         # The old preference remains readable until the user chooses its replacement.
-        assert (await client.get("/api/v1/settings")).json() == {
-            **body,
-            "memory_model": "gpt-5.6-luna",
-        }
+        assert (await client.get("/api/v1/settings")).json() == body
 
 
 @pytest.mark.parametrize(

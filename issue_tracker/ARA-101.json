@@ -1,0 +1,72 @@
+{
+  "id": "ARA-101",
+  "title": "Paper metadata above the PDF; \u24d8 keeps only provenance and search details",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10, after ARA-097 merged: \"ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff.\" ARA-097 put every detail, bibliography included, in a side sheet behind \u24d8. This ticket moves the bibliography back onto the page above the PDF, as the old Details tab showed it, and turns \u24d8 into a small modal for the behind-the-scenes details only. ARA-097's tabless reader, PDF menu and Remove PDF behaviour stay.",
+  "dependencies": [
+    "ARA-097",
+    "ARA-098"
+  ],
+  "acceptance_criteria": [
+    "Given a paper's workspace, when the reader shows, then a paper header at the top of the reader column, above the PDF, shows the title, all authors, the citation line (year, venue in italics), DOI and record links, and the abstract clamped with Show more, plus Edit details. Missing fields read plainly or are omitted, never as raw placeholders.",
+    "Given a long PDF, when the user reads it, then the header doesn't permanently take reading space. It scrolls away with the document, or collapses to a compact row, and comes back at the top. Page tracking, citation jumps and highlights, zoom and fit-width keep working.",
+    "Given a paper without a ready PDF, when the reader shows its ways to get one, then the same header sits above them, and the abstract is not shown twice.",
+    "Given reader tabs for other papers (multi-paper chats), when a tab is active, then the header describes that tab's paper.",
+    "Given the \u24d8 button in the paper header, when it is pressed, then a centred modal dialog (not a side sheet) lists only the behind-the-scenes details: where each field came from with Look up again, catalog identifiers, and the search index. Esc and close return focus to \u24d8. Delete paper\u2026 stays reachable from the workspace.",
+    "Given a 390px screen, when the PDF segment shows, then the header fits with no horizontal scroll, and the dialog fits the screen.",
+    "Given the codebase, when this lands, then PaperDetailsSheet and anything used only by it are deleted, with no second implementation."
+  ],
+  "test_cases": [
+    "Header renders the bibliography for a full and a sparse paper; abstract clamps and expands.",
+    "Header follows the active reader tab.",
+    "No-PDF state shows the header once and no duplicate abstract.",
+    "\u24d8 opens a dialog with sources, Look up again, identifiers and the search index, and none of the bibliography; focus returns.",
+    "Citation jump still scrolls to and highlights the passage with the header present.",
+    "Visual check: desktop light and dark, 390px."
+  ],
+  "status": "completed",
+  "related_files": [
+    "DESIGN.md",
+    "PRODUCT.md",
+    "README.md",
+    "docs/agent-development-log.md",
+    "issue_tracker/ARA-101.json",
+    "src/frontend/e2e/workspace.spec.ts",
+    "src/frontend/src/components/shell/shell.test.tsx",
+    "src/frontend/src/components/ui/sheet.tsx",
+    "src/frontend/src/features/open-models-flag.test.tsx",
+    "src/frontend/src/features/workspace/LookupNotice.tsx",
+    "src/frontend/src/features/workspace/MetadataSources.tsx",
+    "src/frontend/src/features/workspace/PaperDetailsSheet.tsx",
+    "src/frontend/src/features/workspace/PaperHeader.tsx",
+    "src/frontend/src/features/workspace/PaperSourcesDialog.tsx",
+    "src/frontend/src/features/workspace/PaperWorkspacePage.tsx",
+    "src/frontend/src/features/workspace/PdfReader.tsx",
+    "src/frontend/src/features/workspace/PdfViewer.test.tsx",
+    "src/frontend/src/features/workspace/PdfViewer.tsx",
+    "src/frontend/src/features/workspace/ReaderGate.tsx",
+    "src/frontend/src/features/workspace/SearchIndexPanel.tsx",
+    "src/frontend/src/features/workspace/paper-details.test.tsx",
+    "src/frontend/src/features/workspace/paper-header.test.tsx",
+    "src/frontend/src/features/workspace/search-index.test.tsx",
+    "src/frontend/src/features/workspace/workspace.test.tsx"
+  ],
+  "commits": [
+    "7a983de",
+    "4fe991e",
+    "a915653",
+    "24866d9",
+    "33890c1",
+    "b109e7d",
+    "281a782",
+    "eb51d0b",
+    "a75bdca",
+    "a8d2b44",
+    "67be56a",
+    "c0eacd1"
+  ],
+  "pull_requests": [],
+  "verification": "Implemented 2026-10-10 on feat/ara-101-paper-header from feat/ux-feedback-round (32528d0). Frontend only. npm run check -> typecheck and lint clean, 690 tests in 91 files; npm run build passed with the existing chunk-size warning. New: paper-header.test.tsx (14 tests: full and sparse bibliography, abstract clamp, top bar keeps the title, no-PDF header with one abstract, header follows the active reader tab, \u24d8 dialog contents and no bibliography, focus return on Esc and close, copy DOI, Look up again, Edit details, Delete paper, no Delete for another paper's tab, DOI-owner note, narrow header) and a PdfViewer test for a citation jump below the header. Scroll design: the header is the first child of PdfViewer's scroll column (offsets are rect-relative, page tracking probes 30% down, zoom anchoring is page-relative), so it scrolls away while the controls bar stays. Visual check (two rounds) against the test copy's API on 8011 through Vite on 5198, read-only (no non-GET request): desktop light and dark, 390 px light and dark; no horizontal overflow (PDF region 592/592 desktop, 390/390 phone), the phone dialog 358x697 within 390x844; round 1 found the Edit details label squeezing the title at 390 px (fixed with a container query); round 2 confirmed it, focus returning to \u24d8, and a citation jump to page 7 highlighted in view with zoom and fit-width keeping the page. Not run: the updated e2e/workspace.spec.ts (type-checked only). The other-paper tab was not seen in a browser (no such chat on the test copy); a unit test covers it. This record and the journal are committed after the commits listed. Follow-up on feat/ara-101b-abstract-heading (from 58ae56b), after the user asked for an abstract heading: PaperHeader has a small h3 'Abstract' grouped with its text (kept above the no-abstract line); the \u24d8 dialog's search index is one sentence ('Searching N passages in M sections with <model>.'), the model named once, with no middle dot and no status pill (building shows a spinner line and progress). Red: 9 tests failed first (missing heading, sentence, 'Building the index', pills still present); then 29 passed. npm run check -> 695 tests in 92 files; npm run build passed. Visual check read-only against :8011 at desktop light and 390 px: no overflow, dialog 358x633. Note: library-manage.test.tsx's Delete test fails alone on this base because ARA-103's sidebar menu shares the 'Actions for' name; feat/ux-feedback-round has since changed that test. Second follow-up (the user asked for a PDF heading too): an h3 'PDF' with the file name in muted text sits between the header and page 1 and scrolls with them; the same heading leads the no-PDF states (their own headings moved to h4); an earlier PDF version keeps its banner. Red: the two heading tests failed first; the earlier-version test and the extended citation-jump test passed at once (nothing to remove; PdfViewer renders any header). npm run check -> 698 tests in 92 files; npm run build passed. Visual round read-only against :8011 at desktop light and 390 px: headings read title, Abstract, PDF in both states; a citation jump to page 7 still lands and marks in view. Third pass: merged feat/ux-feedback-round (ba62a2a) as eb51d0b; the index sentence breaks before the model name (whitespace-nowrap, a75bdca). Reload bug reproduced, not only guessed: with classic scrollbars (Playwright's headless Chromium hides them by default) a reload opened the reader at scrollTop 383 (1440 px) and 421 (390 px), because the scrollbar narrowed the viewer and the width re-anchor, starting at page 1, skipped the header. Fixed in a8d2b44: the anchor can be the header region (a distance from the top), and the viewer sets overflow-anchor: none. Red: 3 PdfViewer tests failed first (336 vs 0, 124.35 vs 120, missing class); the page-3 guard passed before and after. After the fix the classic-scrollbar reload is at 0 at both widths, zoom at the top stays at 0, zoom on page 3 keeps page 3, and a citation jump still lands on page 7. npm run check -> 747 tests in 96 files; npm run build passed. Fourth pass (user: the PDF controls should stick to the PDF; the reader should be one white surface): merged feat/ux-feedback-round (ea7dcab) as 67be56a. In c0eacd1 the PDF bar (h3 'PDF', file name, paging, zoom, fit width, PDF menu) sits between the paper header and page 1 in the viewer's scroll column and docks at the top (sticky, bg-background, hairline coloured only once docked); paging lands a page 8px under the bar and citations centre below it; no ready PDF shows the heading alone; an earlier version's bar names its file. The reader is bg-background throughout, the header has no surface of its own, pages have a ring-1 ring-border edge, and header, bar and pages share the page column's left edge. Red: 4 PdfViewer tests (after fixing a missing within import) and 3 header tests failed first; the hairline assertion was changed before green to a border that only takes colour, so docking cannot shift the pages. npm run check -> 751 tests in 96 files; npm run build passed. Visual round read-only against :8011 with classic scrollbars, desktop light, desktop dark and 390 px: top at scrollTop 0 after a reload, page 3 lands 8px under the docked bar, a citation jump to page 7 puts the passage 399/325 px below the bar, one left edge (272/16 px), no write requests.",
+  "updated_at": "2026-10-10"
+}

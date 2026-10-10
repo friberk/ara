@@ -1,0 +1,65 @@
+{
+  "id": "ARA-087",
+  "title": "Fetch PDFs only from OpenAlex's stored copies; otherwise link the DOI for manual upload",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Automatic retrieval (ARA-019/ARA-084) downloads from provider-listed hosts behind an exact host allowlist (FULLTEXT_ALLOWED_HOSTS). Publishers such as Wiley fail as unsupported or behind bot checks, and Semantic Scholar lookups were rate limited. OpenAlex now serves cached open-access PDFs from its content endpoint (content.openalex.org/works/{id}.pdf, about 60M works, an API key required, about $0.01 per download against the free key's $1 daily allowance), while single-work lookups by DOI are free. User decision on 2026-10-09: \"We will use OpenAlex's thing. If it is not available on OpenAlex or behind Paywall we will present the DOI link to users and they will have to manually upload.\" The user is obtaining an OpenAlex API key.",
+  "dependencies": [
+    "ARA-019",
+    "ARA-084"
+  ],
+  "acceptance_criteria": [
+    "Given a saved paper whose OpenAlex work reports a stored PDF and a configured OPENALEX_API_KEY, when retrieval runs (automatically on save or first open), then the PDF downloads from OpenAlex's content endpoint, is stored and processed, and the automatic summary starts as in ARA-084.",
+    "Given a paper saved from Semantic Scholar or by DOI, when retrieval runs, then it resolves its OpenAlex work by DOI with a free single-work lookup and follows the same rule.",
+    "Given no stored copy on OpenAlex (not cached, paywalled or no matching work), when retrieval ends, then no other host is contacted and the workspace shows the DOI link to open the paper plus a clear request to upload the PDF.",
+    "Given no OpenAlex API key, when a paper is saved or opened, then no download is attempted and the workspace shows the DOI link and upload, noting that an OpenAlex API key enables automatic PDFs.",
+    "Given OpenAlex refuses because the daily allowance is spent or it rate-limits (429), when retrieval ends, then the outcome is rate limited with the reported wait, there is no automatic retry loop, and a manual retry is offered after the wait.",
+    "Given the content download, when bytes arrive, then the existing bounds hold: size, time, redirects only to OpenAlex's storage, public destinations, TLS and PDF validation.",
+    "Given the old multi-host downloader, when this lands, then the host allowlist, third-party host downloads and institutional-network retry guidance are deleted rather than kept for compatibility, and existing documents and acquisition records stay readable."
+  ],
+  "test_cases": [
+    "Backend: content download with a key, missing key, no stored copy, 404, 429 with wait, oversized and non-PDF bodies, redirect to storage host, DOI resolution for Semantic Scholar papers.",
+    "Backend: automatic retrieval on save/open uses only OpenAlex; duplicate saves stay idempotent.",
+    "Frontend: workspace states for OpenAlex download, DOI link plus upload, missing key note, rate limited.",
+    "Browser regression for the provider PDF journey, run at integration; live check once the user's key exists."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/backend/app/integrations/openalex_content.py",
+    "src/backend/app/services/fulltext.py",
+    "src/backend/app/repositories/fulltext.py",
+    "src/backend/app/schemas/fulltext.py",
+    "src/backend/app/routes/fulltext.py",
+    "src/backend/app/routes/research.py",
+    "src/backend/app/integrations/public_http.py",
+    "src/backend/app/core/config.py",
+    "src/backend/app/core/resources.py",
+    "src/backend/tests/test_openalex_content.py",
+    "src/backend/tests/test_fulltext_jobs.py",
+    "src/backend/tests/test_automatic_fulltext_integration.py",
+    "src/backend/tests/test_fulltext_integration.py",
+    "src/backend/tests/test_public_http.py",
+    "src/frontend/src/features/workspace/FullTextAccess.tsx",
+    "src/frontend/src/features/workspace/fulltext-copy.ts",
+    "src/frontend/src/api/generated.ts",
+    "src/frontend/e2e/fulltext.spec.ts",
+    "tests/fixtures/fulltext_fixture.py",
+    "tests/fixtures/fulltext_resources.py",
+    "tests/infrastructure/test_compose_fulltext.py",
+    "compose.yaml",
+    "compose.e2e.yaml",
+    ".env.example",
+    "README.md",
+    "docs/api-contract.md",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [
+    "d4d81dfa6988d772d99d18a8b7b83f6bcd76eb4f",
+    "71bf4fe3d9bebbfaad87e6f0b25448eedd4d3d69",
+    "01021b22fed8c1b7f4e57c6c5bfa74dc27a30306",
+    "5f357c72cf17b5ba0ab20fbbc8df47fe0ac97a61"
+  ],
+  "pull_requests": [],
+  "verification": "Implemented on feat/ara-087-openalex-pdf from 77a8e1d (integration with ARA-083/084/085). Isolated backend (ara-oapdf-test): Ruff passed; 916 passed in 156.95s (baseline 941 passed in 157.33s; the multi-host downloader, discovery and attempt tests were deleted and 39 OpenAlex content/lookup tests added). Frontend: strict tsc, ESLint and 506 Vitest tests passed (69 files, 25.03s); production build passed. Fixture server tests 25 OK; infrastructure tests 15 OK. OpenAPI contract regenerated. Every behaviour change was observed red first (journal). OpenAlex facts were checked against help.openalex.org and two unauthenticated probes: the content endpoint answers 401 'API key required' without a key, and a free DOI lookup returns has_content and content_urls. Not verified live (no key yet): the redirect from content.openalex.org to signed R2 storage, the exact storage host (taken from OpenAlex's documented R2 endpoint for openalex-pdfs), real 429 headers and per-download cost. The provider PDF Playwright spec and fixtures were updated but not run here. No migration, merge or push. Live check on 2026-10-10 by the lead, with the user's OpenAlex key, on an isolated `ara-live` stack built from feat/ux-feedback-round (no OpenAI key; flag off):\n- Saving W2626778328 (Attention Is All You Need) queued automatic retrieval, which completed `downloaded` within about 3 s. The content endpoint's real redirect target passed the storage-host policy. Acquisition: {provider: openalex, source: content, work_id}. The document became ready (11 pages), and the automatic summary was correctly blocked with MODEL_NOT_CONFIGURED; there was no paid fallback.\n- Saving W3163652268 (an IEEE paper) ended `not_stored`: 'OpenAlex has no stored copy of this PDF.' No other host was contacted, and the DOI was kept for the 'Open the paper' link.\n- Logs contain the key only as `api_key=[REDACTED]`; the raw key is absent.\n- Screenshots of both workspaces matched the intended copy.\nNot checked live: 429 headers and cache-write accounting.",
+  "updated_at": "2026-10-10"
+}

@@ -9,6 +9,8 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.services.health import SCHEMA_REVISION
+
 
 @pytest.mark.parametrize(
     "starting_revision", ["0005_local_models", "0006_fulltext", "0006_retrieval_context"]
@@ -65,7 +67,7 @@ async def test_fulltext_migration_preserves_local_model_installation(resources, 
             assert {"parser", "chunk_set"}.issubset(columns)
             assert "retrieval_indexes" in tables
             assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0007_feature_merge"
+                SCHEMA_REVISION
             )
             retained = (
                 await connection.execute(

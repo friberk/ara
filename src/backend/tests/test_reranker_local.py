@@ -11,6 +11,9 @@ from app.core.errors import AppError
 from app.integrations.model_catalog import local_spec
 from tests.support.providers import overlap_relevance
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 RERANKER = "qwen3-reranker-0.6b"
 RERANK = re.compile(r"<Query>: (.*?)\n<Document>: (.*?)<\|im_end\|>", re.S)
 

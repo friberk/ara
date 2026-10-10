@@ -1,4 +1,3 @@
-import ipaddress
 import re
 from urllib.parse import urlsplit
 
@@ -25,22 +24,6 @@ class Settings(BaseSettings):
     semantic_scholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
     openalex_base_url: str = "https://api.openalex.org"
     openai_base_url: str = "https://api.openai.com/v1"
-    fulltext_allowed_hosts: list[str] = [
-        "arxiv.org",
-        "export.arxiv.org",
-        "aclanthology.org",
-        "pmc.ncbi.nlm.nih.gov",
-        "europepmc.org",
-        "proceedings.neurips.cc",
-        "openaccess.thecvf.com",
-        "pdfs.semanticscholar.org",
-        "link.springer.com",
-        "www.nature.com",
-        "nature.com",
-        "static-content.springer-cdn.com",
-        "ieeexplore.ieee.org",
-        "dl.acm.org",
-    ]
     ollama_base_url: str = "http://ollama:11434"
     ollama_context_window: int = Field(default=8192, ge=1024, le=131072)
     ollama_max_output_tokens: int = Field(default=2048, ge=1, le=32768)
@@ -51,7 +34,6 @@ class Settings(BaseSettings):
     local_input_budget_tokens: int = Field(default=3072, ge=256, le=131072)
     # Local tokenizers measured 0.974-1.018x o200k (ARA-070 S1); counts round up from o200k.
     local_token_factor: float = Field(default=1.05, ge=1, le=2)
-    hosted_working_context_tokens: int = Field(default=64000, ge=1024, le=1_000_000)
     # Compact older turns once unsummarized turns pass this share of the recent-turns budget.
     memory_compaction_ratio: float = Field(default=0.6, gt=0, le=1)
     ollama_num_threads: int = Field(default=4, ge=1, le=64)
@@ -59,6 +41,8 @@ class Settings(BaseSettings):
     ollama_pull_timeout_seconds: float = Field(default=21600, gt=0, le=21600)
     ollama_stall_seconds: float = Field(default=120, gt=0, le=3600)
     ollama_memory_limit: str = "12g"
+    # Open (local) models are experimental and frozen (ARA-090): nothing of them exists unless on.
+    experimental_open_models: bool = False
     default_model: str = "gpt-5.6-luna"
     default_reasoning_effort: str = "low"
     llm_daily_budget_usd: float = Field(default=5, gt=0)
@@ -66,26 +50,6 @@ class Settings(BaseSettings):
     recovery_interval_seconds: float = Field(default=30, ge=1)
     lease_seconds: int = Field(default=60, ge=30)
     heartbeat_seconds: int = Field(default=10, ge=1)
-
-    @field_validator("fulltext_allowed_hosts")
-    @classmethod
-    def public_hostnames(cls, values: list[str]) -> list[str]:
-        result = []
-        for value in values:
-            host = value.strip().rstrip(".").encode("idna").decode("ascii").lower()
-            if not re.fullmatch(
-                r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", host
-            ):
-                raise ValueError("FULLTEXT_ALLOWED_HOSTS must contain exact hostnames")
-            try:
-                ipaddress.ip_address(host)
-            except ValueError:
-                pass
-            else:
-                raise ValueError("FULLTEXT_ALLOWED_HOSTS cannot contain IP addresses")
-            if host not in result:
-                result.append(host)
-        return result
 
     @field_validator("ollama_base_url")
     @classmethod

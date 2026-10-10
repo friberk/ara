@@ -12,9 +12,9 @@ afterEach(() => vi.unstubAllGlobals())
 test('Given library papers, Then the sidebar lists recent papers linking to their workspaces', async () => {
   mockApi({ 'GET /papers': { items: [paper('p1', 'Attention Is All You Need'), paper('p2', 'Exploiting input sanitization')] } })
   renderApp('/')
-  const link = await screen.findByRole('link', { name: 'Attention Is All You Need' })
+  const link = await screen.findByRole('link', { name: /Attention Is All You Need/ })
   expect(link).toHaveAttribute('href', '/papers/p1')
-  expect(screen.getByRole('link', { name: 'Exploiting input sanitization' })).toHaveAttribute('href', '/papers/p2')
+  expect(screen.getByRole('link', { name: /Exploiting input sanitization/ })).toHaveAttribute('href', '/papers/p2')
 })
 
 test('Given the current route, Then its navigation item is marked active', async () => {
@@ -25,10 +25,19 @@ test('Given the current route, Then its navigation item is marked active', async
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('data-active', 'true')
 })
 
-test('Given /jobs from an old link, Then it redirects to Activity', async () => {
+test.each(['/jobs', '/activity'])('Given %s from an old link, Then it redirects home and no Activity entry exists', async (path) => {
   mockApi({})
-  renderApp('/jobs')
-  await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name: 'Activity' })).toHaveAttribute('data-active', 'true'))
+  renderApp(path)
+  expect(await screen.findByRole('heading', { name: 'What are you researching?' })).toBeVisible()
+  expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument()
+})
+
+test('Given the palette is open, Then it offers no activity action', async () => {
+  mockApi({})
+  const { user } = renderApp('/')
+  await user.keyboard('{Control>}k{/Control}')
+  expect(await screen.findByRole('option', { name: 'Open library' })).toBeVisible()
+  expect(screen.queryByRole('option', { name: /activity/i })).not.toBeInTheDocument()
 })
 
 test('Given a recent search, When removed from history, Then it is deleted and the list refreshes', async () => {
@@ -62,7 +71,7 @@ test('Given Ctrl+K, Then the palette opens, finds a paper by title and opens its
   const input = await screen.findByPlaceholderText('Search papers, conversations and actions')
   await user.type(input, 'attention')
   await user.click(await screen.findByRole('option', { name: /Attention Is All You Need/ }))
-  expect(await screen.findByRole('heading', { name: 'Attention Is All You Need' })).toBeVisible()
+  expect(await screen.findByRole('heading', { level: 1, name: 'Attention Is All You Need' })).toBeVisible()
   expect(screen.queryByPlaceholderText('Search papers, conversations and actions')).not.toBeInTheDocument()
 })
 
@@ -104,4 +113,46 @@ test('Given the desktop sidebar collapsed to icons, When an item is focused, The
   await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
   within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name: 'Library' }).focus()
   expect(await screen.findByRole('tooltip', { name: 'Library' })).toBeInTheDocument()
+})
+
+const states = [{ ...paper('p1', 'Has a PDF') }, { ...paper('p2', 'Needs a PDF'), document_status: 'metadata_only', active_document_id: null }, { ...paper('p3', 'Broken PDF'), document_status: 'failed' }]
+
+test('Given papers in each PDF state, Then the sidebar shows a state icon on each and no status text', async () => {
+  mockApi({ 'GET /papers': { items: states } })
+  renderApp('/')
+  const link = await screen.findByRole('link', { name: /Needs a PDF/ })
+  expect(within(link).getByRole('img', { name: 'No PDF yet' })).toBeInTheDocument()
+  expect(within(screen.getByRole('link', { name: /Has a PDF/ })).getByRole('img', { name: 'PDF attached' })).toBeInTheDocument()
+  expect(within(screen.getByRole('link', { name: /Broken PDF/ })).getByRole('img', { name: 'PDF couldn’t be read' })).toBeInTheDocument()
+  expect(screen.queryByText(/Ready to read|PDF needed|Processing failed/)).not.toBeInTheDocument()
+})
+
+test('Given papers in each PDF state, Then the palette rows show a state icon instead of status text', async () => {
+  mockApi({ 'GET /papers': { items: states } })
+  renderApp('/')
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+  const dialog = await screen.findByRole('dialog', { name: 'Find papers and chats' })
+  const option = await within(dialog).findByRole('option', { name: /Needs a PDF/ })
+  expect(within(option).getByRole('img', { name: 'No PDF yet' })).toBeInTheDocument()
+  expect(within(dialog).getByRole('option', { name: /Has a PDF/ })).toBeInTheDocument()
+  expect(within(dialog).queryByText(/Ready to read|PDF needed|Processing failed/)).not.toBeInTheDocument()
+})
+
+test('Given the sidebar header, Then the ara. wordmark links home and no Research Assistant text remains', async () => {
+  mockApi({})
+  renderApp('/settings')
+  const home = screen.getByRole('link', { name: 'ara.' })
+  expect(home).toHaveAttribute('href', '/')
+  expect(home.querySelector('svg[data-brand="wordmark"]')).not.toBeNull()
+  expect(screen.queryByText('Research Assistant')).not.toBeInTheDocument()
+})
+
+test('Given the sidebar collapsed to icons, Then the header shows the a. mark under the name ara.', async () => {
+  mockApi({})
+  const { user } = renderApp('/settings')
+  await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Toggle Sidebar' }))
+  await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
+  const home = screen.getByRole('link', { name: 'ara.' })
+  expect(home.querySelector('svg[data-brand="mark"]')).not.toBeNull()
+  expect(home.querySelector('svg[data-brand="wordmark"]')).toBeNull()
 })

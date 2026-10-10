@@ -44,11 +44,13 @@ def turns(count: int, start: int = 0):
     return result
 
 
-async def maybe_enqueue(resources, chat_id, model="gpt-5.6-luna"):
+async def maybe_enqueue(resources, chat_id, model="gpt-5.6-luna", effort="none"):
     from app.services.memory import maybe_enqueue_compaction
 
     async with resources.sessions() as session, session.begin():
-        job = await maybe_enqueue_compaction(session, chat_id, model, settings=resources.settings)
+        job = await maybe_enqueue_compaction(
+            session, chat_id, model, effort=effort, settings=resources.settings
+        )
         return job.id if job else None
 
 
@@ -140,6 +142,7 @@ async def test_given_turns_over_threshold_when_turn_completes_then_one_job_for_o
         "chat_id": str(chat_id),
         "through_message_id": str(added[0].answer),
         "model": "gpt-5.6-luna",
+        "effort": "none",
     }
     assert await maybe_enqueue(resources, chat_id) is None
     assert [job.id for job in await compact_jobs(resources)] == [job_id]
@@ -168,13 +171,13 @@ async def test_given_compaction_when_delivered_twice_then_one_version_and_messag
     await run_compact_job(resources, job_id, generation, token, payload)
     (memory,) = await memories(resources, chat_id)
     assert (memory.version, memory.through_message_id) == (1, added[0].answer)
-    assert memory.summary == SUMMARY_V1 and memory.model == "gpt-5.6-luna"
+    assert memory.summary == SUMMARY_V1 and memory.model == "gpt-5.6-sol"
     from app.services.memory import COMPACTION_PROMPT_VERSION
 
     assert memory.prompt_version == COMPACTION_PROMPT_VERSION and memory.token_count > 0
     assert len(requests) == 1
     (body,) = requests
-    assert body["model"] == "gpt-5.6-luna" and body["reasoning"] == {"effort": "none"}
+    assert body["model"] == "gpt-5.6-sol" and body["reasoning"] == {"effort": "none"}
     sent = body["instructions"] + json.dumps(body["input"])
     for heading in (
         "User goals",
@@ -213,6 +216,7 @@ async def test_given_racing_duplicate_jobs_when_both_generate_then_one_summary_v
         "chat_id": str(chat_id),
         "through_message_id": str(added[0].answer),
         "model": "gpt-5.6-luna",
+        "effort": "none",
     }
     claims = []
     for _ in range(2):
@@ -261,6 +265,7 @@ async def test_given_covered_range_when_stale_job_runs_then_it_skips_without_a_c
         "chat_id": str(chat_id),
         "through_message_id": str(added[1].answer),
         "model": "gpt-5.6-luna",
+        "effort": "none",
     }
     earlier = {**later, "through_message_id": str(added[0].answer)}
     async with resources.sessions() as session, session.begin():

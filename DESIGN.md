@@ -195,9 +195,9 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 ### Tertiary
 - **Evidence Marker Yellow** (oklch(0.93 0.13 96 / 0.75), applied as a 55% mix over the canvas): the cited-sentence highlight in the PDF text layer and its one-shot pulse ring. Nothing else. The `--evidence` token has a single value in both themes because the pages under it are always white paper.
-- **Status Green** (text oklch(0.45 0.11 155) on oklch(0.96 0.03 155); dark text oklch(0.8 0.12 155) on oklch(0.3 0.05 155)): status badges that mean done or usable, such as a document ready to read, a completed job or an available model.
-- **Status Amber** (text oklch(0.5 0.11 70) on oklch(0.96 0.04 85); dark text oklch(0.82 0.12 80) on oklch(0.32 0.05 75)): status badges that mean in progress or incomplete, such as processing, running or an interrupted answer.
-- **Destructive Red** (light oklch(0.577 0.245 27.325), dark oklch(0.704 0.191 22.216)): errors and destructive actions only. It appears as a 10% tint behind red text on inline alerts, failed badges and delete menu items, never as a solid fill.
+- **Status Green** (text oklch(0.45 0.11 155) on oklch(0.96 0.03 155); dark text oklch(0.8 0.12 155) on oklch(0.3 0.05 155)): status badges that mean done or usable, such as a completed job or an available model.
+- **Status Amber** (text oklch(0.5 0.11 70) on oklch(0.96 0.04 85); dark text oklch(0.82 0.12 80) on oklch(0.32 0.05 75)): status badges that mean in progress or incomplete, such as a running job or an interrupted answer.
+- **Destructive Red** (light oklch(0.577 0.245 27.325), dark oklch(0.704 0.191 22.216)): errors and destructive actions only. It appears as a 10% tint behind red text on inline alerts, failed badges, the failed-PDF icon and delete menu items, never as a solid fill.
 
 ### Neutral
 - **Paper** (light oklch(1 0 0), dark oklch(0.145 0 0)): the app ground, the composer in light mode, and outline buttons.
@@ -228,8 +228,8 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 ### Hierarchy
 - **Display** (600, 28px, tight tracking, balanced wrap): the home greeting above the composer ("What are you researching?"). Used once per screen at most.
-- **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library, Activity and Settings.
-- **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the details panel at 1.125rem.
+- **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library and Settings.
+- **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the paper header above the PDF at 1.125rem.
 - **Reading** (400, 15.5px, 28px line): assistant answers, user messages and summaries. This is the conversation's reading voice, one step above the interface.
 - **Composer** (400, 15px, 24px line): text typed into the composer.
 - **Body** (400, 0.875rem, 24px line): abstracts (clamped to three lines with Show more), descriptions, links and menus. Long prose is capped near 70ch.
@@ -241,13 +241,21 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 **The Sentence Case Rule.** All interface copy (buttons, headings, badges, menu items, toasts) is in sentence case. There are no uppercase eyebrows or tracked-out labels.
 
+## Brand
+
+The product's mark is the wordmark "ara." (the dot is part of the name), set in Instrument Serif Italic.
+- **The Only Serif Rule.** The wordmark is the only serif in the system. It is an SVG outline (`branding/ara-wordmark.svg`, inlined by `AraWordmark`), not a UI font: no webfont is loaded and it never appears as text styling.
+- **Monochrome.** It uses `fill="currentColor"` and follows the foreground token in light and dark. Never recolour it.
+- **Sizes.** Minimum height is 16px. Keep clear space of at least the width of the dot on every side. The sidebar header uses 26px; collapsed to icons it shows the "a." mark (`AraMark`).
+- **Never** stretch it, recolour it or retype it in Geist. The favicon (`branding/favicon.svg`) is the "a." on an ink tile and inverts under a dark browser theme. Regeneration steps are in `branding/README.md`.
+
 ## Layout
 
-The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), Library and Activity, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher.
+The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), and Library, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher: the open chat's title (its menu holds Rename and Delete), a History icon that opens a popover of this paper's chats newest first with compact relative times ("now", "12m", "3h", "2d", then "Oct 2"), and the New conversation icon.
 
 Content routes centre a single column at max-w-3xl (48rem). Home centres the display greeting, the composer and suggestion chips vertically, with a 28px gap and 12vh of extra bottom padding so the group sits slightly above centre. Search pins the composer to the bottom of the results column, like a chat thread. Search results and library entries are borderless rows with 24px and 20px vertical padding, divided by hairlines.
 
-The paper workspace is a resizable two-panel split separated by a grip handle. The reader takes 50% by default, at least 30%, and can collapse fully. The conversation keeps at least 35%. The reader has PDF and Details tabs. Below 768px the split becomes three tabs: Chat, PDF and Details. PDF pages are centred in a 16px gutter with 16px between pages.
+The paper workspace is a resizable two-panel split separated by a grip handle. The reader takes 50% by default, at least 30%, and can collapse fully. The conversation keeps at least 35%. The reader has no tabs: the paper header (its bibliography) leads, then the PDF, or, until the paper has one, the ways to get it (retrieval progress, the DOI link, upload, preparation steps, failure with retry). The PDF's own bar carries its controls: paging and zoom, then the PDF menu. The top bar keeps the paper's title, because the reader can be hidden. Below 768px the split becomes two segments, Chat and PDF. The whole reader column is the app background, the same white (near-black in dark mode) as the conversation. PDF pages are centred in a 16px gutter with 16px between pages, and the paper header and the PDF bar line up with the page column: as wide as a page at the current zoom, never wider than the reader less its gutters, so all three share one left edge.
 
 ## Elevation & Depth
 
@@ -257,10 +265,9 @@ The system is flat by default and uses tonal layering. Depth comes from the side
 - **Composer float** (`box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px -4px rgb(0 0 0 / 0.08)`): the composer at rest in light mode.
 - **Composer focus** (`box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 24px -6px rgb(0 0 0 / 0.12)`): the composer while its text field has focus. The border also moves to the ring at 60%.
 - **Floating control** (`box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.15)`): the round "Scroll to latest message" button over the thread.
-- **Paper page** (`box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent), 0 4px 12px -4px color-mix(in oklch, var(--foreground) 12%, transparent)`, radius 2px): each rendered PDF page, so the white sheet reads as paper on either ground.
 
 ### Named Rules
-**The Soft Lift Rule.** Only surfaces that float over scrolling content (the composer, floating controls and PDF pages) get a shadow. Shadows are soft, low-opacity and blurred. Hard offset shadows are not part of this world.
+**The Soft Lift Rule.** Only surfaces that float over scrolling content (the composer and floating controls) get a shadow. PDF pages lie on the reader's white ground with a 1px border-colour ring (`ring-1 ring-border`, radius 2px) as their only edge, in both themes. Shadows are soft, low-opacity and blurred. Hard offset shadows are not part of this world.
 
 **The Dark Mode Lifts by Tone Rule.** In dark mode, floating surfaces drop their shadow and use the card tone (oklch(0.205 0 0)) instead.
 
@@ -298,24 +305,36 @@ Quiet, compact and monochrome.
 
 ### Navigation
 - **Sidebar:** 32px rows with an 8px corner on the sidebar ground. Hover and active states share the sidebar accent (quiet surface), and the active row adds medium weight. Group labels use muted text in sentence case. Recent items have overflow menus for rename, delete and remove.
-- **Mobile:** the sidebar opens as an offcanvas sheet from the header trigger. The paper workspace switches to Chat, PDF and Details tabs.
+- **Mobile:** the sidebar opens as an offcanvas sheet from the header trigger. The paper workspace switches between Chat and PDF segments.
 - **Tabs:** a segmented control on a muted track. The active segment is raised with a small shadow, and inactive labels sit at 60% foreground.
 
+### Paper header
+The reader opens with the paper's bibliography, laid out as a reading header with no surface or hairline of its own, on the reader's one background: the title at 1.125rem semibold, every author, then the year and the italic venue as running text, the DOI and catalog record links, and, under a small "Abstract" heading (label size, medium weight), the abstract clamped to three lines with Show more. A field the paper lacks is left out; a missing abstract keeps its heading and says so in muted text. The PDF bar follows: a "PDF" heading in the same label style with the file name after it in muted text (no separator glyph), and the PDF's controls at the right. The file name truncates first and gives way entirely in a bar narrower than 24rem; the PDF menu still names it. An earlier PDF version's bar names that version's file, under its banner. Above a PDF the header and the bar are the first things in the viewer's scroll column: the header scrolls away with page 1, and the bar docks at the top of the reader on the app background, showing its bottom hairline only once docked (the border is always there and only takes colour, so docking never shifts the pages). Paging lands a page's top 8px under the docked bar, and a citation is centred in the space below it. With no ready PDF the bar is the heading alone, nothing to page or zoom, and leads the ways to get one, whose own headings sit under "PDF". In a reader tab for another paper it describes that paper. Edit details (a ghost button whose label becomes screen-reader text in a reader narrower than 28rem) and the circled-i sit at the title's top right.
+
+### Sources and search index
+The circled-i (Lucide Info, a ghost icon button named "Sources and search index") opens a stock centred Dialog that holds only what lies behind the bibliography: where each field came from with Look up again, the identifiers in Geist Mono with copy buttons, the search index as one plain sentence ("Searching 64 passages in 32 sections with …", no status pill; only building, with a spinner line and progress, and failure say more), and, for the workspace's own paper, a destructive Delete paper after a hairline. Esc and the close button return focus to the circled-i; on a phone the dialog fits the screen and scrolls inside.
+
+### PDF menu
+The PDF bar ends with a vertical-ellipsis button named "PDF options". Its dropdown starts with a non-interactive label: the file name, then pages and size in tabular figures, then the source ("Uploaded" or "Downloaded from OpenAlex"), in muted label text. Open original and Download follow. For the paper's current PDF the menu adds Replace PDF, which opens the upload in a dialog, and Remove PDF, a destructive item. Remove PDF opens an alert dialog that states what happens, from the server's preview, with Cancel focused: the reader returns to upload, existing conversations keep using the PDF and new questions need a new PDF, and only what no conversation uses is deleted. Earlier versions and other papers' PDFs only open or download. A chat on an earlier PDF reads it in a reader tab under a "Showing an earlier PDF version" banner, whose button returns to the current PDF or, when the paper has none, offers to add one.
+
+### PDF state icon
+`PdfStateIcon` is the leading icon of every paper row (Library, sidebar Papers, command palette, @ picker) and appears in the paper workspace header only when the PDF is not ready. It is 16px and uses ink, muted and destructive only, never green or amber: attached is `FileText` in foreground ink, none is `FileQuestion` in muted ink, preparing is a muted `LoaderCircle` that spins only when motion is allowed, and failed is a destructive `FileWarning`. A tooltip opens on hover and keyboard focus ("PDF attached", "No PDF yet", "Preparing PDF…", "PDF couldn’t be read") and the same text names the icon for screen readers. Inside a link or option the icon is not a tab stop. There is no text badge for PDF state.
+
 ### Status Badges
-Fully round, 20px tall, label size at regular weight, with a leading 12px icon. Ready, completed and available states use the green tints. Processing, running and interrupted use the amber tints. Failed uses the destructive tint, and metadata-only uses muted grey. The processing icon spins only when the user allows motion.
+Fully round, 20px tall, label size at regular weight, with a leading 12px icon. Completed and available states use the green tints. Processing, running and interrupted use the amber tints. Failed uses the destructive tint. PDF state is not a badge; see the PDF state icon. The processing icon spins only when the user allows motion.
 
 ### Composer (signature)
 The single input surface of the app. It is a 22px-radius floating form on paper (card in dark mode) with the soft composer shadow. An optional header row holds context chips. The auto-growing textarea runs from 44px (64px on home) up to 240px. Below it, a toolbar holds leading controls (attach, provider switcher) on the left, trailing controls (model and reasoning switcher) on the right, and a 28px round ink send button that becomes Stop while generating. Enter sends and Shift+Enter adds a new line. An optional centred footnote of 12px muted text sits beneath it and explains why it is disabled or reminds the user to check claims.
 
 Reasoning choices come from the selected model's backend capabilities. Settings and the composer show **None**, **Low**, **Medium** and **High** for verified IFM models; GPT retains its own levels, including **Extra high** and **Max**. Verified per-model aliases resolve older IFM preset/enabled preferences to High without a false unsaved-change state. Binary-only models use a **Reasoning** toggle, with Enabled/Disabled state, rather than an effort menu. Incomplete capabilities explain that reasoning is model-controlled. Unavailable models preserve the preference and hide editing until readiness returns. Deliberate model switches store an explicit supported level; later preset changes do not move that choice. Historical Runtime preset/Reasoning enabled labels describe stored requests without rewriting them.
 
-Installed local models prepare automatically when runtime or capability checks become stale. Settings shows **Preparing model**, the current phase and background continuity; preparation has no transfer percentage or Pause button. Selection remains unavailable until the server confirms readiness, then enables through polling. Temporary unavailability preserves the saved model and reasoning effort. Activity calls verification-only work **Model preparation**, including its history. Failed preparation offers **Retry preparation** with retained weights, or an explicit **Download** if weights disappeared; failed transfer/deletion actions name their respective retries. Routine upgrades require no **Verify again** action.
+Installed local models prepare automatically when runtime or capability checks become stale. Settings shows **Preparing model**, the current phase and background continuity; preparation has no transfer percentage or Pause button. Selection remains unavailable until the server confirms readiness, then enables through polling. Temporary unavailability preserves the saved model and reasoning effort. Settings calls verification-only work **Model preparation**, including its history. Failed preparation offers **Retry preparation** with retained weights, or an explicit **Download** if weights disappeared; failed transfer/deletion actions name their respective retries. Routine upgrades require no **Verify again** action.
 
 ### Conversation thread
-User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a muted meta line (copy, model name, reasoning level). While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.
+User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a quiet footer row with Interrupted or Failed badges on the left and the copy button at the bottom right. The footer names no model or reasoning level. The context ring's card has two section headings, Context and Cost, both small medium-weight text; each row pairs a muted label on the left with a tabular value on the right, and a thin meter under the token row mirrors the ring. An answer is a one-column grid at minmax(0, 1fr), so long links and identifiers wrap and wide tables and code scroll inside it rather than widening the thread. The paper chips above a multi-paper thread sit on an opaque row; while the thread is scrolled, a hairline divides it from the header and chips. While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.
 
 ### Evidence jump (signature interaction)
-Selecting a citation chip scrolls the PDF to the cited page and marks the supporting sentence in the text layer to the exact character, including sentences that start or end mid-line. The mark is centred vertically in the reader with a smooth scroll (instant under reduced motion). It is tinted with evidence yellow at a 55% mix and a 2px corner, then pulses once with a 4px yellow ring over 1.2s on `cubic-bezier(0.16, 1, 0.3, 1)`. The rest of the cited chunk stays untinted so only the evidence reads. In forced-colours mode the mark uses the system Highlight colour.
+Selecting a citation chip scrolls the PDF to the cited page and marks the supporting sentence in the text layer to the exact character, including sentences that start or end mid-line. The mark is centred vertically in the part of the reader below the docked PDF bar, with a smooth scroll (instant under reduced motion). It is tinted with evidence yellow at a 55% mix and a 2px corner, then pulses once with a 4px yellow ring over 1.2s on `cubic-bezier(0.16, 1, 0.3, 1)`. The rest of the cited chunk stays untinted so only the evidence reads. In forced-colours mode the mark uses the system Highlight colour.
 
 ### Feedback
 Errors are inline destructive alerts with role=alert, an icon, the message and an optional Try again button, placed next to the thing that failed. Toasts (sonner) confirm completed actions only, such as "Saved to library", "Conversation renamed" or "Processing queued again". Loading uses skeletons that match the final shape, plus a status role.

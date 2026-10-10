@@ -1,0 +1,60 @@
+{
+  "id": "ARA-091",
+  "title": "One library-wide embedding model, with OpenAI small and large",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Embeddings from different models live in different vector spaces, so one search cannot mix them. Multi-paper chats (ARA-088) need every paper indexed with the same model. User decisions on 2026-10-09:\n- one library-wide embedding model, removing the per-paper choice in Details > Advanced;\n- offer OpenAI text-embedding-3-small alongside -large, and say clearly that switching re-embeds the whole library.\nToday the catalog has only openai-3-large (3072 dimensions, $0.13 per million tokens) plus local Qwen3 profiles that ARA-090 gates behind the open-models flag. papers.retrieval_profile holds per-paper overrides. Embeddings are stored as dimensionless HALFVEC with document-scoped exact scans, so adding a 1536-dimensional profile needs no ANN index change.",
+  "dependencies": [
+    "ARA-021",
+    "ARA-090"
+  ],
+  "acceptance_criteria": [
+    "Given Settings, when the user views retrieval, then one library-wide embedding choice offers OpenAI text-embedding-3-small and text-embedding-3-large (large is the default), each with its price.",
+    "Given the user picks a different embedding model, when they confirm, then a dialog states that the whole library is re-embedded in the background, with the number of papers and an estimated cost, before anything changes.",
+    "Given a confirmed switch, when re-embedding runs, then every paper's ready document is indexed with the new model, questions keep working during the transition, and old-model vectors are removed once a paper's new index is ready.",
+    "Given a paper, when Details > Advanced renders, then there is no per-paper embedding choice; the per-paper override is removed end to end (API, UI and database column) rather than kept for compatibility.",
+    "Given papers that had a per-paper override, when the migration runs, then they follow the library model and are re-indexed if it differs.",
+    "Given ARA-090's flag is on, when Settings renders, then local embedding profiles may still appear as library-wide choices; nothing per-paper returns."
+  ],
+  "test_cases": [
+    "Backend: catalog includes small; library switch reconciles every paper; old vectors pruned after ready; retrieval during transition.",
+    "Migration: drop papers.retrieval_profile with overrides folded into the library setting; upgrade test from the current head.",
+    "Frontend: settings choice with price, confirmation dialog with paper count and cost, no per-paper selector in Details."
+  ],
+  "status": "completed",
+  "related_files": [
+    "README.md",
+    "docs/api-contract.md",
+    "src/backend/alembic/versions/0008_library_embeddings.py",
+    "src/backend/app/integrations/embedding_catalog.py",
+    "src/backend/app/models/research.py",
+    "src/backend/app/rag/hooks.py",
+    "src/backend/app/rag/indexing.py",
+    "src/backend/app/routes/retrieval.py",
+    "src/backend/app/schemas/retrieval.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/health.py",
+    "src/backend/app/services/memory.py",
+    "src/backend/app/services/reindex.py",
+    "src/backend/tests/test_indexing_integration.py",
+    "src/backend/tests/test_library_embedding_migration.py",
+    "src/backend/tests/test_retrieval_api_integration.py",
+    "src/backend/tests/test_schema_revision.py",
+    "src/frontend/src/api/generated.ts",
+    "src/frontend/src/components/retrieval/ProfileOptions.tsx",
+    "src/frontend/src/features/settings/RetrievalSettingsSection.tsx",
+    "src/frontend/src/features/settings/retrieval-settings.test.tsx",
+    "src/frontend/src/features/workspace/SearchIndexPanel.tsx",
+    "src/frontend/src/features/workspace/search-index.test.tsx",
+    "src/frontend/src/hooks/queries/retrieval.ts"
+  ],
+  "commits": [
+    "34ab1e3",
+    "a9fc155",
+    "04da187",
+    "d7a941e"
+  ],
+  "pull_requests": [],
+  "verification": "2026-10-09. Red first: 13 failed, 54 passed in the focused retrieval files (KeyError 'openai-3-small', PUT /papers/{id}/retrieval still 200, estimate route 404). Full backend suite in ara-embed-test: 1005 passed in 190 s. Frontend: 5 tests red first, then npm run check passed (72 files, 532 tests) and npm run build succeeded. Migration 0008 upgrade test from 0007 passes. Not run: Playwright, live OpenAI calls. The $0.02 price and 8191-token limit come from third-party sources, not OpenAI's own page. Follow-up: readiness pinned SCHEMA_REVISION to 0007; red test (tests/test_schema_revision.py: ['0008_library_embeddings'] == ['0007_feature_merge']) then constant set to 0008. Full suite on a freshly reset ara-embed-test database: 1006 passed in 175 s; readiness database check passes on the migrated DB (2 passed).",
+  "updated_at": "2026-10-09"
+}

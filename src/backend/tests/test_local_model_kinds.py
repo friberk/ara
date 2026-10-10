@@ -8,6 +8,9 @@ import pytest
 from app.core.errors import AppError
 from app.integrations.model_catalog import LOCAL_MODELS, local_spec
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 EMBED_4B = "qwen3-embedding-4b"
 # Phase 0 S1 pins (scratchpad/spikes/s1/REPORT.md, "Digests and sizes").
 PINS = {

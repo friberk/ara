@@ -7,6 +7,8 @@ import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+# Ollama and the model worker exist only under this profile (ARA-090).
+OPEN_MODELS = {"COMPOSE_PROFILES": "open-models"}
 
 
 def compose_services(*files, **env):
@@ -48,13 +50,13 @@ class ComposeRetrievalTests(unittest.TestCase):
             )
 
     def test_single_ollama_with_configurable_residency(self):
-        services = compose_services("compose.yaml", OLLAMA_MAX_LOADED_MODELS="3")
+        services = compose_services("compose.yaml", OLLAMA_MAX_LOADED_MODELS="3", **OPEN_MODELS)
         self.assertEqual(images(services, "ollama"), ["ollama"])
         environment = services["ollama"]["environment"]
         self.assertEqual(environment["OLLAMA_MAX_LOADED_MODELS"], "3")
 
     def test_ollama_defaults_keep_chat_embedder_and_reranker_resident_without_swap(self):
-        services = compose_services("compose.yaml")
+        services = compose_services("compose.yaml", **OPEN_MODELS)
         ollama = services["ollama"]
         environment = ollama["environment"]
         # Phase 0 (S1): residency 3 avoids chat reloads; the prompt cache grew ~265 MiB per prompt.
@@ -68,14 +70,21 @@ class ComposeRetrievalTests(unittest.TestCase):
             "LOCAL_INPUT_BUDGET_TOKENS": "2048",
             "OLLAMA_THINKING_TOKENS": "512",
             "LOCAL_TOKEN_FACTOR": "1.1",
-            "HOSTED_WORKING_CONTEXT_TOKENS": "32000",
             "MEMORY_COMPACTION_RATIO": "0.4",
         }
-        services = compose_services("compose.yaml", **overrides)
+        services = compose_services("compose.yaml", **overrides, **OPEN_MODELS)
         for name in ("api", "worker", "model-worker"):
             environment = services[name]["environment"]
             for key, value in overrides.items():
                 self.assertEqual(environment.get(key), value, (name, key))
+
+    def test_hosted_budget_follows_the_model_catalog_not_a_setting(self):
+        # ARA-093: W derives from each model's window; no flag or fallback setting remains.
+        services = compose_services(
+            "compose.yaml", HOSTED_WORKING_CONTEXT_TOKENS="32000", **OPEN_MODELS
+        )
+        for name in ("api", "worker", "model-worker"):
+            self.assertNotIn("HOSTED_WORKING_CONTEXT_TOKENS", services[name]["environment"])
 
 
 if __name__ == "__main__":

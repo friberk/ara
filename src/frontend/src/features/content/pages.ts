@@ -11,11 +11,14 @@ export const pageSpan = (citation: Located) => (spansPages(citation) ? `${citati
 /** The visible chip label and copied-text reference: "p. 6" or "p. 5–6". */
 export const pageLabel = (citation: Located) => `p. ${pageSpan(citation)}`
 
+/** The visible chip label, naming the paper in a chat over several papers: "Smith 2023 · p. 4". */
+export const sourceLabel = (citation: Located, paper?: string) => (paper ? `${paper} · ${pageLabel(citation)}` : pageLabel(citation))
+
 /**
  * The chip's accessible name. The innermost heading tells apart two passages cited from one page; the full heading
- * path is in the preview.
+ * path is in the preview. In a chat over several papers it names the paper first.
  */
-export function sourceName(citation: Pick<Citation, 'page' | 'page_end' | 'section'>) {
+export function sourceName(citation: Pick<Citation, 'page' | 'page_end' | 'section'>, paper?: string) {
   const heading = citation.section?.split('>').at(-1)?.trim()
-  return `Source, ${spansPages(citation) ? 'pages' : 'page'} ${pageSpan(citation)}${heading ? `, ${heading}` : ''}`
+  return `Source, ${paper ? `${paper}, ` : ''}${spansPages(citation) ? 'pages' : 'page'} ${pageSpan(citation)}${heading ? `, ${heading}` : ''}`
 }

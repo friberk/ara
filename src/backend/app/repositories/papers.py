@@ -125,9 +125,15 @@ async def mark_saved(session, hits: list[SearchHit]) -> None:
         )
 
 
-async def paper_detail(session, paper_id: UUID) -> PaperDetail:
+async def paper_detail(session, paper_id: UUID, *, follow: bool = True) -> PaperDetail:
+    from app.services.upload_match import match_view, redirect_target
+
     paper = await session.get(Paper, paper_id)
     if paper is None:
+        # An upload that joined a library paper answers as that paper (ARA-086).
+        target = await redirect_target(session, paper_id) if follow else None
+        if target is not None:
+            return await paper_detail(session, target, follow=False)
         raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
     authors = (
         await session.scalars(
@@ -142,9 +148,27 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
     document = (
         await session.get(Document, paper.active_document_id) if paper.active_document_id else None
     )
+    upload_match, pdf_doi_owner = await match_view(session, paper)
     status = document.status if document else "metadata_only"
     if status == "uploading":
         status = "processing"
+    snapshots = [SearchResult.model_validate(x.metadata_snapshot) for x in sources]
+    # The venue lives in the provider record its provenance names, else any record (ARA-086);
+    # a venue the user edited lives in its provenance entry (ARA-095).
+    venue_origin = paper.metadata_provenance.get("venue") or {}
+    venue_source = venue_origin.get("source")
+    venue = (
+        venue_origin.get("value")
+        if venue_source == "manual"
+        else next(
+            (
+                x.venue
+                for x in sorted(snapshots, key=lambda x: x.provider != venue_source)
+                if x.venue
+            ),
+            None,
+        )
+    )
     return PaperDetail(
         id=paper.id,
         title=paper.title,
@@ -152,10 +176,14 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
         year=paper.year,
         abstract=paper.abstract,
         doi=paper.doi,
-        sources=[SearchResult.model_validate(x.metadata_snapshot) for x in sources],
+        venue=venue,
+        sources=snapshots,
         document_status=status,
         active_document_id=paper.active_document_id,
         metadata_provenance=paper.metadata_provenance,
+        file_name=document.original_filename if document else None,
+        upload_match=upload_match,
+        pdf_doi_owner=pdf_doi_owner,
     )
 
 
@@ -179,13 +207,15 @@ async def patch_paper(session, paper_id: UUID, patch: PaperPatch) -> PaperDetail
         raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
     provenance = dict(paper.metadata_provenance)
     for field, value in updates.items():
+        provenance[field] = {"source": "manual"}
         if field == "authors":
             await replace_authors(session, paper.id, value or [])
+        elif field == "venue":
+            provenance[field]["value"] = (value.strip() or None) if value else None
         else:
             setattr(paper, field, value)
             if field == "doi":
                 paper.normalized_doi = value
-        provenance[field] = {"source": "manual"}
     paper.metadata_provenance = provenance
     paper.updated_at = func.now()
     await session.flush()

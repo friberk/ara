@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -17,51 +17,84 @@ function mount(path: string) {
   return { user }
 }
 
-test('Given saved papers, Then each row links to its workspace with authors, year and document status', async () => {
+test('Given saved papers, Then each row links to its workspace with a short citation and a PDF state icon', async () => {
   mockApi({ 'GET /papers': { items: [ready, saved] } })
   mount('/library')
   expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
   const main = screen.getByRole('main')
-  const row = (await within(main).findByRole('link', { name: ready.title })).closest('article') as HTMLElement
-  expect(within(row).getByRole('link', { name: ready.title })).toHaveAttribute('href', '/papers/p1')
-  expect(within(row).getByText('Ashish Vaswani, Noam Shazeer, Niki Parmar et al.')).toBeVisible()
-  expect(within(row).getByText('2017')).toBeVisible()
-  expect(within(row).getByText('Ready to read')).toBeVisible()
+  const row = (await within(main).findByRole('link', { name: /^Attention is all you need/ })).closest('article') as HTMLElement
+  expect(within(row).getByRole('link', { name: /^Attention is all you need/ })).toHaveAttribute('href', '/papers/p1')
+  expect(row).toHaveTextContent('Vaswani et al. (2017)')
+  expect(within(row).getByRole('link', { name: `${ready.title}, PDF attached` })).toBeVisible()
   expect(within(main).getByText('2 papers')).toBeVisible()
-  expect(within(main).getByText('PDF needed')).toBeVisible()
+  expect(within(main).getByRole('link', { name: `${saved.title}, No PDF yet` })).toBeVisible()
+  expect(within(row).queryByRole('img')).not.toBeInTheDocument()
+  expect(row.querySelector('[tabindex]:not(input)')).toBeNull()
+  expect(within(row).getByRole('heading', { level: 2 })).not.toHaveClass('text-balance')
+  expect(within(main).queryByText(/Ready to read|PDF needed/)).not.toBeInTheDocument()
 })
 
-test('Given a PDF upload accepted, Then durable processing status and the new paper are offered', async () => {
-  mockApi({
-    'POST /documents': { paper_id: 'p1', document_id: 'd1', job_id: 'j1' },
-    'GET /jobs/j1': { id: 'j1', kind: 'ingest', state: 'processing', stage: 'extracting', progress: 40, attempts: 1, error: null, result: null },
+const ingest = { kind: 'ingest', state: 'processing', stage: 'processing', progress: 20, attempts: 1, error: null, result: null }
+const pdf = (name: string) => new File([`%PDF-1.4 ${name}`], name, { type: 'application/pdf' })
+
+test('Given several PDFs dropped on the library, Then each becomes its own paper with its own progress row', async () => {
+  let next = 0
+  const { calls } = mockApi({
+    'POST /documents': () => { next += 1; return new Response(JSON.stringify(next === 3 ? { paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: true } : { paper_id: `new-${next}`, document_id: `d-${next}`, job_id: `j-${next}`, duplicate: false }), { status: 202, headers: { 'Content-Type': 'application/json' } }) },
+    'GET /jobs/j-1': { ...ingest, id: 'j-1' },
+    'GET /jobs/j-2': { ...ingest, id: 'j-2', state: 'completed', stage: 'completed', progress: 100 },
+    'GET /jobs/j1': { ...ingest, id: 'j1', state: 'completed', stage: 'completed', progress: 100 },
   })
+  mount('/library')
+  const main = await screen.findByRole('main')
+  await screen.findByRole('heading', { name: 'Your library is empty' })
+  // Drops land anywhere on the page, like a file manager.
+  fireEvent.drop(main, { dataTransfer: { files: [pdf('first.pdf'), pdf('second.pdf'), pdf('again.pdf')], types: ['Files'] } })
+  const uploads = await screen.findByRole('list', { name: 'Uploads' })
+  await waitFor(() => expect(calls.filter((call) => call.method === 'POST' && call.path === '/documents')).toHaveLength(3))
+  const row = (name: string) => within(uploads).getByText(name).closest('li') as HTMLElement
+  await waitFor(() => expect(within(row('first.pdf')).getByText('Reading pages')).toBeVisible())
+  await waitFor(() => expect(within(row('second.pdf')).getByText('Ready')).toBeVisible())
+  expect(within(row('second.pdf')).getByRole('link', { name: 'Open second.pdf' })).toHaveAttribute('href', '/papers/new-2')
+  expect(within(row('again.pdf')).getByText('Already in your library')).toBeVisible()
+  expect(within(row('again.pdf')).getByRole('link', { name: 'Open again.pdf' })).toHaveAttribute('href', '/papers/p1')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('Given the Upload PDF button, Then it opens a picker for several PDFs without a dialog', async () => {
+  const { calls } = mockApi({ 'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }), { status: 202 }), 'GET /jobs/j1': { ...ingest, id: 'j1' } })
   const { user } = mount('/library')
-  await user.click(await screen.findByRole('button', { name: 'Upload PDF' }))
-  await user.upload(await screen.findByLabelText('PDF file'), new File(['%PDF-1.4'], 'paper.pdf', { type: 'application/pdf' }))
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Upload PDF' }))
-  expect(await screen.findByText(/extracting/)).toBeVisible()
-  await waitFor(() => expect(screen.getByRole('link', { name: 'Open uploaded paper' })).toHaveAttribute('href', '/papers/p1'))
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  const input = screen.getByLabelText('PDF files')
+  expect(input).toHaveAttribute('multiple')
+  const click = vi.spyOn(input, 'click')
+  await user.click(screen.getByRole('button', { name: 'Upload PDF' }))
+  expect(click).toHaveBeenCalled()
+  await user.upload(input, [pdf('one.pdf'), pdf('two.pdf')])
+  await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(2))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
-test('Given an oversized PDF, Then upload stays disabled with a recoverable explanation', async () => {
-  mockApi({})
-  const { user } = mount('/library#upload')
-  const file = new File(['%PDF'], 'large.pdf', { type: 'application/pdf' })
-  Object.defineProperty(file, 'size', { value: 26 * 1024 * 1024 })
-  await user.upload(await screen.findByLabelText('PDF file'), file)
-  const dialog = screen.getByRole('dialog')
-  expect(within(dialog).getByRole('alert')).toHaveTextContent('exceeds 25 MB')
-  expect(within(dialog).getByRole('button', { name: 'Upload PDF' })).toBeDisabled()
+test('Given an oversized PDF among others, Then only that row explains the limit and the rest upload', async () => {
+  const { calls } = mockApi({ 'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }), { status: 202 }), 'GET /jobs/j1': { ...ingest, id: 'j1' } })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  const large = pdf('large.pdf')
+  Object.defineProperty(large, 'size', { value: 26 * 1024 * 1024 })
+  await user.upload(screen.getByLabelText('PDF files'), [large, pdf('fine.pdf')])
+  const uploads = await screen.findByRole('list', { name: 'Uploads' })
+  expect(within(within(uploads).getByText('large.pdf').closest('li') as HTMLElement).getByText('This PDF exceeds 25 MB. Choose a smaller file.')).toBeVisible()
+  await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1))
 })
 
-test('Given the #upload link, Then the upload dialog opens and closing it clears the hash', async () => {
+test('Given the #upload link, Then an inline drop area opens and closing it clears the hash', async () => {
   mockApi({})
   const { user } = mount('/library#upload')
-  expect(await screen.findByRole('dialog', { name: 'Upload a paper' })).toBeVisible()
-  expect(screen.getByLabelText('PDF file')).toBeInTheDocument()
-  await user.keyboard('{Escape}')
-  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  const area = await screen.findByRole('region', { name: 'Add PDFs' })
+  expect(within(area).getByRole('button', { name: 'Choose PDFs' })).toBeVisible()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  await user.click(within(area).getByRole('button', { name: 'Close' }))
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Add PDFs' })).not.toBeInTheDocument())
   expect(screen.getByLabelText('Location')).toHaveTextContent(/^\/library$/)
 })
 
@@ -83,7 +116,7 @@ test('Given a filter with no matches, Then the filter can be cleared', async () 
   expect(await screen.findByRole('heading', { name: 'No papers match “quantum”' })).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Clear filter' }))
   await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(/^\/library$/))
-  expect(await within(screen.getByRole('main')).findByRole('link', { name: ready.title })).toBeVisible()
+  expect(await within(screen.getByRole('main')).findByRole('link', { name: new RegExp(`^${ready.title}, `) })).toBeVisible()
 })
 
 test('Given an empty library, Then searching and uploading are offered', async () => {
@@ -91,6 +124,84 @@ test('Given an empty library, Then searching and uploading are offered', async (
   const { user } = mount('/library')
   expect(await screen.findByRole('heading', { name: 'Your library is empty' })).toBeVisible()
   expect(within(screen.getByRole('main')).getByRole('link', { name: 'Search papers' })).toHaveAttribute('href', '/')
+  const input = screen.getByLabelText('PDF files')
+  const click = vi.spyOn(input, 'click')
   await user.click(screen.getByRole('button', { name: 'Upload a PDF' }))
-  expect(await screen.findByRole('dialog', { name: 'Upload a paper' })).toBeVisible()
+  expect(click).toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('Given an upload still being read, Then its row is named by its file until a title is known', async () => {
+  mockApi({ 'GET /papers': { items: [{ ...saved, id: 'p3', title: null, authors: [], year: null, document_status: 'processing', active_document_id: 'd3', file_name: 'sec18-han.pdf' }] } })
+  mount('/library')
+  expect(await within(screen.getByRole('main')).findByRole('link', { name: /^sec18-han.pdf, / })).toHaveAttribute('href', '/papers/p3')
+})
+
+test('Given an uploaded PDF that is readable while its details are looked up, Then its row says Ready and notes the lookup', async () => {
+  mockApi({
+    'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p5', document_id: 'd5', job_id: 'j5', duplicate: false }), { status: 202 }),
+    'GET /jobs/j5': { ...ingest, id: 'j5', state: 'completed', stage: 'completed', progress: 100 },
+    'GET /jobs': ({ url }) => new Response(JSON.stringify({ items: url.searchParams.get('kind') === 'metadata' ? [{ ...ingest, id: 'm5', kind: 'metadata', state: 'queued', stage: 'retry_wait', paper_id: 'p5' }] : [] })),
+  })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  await user.upload(screen.getByLabelText('PDF files'), pdf('slow-details.pdf'))
+  const row = (await within(await screen.findByRole('list', { name: 'Uploads' })).findByText('slow-details.pdf')).closest('li') as HTMLElement
+  await waitFor(() => expect(within(row).getByText('Ready')).toBeVisible())
+  expect(within(row).getByText('Finding paper details')).toBeVisible()
+})
+
+const libraryPaper = { ...ready, id: 'p-lib', title: 'Exploiting input sanitization for regex denial of service' }
+const match = (hasPdf: boolean) => ({ paper_id: 'p-lib', title: libraryPaper.title, has_pdf: hasPdf, matched_by: 'doi', found_by: 'ingest' })
+
+test('Given library uploads that match library papers, Then each row says so and carries its own choice', async () => {
+  let next = 0
+  const { calls } = mockApi({
+    'POST /documents': () => { next += 1; return new Response(JSON.stringify({ paper_id: `new-${next}`, document_id: `d-${next}`, job_id: `j-${next}`, duplicate: false }), { status: 202 }) },
+    'GET /jobs/j-1': { ...ingest, id: 'j-1', state: 'completed', stage: 'completed', progress: 100 },
+    'GET /jobs/j-2': { ...ingest, id: 'j-2', state: 'completed', stage: 'completed', progress: 100 },
+    // The first joined a paper without a PDF; the second waits for a choice.
+    'GET /papers/new-1': libraryPaper,
+    'GET /papers/new-2': { ...saved, id: 'new-2', title: null, document_status: 'processing', active_document_id: 'd-2', file_name: 'second.pdf', upload_match: match(true) },
+    'POST /uploads/new-2/match': () => new Response(JSON.stringify(libraryPaper), { headers: { 'Content-Type': 'application/json' } }),
+  })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  await user.upload(screen.getByLabelText('PDF files'), [pdf('first.pdf'), pdf('second.pdf')])
+  const uploads = await screen.findByRole('list', { name: 'Uploads' })
+  const row = (name: string) => within(uploads).getByText(name).closest('li') as HTMLElement
+  await waitFor(() => expect(within(row('first.pdf')).getByText(`Added to “${libraryPaper.title}”`)).toBeVisible())
+  expect(within(row('first.pdf')).getByRole('link', { name: 'Open first.pdf' })).toHaveAttribute('href', '/papers/p-lib')
+  await waitFor(() => expect(within(row('second.pdf')).getByText(`Matches “${libraryPaper.title}”, which already has a PDF`)).toBeVisible())
+  await user.click(within(row('second.pdf')).getByRole('button', { name: 'Replace PDF' }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/uploads/new-2/match')?.body).toEqual({ decision: 'attach' }))
+  await waitFor(() => expect(within(row('second.pdf')).getByText(`Replaced the PDF on “${libraryPaper.title}”`)).toBeVisible())
+})
+
+test('Given uploads still waiting for a choice from an earlier visit, Then the library lists them apart with their choices', async () => {
+  const waiting = { ...saved, id: 'new-9', title: null, document_status: 'processing', active_document_id: 'd-9', file_name: 'waiting.pdf', upload_match: match(false) }
+  const { calls } = mockApi({ 'GET /papers': { items: [libraryPaper] }, 'GET /uploads/matches': { items: [waiting] }, 'POST /uploads/new-9/match': () => new Response(null, { status: 204 }) })
+  const { user } = mount('/library')
+  const section = await screen.findByRole('region', { name: 'Needs your choice' })
+  expect(within(section).getByText('waiting.pdf')).toBeVisible()
+  expect(within(section).getByText(`Matches “${libraryPaper.title}”, which has no PDF yet`)).toBeVisible()
+  await user.click(within(section).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'POST')?.body).toEqual({ decision: 'discard' }))
+})
+
+test('Given an upload in the list, When its processing settles, Then the library list refreshes without a reload', async () => {
+  let settled = false
+  mockApi({
+    'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p7', document_id: 'd7', job_id: 'j7', duplicate: false }), { status: 202 }),
+    'GET /jobs/j7': () => new Response(JSON.stringify({ ...ingest, id: 'j7', ...(settled ? { state: 'completed', stage: 'completed', progress: 100 } : {}) })),
+    'GET /papers': () => new Response(JSON.stringify({ items: [{ ...ready, id: 'p7', title: settled ? 'Fresh title' : null, file_name: 'fresh.pdf', document_status: settled ? 'ready' : 'processing' }] })),
+  })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  await user.upload(screen.getByLabelText('PDF files'), pdf('fresh.pdf'))
+  const papers = await screen.findByRole('list', { name: 'Papers' })
+  expect(await within(papers).findByRole('link', { name: /Preparing PDF…/ })).toBeVisible()
+  settled = true
+  expect(await within(papers).findByRole('link', { name: /^Fresh title, / }, { timeout: 5000 })).toBeVisible()
+  expect(within(papers).getByRole('link', { name: /PDF attached/ })).toBeVisible()
 })

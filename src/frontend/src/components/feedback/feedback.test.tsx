@@ -4,7 +4,6 @@ import { FileText } from 'lucide-react'
 import { ErrorNotice } from './ErrorNotice'
 import { LoadingState } from './LoadingState'
 import { EmptyState } from './EmptyState'
-import { DocumentStatusBadge } from './DocumentStatusBadge'
 
 test('Given an error, Then one inline alert shows its message and offers a retry', async () => {
   const retry = vi.fn()
@@ -28,13 +27,4 @@ test('Given loading and empty states, Then loading is announced and the empty st
   expect(screen.getByRole('heading', { name: 'Your library is empty', level: 2 })).toBeVisible()
   expect(screen.getByText('Search for a paper or upload one.')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Upload a PDF' })).toBeVisible()
-})
-
-test('Given each document state, Then the badge uses the reader-facing label', () => {
-  const { rerender } = render(<DocumentStatusBadge state="metadata_only" />)
-  expect(screen.getByText('PDF needed')).toBeVisible()
-  for (const [state, label] of [['processing', 'Processing PDF'], ['ready', 'Ready to read'], ['failed', 'Processing failed']] as const) {
-    rerender(<DocumentStatusBadge state={state} />)
-    expect(screen.getByText(label)).toBeVisible()
-  }
 })

@@ -108,6 +108,16 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.services.summarization import run_summary_job
 
             await run_summary_job(resources, identifier, generation, token, payload)
+        elif kind == "section_summaries":
+            from app.services import section_summaries
+
+            await section_summaries.run_section_summaries_job(
+                resources, identifier, generation, token, payload
+            )
+        elif kind == "metadata":
+            from app.services.metadata import run_metadata_job
+
+            await run_metadata_job(resources, identifier, generation, token, payload)
         elif kind == "embed":
             from app.rag.indexing import run_embed_job
 
@@ -120,6 +130,10 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.services.memory import run_embed_turn_job
 
             await run_embed_turn_job(resources, identifier, generation, token, payload)
+        elif kind == "storage_cleanup":
+            from app.services.deletion import run_storage_cleanup_job
+
+            await run_storage_cleanup_job(resources, identifier, generation, token, payload)
         elif kind == "canary":
             await complete(
                 resources.sessions,

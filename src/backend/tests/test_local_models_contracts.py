@@ -1,8 +1,13 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
 from app.schemas.ai import Model
 from app.schemas.jobs import JobStatus
+
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
 
 
 def test_local_catalog_has_exact_pinned_artifacts():
@@ -53,6 +58,7 @@ def test_local_contract_preserves_pause_and_artifact_information():
         display_name="Local",
         status="unavailable",
         reasoning_efforts=["default"],
+        context_window=8192,
         installation={
             "state": "paused",
             "weights_present": False,

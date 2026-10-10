@@ -1,3 +1,4 @@
+import { textIn } from '@/test/editor'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -115,7 +116,7 @@ test('Given a search thread, When the docked composer refines it, Then the searc
   const { user } = mount('/search?q=graphs&provider=openalex')
   await screen.findByRole('article', { name: rich.title })
   const composer = screen.getByRole('textbox', { name: 'Research topic' })
-  expect(composer).toHaveValue('graphs')
+  expect(textIn(composer)).toBe('graphs')
   await user.clear(composer)
   await user.type(composer, 'graph neural networks{Enter}')
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/search-history')?.body).toEqual({ provider: 'openalex', query: 'graph neural networks' }))

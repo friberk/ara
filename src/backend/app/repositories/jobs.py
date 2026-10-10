@@ -7,6 +7,11 @@ from sqlalchemy import func, select, update
 from app.models.jobs import BackgroundJob, JobOutbox
 from app.schemas.jobs import JobStatus
 
+# A storage cleanup that ran out of attempts against an unreachable store is queued again by
+# recovery after this wait, at most this many times (ARA-100).
+STORAGE_REVIVE_SECONDS = 600
+STORAGE_MAX_REVIVALS = 48
+
 
 def now() -> datetime:
     return datetime.now(UTC)
@@ -92,7 +97,9 @@ async def complete(sessions, job_id, generation, token, result: dict) -> bool:
         return saved is not None
 
 
-def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> None:
+def retry_locked(
+    session, job: BackgroundJob, *, code: str, message: str, delay_seconds: float | None = None
+) -> None:
     if job.kind in {"model_download", "model_delete"}:
         # Process restarts and lost dispatches do not spend transfer retry attempts.
         from app.repositories.local_models import recovery_operations
@@ -123,7 +130,9 @@ def retry_locked(session, job: BackgroundJob, *, code: str, message: str) -> Non
         return
     job.state, job.stage = "queued", "retry_wait"
     job.generation += 1
-    job.available_at = now() + timedelta(seconds=2**job.attempts + random.uniform(0, 1))
+    if delay_seconds is None:
+        delay_seconds = 2**job.attempts + random.uniform(0, 1)
+    job.available_at = now() + timedelta(seconds=delay_seconds)
     session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
 
 
@@ -198,18 +207,18 @@ async def fail(sessions, job_id, generation, token, *, permanent: bool = False) 
         return True
 
 
-async def recover(sessions) -> None:
+async def recover(sessions, *, open_models: bool = True) -> None:
+    statement = select(BackgroundJob).where(
+        BackgroundJob.state == "processing", BackgroundJob.lease_expires_at <= func.now()
+    )
+    if not open_models:
+        # Open-model work keeps its unsettled state until the flag is on again (ARA-090).
+        from app.integrations.open_models import lane_jobs
+
+        statement = statement.where(~lane_jobs())
     async with sessions() as session, session.begin():
         expired = (
-            await session.scalars(
-                select(BackgroundJob)
-                .where(
-                    BackgroundJob.state == "processing",
-                    BackgroundJob.lease_expires_at <= func.now(),
-                )
-                .with_for_update(skip_locked=True)
-                .limit(100)
-            )
+            await session.scalars(statement.with_for_update(skip_locked=True).limit(100))
         ).all()
         for job in expired:
             retry_locked(
@@ -228,6 +237,7 @@ async def recover(sessions) -> None:
                     installation.updated_at = now()
             await mark_terminal_document(session, job)
             await mark_terminal_index(session, job)
+        await revive_storage_cleanups(session)
         # Delivered events can be lost in Redis or remain unclaimed after a worker crash.
         # Redelivery preserves generation and attempts; an atomic claim defeats duplicates.
         await session.execute(
@@ -239,6 +249,40 @@ async def recover(sessions) -> None:
                 ),
             )
             .values(delivered_at=None)
+        )
+
+
+async def revive_storage_cleanups(session) -> None:
+    """Queue storage cleanups that ran out of attempts against an unreachable store again.
+
+    No page offers a retry (ARA-100), so recovery does, or the stored PDFs of deleted papers
+    would leak. Only the transient failure qualifies; a refused request fails permanently. Each
+    revival waits out a cooldown and counts in the payload, so a store that never answers stops
+    being asked. The row lock with skip-locked makes concurrent recoveries revive a job once.
+    """
+    revivals = func.coalesce(BackgroundJob.payload["revivals"].as_integer(), 0)
+    failed = (
+        await session.scalars(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.kind == "storage_cleanup",
+                BackgroundJob.state == "failed",
+                BackgroundJob.error_code == "STORAGE_UNAVAILABLE",
+                BackgroundJob.updated_at <= now() - timedelta(seconds=STORAGE_REVIVE_SECONDS),
+                revivals < STORAGE_MAX_REVIVALS,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(100)
+        )
+    ).all()
+    for job in failed:
+        job.payload = {**job.payload, "revivals": int(job.payload.get("revivals") or 0) + 1}
+        job.state, job.stage, job.attempts = "queued", "retry_wait", 0
+        job.generation += 1
+        job.lease_token = job.lease_expires_at = None
+        job.available_at = job.updated_at = now()
+        session.add(
+            JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at)
         )
 
 
@@ -268,7 +312,7 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     )
 
     def linked_paper(job: BackgroundJob) -> UUID | None:
-        if job.kind in {"summary", "fulltext", "embed"}:
+        if job.kind in {"summary", "section_summaries", "fulltext", "embed", "metadata"}:
             return payload_uuid(job.payload, "paper_id")
         if job.kind == "ingest":
             return document_papers.get(payload_uuid(job.payload, "document_id"))
@@ -287,8 +331,11 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     for job in jobs:
         status = JobStatus.model_validate(job)
         paper_id = paper_of.get(job.id)
-        # A deleted paper leaves no link rather than one that would 404.
+        # A deleted paper leaves no link rather than one that would 404; a job its deletion
+        # stopped still names it (ARA-095).
         if paper_id in titles:
             status.paper_id, status.paper_title = paper_id, titles[paper_id]
+        elif isinstance(job.result, dict) and isinstance(job.result.get("paper_title"), str):
+            status.paper_title = job.result["paper_title"]
         statuses.append(status)
     return statuses

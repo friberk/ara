@@ -1,31 +1,38 @@
-// Search and retrieval settings (ARA-075): the default search model, separate from the chat model defaults.
+// Search and retrieval settings (ARA-075, ARA-091): the one library-wide search model, separate from the chat model defaults.
 import { screen, waitFor, within } from '@testing-library/react'
 import type { EmbeddingProfile, Reranker, RetrievalSettings } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
 const luna = { kind: 'chat' as const, key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
-const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null }
-const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'unavailable', unavailable_reason: 'Download Qwen3 Embedding 4B in Settings', local_model_key: 'qwen3-embedding-4b' }
+const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13 }
+const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02 }
+const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'unavailable', unavailable_reason: 'Download Qwen3 Embedding 4B in Settings', local_model_key: 'qwen3-embedding-4b', price_per_million: 0 }
 const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: 'qwen3-embedding:8b', display_name: 'Qwen3 Embedding 8B', dimensions: 4096, unavailable_reason: 'Download Qwen3 Embedding 8B in Settings', local_model_key: 'qwen3-embedding-8b' }
-const profiles = { items: [openai, qwen4b, qwen8b], default_profile: openai.key }
+const profiles = { items: [openai, small, qwen4b, qwen8b], default_profile: openai.key }
 const saved: RetrievalSettings = { embedding_profile: openai.key, reranker: 'openai-gpt-6-luna' }
-const base = { 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'GET /retrieval/profiles': profiles }
+const estimate = { profile: 'openai-3-small', papers: 12, tokens: 480000, price_per_million: 0.02, estimated_cost_usd: 0.0096 }
+const base = { 'GET /retrieval/reindex-estimate': estimate, 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'GET /retrieval/profiles': profiles }
 afterEach(() => vi.unstubAllGlobals())
+// Local model tests run with open models on, as the server reports them (ARA-090).
+const openModels = { 'GET /features': { open_models: true } }
 
-test('Given three search models with OpenAI saved, Then Settings lists them with OpenAI chosen and exact ids in mono', async () => {
-  mockApi({ ...base, 'GET /retrieval/settings': saved })
+test('Given four search models with OpenAI large saved, Then Settings lists them with large chosen, exact ids in mono and each price', async () => {
+  mockApi({ ...openModels, ...base, 'GET /retrieval/settings': saved })
   renderApp('/settings')
   const section = await screen.findByRole('region', { name: 'Search and retrieval' })
-  const choices = await within(section).findByRole('radiogroup', { name: 'Default search model' })
-  expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-3-large', 'qwen3-embed-4b', 'qwen3-embed-8b'])
+  const choices = await within(section).findByRole('radiogroup', { name: 'Search model' })
+  expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-3-large', 'openai-3-small', 'qwen3-embed-4b', 'qwen3-embed-8b'])
   expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toBeChecked()
   expect(within(choices).getByText('text-embedding-3-large')).toHaveClass('font-mono')
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toHaveAccessibleDescription(/\$0\.13 per million tokens/)
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toHaveAccessibleDescription(/\$0\.02 per million tokens/)
+  expect(within(section).getByText(/One model searches the whole library/)).toBeVisible()
   expect(within(section).getByRole('button', { name: 'Save search settings' })).toBeDisabled()
 })
 
 test('Given Qwen 4B is not downloaded, Then its reason links to Local models and it can still be chosen', async () => {
-  mockApi({ ...base, 'GET /retrieval/settings': saved })
+  mockApi({ ...openModels, ...base, 'GET /retrieval/settings': saved })
   const { user } = renderApp('/settings')
   const qwen = await screen.findByRole('radio', { name: 'Qwen3 Embedding 4B' })
   expect(qwen).toHaveAccessibleDescription(/Download Qwen3 Embedding 4B in Settings/)
@@ -37,16 +44,51 @@ test('Given Qwen 4B is not downloaded, Then its reason links to Local models and
   expect(screen.getByRole('button', { name: 'Save search settings' })).toBeEnabled()
 })
 
-test('Given a new choice, When Save search settings is pressed, Then PUT sends the chosen key and keeps the saved reranker choice', async () => {
+test('Given a new model, When Save is pressed, Then a dialog warns the whole library is re-embedded and nothing is sent until confirmed', async () => {
   // Saving the search model must not overwrite the stored reranker choice.
   const stored: RetrievalSettings = { ...saved, reranker: 'qwen3-rerank-0.6b' }
-  const { calls } = mockApi({ ...base, 'GET /retrieval/settings': stored, 'PUT /retrieval/settings': ({ body }) => json(body) })
+  const { calls } = mockApi({ ...openModels, ...base, 'GET /retrieval/settings': stored, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/settings')
-  await user.click(await screen.findByRole('radio', { name: 'Qwen3 Embedding 8B' }))
+  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
   await user.click(screen.getByRole('button', { name: 'Save search settings' }))
-  await waitFor(() => expect(calls.find((call) => call.method === 'PUT' && call.path === '/retrieval/settings')?.body).toEqual({ embedding_profile: 'qwen3-embed-8b', reranker: 'qwen3-rerank-0.6b' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Re-embed the whole library?' })
+  expect(await within(dialog).findByText(/Switching to OpenAI text-embedding-3-small re-embeds your whole library in the background: 12 papers, about 480,000 tokens\./)).toBeVisible()
+  expect(within(dialog).getByText('Estimated cost: less than $0.01.')).toBeVisible()
+  expect(within(dialog).getByText(/Questions keep working meanwhile/)).toBeVisible()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+  await user.click(within(dialog).getByRole('button', { name: 'Re-embed library' }))
+  await waitFor(() => expect(calls.find((call) => call.method === 'PUT' && call.path === '/retrieval/settings')?.body).toEqual({ embedding_profile: 'openai-3-small', reranker: 'qwen3-rerank-0.6b' }))
+  expect(calls.find((call) => call.path === '/retrieval/reindex-estimate')?.url.searchParams.get('profile')).toBe('openai-3-small')
   expect(await screen.findByText('Search settings saved.')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Save search settings' })).toBeDisabled()
+})
+
+test('Given the confirmation dialog, When Cancel is pressed, Then nothing is saved and the choice stays', async () => {
+  const { calls } = mockApi({ ...base, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
+  const { user } = renderApp('/settings')
+  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
+  await user.click(screen.getByRole('button', { name: 'Save search settings' }))
+  await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+  expect(screen.getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toBeChecked()
+})
+
+test('Given an empty library, When a new model is saved, Then the dialog says there is nothing to re-embed yet', async () => {
+  mockApi({ ...base, 'GET /retrieval/reindex-estimate': { ...estimate, papers: 0, tokens: 0, estimated_cost_usd: 0 }, 'GET /retrieval/settings': saved })
+  const { user } = renderApp('/settings')
+  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
+  await user.click(screen.getByRole('button', { name: 'Save search settings' }))
+  expect(await within(await screen.findByRole('alertdialog')).findByText(/no papers to re-embed yet/)).toBeVisible()
+})
+
+test('Given only the reranker changed, When Save is pressed, Then it saves at once without the re-embed dialog', async () => {
+  const { calls } = mockApi({ ...withRerankers, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
+  const { user } = renderApp('/settings')
+  await user.click(await screen.findByRole('radio', { name: 'Off' }))
+  await user.click(screen.getByRole('button', { name: 'Save search settings' }))
+  await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true))
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 })
 
 // Reranker profiles come from the server's catalog (ARA-074); the UI renders whatever it lists, plus Off.
@@ -55,7 +97,7 @@ const localRerank: Reranker = { key: 'qwen3-rerank-0.6b', provider: 'ollama', mo
 const withRerankers = { ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank, localRerank] } }
 
 test('Given catalog rerankers, Then Rerank results lists each with its id and what it costs, plus Off, with the saved one chosen', async () => {
-  mockApi({ ...withRerankers, 'GET /retrieval/settings': saved })
+  mockApi({ ...openModels, ...withRerankers, 'GET /retrieval/settings': saved })
   renderApp('/settings')
   const choices = await screen.findByRole('radiogroup', { name: 'Rerank results' })
   expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-gpt-6-luna', 'qwen3-rerank-0.6b', ''])
@@ -69,7 +111,7 @@ test('Given catalog rerankers, Then Rerank results lists each with its id and wh
 })
 
 test('Given a local reranker that is not installed, Then it cannot be chosen and its reason links to Local models', async () => {
-  mockApi({ ...withRerankers, 'GET /retrieval/settings': saved })
+  mockApi({ ...openModels, ...withRerankers, 'GET /retrieval/settings': saved })
   renderApp('/settings')
   const local = await screen.findByRole('radio', { name: 'Qwen3 Reranker 0.6B' })
   expect(local).toBeDisabled()
@@ -78,7 +120,7 @@ test('Given a local reranker that is not installed, Then it cannot be chosen and
 })
 
 test('Given an installed local reranker, When it is chosen and saved, Then PUT sends its key with the saved search model', async () => {
-  const { calls } = mockApi({ ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank, { ...localRerank, status: 'available', unavailable_reason: null }] }, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
+  const { calls } = mockApi({ ...openModels, ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank, { ...localRerank, status: 'available', unavailable_reason: null }] }, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/settings')
   await user.click(await screen.findByRole('radio', { name: 'Qwen3 Reranker 0.6B' }))
   await user.click(screen.getByRole('button', { name: 'Save search settings' }))

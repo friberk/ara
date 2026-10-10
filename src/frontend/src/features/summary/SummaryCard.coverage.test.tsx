@@ -36,25 +36,6 @@ test('Given a summary that just finished, Then it opens in full', async () => {
   expect(await within(card).findByRole('button', { name: 'Collapse summary' })).toHaveAttribute('aria-expanded', 'true')
 })
 
-test('Given an earlier version selected, When Generate summary is chosen from the version menu, Then the new latest version shows', async () => {
-  let versions = [summary('s1', 'First version text.', '2026-10-08T12:00:00Z'), summary('s2', 'Second version text.', '2026-10-08T13:00:00Z')]
-  let posts = 0
-  const { user } = mount({
-    ...settings,
-    'GET /papers/p1/summaries': () => json({ items: versions }),
-    'POST /papers/p1/summaries': () => { posts++; return json({ job_id: 'j5', summary_id: null }) },
-    'GET /jobs/j5': () => { versions = [...versions, summary('s3', 'Third version text.', '2026-10-08T14:00:00Z')]; return json(job('j5', 'completed')) },
-  })
-  const card = await screen.findByRole('article', { name: 'Paper summary' })
-  await user.click(await within(card).findByRole('button', { name: 'Version 2 of 2' }))
-  await user.click(await screen.findByRole('menuitemradio', { name: /Version 1/ }))
-  await user.click(await within(card).findByRole('button', { name: 'Version 1 of 2' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Generate summary' }))
-  expect(await within(card).findByRole('button', { name: 'Version 3 of 3' })).toBeVisible()
-  expect(within(card).getByText('Third version text.')).toBeInTheDocument()
-  expect(posts).toBe(1)
-})
-
 test('Given a summary of an earlier PDF, Then the card marks it', async () => {
   mount({ ...settings, 'GET /papers/p1/summaries': { items: [summary('s1', 'Old text.', '2026-10-08T12:00:00Z', { document_id: 'd0' })] } })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
@@ -82,7 +63,7 @@ test('Given summaries fail to load, Then the error is inline and Try again loads
 test('Given a PDF still processing, Then the card explains the wait and offers no action', async () => {
   mount(settings, { ...paper, document_status: 'processing' as const })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
-  expect(await within(card).findByText('A summary can be generated when the PDF finishes processing.')).toBeVisible()
+  expect(await within(card).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()
   expect(within(card).queryByRole('button', { name: /Generate summary|Attach PDF/ })).not.toBeInTheDocument()
 })
 
@@ -101,10 +82,12 @@ test('Given a model without structured output, Then Generate summary is disabled
   expect(within(card).getByRole('button', { name: 'Generate summary' })).toBeDisabled()
 })
 
-test('Given no summary yet, Then the card names the model a new summary will use', async () => {
+test('Given no summary yet, Then Generate summary shows with no model or effort line', async () => {
   mount(settings)
   const card = await screen.findByRole('article', { name: 'Paper summary' })
-  expect(await within(card).findByText('Uses Luna with low reasoning')).toBeVisible()
+  // Waiting for enabled means the models have loaded, so a model line would already be rendered.
+  await waitFor(() => expect(within(card).getByRole('button', { name: 'Generate summary' })).toBeEnabled())
+  expect(within(card).queryByText(/Uses .* with/)).not.toBeInTheDocument()
 })
 
 test('Given a server that ignores the job filters, Then jobs of other papers and finished jobs show no progress here', async () => {

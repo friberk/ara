@@ -1,0 +1,32 @@
+{
+  "id": "ARA-103",
+  "title": "Paper actions behind a hover \"…\" in the sidebar's Papers list",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"In the sidebar, for papers, can we show the \"...\" thing to show controls for papers? They should appear on hover.\" Recent chats and searches in the sidebar already have a hover \"…\" (SidebarRecent). Library rows already have the paper actions menu (PaperActions: Edit details, Look up details again, Delete…). The sidebar's Papers rows get the same menu through a single implementation.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given the sidebar's Papers list on desktop, when the pointer is over a paper row or the row has keyboard focus, then a \"…\" button appears at its right edge, as on recent chats. Otherwise it is hidden. On touch or narrow screens it stays visible, as shadcn's showOnHover does.",
+    "Given the \"…\" button, when it is opened, then it shows the same actions as the Library row (Edit details, Look up details again when available, Delete…), from the same PaperActions code with no copy of the menu.",
+    "Given the paper open in the workspace, when it is deleted from the sidebar menu, then the app leaves its page for home. Deleting another paper leaves the current page alone.",
+    "Given the collapsed (icon) sidebar, when it shows, then no paper menu appears, matching the hidden Papers group.",
+    "Given the Library page, when it renders, then its row menus behave exactly as before."
+  ],
+  "test_cases": [
+    "Sidebar paper row exposes an 'Actions for <title>' button inside the row item.",
+    "Menu items match the Library's; Edit opens the edit dialog; Delete opens the delete dialog.",
+    "Deleting the open paper navigates home; deleting another doesn't.",
+    "Library PaperActions tests still pass."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/src/features/library/PaperActions.tsx"
+  ],
+  "commits": [
+    "e00e01b"
+  ],
+  "pull_requests": [],
+  "verification": "Red first: sidebar-paper-actions.test.tsx (4 tests) failed 4/4 with 'Unable to find an accessible element with the role \"button\" and name \"Actions for “Attention is all you need”\"' before PaperActions had a sidebar trigger. Green after: the 4 tests pass (trigger in the row, menu has Edit details and Delete…, Edit opens its dialog, deleting the open paper goes to /, deleting another leaves /papers/p1). npm run check: tsc and ESLint clean, 693-694 of 695 Vitest tests passed per run; the only failures were load-flaky timeouts (5 s) in library-manage 'When Delete is chosen' and the Ctrl+K palette test, and library-manage passed 7/7 and 'When Delete is chosen' alone passed in 2 s, src/components/shell passed 22/22. npm run build passed (existing chunk-size warning). Not seen in a browser: hover reveal and long-title truncation rely on the shadcn SidebarMenuAction classes (row button gets pr-8 via group-has-data-menu-action, hidden under group-data-[collapsible=icon]).",
+  "updated_at": "2026-10-10"
+}

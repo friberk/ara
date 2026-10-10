@@ -8,6 +8,8 @@ import { useGenerationSettings } from './generation-settings-context'
 
 const model = (key: string, overrides: Record<string, unknown> = {}) => ({ key, provider: 'openai', model_id: key, display_name: key, status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000, ...overrides })
 afterEach(() => vi.unstubAllGlobals())
+// Local model tests run with open models on, as the server reports them (ARA-090).
+const openModels = { 'GET /features': { open_models: true } }
 
 function mount() {
   const client = testClient()
@@ -61,12 +63,11 @@ test('Given a session choice, Then it overrides the default and usability follow
   expect(result.current.usableFor('summary')).toBe(true)
 })
 
-test.each(['default', 'on'])('Given declared supported %s alias, Then prospective selection and default comparison use High', async (reasoning) => {
+test.each(['default', 'on'])('Given declared supported %s alias, Then the selection uses High', async (reasoning) => {
   const local = model('native', { provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } })
   mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning } })
   const { result } = mount()
   await waitFor(() => expect(result.current.settings).toEqual({ model: 'native', reasoning_effort: 'high' }))
-  expect(result.current.savedDefaults).toEqual({ model: 'native', reasoning_effort: 'high' })
   expect(result.current.usableFor('chat')).toBe(true)
 })
 
@@ -88,7 +89,7 @@ test('Given pending local capabilities, Then its raw Low preference stays preser
 test('Given switching from hosted Max chooses native High, When its runtime preset later changes, Then the explicit session choice remains High', async () => {
   let local = { ...model('native', { provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'high'] }), reasoning_aliases: { default: 'high', on: 'high' } }
   const hosted = model('hosted', { reasoning_efforts: ['low', 'max'] })
-  mockApi({ 'GET /models': () => json({ items: [hosted, local] }), 'GET /settings': { default_model: hosted.key, reasoning_effort: 'max' } })
+  mockApi({ ...openModels, 'GET /models': () => json({ items: [hosted, local] }), 'GET /settings': { default_model: hosted.key, reasoning_effort: 'max' } })
   const { client, result } = mount()
   await waitFor(() => expect(result.current.settings.model).toBe(hosted.key))
   act(() => result.current.setSettings({ model: local.key, reasoning_effort: 'max' }))
