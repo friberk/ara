@@ -14,12 +14,14 @@
     "Given the excerpt cannot be located in the text layer and the citation has bboxes, when the reader jumps, then it outlines the passage region from the stored boxes on the correct page(s), including rotated or cropped pages, instead of page-only.",
     "Given neither text matching nor boxes are available, when the reader jumps, then today's page-only behaviour and status message remain.",
     "Given a second citation is clicked, when the reader moves, then earlier highlights and outlines are cleared and zoom changes keep the current highlight aligned.",
-    "Given summary-card and answer citations, when either is clicked, then both get the same behaviour."
+    "Given summary-card and answer citations, when either is clicked, then both get the same behaviour.",
+    "Given a highlight, when about 4 s pass without hover, then it fades out over about 1.5 s and leaves no marks or outlines; reduced motion removes it after the same hold without animation; hovering the passage pauses the countdown; a re-click restarts it; a later zoom does not bring a faded highlight back."
   ],
   "test_cases": [
     "Unit: bbox to viewport rectangle conversion, including scale, rotation and CropBox offset.",
     "Component: highlight attributes and outline overlay rendered; fallback order text, then boxes, then page-only; clearing on a new citation; zoom realignment.",
-    "Visual check: screenshots in light and dark themes on real papers through a read-only preview against the user's dev API."
+    "Visual check: screenshots in light and dark themes on real papers through a read-only preview against the user's dev API.",
+    "Component with fake timers: hold then fade then removal for text, context and region; reduced motion; re-click during hold and fade; hover pause and resume; zoom during and after the fade."
   ],
   "status": "completed",
   "related_files": [
@@ -35,7 +37,8 @@
     "src/frontend/src/features/workspace/PdfReader.tsx",
     "src/frontend/src/features/workspace/workspace.test.tsx",
     "src/frontend/src/index.css",
-    "README.md"
+    "README.md",
+    "src/frontend/src/features/workspace/highlight-lifetime.ts"
   ],
   "commits": [
     "cc50a7a",
@@ -44,6 +47,6 @@
     "c0eda63"
   ],
   "pull_requests": [],
-  "verification": "Completed 2026-10-09 on feat/ara-089-citation-highlight. npm run check: typecheck and lint clean, 73 test files / 551 tests passed; npm run build passed (existing over-500 kB chunk warning). Real-PDF check: PyMuPDF boxes on plain, CropBox, and 90/180/270-rotated PDFs mapped through the real pdf.js viewport land on the pdf.js text positions (scratch script, not committed). Visual check, read-only preview on the user's dev API in light and dark: strong highlight plus dotted context visible; passage centred (0 px offset) after settling; forced text-match failure outlined stored boxes aligned with the text blocks on 3 papers; second citation cleared the first; zoom x2 kept the same page percentages. The ticket's 'scrolls to the page, not the passage' observation did not reproduce: centring already worked after the smooth scroll settled, and is clamped at the very top or bottom of the document. Not verified in the app: a rotated PDF (none of the user's papers is rotated; covered by the node check and unit tests).",
+  "verification": "Completed 2026-10-09 on feat/ara-089-citation-highlight. npm run check: typecheck and lint clean, 73 test files / 564 tests passed (including the fade-out lifetime tests); npm run build passed (existing over-500 kB chunk warning). Real-PDF check: PyMuPDF boxes on plain, CropBox, and 90/180/270-rotated PDFs mapped through the real pdf.js viewport land on the pdf.js text positions (scratch script, not committed). Visual check, read-only preview on the user's dev API in light and dark: strong highlight plus dotted context visible; passage centred (0 px offset) after settling; forced text-match failure outlined stored boxes aligned with the text blocks on 3 papers; second citation cleared the first; zoom x2 kept the same page percentages. The ticket's 'scrolls to the page, not the passage' observation did not reproduce: centring already worked after the smooth scroll settled, and is clamped at the very top or bottom of the document. Not verified in the app: a rotated PDF (none of the user's papers is rotated; covered by the node check and unit tests). Fade-out checked live: hold at 2.5 s, fading at about 4.8 s, no marks at about 7 s, countdown paused while hovering.",
   "updated_at": "2026-10-09"
 }

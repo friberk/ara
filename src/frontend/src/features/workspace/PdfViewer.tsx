@@ -11,6 +11,7 @@ import type { PdfNavigation } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
 import { regionsFor, type PageGeometry, type Region } from './citation-region'
 import { findEvidence } from './evidence'
+import { FADE_MS, HOLD_MS } from './highlight-lifetime'
 import type { HighlightOutcome, SourceRequest } from './workspace-context'
 
 // The worker comes from the same pdfjs-dist that react-pdf resolves, so API and worker versions always agree.
@@ -20,6 +21,8 @@ const GUTTER = 16
 const DEFAULT_RATIO = 11 / 8.5
 const DEVICE_PIXEL_RATIO = Math.min(2, window.devicePixelRatio || 1)
 const HIGHLIGHT_TIMEOUT_MS = 8000
+/** Time left to read a passage the pointer has just stopped covering during a fade. */
+const MIN_RESUME_MS = 1000
 
 export type PdfViewerProps = {
   documentId: string
@@ -33,7 +36,7 @@ export type PdfViewerProps = {
   onHighlight: (outcome: HighlightOutcome) => void
 }
 
-type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean; waitingForGeometry?: boolean }
+type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean; waitingForGeometry?: boolean; expired?: boolean }
 type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -123,6 +126,7 @@ export default function PdfViewer(props: PdfViewerProps) {
   const anchor = useRef({ page: 1, offset: 0 })
   const reportedPage = useRef(1)
   const frame = useRef(0)
+  const life = useRef({ timer: 0, deadline: 0, remaining: HOLD_MS, phase: 'idle' as 'idle' | 'hold' | 'fade' | 'gone', overText: false, overRegion: false })
   const geometry = useRef<Map<number, PageGeometry> | null>(null)
   const [regions, setRegions] = useState<{ nonce: number; list: Region[] }>({ nonce: 0, list: [] })
   const [width, setWidth] = useState(0)
@@ -145,12 +149,83 @@ export default function PdfViewer(props: PdfViewerProps) {
     root.scrollTo({ top: offsetIn(root, element) - GUTTER / 2, behavior: 'instant' })
   }, [])
 
+  const stopLife = useCallback(() => {
+    const state = life.current
+    window.clearTimeout(state.timer)
+    state.timer = 0
+    state.phase = 'idle'
+    rootRef.current?.removeAttribute('data-citation-fade')
+  }, [])
+
+  /** End of the fade: the same clean-up a new citation does, and the passage is not marked again by a redrawn layer. */
+  const expire = useCallback(() => {
+    const root = rootRef.current
+    life.current.phase = 'gone'
+    life.current.timer = 0
+    if (request.current) request.current.expired = true
+    if (!root) return
+    root.removeAttribute('data-citation-fade')
+    clearMarks(root)
+    setRegions({ nonce: 0, list: [] })
+  }, [])
+
+  const beginFade = useCallback(() => {
+    const root = rootRef.current
+    if (!root || prefersReducedMotion()) { expire(); return }
+    life.current.phase = 'fade'
+    root.style.setProperty('--citation-fade-ms', `${FADE_MS}ms`)
+    root.setAttribute('data-citation-fade', 'out')
+    life.current.timer = window.setTimeout(expire, FADE_MS)
+  }, [expire])
+
+  const runHold = useCallback((ms: number) => {
+    const state = life.current
+    window.clearTimeout(state.timer)
+    state.phase = 'hold'
+    state.deadline = Date.now() + ms
+    state.timer = window.setTimeout(beginFade, ms)
+  }, [beginFade])
+
+  /** Holding a passage while the pointer is over it, so a reader is not racing the fade. */
+  const pauseLife = useCallback(() => {
+    const state = life.current
+    if (state.phase === 'hold') {
+      state.remaining = Math.max(0, state.deadline - Date.now())
+    } else if (state.phase === 'fade') {
+      state.remaining = MIN_RESUME_MS
+      state.phase = 'hold'
+      rootRef.current?.removeAttribute('data-citation-fade')
+    } else return
+    window.clearTimeout(state.timer)
+    state.timer = 0
+  }, [])
+
+  const resumeLife = useCallback(() => {
+    const state = life.current
+    if (state.phase === 'hold' && !state.timer) runHold(state.remaining)
+  }, [runHold])
+
+  const setHover = useCallback((kind: 'text' | 'region', over: boolean) => {
+    const state = life.current
+    const before = state.overText || state.overRegion
+    if (kind === 'text') state.overText = over
+    else state.overRegion = over
+    const after = state.overText || state.overRegion
+    if (after && !before) pauseLife()
+    else if (!after && before) resumeLife()
+  }, [pauseLife, resumeLife])
+
   const settle = useCallback((outcome: HighlightOutcome, nonce: number) => {
     const active = request.current
     if (!active || active.nonce !== nonce || active.reported) return
     active.reported = true
     latest.current.onHighlight(outcome)
-  }, [])
+    if (outcome === 'page-only') return
+    life.current.remaining = HOLD_MS
+    life.current.phase = 'hold'
+    if (life.current.overText || life.current.overRegion) life.current.timer = 0
+    else runHold(HOLD_MS)
+  }, [runHold])
 
   /**
    * The excerpt is not in the text layer: outline the citation's stored layout boxes instead, or settle page-only when
@@ -169,7 +244,7 @@ export default function PdfViewer(props: PdfViewerProps) {
   const markPage = useCallback((pageNumber: number) => {
     const root = rootRef.current
     const active = request.current
-    if (!root || !active || active.citation.page !== pageNumber) return
+    if (!root || !active || active.expired || active.citation.page !== pageNumber) return
     const layer = root.querySelector(`[data-pdf-page="${pageNumber}"] .textLayer`)
     // react-pdf appends .endOfContent when a text layer finishes; it is removed again when the layer re-renders.
     if (!layer?.querySelector('.endOfContent')) return
@@ -259,13 +334,19 @@ export default function PdfViewer(props: PdfViewerProps) {
   useEffect(() => {
     if (!highlight) return
     const { citation, claim, nonce } = highlight
+    stopLife()
+    life.current.overText = false
+    life.current.overRegion = false
+    if (rootRef.current) clearMarks(rootRef.current)
     request.current = { citation, claim, nonce, reported: false }
     pendingPage.current = citation.page
     flushPendingPage()
     markPage(citation.page)
     const timer = window.setTimeout(() => outlineRegions(nonce), HIGHLIGHT_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [highlight, flushPendingPage, markPage, outlineRegions])
+  }, [highlight, flushPendingPage, markPage, outlineRegions, stopLife])
+
+  useEffect(() => () => window.clearTimeout(life.current.timer), [])
 
   // Once the outline is on the page, bring it to the middle of the reader.
   useLayoutEffect(() => {
@@ -283,6 +364,29 @@ export default function PdfViewer(props: PdfViewerProps) {
   }, [regions, nonce])
 
   useEffect(() => () => window.cancelAnimationFrame(frame.current), [])
+
+  function onPointerOver(event: React.PointerEvent) {
+    if (event.target instanceof Element && event.target.closest('[data-citation-highlight]')) setHover('text', true)
+  }
+
+  function onPointerOut(event: React.PointerEvent) {
+    if (!(event.target instanceof Element) || !event.target.closest('[data-citation-highlight]')) return
+    const next = event.relatedTarget
+    if (!(next instanceof Element) || !next.closest('[data-citation-highlight]')) setHover('text', false)
+  }
+
+  /** Outlines let the pointer through, so hovering one is a rectangle test. */
+  function onPointerMove(event: React.PointerEvent) {
+    const state = life.current
+    if (state.phase === 'idle' || state.phase === 'gone') return
+    const outlines = rootRef.current?.querySelectorAll('[data-citation-region]')
+    if (!outlines?.length && !state.overRegion) return
+    const over = Array.from(outlines ?? []).some((outline) => {
+      const box = outline.getBoundingClientRect()
+      return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom
+    })
+    setHover('region', over)
+  }
 
   function trackScroll() {
     window.cancelAnimationFrame(frame.current)
@@ -329,6 +433,9 @@ export default function PdfViewer(props: PdfViewerProps) {
       aria-label="PDF document"
       tabIndex={0}
       onScroll={trackScroll}
+      onPointerOver={onPointerOver}
+      onPointerOut={onPointerOut}
+      onPointerMove={onPointerMove}
       className="pdf-viewer relative h-full overflow-auto bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
     >
       <Document

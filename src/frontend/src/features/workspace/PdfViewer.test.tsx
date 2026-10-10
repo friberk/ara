@@ -2,8 +2,9 @@
 // mutation-verified (each case fails when the behaviour it names is removed). react-pdf is replaced by a canvas-free
 // stand-in that renders a pdf.js-shaped text layer: one span[role=presentation] per line, a <br> at each line end
 // and .endOfContent once the layer is complete.
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Citation } from '@/api/types'
+import { FADE_MS, HOLD_MS } from './highlight-lifetime'
 import PdfViewer, { type PdfViewerProps } from './PdfViewer'
 
 const fixture = vi.hoisted(() => ({ pages: {} as Record<number, React.ReactNode[]>, failing: new Set<number>() }))
@@ -11,18 +12,19 @@ const fixture = vi.hoisted(() => ({ pages: {} as Record<number, React.ReactNode[
 vi.mock('react-pdf', async () => {
   const { useEffect } = await import('react')
   type DocumentStubProps = { children?: React.ReactNode; className?: string; onLoadSuccess?: (pdf: unknown) => void }
-  type PageStubProps = { pageNumber: number; onRenderTextLayerSuccess?: () => void; onRenderTextLayerError?: (error: Error) => void }
+  type PageStubProps = { pageNumber: number; width?: number; onRenderTextLayerSuccess?: () => void; onRenderTextLayerError?: (error: Error) => void }
   return {
     pdfjs: { GlobalWorkerOptions: {} },
     Document: function DocumentStub({ children, className, onLoadSuccess }: DocumentStubProps) {
       useEffect(() => { onLoadSuccess?.({ numPages: 3, getPage: async () => ({ view: [0, 0, 612, 792], getViewport: () => ({ width: 612, height: 792, convertToViewportPoint: (x: number, y: number) => [x, 792 - y] }) }) }) }, [onLoadSuccess])
       return <div className={className}>{children}</div>
     },
-    Page: function PageStub({ pageNumber, onRenderTextLayerSuccess, onRenderTextLayerError }: PageStubProps) {
+    Page: function PageStub({ pageNumber, width, onRenderTextLayerSuccess, onRenderTextLayerError }: PageStubProps) {
       useEffect(() => {
         if (fixture.failing.has(pageNumber)) onRenderTextLayerError?.(new Error('Text layer failed'))
         else onRenderTextLayerSuccess?.()
-      }, [pageNumber, onRenderTextLayerSuccess, onRenderTextLayerError])
+      // width is a dependency because pdf.js redraws a text layer when the page size changes (zoom)
+      }, [pageNumber, width, onRenderTextLayerSuccess, onRenderTextLayerError])
       return (
         <div className="textLayer">
           {(fixture.pages[pageNumber] ?? []).flatMap((line, index) => [<span key={`line-${index}`} role="presentation">{line}</span>, <br key={`end-${index}`} role="presentation" />])}
@@ -291,5 +293,159 @@ describe('PdfViewer region fallback (ARA-089, test-first)', () => {
     await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
     // centre 1000 + 80 / 2, less half the reader's height
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 740, behavior: 'smooth' }))
+  })
+})
+
+describe('PdfViewer highlight lifetime (ARA-089, test-first, fake timers)', () => {
+  const box = [2, 61.2, 79.2, 306, 158.4]
+  const textual = onMethod
+  const boxed = withBoxes(cite(2, unmatched), [box])
+  const region = () => screen.getByRole('group', { name: 'Page 2' }).querySelectorAll('[data-citation-region]')
+  const fadeState = () => screen.getByRole('region', { name: 'PDF document' }).getAttribute('data-citation-fade')
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+  const start = async (citation: Citation) => {
+    const view = renderViewer({ citation, nonce: 1 })
+    await advance(50)
+    expect(view.onHighlight).toHaveBeenCalledTimes(1)
+    return view
+  }
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] }) })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  test('Given a text highlight, Then it holds, then fades out, then leaves no marks', async () => {
+    await start(textual)
+    await advance(HOLD_MS - 200)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    expect(fadeState()).toBeNull()
+    await advance(300)
+    expect(fadeState()).toBe('out')
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(FADE_MS)
+    expect(marked(2)).toEqual([])
+    expect(fadeState()).toBeNull()
+  })
+
+  test('Given a context mark, Then it fades and goes with the strong marks', async () => {
+    fixture.pages[2] = ['The method first extracts page text, then retrieves relevant', 'chunks. It generates answers grounded in those passages. The', 'experiment uses the Orion-12 dataset with twelve examples.']
+    const prose = fixture.pages[2] as string[]
+    const view = renderViewer({ citation: cite(2, prose.join('\n')), claim: 'The study evaluates on the Orion-12 dataset.', nonce: 1 })
+    await advance(50)
+    expect(view.onHighlight).toHaveBeenCalledWith('highlighted')
+    expect(marked(2, 'context')).toHaveLength(1)
+    await advance(HOLD_MS + FADE_MS + 50)
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given an outlined region, Then it fades and is removed after the same hold', async () => {
+    await start(boxed)
+    expect(region()).toHaveLength(1)
+    await advance(HOLD_MS + 50)
+    expect(fadeState()).toBe('out')
+    expect(region()).toHaveLength(1)
+    await advance(FADE_MS)
+    expect(region()).toHaveLength(0)
+  })
+
+  test('Given reduced motion, Then the highlight is removed after the hold with no fade', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({ matches: query.includes('reduce'), media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false }))
+    await start(textual)
+    await advance(HOLD_MS - 100)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(200)
+    expect(fadeState()).toBeNull()
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given a re-click during the hold, Then the clock restarts and the old timer does not remove the new highlight', async () => {
+    const { onHighlight, rehighlight } = await start(textual)
+    await advance(HOLD_MS - 500)
+    rehighlight({ citation: textual, nonce: 2 })
+    await advance(50)
+    expect(onHighlight).toHaveBeenCalledTimes(2)
+    await advance(HOLD_MS - 300)
+    expect(fadeState()).toBeNull()
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(FADE_MS + 500)
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given a re-click during the fade, Then the fade is cancelled and the highlight is whole again', async () => {
+    const { rehighlight } = await start(textual)
+    await advance(HOLD_MS + 500)
+    expect(fadeState()).toBe('out')
+    rehighlight({ citation: textual, nonce: 2 })
+    await advance(50)
+    expect(fadeState()).toBeNull()
+    await advance(FADE_MS)
+    expect(marked(2, 'strong')).toHaveLength(2)
+  })
+
+  test('Given a second citation during the hold, Then only the new passage remains and it fades on its own clock', async () => {
+    const { rehighlight } = await start(textual)
+    await advance(HOLD_MS - 500)
+    rehighlight({ citation: cite(3, 'Limitations\nTwelve examples do not establish performance.'), nonce: 2 })
+    await advance(50)
+    expect(marked(2)).toEqual([])
+    expect(marked(3, 'strong')).toHaveLength(2)
+    await advance(HOLD_MS + FADE_MS)
+    expect(marked(3)).toEqual([])
+  })
+
+  test('Given the pointer over a highlighted line, Then the countdown pauses and resumes on leave', async () => {
+    await start(textual)
+    const line = screen.getByText(methodLines[1]!)
+    await advance(HOLD_MS - 1000)
+    fireEvent.pointerOver(line)
+    await advance(HOLD_MS * 3)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    expect(fadeState()).toBeNull()
+    fireEvent.pointerOut(line)
+    await advance(900)
+    expect(fadeState()).toBeNull()
+    await advance(200)
+    expect(fadeState()).toBe('out')
+    await advance(FADE_MS)
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given the pointer arrives during the fade, Then the fade stops and the highlight returns to full strength', async () => {
+    await start(textual)
+    await advance(HOLD_MS + 500)
+    expect(fadeState()).toBe('out')
+    fireEvent.pointerOver(screen.getByText(methodLines[1]!))
+    expect(fadeState()).toBeNull()
+    await advance(FADE_MS * 3)
+    expect(marked(2, 'strong')).toHaveLength(2)
+  })
+
+  test('Given the pointer over an outlined region, Then the countdown pauses', async () => {
+    await start(boxed)
+    const outline = region()[0] as HTMLElement
+    vi.spyOn(outline, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 200, 50))
+    await advance(HOLD_MS - 500)
+    fireEvent.pointerMove(screen.getByRole('region', { name: 'PDF document' }), { clientX: 150, clientY: 120 })
+    await advance(HOLD_MS * 2)
+    expect(region()).toHaveLength(1)
+    fireEvent.pointerMove(screen.getByRole('region', { name: 'PDF document' }), { clientX: 5, clientY: 5 })
+    await advance(600 + FADE_MS)
+    expect(region()).toHaveLength(0)
+  })
+
+  test('Given the text layer is drawn again by a zoom, Then a highlight in its hold stays on the same clock, and a faded one is not brought back', async () => {
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const highlight = { citation: textual, nonce: 1 }
+    const element = (zoom: number) => <PdfViewer documentId="doc-1" zoom={zoom} navigation={null} highlight={highlight} {...handlers} />
+    const view = render(element(1))
+    await advance(50)
+    await advance(HOLD_MS - 1000)
+    view.rerender(element(2))
+    await advance(50)
+    expect(marked(2, 'strong')).toHaveLength(2)
+    await advance(1000 + FADE_MS)
+    expect(marked(2)).toEqual([])
+    view.rerender(element(3))
+    await advance(50)
+    expect(marked(2)).toEqual([])
+    expect(fadeState()).toBeNull()
   })
 })

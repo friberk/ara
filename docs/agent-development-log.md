@@ -959,3 +959,20 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
 - No rotated PDF in the app.
 - Cited boxes sprawl across several blocks for a 3,200-character chunk, so the outline shows the whole chunk, not the claim's sentence. Only the first box is centred.
 - A citation spanning pages is text-matched on its first page only.
+
+**Fade-out (user request after the first round: "it stuck forever").**
+- **Behaviour.** A highlight pulses, holds for `HOLD_MS` (4 s), fades for `FADE_MS` (1.5 s), then is removed. The constants are in `highlight-lifetime.ts`.
+  - Marks, context underlines and outlines fade through CSS transitions, driven by `data-citation-fade="out"` on the reader. The transition is declared only in the fade state, so highlights still appear instantly.
+  - Under reduced motion the attribute is never set, and the highlight is removed after the same hold.
+  - At the end of the fade the same clean-up as a new citation runs. The request is marked `expired`, so a text layer redrawn by a zoom cannot bring the highlight back.
+  - A re-click stops the old timers first.
+  - Hovering a mark pauses the countdown, with the time left kept. Leaving resumes it. Arriving during the fade restores full strength and gives about 1 s once the pointer leaves. Outlines let the pointer through, so hovering one is a rectangle test on `pointermove`.
+- **Red first (fake timers).** 11 new `PdfViewer` tests failed on the real assertions: `expected null to be 'out'` and `expected [ …(3) ] to deeply equal []`. The first run before the constants file existed failed with `Failed to resolve import "./highlight-lifetime"`. They went green after the implementation.
+- **CSS.** The fade-state rule test failed first with `expected '' to match /background-color:\s*transparent/`.
+- **Corrections.** The new transparent-background fade rule tripped the older "context has no background" test. I narrowed that regex to "no non-transparent background". The Page stub in the test now takes `width` as a dependency to simulate a zoom redraw.
+- **Test flakiness.** One full `npm run check` under machine load showed 4 failed files (4 tests). I did not capture which. A re-run of the whole suite passed, with 73 files and 564 tests.
+- **Live check** (Vite on port 5191, read-only):
+  - **Hold:** at 2.5 s there were 5 strong and 8 context marks, with the full tint `oklch(0.93 0.13 96 / 0.75)`.
+  - **Fade:** at about 4.8 s the fade state was on, with the tint at about 0.26 alpha.
+  - **After:** at about 7 s no marks remained, and the screenshot shows a clean page except for the PDF's own link boxes.
+  - **Hover:** with the pointer on a mark for 8.8 s the highlight stayed. After the pointer left, the fade began about 3 s later and the highlight was gone by 6.5 s.

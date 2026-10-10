@@ -28,7 +28,8 @@ test('Given a strong mark that just landed, Then it pulses; context lines never 
 // washed the page in stripes. They now get only a thin dotted underline (text-decoration, not a background), so the
 // excerpt's extent is visible without competing with the strong lines.
 test('Given context lines, Then they carry a thin dotted underline and no background tint', () => {
-  expect(css).not.toMatch(/\.textLayer \[data-citation-highlight\][^{]*\{[^}]*background/)
+  // (the fade-out rule sets every mark's background to transparent; that is not a tint)
+  expect(css).not.toMatch(/\.textLayer \[data-citation-highlight\][^{]*\{[^}]*background(?:-color)?:\s*(?!transparent)\S/)
   expect(css).toMatch(/\[data-citation-highlight='context'\]\s*\{[^}]*text-decoration:\s*underline dotted[^;]*var\(--pdf-evidence-edge\)/)
 })
 
@@ -59,4 +60,20 @@ test('Given a cited region from stored boxes, Then it is an outlined translucent
 test('Given a mark inside a text-layer span, Then its text stays transparent and only the evidence tint shows', () => {
   expect(css).toMatch(/\.textLayer mark\s*\{[^}]*color:\s*transparent/)
   expect(css).toMatch(/\.textLayer mark\s*\{[^}]*background(?:-color)?:\s*(?:none|transparent)/)
+})
+
+// ARA-089: the highlight does not stay forever. The viewer sets data-citation-fade="out" on the reader once the hold
+// ends; marks and outlines transition to transparent over --citation-fade-ms, then the viewer removes them.
+test('Given the fade state, Then marks and outlines transition to transparent over the fade duration', () => {
+  const fade = css.match(/\.pdf-viewer\[data-citation-fade='out'\] \.textLayer \[data-citation-highlight\]\s*\{[^}]*\}/)?.[0] ?? ''
+  expect(fade).toMatch(/background-color:\s*transparent/)
+  expect(fade).toMatch(/box-shadow:\s*inset 0 -2px 0 transparent/)
+  expect(fade).toMatch(/text-decoration-color:\s*transparent/)
+  expect(fade).toMatch(/transition:[^;]*var\(--citation-fade-ms\)/)
+  expect(css).toMatch(/\.pdf-viewer\[data-citation-fade='out'\] \[data-citation-region\]\s*\{[^}]*opacity:\s*0[^}]*transition:\s*opacity var\(--citation-fade-ms\)/)
+})
+
+test('Given the arrival state, Then no transition is declared there, so a highlight appears at once and only fades out', () => {
+  const arrival = css.match(/\.pdf-viewer \.textLayer \[data-citation-highlight='strong'\]\s*\{[^}]*\}/)?.[0] ?? ''
+  expect(arrival).not.toMatch(/transition/)
 })
