@@ -76,7 +76,7 @@ async def test_given_papers_with_overrides_when_upgrading_from_0007_then_column_
             )
             assert setting == "openai-3-small"
             assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0008_library_embeddings"
+                "0009_upload_match_tables"
             )
     finally:
         await engine.dispose()

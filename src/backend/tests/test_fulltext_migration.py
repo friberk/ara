@@ -65,7 +65,7 @@ async def test_fulltext_migration_preserves_local_model_installation(resources, 
             assert {"parser", "chunk_set"}.issubset(columns)
             assert "retrieval_indexes" in tables
             assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0008_library_embeddings"
+                "0009_upload_match_tables"
             )
             retained = (
                 await connection.execute(
