@@ -1954,6 +1954,13 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
   - The impeccable finish reviewer returned **fix** with seven items:
     - Fixed: reranking now says its model is "separate from the model that answers"; the context figure says "tokens"; the Input, Output and Context figures sit in fixed columns; the rebuild estimate rounds tokens to two figures; DESIGN.md was updated by the impeccable documenter.
     - Declined, with reasons: renaming the embedding models' catalog display names is a cross-cutting change, left for the lead; a "pick this when" sentence per model would be an unsourced claim beyond OpenAI's own line.
+- **Real browser.** On the dev server, in Chromium:
+  - From `/library`, the sidebar Settings opened `/library?settings=`.
+  - Esc returned to `/library` with focus on Settings.
+  - Choosing Models gave `?settings=models`, and the browser's Back closed the dialog with focus on Settings.
+  - ⌘K "Model settings" opened Models, and the close button closed it.
+  - `/settings` landed on `/?settings=`.
+  - There were no console errors.
 - **Verification.**
   - Backend: full suite 1227 passed in 279 s at `6734f0d`, Ruff check clean. The baseline at `a21b3f4` was 1221 passed and 1 failed, an ordering assertion in `test_metadata_backfill_integration.py` that passed in the final run.
   - Frontend: `npm run check` gave 732 passed in 91 files before the merge and 763 in 94 after it. `npm run build` passed with the existing chunk-size warning; the dialog is its own 36 kB lazy chunk.
