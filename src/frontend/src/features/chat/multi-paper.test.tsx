@@ -1,5 +1,5 @@
-// Chats over several library papers (ARA-088): paper chips, the @ picker, routing and paper-named citations.
-import { screen, waitFor, within } from '@testing-library/react'
+// Chats over several library papers (ARA-088): the paper row of pills (ARA-110), the @ picker, routing and paper-named citations.
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import type { Citation, Paper } from '@/api/types'
 import { deletePill, isEditable, textIn } from '@/test/editor'
 import { json, mockApi } from '@/test/fetch-routes'
@@ -13,32 +13,38 @@ const summary = (source: Paper, content: string) => ({ id: `s-${source.id}`, pap
 
 function chips() { return screen.findByRole('list', { name: 'Papers in this conversation' }) }
 
-test('Given a chat over two papers, Then both show as chips, each summary opens from its chip, and no summary card is stacked in the thread', async () => {
+async function removePill(user: ReturnType<typeof mount>['user'], list: HTMLElement, title: string) {
+  await user.hover(within(list).getByRole('button', { name: title }))
+  // user.click would first move the pointer onto the button, which user-event reports to React as leaving the pill.
+  fireEvent.click(within(list).getByRole('button', { name: `Remove ${title}` }))
+}
+
+test('Given a chat over two papers, Then each shows as a composer pill, a click opens its reader tab, and no summary dialog or card appears (ARA-110)', async () => {
   mockApi({
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
     'GET /chats/c1/messages': { items: [] },
+    'GET /papers/p1': paper,
     'GET /papers/p2': paper2,
-    'GET /papers/p2/summaries': { items: [summary(paper2, 'Dense retrieval beats BM25 on recall.')] },
   })
-  const { user } = mount('/papers/p1/chats/c1')
+  const { user, workspace } = mount('/papers/p1/chats/c1')
   const list = await chips()
   expect(within(list).getAllByRole('listitem')).toHaveLength(2)
   expect(within(list).getByRole('button', { name: 'Evidence based research' })).toBeVisible()
-  expect(screen.queryByRole('article', { name: 'Paper summary' })).not.toBeInTheDocument()
+  await user.hover(within(list).getByRole('button', { name: 'Dense passage retrieval' }))
+  await waitFor(() => expect(screen.getAllByText(/Karpukhin & Oguz/).some((node) => !node.closest('[hidden]'))).toBe(true))
+  expect(screen.queryByText('Show summary')).not.toBeInTheDocument()
   await user.click(within(list).getByRole('button', { name: 'Dense passage retrieval' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Dense passage retrieval' })
-  expect(await within(dialog).findByText('Dense retrieval beats BM25 on recall.')).toBeVisible()
-  expect(dialog).toHaveTextContent('Karpukhin & Oguz (2020)')
+  expect(workspace.showPaper).toHaveBeenLastCalledWith('p2')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.queryByRole('article', { name: 'Paper summary' })).not.toBeInTheDocument()
 })
 
-test('Given a chat over one paper, Then its chip cannot be removed and its summary stays the first message', async () => {
+test('Given a chat over one paper, Then there is no paper row and its summary stays the first message', async () => {
   mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [] }, 'GET /papers/p1/summaries': { items: [summary(paper, 'One paper summary.')] } })
   mount('/papers/p1/chats/c1')
-  const list = await chips()
-  expect(within(list).getAllByRole('listitem')).toHaveLength(1)
-  expect(within(list).queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument()
   expect(await screen.findByRole('article', { name: 'Paper summary' })).toBeVisible()
+  expect(screen.queryByRole('list', { name: 'Papers in this conversation' })).not.toBeInTheDocument()
 })
 
 test('Given the paper in the URL is removed from the chat, Then the chat reroutes to its new first paper', async () => {
@@ -46,13 +52,17 @@ test('Given the paper in the URL is removed from the chat, Then the chat reroute
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
     'GET /chats/c1/messages': { items: [] },
+    'GET /papers/p1': paper,
+    'GET /papers/p2': paper2,
     'DELETE /chats/c1/papers/p1': chatRow('c1', { paper_id: 'p2', papers: [included(paper2)] }),
   })
   const { user } = mount('/papers/p1/chats/c1', { others: [paper2] })
   const list = await chips()
-  await user.click(within(list).getByRole('button', { name: 'Remove Evidence based research from this conversation' }))
+  await removePill(user, list, 'Evidence based research')
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p2/chats/c1'))
   expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(1)
+  // The last paper has no pill to remove: the row is gone.
+  expect(screen.queryByRole('list', { name: 'Papers in this conversation' })).not.toBeInTheDocument()
 })
 
 test('Given a multi-paper chat opened from its second paper, Then its URL becomes its first paper', async () => {
@@ -129,16 +139,19 @@ test('Given an answer citing two papers and a removed one, Then each chip names 
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
     'GET /chats/c1/messages': { items: [userMessage('u1', 'Compare recall'), assistantMessage('m1', content, { citations: [first, second, removed] })] },
+    'GET /papers/p1': paper,
+    'GET /papers/p2': paper2,
     'GET /papers/p3': paper3,
   })
   const { user, workspace } = mount('/papers/p1/chats/c1')
   const reply = await screen.findByRole('article', { name: 'Assistant message' })
   const sources = await within(reply).findByRole('group', { name: 'Sources' })
-  expect(within(sources).getByRole('button', { name: 'Source, Author 2024, page 2' })).toHaveTextContent('Author 2024 · p. 2')
-  expect(within(sources).getByRole('button', { name: 'Source, Karpukhin 2020, page 4' })).toHaveTextContent('Karpukhin 2020 · p. 4')
-  expect(await within(sources).findByRole('button', { name: 'Source, Khattab 2020, page 1' })).toHaveTextContent('Khattab 2020 · p. 1')
+  expect(await within(sources).findByRole('button', { name: 'Source, Author, 2024, page 2' })).toHaveTextContent(/^Author, 2024, p\. 2$/)
+  expect(await within(sources).findByRole('button', { name: 'Source, Karpukhin & Oguz, 2020, page 4' })).toHaveTextContent(/^Karpukhin & Oguz, 2020, p\. 4$/)
+  expect(await within(sources).findByRole('button', { name: 'Source, Khattab, 2020, page 1' })).toHaveTextContent(/^Khattab, 2020, p\. 1$/)
+  expect(sources.textContent).not.toContain('·')
   expect(within(reply).queryByRole('alert')).not.toBeInTheDocument()
-  await user.click(within(sources).getByRole('button', { name: 'Source, Karpukhin 2020, page 4' }))
+  await user.click(within(sources).getByRole('button', { name: 'Source, Karpukhin & Oguz, 2020, page 4' }))
   expect(workspace.showSource).toHaveBeenLastCalledWith(second, 'Dense reaches 0.79')
 })
 
@@ -147,12 +160,14 @@ test('Given a chat over two papers and a streamed answer whose citations lack pa
   mockApi({
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
+    'GET /papers/p1': paper,
+    'GET /papers/p2': paper2,
     'GET /chats/c1/messages': { items: [userMessage('u1', 'Dense?'), assistantMessage('m1', `Dense reaches 0.79 [source:${second.chunk_id}].`, { citations: [second] })] },
   })
   const { user, workspace } = mount('/papers/p1/chats/c1')
   const reply = await screen.findByRole('article', { name: 'Assistant message' })
   const sources = await within(reply).findByRole('group', { name: 'Sources' })
-  await user.click(within(sources).getByRole('button', { name: 'Source, Karpukhin 2020, page 4' }))
+  await user.click(await within(sources).findByRole('button', { name: 'Source, Karpukhin & Oguz, 2020, page 4' }))
   expect(workspace.showSource).toHaveBeenLastCalledWith({ ...second, paper_id: 'p2' }, 'Dense reaches 0.79')
 })
 
@@ -162,6 +177,8 @@ test('Given a new conversation, When a second paper is mentioned with @, Then th
     ...settings,
     'GET /chats': () => json({ items: created ? [chatRow('c9', both)] : [] }),
     'GET /papers': { items: [paper, paper2] },
+    'GET /papers/p1': paper,
+    'GET /papers/p2': paper2,
     'POST /chats': () => { created = true; return json(chatRow('c9', both), 201) },
     'POST /chats/c9/messages/stream': () => new Promise<Response>(() => {}),
   })
@@ -215,21 +232,26 @@ test('Given a local model selected in a chat over two papers, Then the composer 
   expect(screen.getByRole('button', { name: 'Ask question' })).toBeDisabled()
 })
 
-test('Given a chat over fifteen papers, Then three chips show and the rest collapse into a list that can remove any paper', async () => {
+test('Given a chat over fifteen papers, Then three pills show and a +12 pill opens the rest as the same pills, any of which can be removed', async () => {
   const many = Array.from({ length: 15 }, (_, n) => included({ ...paper2, id: `m${n}`, title: `Study ${n}`, active_document_id: `md${n}` }))
   const { calls } = mockApi({
     ...settings,
     'GET /chats': { items: [chatRow('c1', { papers: [included(paper), ...many.slice(1)] })] },
     'GET /chats/c1/messages': { items: [] },
+    'GET /papers/p1': paper,
+    ...Object.fromEntries(many.map((item) => [`GET /papers/${item.paper_id}`, { ...paper2, id: item.paper_id, title: item.title }])),
     'DELETE /chats/c1/papers/m9': chatRow('c1', { papers: [included(paper), ...many.slice(1).filter((item) => item.paper_id !== 'm9')] }),
   })
-  const { user } = mount('/papers/p1/chats/c1')
+  const { user, workspace } = mount('/papers/p1/chats/c1')
   const list = await chips()
   expect(within(list).getAllByRole('listitem')).toHaveLength(4)
-  await user.click(within(list).getByRole('button', { name: '+12 more' }))
-  const all = await screen.findByRole('list', { name: 'All papers in this conversation' })
-  expect(within(all).getAllByRole('listitem')).toHaveLength(15)
-  await user.click(within(all).getByRole('button', { name: 'Remove Study 9 from this conversation' }))
+  await user.click(within(list).getByRole('button', { name: '+12 more papers' }))
+  const rest = await screen.findByRole('list', { name: 'More papers in this conversation' })
+  expect(within(rest).getAllByRole('listitem')).toHaveLength(12)
+  expect(within(rest).queryByRole('button', { name: 'Study 1' })).toBeNull()
+  await user.click(within(rest).getByRole('button', { name: 'Study 5' }))
+  expect(workspace.showPaper).toHaveBeenLastCalledWith('m5')
+  await removePill(user, rest, 'Study 9')
   await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/m9')).toHaveLength(1))
 })
 
@@ -240,6 +262,8 @@ test('Given a paper already in the chat, When its pill is deleted, Then it stays
     'GET /chats': () => json({ items: [chatRow('c1', { papers })] }),
     'GET /chats/c1/messages': { items: [] },
     'GET /papers': { items: [paper, paper2] },
+    'GET /papers/p1': paper,
+    'GET /papers/p2': paper2,
     'DELETE /chats/c1/papers/p2': () => { papers = papers.filter((item) => item.paper_id !== 'p2'); return json(chatRow('c1', { papers })) },
   })
   const { user } = mount('/papers/p1/chats/c1')
@@ -261,7 +285,7 @@ test('Given a paper already in the chat, When its pill is deleted, Then it stays
   await user.type(input, '@')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   await within(input).findByRole('group', { name: 'Dense passage retrieval' })
-  await user.click(within(await chips()).getByRole('button', { name: 'Remove Dense passage retrieval from this conversation' }))
+  await removePill(user, await chips(), 'Dense passage retrieval')
   await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/p2')).toHaveLength(1))
   await waitFor(() => expect(within(input).queryByRole('group')).not.toBeInTheDocument())
 })

@@ -1,4 +1,4 @@
-import { authorShort, citationLine, mentionLabel, mentionName, shortCitation, shortPaperName } from './paper-names'
+import { apaAuthorDate, authorShort, citationLine, mentionLabel, mentionName, shortCitation, shortPaperName } from './paper-names'
 
 const paper = (authors: string[], year: number | null = null, venue: string | null = null) => ({ title: 'Attention Is All You Need', authors, year, venue })
 
@@ -38,4 +38,23 @@ test('Given what a paper has, Then its short citation is plain text as PaperCita
   expect(shortCitation(paper([], 2017, 'NeurIPS'))).toBe('2017, NeurIPS')
   expect(shortCitation(paper([], null, 'NeurIPS'))).toBe('NeurIPS')
   expect(shortCitation(paper([]))).toBe('')
+})
+
+describe('apaAuthorDate', () => {
+  test('Given one, two and three or more authors, Then the in-text author-date part follows APA 7', () => {
+    expect(apaAuthorDate({ title: 'T', authors: ['Song Han'], year: 2018 })).toBe('Han, 2018')
+    expect(apaAuthorDate({ title: 'T', authors: ['Song Han', 'Jin Shin'], year: 2018 })).toBe('Han & Shin, 2018')
+    expect(apaAuthorDate({ title: 'T', authors: ['Song Han', 'Jin Shin', 'Ana Lee'], year: 2018 })).toBe('Han et al., 2018')
+  })
+
+  test('Given no year, Then it reads n.d.', () => {
+    expect(apaAuthorDate({ title: 'T', authors: ['Song Han'], year: null })).toBe('Han, n.d.')
+  })
+
+  test('Given no authors, Then a short title stands in, with the year when there is one', () => {
+    expect(apaAuthorDate({ title: 'Attention Is All You Need', authors: [], year: 2017 })).toBe('Attention Is All You Need, 2017')
+    expect(apaAuthorDate({ title: 'Attention Is All You Need', authors: [], year: null })).toBe('Attention Is All You Need')
+    expect(apaAuthorDate({ title: 'A'.repeat(60), authors: [], year: null })).toBe(`${'A'.repeat(39)}…`)
+    expect(apaAuthorDate({ title: null, authors: [], year: null })).toBe('Untitled paper')
+  })
 })

@@ -11,8 +11,8 @@ export const pageSpan = (citation: Located) => (spansPages(citation) ? `${citati
 /** The visible chip label and copied-text reference: "p. 6" or "p. 5–6". */
 export const pageLabel = (citation: Located) => `p. ${pageSpan(citation)}`
 
-/** The visible chip label, naming the paper in a chat over several papers: "Smith 2023 · p. 4". */
-export const sourceLabel = (citation: Located, paper?: string) => (paper ? `${paper} · ${pageLabel(citation)}` : pageLabel(citation))
+/** The visible chip label, naming the paper in a chat over several papers: "Smith et al., 2023, p. 4". */
+export const sourceLabel = (citation: Located, paper?: string) => (paper ? `${paper}, ${pageLabel(citation)}` : pageLabel(citation))
 
 /**
  * The chip's accessible name. The innermost heading tells apart two passages cited from one page; the full heading

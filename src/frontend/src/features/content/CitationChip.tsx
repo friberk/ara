@@ -75,10 +75,8 @@ export function CitationChip({ citation, claim, paper, onSelect, className }: Ci
       <HoverCard openDelay={200} closeDelay={100} open={preview} onOpenChange={(open) => setPreview(open && performance.now() >= pausedUntil.current)}>
         {chip}
         <HoverCardContent side="top" collisionPadding={12} className="grid w-80 max-w-[calc(100vw-1.5rem)] gap-1.5 p-3">
-          <p className="flex gap-1.5 text-xs font-medium text-muted-foreground tabular">
-            {paper && <><span>{paper}</span><span aria-hidden="true">·</span></>}
-            <span>{spansPages(citation) ? 'Pages' : 'Page'} {pageSpan(citation)}</span>
-            {citation.kind === 'table' && <><span aria-hidden="true">·</span><span>Table</span></>}
+          <p className="text-xs font-medium text-muted-foreground tabular">
+            {[paper, `${spansPages(citation) ? 'Pages' : 'Page'} ${pageSpan(citation)}`, citation.kind === 'table' ? 'Table' : null].filter(Boolean).join(', ')}
           </p>
           {citation.section && <p className="line-clamp-2 text-xs font-medium text-popover-foreground">{citation.section}</p>}
           <SourcePassage citation={citation} source={source} preview />
