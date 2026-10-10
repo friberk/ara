@@ -22,15 +22,15 @@ The interface is a chat-centred workspace built with shadcn components, using th
   - If both catalogs are rate limited, reading is not blocked. The lookup retries in the background, honouring Retry-After, at most three times. Details can then start it again.
 - **Get or find a PDF.** Saved papers offer retrieval in the PDF and Details views. The app checks both providers, including exact DOI alternatives, and tries reported open copies first. Retrieval continues in the background, then hands the original to PDF processing. Reported open access does not guarantee a working download.
 - **Paper workspace.** The PDF reader sits beside the conversation. The latest summary is the first card. Ask your own questions or use the suggested ones; answers stream in with inline page citations. Clicking a citation scrolls the PDF to that page and highlights the passage. On phones, the workspace switches between Chat, PDF and Details tabs.
-- **Context and cost ring.** In an open chat, a hollow ring at the bottom left of the question box shows how much of the selected model's input budget the latest answer used. Hover, focus or tap it for used and total tokens with the percentage, the model's full window when it is larger, and what the chat has cost so far in USD, split into answers, follow-up planning, conversation summaries, query embeddings and reranking. Costs come from the model catalogs at the tokens each call recorded; local models cost $0.00, the shared paper summary is not part of a chat's cost, and answers from before this was recorded are noted as untracked rather than estimated. The total follows the model selected in the composer.
-- **Retrieval.** Each PDF is split into section-aware passages. Questions and summaries use the passages that best match the question, found by keyword and embedding search, reranked, and packed to fit the model's context. Settings chooses the default embedding model (OpenAI `text-embedding-3-large`, or Qwen3 Embedding 4B or 8B on the local runtime) and the reranker (OpenAI by default, the local Qwen3 reranker, or off). The paper's Details tab has an advanced **Search index** panel that changes one paper's embedding model or rebuilds its index. Each answer can show how its passages were found.
-- **Long conversations.** Recent turns are sent verbatim; older turns fold into a running summary, and relevant earlier turns are recalled. Follow-up questions are rewritten into standalone searches. The composer notes when earlier messages are summarized. Hosted chats summarize and plan with the model chosen in Settings (GPT-5.6 Luna by default); local chats use their own model and summarize only once the chat has been idle for a minute.
-- **Models.** A compact switcher chooses the model and reasoning effort for the next request. Settings stores defaults and manages local model downloads, pause/resume, verification and deletion. Each answer records the model that produced it.
+- **Context and cost ring.** In an open chat, a hollow ring at the bottom left of the question box shows how much of the selected model's input budget the latest answer used. Hover, focus or tap it for used and total tokens with the percentage, the model's full window when it is larger, and what the chat has cost so far in USD, split into answers, follow-up planning, conversation summaries, query embeddings and reranking. Costs come from the model catalogs at the tokens each call recorded; the shared paper summary is not part of a chat's cost, and answers from before this was recorded are noted as untracked rather than estimated. The total follows the model selected in the composer.
+- **Retrieval.** Each PDF is split into section-aware passages. Questions and summaries use the passages that best match the question, found by keyword and embedding search, reranked, and packed to fit the model's context. Settings chooses the default embedding model (OpenAI `text-embedding-3-large`) and the reranker (OpenAI by default, or off). The paper's Details tab has an advanced **Search index** panel that changes one paper's embedding model or rebuilds its index. Each answer can show how its passages were found.
+- **Long conversations.** Recent turns are sent verbatim; older turns fold into a running summary, and relevant earlier turns are recalled. Follow-up questions are rewritten into standalone searches. The composer notes when earlier messages are summarized. Chats summarize and plan with the model chosen in Settings (GPT-5.6 Luna by default).
+- **Models.** A compact switcher chooses the model and reasoning effort for the next request. Settings stores defaults. Each answer records the model that produced it. Open (local) models are experimental and off by default; see [Experimental: open models](#experimental-open-models-frozen).
 - **History.** The sidebar lists recent papers, searches and conversations. Conversations are titled from their first question and can be renamed or deleted. Press ⌘K (Ctrl+K) to find papers and chats.
 
 ## Start locally
 
-Requirements: Docker with Compose and Python3 for the environment bootstrap. Compose includes the core services, a separate model worker and a CPU Ollama runtime. The runtime starts without weights; generating locally needs additional disk and memory. The verified local-model host is Linux ARM64 in OrbStack on an M3 Pro. Native x86_64 CPU and NVIDIA/AMD configurations are provided; their hardware validation remains separate.
+Requirements: Docker with Compose and Python3 for the environment bootstrap. Compose runs the core services; the experimental open-model runtime and its worker start only when enabled.
 
 ```bash
 python3 scripts/bootstrap.py
@@ -44,14 +44,14 @@ docker compose up --build
 
 Open <http://localhost:5173>. API documentation is at <http://localhost:8000/docs>. Change `FRONTEND_PORT`, `API_PORT` and `CORS_ORIGINS` together when using different local ports. Browser calls use the Vite `/api` proxy; credentials remain on the backend. PostgreSQL, Redis and MinIO have no host ports by default.
 
-Default startup initializes the private PDF bucket and runs Alembic before starting the API/workers. It works without LLM credentials. Ollama starts without downloading or loading weights, and core API readiness does not depend on it. Analysis reports unavailable model access until a hosted key is configured or local weights are downloaded and verified.
+Default startup initializes the private PDF bucket and runs Alembic before starting the API/workers. It works without LLM credentials. Analysis reports unavailable model access until a hosted key is configured. Core API readiness never depends on the open-model runtime.
 
-Source edits use Vite HMR, Uvicorn reload and a debounced worker subprocess wrapper. The wrapper stops the previous worker process tree before starting its replacement. Rebuild images after dependency or Dockerfile changes. PostgreSQL, Redis, MinIO and Ollama named volumes survive normal shutdown:
+Source edits use Vite HMR, Uvicorn reload and a debounced worker subprocess wrapper. The wrapper stops the previous worker process tree before starting its replacement. Rebuild images after dependency or Dockerfile changes. PostgreSQL, Redis, MinIO and model-weight named volumes survive normal shutdown:
 
 ```bash
 docker compose down
 docker compose up
-docker compose logs --tail 100 api worker model-worker ollama
+docker compose logs --tail 100 api worker
 docker compose run --rm migrate
 ```
 
@@ -71,7 +71,7 @@ python3 -m unittest discover -s tests/infrastructure -v
 uv run --with pymupdf==1.28.2 python -m unittest discover -s tests/fixtures -v
 ```
 
-The backend helper forces a separate `ara-test` Compose project/database/buckets; `--project-name ara-<name>-test` runs a second isolated copy beside it. An autouse test guard refuses any request to a real external host, so a test that silently fell back from an unreachable provider still fails. It runs Ruff and pytest against real PostgreSQL, Redis and MinIO. HTTP fixtures replace academic and LLM providers. Test Compose uses an empty offline Ollama fixture and disables the model worker; browser Compose enables the model worker against a deterministic model provider. These commands do not build the inference runtime or download weights. Fixtures demonstrate deterministic behavior; live provider/model checks are separate.
+The backend helper forces a separate `ara-test` Compose project/database/buckets; `--project-name ara-<name>-test` runs a second isolated copy beside it. An autouse test guard refuses any request to a real external host, so a test that silently fell back from an unreachable provider still fails. It runs Ruff and pytest against real PostgreSQL, Redis and MinIO. HTTP fixtures replace academic and LLM providers. These commands do not build the inference runtime or download weights. Fixtures demonstrate deterministic behavior; live provider/model checks are separate.
 
 Browser test environment:
 
@@ -83,7 +83,7 @@ npx playwright install chromium
 npx playwright test
 ```
 
-The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. Model browser tests cover background progress, navigation, pause/reload/resume and default preservation after deletion. PDF fixtures cover both providers, denial followed by success, HTML fallback and 390px keyboard upload. Upload journeys cover a home upload into the workspace, several library uploads with a repeat, and the metadata-source setting. Compose mounts the generated synthetic PDF from `/tmp/ara-fixtures/research.pdf`; set `E2E_PDF_PATH` for a different absolute path in both Compose and Playwright. The test-only resource factory relays approved synthetic PDF cases to the fixture server without weakening production public-host checks. Fixtures prove deterministic behavior; university subscription access needs a separate actual-network check. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
+The research journey runs first because it saves the fixture paper through the UI; start from a fresh `ara-e2e` database (`docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml down --volumes` removes only test data). The fixture UI uses port5180 and API8001. Wait for the frontend/API health checks before browser tests; inspect them with the same Compose files and `ps`. PDF fixtures cover both providers, denial followed by success, HTML fallback and 390px keyboard upload. Upload journeys cover a home upload into the workspace, several library uploads with a repeat, and the metadata-source setting. Compose mounts the generated synthetic PDF from `/tmp/ara-fixtures/research.pdf`; set `E2E_PDF_PATH` for a different absolute path in both Compose and Playwright. The test-only resource factory relays approved synthetic PDF cases to the fixture server without weakening production public-host checks. Fixtures prove deterministic behavior; university subscription access needs a separate actual-network check. The browser commands require Node24/npm and uv on the host. Development and test data are isolated.
 
 Test data reset is explicit and affects only `ara-test`:
 
@@ -95,15 +95,48 @@ For development data reset, inspect the project and back up original PDFs/databa
 
 ## Models and source grounding
 
-Hosted IDs: `gpt-5.6-luna` (default), `gpt-5.6-terra`, `gpt-5.6-sol`. Supported reasoning controls come from backend capabilities. Missing keys, provider outages and unavailable models are reported. Metadata-only papers require a processed PDF before analysis.
+Hosted IDs: `gpt-5.6-luna` (default), `gpt-5.6-terra`, `gpt-5.6-sol`. Supported reasoning controls come from backend capabilities; the GPT-5.6 catalog records `none`, `low`, `medium`, `high`, `xhigh` and `max` separately for Sol, Terra and Luna. Missing keys, provider outages and unavailable models are reported. Metadata-only papers require a processed PDF before analysis.
 
-Retrieval stays within the selected document and preserves page references. PyMuPDF4LLM's layout model turns each PDF into Markdown in the isolated child process, and LlamaIndex parsers split it into passages of at most 512 tokens that keep their section path, pages and layout boxes. Search fuses PostgreSQL full-text ranking with pgvector embeddings (exact scans within the paper) by reciprocal rank fusion; the selected reranker then orders the leading candidates (40 for OpenAI, 12 for the local reranker). When an embedding index or the reranker is unavailable, answers fall back to keyword search or fused order and report why. The model sees short passage handles that the server maps back to stored passages; a handle outside the supplied passages fails the answer with `UNGROUNDED_OUTPUT`, and the model can answer that the passages do not contain the evidence. Budgets count tokens with tiktoken against each model's context window: hosted requests use at most `HOSTED_WORKING_CONTEXT_TOKENS` (64,000), and local prompts at most `LOCAL_INPUT_BUDGET_TOKENS` (3,072), with o200k counts scaled by `LOCAL_TOKEN_FACTOR` (1.05). Older turns are summarized once they pass `MEMORY_COMPACTION_RATIO` (0.6) of the recent-turns budget; local conversations are summarized by their own local model and never sent to a hosted model for summarization.
+Retrieval stays within the selected document and preserves page references. PyMuPDF4LLM's layout model turns each PDF into Markdown in the isolated child process, and LlamaIndex parsers split it into passages of at most 512 tokens that keep their section path, pages and layout boxes. Search fuses PostgreSQL full-text ranking with pgvector embeddings (exact scans within the paper) by reciprocal rank fusion; the selected reranker then orders the leading 40 candidates. When an embedding index or the reranker is unavailable, answers fall back to keyword search or fused order and report why. The model sees short passage handles that the server maps back to stored passages; a handle outside the supplied passages fails the answer with `UNGROUNDED_OUTPUT`, and the model can answer that the passages do not contain the evidence. Budgets count tokens with tiktoken against each model's context window: hosted requests use at most `HOSTED_WORKING_CONTEXT_TOKENS` (64,000). Older turns are summarized once they pass `MEMORY_COMPACTION_RATIO` (0.6) of the recent-turns budget.
 
-After an upgrade, the API re-ingests documents from an older chunk set at startup, including every document from before the retrieval overhaul; questions about a paper say it is being prepared until its re-ingest finishes. Missing search indexes are queued at startup, when the default embedding model changes and when a local embedding model finishes verifying, so adding an OpenAI key (with a restart) or installing Qwen3 also indexes existing papers. The same re-ingest can be queued by hand:
+After an upgrade, the API re-ingests documents from an older chunk set at startup, including every document from before the retrieval overhaul; questions about a paper say it is being prepared until its re-ingest finishes. Missing search indexes are queued at startup and when the default embedding model changes, so adding an OpenAI key (with a restart) also indexes existing papers. The same re-ingest can be queued by hand:
 
 ```bash
 docker compose exec api python -m app.services.reindex
 ``` Conversation history and summaries persist locally. Each assistant response records its model and reasoning effort. Model text is generated; citation controls show source passages and link to the original PDF page. Citation validation checks source identity; readers should verify factual support. Prompt instructions embedded in PDFs are treated as untrusted source text.
+
+## Experimental: open models (frozen)
+
+Open (local) models are the Ollama runtime with its IFM K2 Horizon and Qwen chat models, the Qwen3 embedding models and the Qwen3 reranker. They are experimental, and their development is frozen as of 2026-10-09 (ARA-090). Their code and tests stay, and the tests run with the flag on, but nothing new is built on them unless the freeze is lifted.
+
+They are off by default. The app then offers only hosted OpenAI chat, embedding and reranking; Settings has no Local models section; Activity shows no model jobs; and `docker compose up --build` starts neither `ollama` nor `model-worker`. To turn them on, add both lines to `.env` and restart:
+
+```bash
+EXPERIMENTAL_OPEN_MODELS=true
+COMPOSE_PROFILES=open-models
+```
+
+`EXPERIMENTAL_OPEN_MODELS` switches the API and workers; the `open-models` Compose profile (or `docker compose --profile open-models up --build`) starts the runtime and its worker. Downloaded weights stay in the `ollama-models` volume while the flag is off; `docker compose down` without `--volumes` keeps them. After upgrading a stack that ran open models before, `docker compose stop ollama model-worker` stops their old containers.
+
+With the flag off, stored open-model state stays readable and never switches to a paid model:
+
+- Answers and summaries from local models keep their stored model name.
+- A saved local default model shows as unavailable; the composer and summaries ask for a hosted model instead of choosing one.
+- A paper on a local search model is searched by keywords. Details says why, and **Change model** picks a hosted model.
+- A saved local reranker means no reranking, and Settings shows it as unavailable.
+- Unsettled model downloads, deletions and local summaries wait untouched until the flag is on again.
+
+### Tests
+
+The backend and frontend suites run with open models off, as shipped. Open-model tests turn them on: backend tests through the `open_models` pytest marker, frontend tests through a mocked `/features` reply. Test Compose pins `EXPERIMENTAL_OPEN_MODELS=false`, uses an empty offline Ollama fixture and disables the model worker; `python3 scripts/test-stack.py config` checks that Ollama and the model worker run only under the `open-models` profile. Browser Compose turns open models on and runs the model worker against a deterministic model provider; its model tests cover background progress, navigation, pause/reload/resume and default preservation after deletion.
+
+Everything below applies only while open models are on.
+
+### Runtime and budgets
+
+The runtime starts without weights; generating locally needs additional disk and memory. The verified local-model host is Linux ARM64 in OrbStack on an M3 Pro. Native x86_64 CPU and NVIDIA/AMD configurations are provided; their hardware validation remains separate. Ollama starts without downloading or loading weights, and core API readiness does not depend on it. Logs: `docker compose logs --tail 100 model-worker ollama`.
+
+Local prompts use at most `LOCAL_INPUT_BUDGET_TOKENS` (3,072), with o200k counts scaled by `LOCAL_TOKEN_FACTOR` (1.05). Local conversations are summarized by their own local model, only once the chat has been idle for a minute, and are never sent to a hosted model for summarization. Local models cost $0.00 in the context and cost ring. Settings can choose Qwen3 Embedding 4B or 8B as the search model and the local Qwen3 reranker, which orders the leading 12 candidates; a local embedding model that finishes verifying also queues the missing indexes it serves.
 
 ### Managed local models
 
@@ -133,15 +166,15 @@ Automatic preparation was verified with retained 7B weights through application 
 Native Linux GPU overrides:
 
 ```bash
-docker compose -f compose.yaml -f compose.nvidia.yaml up --build
-docker compose -f compose.yaml -f compose.amd.yaml up --build
+EXPERIMENTAL_OPEN_MODELS=true docker compose --profile open-models -f compose.yaml -f compose.nvidia.yaml up --build
+EXPERIMENTAL_OPEN_MODELS=true docker compose --profile open-models -f compose.yaml -f compose.amd.yaml up --build
 ```
 
 NVIDIA requires NVIDIA Container Toolkit. AMD requires supported ROCm hardware/drivers and the host's `OLLAMA_VIDEO_GID`/`OLLAMA_RENDER_GID`; set `OLLAMA_AMDGPU_TARGETS` for the device. Both overrides build the patched runtime. GPU acceleration and native amd64 execution are provided configurations, with no hardware test claim.
 
 The managed image pins Ollama 0.40.1 and llama.cpp b11454. Stock 0.40.1 rejected the real 7B artifact with `unknown model architecture: 'k2-horizon'`. The custom build uses upstream architecture support, reviewed Ollama hook/CLEF adaptations and operation-scoped pull controls. See [runtime provenance, licenses and measured evidence](docker/ollama/README.md). An external `OLLAMA_BASE_URL` must provide the reviewed control protocol for acknowledged pause; stock endpoints cannot promise it.
 
-Reasoning controls belong to each model. The GPT-5.6 catalog records `none`, `low`, `medium`, `high`, `xhigh` and `max` separately for Sol, Terra and Luna. IFM offers **None**, **Low**, **Medium** and **High**; None disables thinking. Its native preset and Boolean enabled control both resolve to High, so old `default`/`on` preferences display as High and future UI requests use that explicit level. Displaying the preference does not save a change. Models that only support Boolean reasoning use a **Reasoning** toggle. Past responses retain their original settings: older `default` and `on` records read **Runtime preset** and **Reasoning enabled**. Automatic preparation refreshes stale controls without downloading weights or changing your saved default, conversations or summaries. Missing models are never downloaded automatically; manually paused or failed operations require their explicit resume or retry action.
+Reasoning controls belong to each model. IFM offers **None**, **Low**, **Medium** and **High**; None disables thinking. Its native preset and Boolean enabled control both resolve to High, so old `default`/`on` preferences display as High and future UI requests use that explicit level. Displaying the preference does not save a change. Models that only support Boolean reasoning use a **Reasoning** toggle. Past responses retain their original settings: older `default` and `on` records read **Runtime preset** and **Reasoning enabled**. Automatic preparation refreshes stale controls without downloading weights or changing your saved default, conversations or summaries. Missing models are never downloaded automatically; manually paused or failed operations require their explicit resume or retry action.
 
 Opt-in live engine validation downloads only 7B into a labeled isolated volume and preserves that volume:
 
