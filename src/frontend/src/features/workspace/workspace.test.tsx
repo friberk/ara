@@ -90,7 +90,7 @@ test('Given a ready paper, When the workspace opens, Then the reader shows its P
   mockApi({ 'GET /papers/p1': paper })
   renderApp('/papers/p1')
   expect(await screen.findByRole('heading', { level: 1, name: paper.title })).toBeVisible()
-  expect(screen.getByText('Ready to read')).toBeVisible()
+  expect(screen.queryByRole('img', { name: /PDF/ })).not.toBeInTheDocument()
   expect(screen.getByRole('region', { name: 'Conversation' })).toBeVisible()
   const reader = screen.getByRole('region', { name: 'PDF reader' })
   expect(await within(reader).findByText('Showing doc-1')).toBeVisible()
@@ -125,7 +125,7 @@ test('Given a metadata-only paper, When its PDF is uploaded in the reader, Then 
   const { user } = renderApp('/papers/p1')
   const reader = await screen.findByRole('region', { name: 'PDF reader' })
   await user.upload(within(reader).getByLabelText('PDF file'), new File(['%PDF-1.7'], 'paper.pdf', { type: 'application/pdf' }))
-  expect(await screen.findByText('Preparing PDF')).toBeVisible()
+  expect(await screen.findByRole('img', { name: 'Preparing PDF…' })).toBeVisible()
   const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
   expect(within(steps).getByText('Uploaded')).toBeVisible()
   await waitFor(() => expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step'))
@@ -156,11 +156,11 @@ test('Given a ready paper whose catalog lookup is running, When it finishes, The
   expect(await screen.findByRole('heading', { level: 1, name: 'Printed title from the PDF' })).toBeVisible()
   // The PDF is readable meanwhile, so the status says so and the lookup is a quiet note beside it.
   expect(await screen.findByText('Finding paper details')).toBeVisible()
-  expect(screen.getByText('Ready to read')).toBeVisible()
+  expect(screen.queryByRole('img', { name: /PDF/ })).not.toBeInTheDocument()
   stored = { ...stored, title: 'Catalog title from OpenAlex', metadata_provenance: { title: { source: 'openalex' } } }
   lookup = { ...lookup, state: 'completed', stage: 'completed', progress: 100 }
   expect(await screen.findByRole('heading', { level: 1, name: 'Catalog title from OpenAlex' }, { timeout: 5000 })).toBeVisible()
-  expect(screen.getByText('Ready to read')).toBeVisible()
+  expect(screen.queryByRole('img', { name: /PDF/ })).not.toBeInTheDocument()
 })
 
 test('Given provider metadata, When only the title is edited, Then only the title is patched and the header follows', async () => {

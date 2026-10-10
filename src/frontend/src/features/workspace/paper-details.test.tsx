@@ -43,12 +43,13 @@ async function openDetails(user: ReturnType<typeof renderApp>['user']) {
   return screen.findByRole('dialog', { name: paper.title })
 }
 
-test('Given the workspace header, Then ⓘ sits beside the title and status, and ARA-095’s ⋯ menu is gone from it', async () => {
+test('Given the workspace header, Then ⓘ sits beside the title, with no PDF status while the PDF is ready, and ARA-095’s ⋯ menu is gone from it', async () => {
   mockApi({ 'GET /papers/p1': paper })
   renderApp('/papers/p1')
   const title = await screen.findByRole('heading', { level: 1, name: paper.title })
   const header = title.parentElement!
-  expect(within(header).getByText('Ready to read')).toBeVisible()
+  expect(within(header).queryByRole('img')).not.toBeInTheDocument()
+  expect(within(header).queryByText('Ready to read')).not.toBeInTheDocument()
   expect(within(header).getByRole('button', { name: 'Paper details' })).toBeVisible()
   expect(screen.queryByRole('button', { name: `Actions for “${paper.title}”` })).not.toBeInTheDocument()
 })

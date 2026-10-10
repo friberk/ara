@@ -83,7 +83,9 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
     await expect(reader(page).getByRole('list', { name: 'Preparation steps' })).toBeVisible()
   }
   const { document_id: documentId } = await (await accepted).json() as { document_id: string }
-  await expect(page.getByText('Ready to read', { exact: true })).toBeVisible({ timeout: 45_000 })
+  // A ready PDF shows no status; the reader's page field proves it opened, and the header icon is gone.
+  await expect(page.getByLabel('Page number')).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByRole('heading', { level: 1 }).locator('..').getByRole('img')).toHaveCount(0)
   await expect(page.getByLabel('Page number')).toHaveValue('1')
   await expect(page.getByText('/ 3', { exact: true })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
@@ -159,6 +161,8 @@ test('ARA-097 Given a ready paper, when its PDF is removed from the reader and u
   await expect(reader(page)).toBeFocused()
   // The same file again is a new PDF, not a duplicate of the removed one.
   await reader(page).getByLabel('PDF file').setInputFiles(pdfPath)
-  await expect(page.getByText('Ready to read', { exact: true })).toBeVisible({ timeout: 45_000 })
+  // A ready PDF shows no status; the reader's page field proves it opened, and the header icon is gone.
+  await expect(page.getByLabel('Page number')).toBeVisible({ timeout: 45_000 })
+  await expect(page.getByRole('heading', { level: 1 }).locator('..').getByRole('img')).toHaveCount(0)
   await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
 })
