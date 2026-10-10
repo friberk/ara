@@ -52,8 +52,9 @@ export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat
   const local = generation.models.find((model) => model.key === generation.settings.model)?.provider === 'ollama'
   // Papers the draft mentions join the chat when it is sent.
   const severalOnSend = new Set([...included, ...mentionedPapers(draft.mentions)]).size > 1
-  const removed = chat.papers.some((item) => item.pdf_removed) ? (chat.papers.length > 1 ? 'one of several' : 'only') : undefined
-  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && severalOnSend, pdfRemoved: removed })
+  const ownPdf = chat.papers.find((item) => item.paper_id === paper.id)?.document_id
+  const earlierPdf = !!ownPdf && ownPdf !== paper.active_document_id
+  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && severalOnSend, earlierPdf })
   const loaded = stream.history.isSuccess
   const ready = canAsk(gate) && loaded && !stream.busy
 

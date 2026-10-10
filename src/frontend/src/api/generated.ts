@@ -583,7 +583,8 @@ export interface paths {
         post?: never;
         /**
          * Exclude Paper
-         * @description The response's `paper_id` is the chat's first paper after the removal.
+         * @description The response's `paper_id` is the chat's first paper after the removal. A PDF the chat was
+         *     the last to use, and that is not its paper's current PDF, goes with it (ARA-097).
          */
         delete: operations["exclude_paper_api_v1_chats__chat_id__papers__paper_id__delete"];
         options?: never;
@@ -622,7 +623,11 @@ export interface paths {
         get: operations["read_chat_api_v1_chats__chat_id__get"];
         put?: never;
         post?: never;
-        /** Delete Chat */
+        /**
+         * Delete Chat
+         * @description PDFs this chat was the last to use, and that are not their paper's current PDF, go with
+         *     it (ARA-097).
+         */
         delete: operations["delete_chat_api_v1_chats__chat_id__delete"];
         options?: never;
         head?: never;
@@ -1365,11 +1370,6 @@ export interface components {
              * Format: date-time
              */
             added_at: string;
-            /**
-             * Pdf Removed
-             * @default false
-             */
-            pdf_removed: boolean;
         };
         /** Installation */
         Installation: {
@@ -1727,8 +1727,10 @@ export interface components {
          * @description What removing the paper's PDF changes; reading it changes nothing (ARA-097).
          */
         PdfRemovalPreview: {
-            /** Pdfs */
-            pdfs: number;
+            /** Deleted Pdfs */
+            deleted_pdfs: number;
+            /** Kept Pdfs */
+            kept_pdfs: number;
             /** Summaries */
             summaries: number;
             /** Chats */

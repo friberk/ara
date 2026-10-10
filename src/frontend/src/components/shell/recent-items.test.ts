@@ -1,7 +1,7 @@
 import type { ChatSummary, SearchHistoryItem } from '@/api/types'
 import { mergeRecent } from './recent-items'
 
-const attention = { paper_id: 'p1', document_id: 'd1', title: 'Attention Is All You Need', first_author: 'Ashish Vaswani', year: 2017, added_at: '2026-10-08T10:00:00Z', pdf_removed: false }
+const attention = { paper_id: 'p1', document_id: 'd1', title: 'Attention Is All You Need', first_author: 'Ashish Vaswani', year: 2017, added_at: '2026-10-08T10:00:00Z' }
 const base: ChatSummary = { id: 'c1', paper_id: 'p1', papers: [attention], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T10:00:00Z', last_activity_at: '2026-10-08T12:00:00Z', message_count: 2, last_question_preview: 'Which datasets were used for machine translation?' }
 const search: SearchHistoryItem = { id: 's1', provider: 'openalex', query: 'regular expressions', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T11:00:00Z' }
 

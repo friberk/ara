@@ -31,7 +31,7 @@ const paper = {
 }
 const removed = { ...paper, document_status: 'metadata_only', active_document_id: null, file_name: null }
 const document = { id: 'doc-1', paper_id: 'p1', file_name: 'evidence.pdf', page_count: 15, byte_size: 1_468_006, status: 'ready', acquisition: null }
-const preview = { pdfs: 1, summaries: 2, chats: [{ id: 'c1', title: 'Accuracy question' }], active_jobs: 0, answering: false }
+const preview = { deleted_pdfs: 0, kept_pdfs: 1, summaries: 0, chats: [{ id: 'c1', title: 'Accuracy question' }], active_jobs: 0, answering: false }
 
 const boundingRect = HTMLElement.prototype.getBoundingClientRect
 beforeEach(() => {
@@ -82,13 +82,11 @@ test('Given Remove PDF…, When confirmed, Then the dialog says what happens, th
   const menu = await openMenu(user)
   await user.click(within(menu).getByRole('menuitem', { name: 'Remove PDF…' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Remove this PDF?' })
-  expect(within(dialog).getByText('“evidence.pdf” is deleted. This can’t be undone.')).toBeVisible()
+  expect(within(dialog).getByText('“evidence.pdf” is removed from this paper.')).toBeVisible()
   const effects = await within(dialog).findByRole('list', { name: 'What happens' })
   expect(within(effects).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
     'The reader goes back to uploading a PDF.',
-    '2 summaries of this PDF are deleted.',
-    'Earlier answers keep their quoted passages, but their page links won’t open.',
-    '1 conversation that used it stays readable but can’t take new questions.',
+    'Existing conversations keep using this PDF; new questions need a new PDF.',
   ])
   expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
   await user.click(within(dialog).getByRole('button', { name: 'Remove PDF' }))
@@ -113,7 +111,7 @@ test('Given earlier versions, When the removal fails, Then the dialog lists them
   mockApi({
     'GET /papers/p1': paper,
     'GET /documents/doc-1': document,
-    'GET /papers/p1/pdf/removal-preview': { ...preview, pdfs: 3, summaries: 1, chats: [], active_jobs: 1 },
+    'GET /papers/p1/pdf/removal-preview': { ...preview, deleted_pdfs: 3, kept_pdfs: 0, summaries: 1, chats: [], active_jobs: 1 },
     'DELETE /papers/p1/pdf': () => json({ code: 'CHAT_BUSY', message: 'Wait for the current answer to finish before removing the PDF.' }, 409),
   })
   const { user } = renderApp('/papers/p1')
@@ -122,9 +120,9 @@ test('Given earlier versions, When the removal fails, Then the dialog lists them
   const effects = await within(dialog).findByRole('list', { name: 'What happens' })
   expect(within(effects).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
     'The reader goes back to uploading a PDF.',
-    '2 earlier versions of the PDF are deleted too.',
-    '1 summary of this PDF is deleted.',
-    '1 background task for this PDF stops.',
+    'The PDF and 2 earlier versions are deleted.',
+    '1 summary is deleted.',
+    '1 background task stops.',
   ])
   await user.click(within(dialog).getByRole('button', { name: 'Remove PDF' }))
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('Wait for the current answer to finish before removing the PDF.')
@@ -167,18 +165,17 @@ test('Given an earlier PDF version a citation opened, Then its menu only opens o
   expect(within(menu).getByRole('menuitem', { name: 'Open original' })).toHaveAttribute('href', '/api/v1/documents/doc-0/download')
 })
 
-test('Given a citation to a PDF that was removed, When it is shown, Then the reader says so instead of failing, and offers the current PDF', async () => {
-  mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-1': document, 'GET /documents/doc-0': () => json({ code: 'PDF_REMOVED', message: 'This PDF was removed. Saved answers keep their quoted passages.' }, 404) })
+test('Given a citation from a PDF a chat kept after the paper lost its PDF, Then the reader opens it and offers a new PDF', async () => {
+  mockApi({ 'GET /papers/p1': { ...paper, document_status: 'metadata_only', active_document_id: null, file_name: null }, 'GET /documents/doc-0': { ...document, id: 'doc-0', file_name: 'first-draft.pdf' } })
   const { user } = renderApp('/papers/p1')
-  await screen.findByText('Showing doc-1')
+  const reader = await screen.findByRole('region', { name: 'PDF reader' })
+  expect(await within(reader).findByText('Attach the PDF to read, summarize and ask')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Page 1 of an earlier PDF' }))
-  const reader = screen.getByRole('region', { name: 'PDF reader' })
-  expect(await within(reader).findByRole('heading', { name: 'This PDF was removed' })).toBeVisible()
-  expect(within(reader).getByText('The answer keeps its quoted passage, but its page can’t open.')).toBeVisible()
-  expect(within(reader).queryByText('Showing doc-0')).not.toBeInTheDocument()
-  expect(within(reader).queryByRole('button', { name: 'PDF options' })).not.toBeInTheDocument()
-  await user.click(within(reader).getByRole('button', { name: 'Back to current PDF' }))
-  expect(await within(reader).findByText('Showing doc-1')).toBeVisible()
+  expect(await within(reader).findByText('Showing doc-0')).toBeVisible()
+  expect(within(reader).getByText('Showing an earlier PDF version')).toBeVisible()
+  // The paper has no current PDF to go back to, so the way out is adding one.
+  await user.click(within(reader).getByRole('button', { name: 'Add a new PDF' }))
+  expect(await within(reader).findByText('Attach the PDF to read, summarize and ask')).toBeVisible()
 })
 
 test('Given the PDF menu opened with the pointer, Then its tooltip does not stay over the menu', async () => {

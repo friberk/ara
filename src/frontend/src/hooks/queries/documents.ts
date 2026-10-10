@@ -29,11 +29,6 @@ export function useDocument(documentId: string | null | undefined) {
   })
 }
 
-/** Whether a PDF that a citation opens was removed from its paper (ARA-097): its saved passages read, its pages do not. */
-export function isRemovedPdf(error: unknown) {
-  return error instanceof ApiError && error.code === 'PDF_REMOVED'
-}
-
 /** What removing the paper's PDF changes, read afresh each time the dialog opens (ARA-097). */
 export function usePdfRemovalPreview(paperId: string, enabled: boolean) {
   return useQuery({
@@ -46,8 +41,8 @@ export function usePdfRemovalPreview(paperId: string, enabled: boolean) {
 }
 
 /**
- * Removes the paper's PDF and its earlier versions (ARA-097). The paper, its chats and their saved answers stay; the
- * reader returns to its upload state when the paper is read again.
+ * Removes the paper's PDF (ARA-097): the paper has none, and its PDFs no chat uses are deleted. Chats keep the PDFs
+ * they use; the reader returns to its upload state when the paper is read again.
  */
 export function useRemovePdf(paperId: string) {
   const client = useQueryClient()

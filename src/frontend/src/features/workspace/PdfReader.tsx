@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense } from 'react'
-import { FileX2, History } from 'lucide-react'
+import { History } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -20,20 +20,6 @@ class ReaderErrorBoundary extends Component<{ children: React.ReactNode }, { err
   }
 }
 
-/** A cited PDF that was removed from its paper (ARA-097): the answer's quoted passage still reads, its page does not. */
-export function RemovedPdf({ current, onShowCurrent }: { current: boolean; onShowCurrent: () => void }) {
-  return (
-    <div className="grid h-full content-center justify-items-center gap-3 px-6 py-10 text-center">
-      <FileX2 className="size-5 text-muted-foreground" aria-hidden="true" />
-      <div className="grid gap-1">
-        <h2 className="text-sm font-medium">This PDF was removed</h2>
-        <p className="max-w-xs text-sm text-pretty text-muted-foreground">The answer keeps its quoted passage, but its page can’t open.</p>
-      </div>
-      <Button size="sm" variant="outline" onClick={onShowCurrent}>{current ? 'Back to current PDF' : 'Add a PDF'}</Button>
-    </div>
-  )
-}
-
 /**
  * The PDF tab: a gate until the paper has a readable PDF, then the viewer. documentId is the version on screen,
  * which is the active PDF unless a citation asked for an earlier one.
@@ -49,7 +35,8 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
         <div className="flex items-center gap-3 border-b bg-muted/50 px-4 py-2 text-sm">
           <History className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <p className="min-w-0 flex-1">Showing an earlier PDF version</p>
-          <Button size="xs" variant="outline" onClick={onShowCurrent}>Back to current PDF</Button>
+          {/* After Remove PDF a chat's kept PDF has no current one to go back to, so the way out is adding one (ARA-097). */}
+          <Button size="xs" variant="outline" onClick={onShowCurrent}>{paper.active_document_id ? 'Back to current PDF' : 'Add a new PDF'}</Button>
         </div>
       )}
       {/* One polite announcement per jump; the visible note repeats the region and page-only cases for sighted readers. */}

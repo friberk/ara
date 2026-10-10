@@ -63,19 +63,21 @@ function ReplacePdfDialog({ paper, onClose }: { paper: Paper; onClose: () => voi
   )
 }
 
-/** What removing changes, in the order a reader meets it: the reader, the files, summaries, answers, then work. */
+/**
+ * What removing changes (ARA-097): the reader, then older conversations, which keep the PDFs they use, then what no
+ * conversation uses, which is deleted.
+ */
 function effects(preview: PdfRemovalPreview): string[] {
-  const earlier = preview.pdfs - 1
-  const chats = preview.chats.length
+  const deleted = preview.deleted_pdfs
+  const gone = preview.kept_pdfs === 0
+    ? deleted === 1 ? 'The PDF is deleted.' : `The PDF and ${count(deleted - 1, 'earlier version', 'earlier versions')} are deleted.`
+    : `${count(deleted, 'PDF version', 'PDF versions')} no conversation uses ${deleted === 1 ? 'is' : 'are'} deleted.`
   return [
     'The reader goes back to uploading a PDF.',
-    ...(earlier > 0 ? [`${count(earlier, 'earlier version', 'earlier versions')} of the PDF ${earlier === 1 ? 'is' : 'are'} deleted too.`] : []),
-    ...(preview.summaries ? [`${count(preview.summaries, 'summary', 'summaries')} of this PDF ${preview.summaries === 1 ? 'is' : 'are'} deleted.`] : []),
-    ...(chats ? [
-      'Earlier answers keep their quoted passages, but their page links won’t open.',
-      `${count(chats, 'conversation', 'conversations')} that used it ${chats === 1 ? 'stays' : 'stay'} readable but can’t take new questions.`,
-    ] : []),
-    ...(preview.active_jobs ? [`${count(preview.active_jobs, 'background task', 'background tasks')} for this PDF ${preview.active_jobs === 1 ? 'stops' : 'stop'}.`] : []),
+    ...(preview.kept_pdfs ? ['Existing conversations keep using this PDF; new questions need a new PDF.'] : []),
+    ...(deleted ? [gone] : []),
+    ...(preview.summaries ? [`${count(preview.summaries, 'summary', 'summaries')} ${preview.summaries === 1 ? 'is' : 'are'} deleted.`] : []),
+    ...(preview.active_jobs ? [`${count(preview.active_jobs, 'background task', 'background tasks')} ${preview.active_jobs === 1 ? 'stops' : 'stop'}.`] : []),
   ]
 }
 
@@ -96,7 +98,7 @@ function RemovePdfDialog({ paper, reader, onClose }: { paper: Paper; reader: HTM
       <AlertDialogContent className="sm:max-w-md" onCloseAutoFocus={(event) => { if (removed.current && reader) { event.preventDefault(); reader.focus() } }}>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove this PDF?</AlertDialogTitle>
-          <AlertDialogDescription className="break-words">{paper.file_name ? `“${paper.file_name}” is deleted. This can’t be undone.` : 'The PDF is deleted. This can’t be undone.'}</AlertDialogDescription>
+          <AlertDialogDescription className="break-words">{paper.file_name ? `“${paper.file_name}” is removed from this paper.` : 'The PDF is removed from this paper.'}</AlertDialogDescription>
         </AlertDialogHeader>
         {preview.isPending && <div role="status" className="grid gap-2"><span className="sr-only">Checking what changes…</span><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-1/2" /></div>}
         <ErrorNotice error={preview.error} retry={() => void preview.refetch()} />
