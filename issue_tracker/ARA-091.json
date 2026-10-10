@@ -33,11 +33,13 @@
     "src/backend/app/routes/retrieval.py",
     "src/backend/app/schemas/retrieval.py",
     "src/backend/app/services/chat.py",
+    "src/backend/app/services/health.py",
     "src/backend/app/services/memory.py",
     "src/backend/app/services/reindex.py",
     "src/backend/tests/test_indexing_integration.py",
     "src/backend/tests/test_library_embedding_migration.py",
     "src/backend/tests/test_retrieval_api_integration.py",
+    "src/backend/tests/test_schema_revision.py",
     "src/frontend/src/api/generated.ts",
     "src/frontend/src/components/retrieval/ProfileOptions.tsx",
     "src/frontend/src/features/settings/RetrievalSettingsSection.tsx",
@@ -51,6 +53,6 @@
     "a9fc155"
   ],
   "pull_requests": [],
-  "verification": "2026-10-09. Red first: 13 failed, 54 passed in the focused retrieval files (KeyError 'openai-3-small', PUT /papers/{id}/retrieval still 200, estimate route 404). Full backend suite in ara-embed-test: 1005 passed in 190 s. Frontend: 5 tests red first, then npm run check passed (72 files, 532 tests) and npm run build succeeded. Migration 0008 upgrade test from 0007 passes. Not run: Playwright, live OpenAI calls. The $0.02 price and 8191-token limit come from third-party sources, not OpenAI's own page.",
+  "verification": "2026-10-09. Red first: 13 failed, 54 passed in the focused retrieval files (KeyError 'openai-3-small', PUT /papers/{id}/retrieval still 200, estimate route 404). Full backend suite in ara-embed-test: 1005 passed in 190 s. Frontend: 5 tests red first, then npm run check passed (72 files, 532 tests) and npm run build succeeded. Migration 0008 upgrade test from 0007 passes. Not run: Playwright, live OpenAI calls. The $0.02 price and 8191-token limit come from third-party sources, not OpenAI's own page. Follow-up: readiness pinned SCHEMA_REVISION to 0007; red test (tests/test_schema_revision.py: ['0008_library_embeddings'] == ['0007_feature_merge']) then constant set to 0008. Full suite on a freshly reset ara-embed-test database: 1006 passed in 175 s; readiness database check passes on the migrated DB (2 passed).",
   "updated_at": "2026-10-09"
 }

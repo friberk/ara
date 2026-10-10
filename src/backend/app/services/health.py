@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy import text
 
-SCHEMA_REVISION = "0007_feature_merge"
+SCHEMA_REVISION = "0008_library_embeddings"
 
 
 async def readiness(resources) -> dict[str, str]:
