@@ -267,7 +267,15 @@ def summary_candidate(sources, *, ordinal: int = 1, title: str = "2 Method"):
     return NodeWithScore(node=node, score=0.0)
 
 
-def test_given_a_section_summary_when_packing_then_it_cites_its_chunks_and_has_no_handle():
+def handles_in(text: str) -> list[str]:
+    import re
+
+    return re.findall(r"\[(S\d+)\]", text)
+
+
+def test_given_a_selected_summary_when_packing_then_its_sources_are_sent_whole_with_handles():
+    """Summaries route, passages ground (RAPTOR's tree traversal): every handle a summary shows
+    belongs to a passage whose text is in the evidence."""
     from app.rag.packing import citable, pack_evidence, render_evidence
 
     first, second = candidate(1).node, candidate(2).node
@@ -280,17 +288,58 @@ def test_given_a_section_summary_when_packing_then_it_cites_its_chunks_and_has_n
         sources={first.node_id: first, second.node_id: second},
     )
     rendered = render_evidence(passages)
-    assert [p.kind for p in passages] == ["summary", "text"]
-    # Only real chunks get handles; the summary shows its sources' handles inside it.
+    assert [p.kind for p in passages] == ["summary", "text", "text", "text"]
+    assert [str(p.chunk_id) for p in citable(passages)] == [
+        first.node_id,
+        second.node_id,
+        hit.node.node_id,
+    ]
     assert rendered.startswith("Section summary · 2 Method · p. 2–3\n")
-    allowed = citable(passages)
-    assert [p.handle for p in allowed] == ["S1", "S2", "S3"]
-    assert {str(p.chunk_id) for p in allowed} == {first.node_id, second.node_id, hit.node.node_id}
-    assert "Okapi [S2][S3]." in rendered and "[S1] Results · p. 10" in rendered
-    assert all(p.kind != "summary" for p in allowed)
+    assert "Okapi [S1][S2]." in rendered
+    for handle in handles_in(rendered):
+        (sent,) = [p for p in passages if p.handle == handle]
+        assert f"[{handle}] Results · p. {sent.page}\n{sent.text}" in rendered
+    assert all(p.kind != "summary" for p in citable(passages))
 
 
-def test_given_a_summary_source_that_is_also_sent_when_packing_then_one_handle_serves_both():
+def test_given_more_sources_than_the_cap_when_packing_then_the_best_scored_are_sent():
+    from app.rag.packing import citable, pack_evidence
+    from app.rag.selection import MAX_SUMMARY_SOURCES
+
+    sources = [candidate(n).node for n in range(1, 8)]
+    summary = summary_candidate(sources)
+    scores = {sources[6].node_id: 0.9, sources[5].node_id: 0.8}
+    passages = pack_evidence(
+        [summary],
+        budget=100_000,
+        counter=COUNTER,
+        sources={node.node_id: node for node in sources},
+        scores=scores,
+    )
+    sent = [str(p.chunk_id) for p in citable(passages)]
+    assert MAX_SUMMARY_SOURCES == 4 and len(sent) == 4
+    # Reranker scores first, then the order in which the summary cites its sources.
+    assert set(sent) == {sources[n].node_id for n in (6, 5, 0, 1)}
+
+
+def test_given_sources_that_do_not_fit_when_packing_then_the_summary_keeps_no_handles():
+    from app.rag.packing import citable, pack_evidence, render_evidence
+
+    big = [candidate(n, words=900).node for n in (1, 2)]
+    summary = summary_candidate(big)
+    alone = pack_evidence([summary], budget=100_000, counter=COUNTER)
+    budget = COUNTER.count(render_evidence(alone)) + 40
+    passages = pack_evidence(
+        [summary], budget=budget, counter=COUNTER, sources={node.node_id: node for node in big}
+    )
+    rendered = render_evidence(passages)
+    assert [p.kind for p in passages] == ["summary"]
+    assert citable(passages) == [] and handles_in(rendered) == []
+    assert "[source:" not in rendered
+    assert rendered.startswith("Section summary · 2 Method")
+
+
+def test_given_a_summary_source_that_is_also_a_candidate_when_packing_then_it_is_sent_once():
     from app.rag.packing import citable, pack_evidence, render_evidence
 
     source = candidate(1)
@@ -302,8 +351,32 @@ def test_given_a_summary_source_that_is_also_sent_when_packing_then_one_handle_s
     assert "Okapi [S1]." in render_evidence(passages)
 
 
+def test_given_two_papers_and_a_summary_when_packing_then_sources_stay_within_its_share():
+    from app.rag.packing import citable, pack_evidence
+
+    headers = {str(PAPERS["A"]): "Paper 1: A", str(PAPERS["B"]): "Paper 2: B"}
+    sources = [candidate(n, paper="A", words=120).node for n in range(10, 14)]
+    summary = summary_candidate(sources)
+    summary.node.metadata["document_id"] = str(PAPERS["A"])
+    others = [candidate(n, paper="B", words=120) for n in range(2)]
+    one = COUNTER.count(sources[0].get_content())
+    budget = 6 * one
+    passages = pack_evidence(
+        [summary, *others, candidate(20, paper="A", words=120)],
+        budget=budget,
+        counter=COUNTER,
+        headers=headers,
+        sources={node.node_id: node for node in sources},
+    )
+    used = {p.document_id for p in citable(passages)}
+    # Paper B keeps its floor; paper A's summary grounds only what its half of the budget holds.
+    assert sum(p.document_id == PAPERS["B"] for p in passages) == 2
+    grounded = [p for p in citable(passages) if str(p.chunk_id) in {n.node_id for n in sources}]
+    assert 0 < len(grounded) < 4 and used == {PAPERS["A"], PAPERS["B"]}
+
+
 def test_given_summaries_when_packing_any_budget_then_the_rendered_evidence_fits():
-    from app.rag.packing import pack_evidence, render_evidence
+    from app.rag.packing import citable, pack_evidence, render_evidence
 
     chunks = [candidate(n, words=40) for n in range(10)]
     sources = {item.node.node_id: item.node for item in chunks}
@@ -312,12 +385,80 @@ def test_given_summaries_when_packing_any_budget_then_the_rendered_evidence_fits
         passages = pack_evidence(
             [*summaries, *chunks[2:]], budget=budget, counter=COUNTER, sources=sources
         )
-        assert COUNTER.count(render_evidence(passages)) <= budget
+        rendered = render_evidence(passages)
+        assert COUNTER.count(rendered) <= budget
+        # No handle without its passage's text in the evidence.
+        sent = {p.handle for p in citable(passages)}
+        assert set(handles_in(rendered)) <= sent
 
 
-def test_given_the_answer_rules_then_summaries_are_cited_through_the_handles_inside_them():
+def test_given_the_answer_rules_then_only_passages_in_the_evidence_are_cited():
     from app.services.context import INSTRUCTIONS_VERSION, RULES
 
+    assert "Cite only handles of passages shown in full" in RULES
     assert "section summary has no handle of its own" in RULES
-    assert "cite the handles inside it" in RULES
-    assert INSTRUCTIONS_VERSION == "5"
+    assert INSTRUCTIONS_VERSION == "6"
+
+
+def test_given_a_handle_whose_passage_was_not_sent_when_validating_then_the_answer_fails():
+    """A summary whose sources did not fit shows no handles, so citing one is an unknown handle
+    and the answer fails as UNGROUNDED_OUTPUT, like any other."""
+    import pytest
+
+    from app.integrations.llm import LLMError
+    from app.rag.citations import HandleMap, HandleTransducer
+    from app.rag.packing import citable, pack_evidence, render_evidence
+    from app.services.chat import grounded
+
+    big = [candidate(n, words=900).node for n in (1, 2)]
+    summary = summary_candidate(big)
+    alone = pack_evidence([summary], budget=100_000, counter=COUNTER)
+    budget = COUNTER.count(render_evidence(alone)) + 40
+    passages = pack_evidence(
+        [summary], budget=budget, counter=COUNTER, sources={node.node_id: node for node in big}
+    )
+    transducer = HandleTransducer(HandleMap(citable(passages)))
+    content = transducer.feed("The method uses Okapi [S1].") + transducer.flush()
+    with pytest.raises(LLMError) as failure:
+        grounded(content, transducer, citable(passages), {DOCUMENT})
+    assert failure.value.code == "UNGROUNDED_OUTPUT"
+
+
+def test_given_many_summaries_when_packing_the_first_pass_then_its_caps_hold():
+    from app.rag.packing import citable, render_evidence
+    from app.rag.selection import FIRST_PASS_PASSAGES, FIRST_PASS_TOKENS
+
+    chunks = [candidate(n, words=200) for n in range(60)]
+    summaries = [
+        summary_candidate([chunks[n + k].node for k in range(5)], ordinal=100 + n)
+        for n in range(0, 50, 5)
+    ]
+    for item in summaries:
+        item.node.id_ = str(UUID(int=0xDEF000 + item.node.metadata["ordinal"]))
+    scores = {item.node.node_id: 0.9 for item in [*summaries, *chunks]}
+    result = evidence([*summaries, *chunks], scores)
+    result.sources = {item.node.node_id: item.node for item in chunks}
+    passages = result.pack(200_000)
+    rendered = render_evidence(passages)
+    assert len(passages) <= FIRST_PASS_PASSAGES
+    assert COUNTER.count(rendered) <= FIRST_PASS_TOKENS
+    assert result.summary.summaries_used >= 1
+    # Every handle shown, in a summary or a passage, opens a passage whose text was sent.
+    for handle in handles_in(rendered):
+        (sent,) = [p for p in citable(passages) if p.handle == handle]
+        assert f"[{handle}] Results · p. {sent.page}\n{sent.text}" in rendered
+
+
+def test_given_the_retry_pass_when_packing_a_summary_then_its_sources_are_sent_too():
+    from app.rag.packing import citable, render_evidence
+    from app.rag.selection import RETRY_PASS
+
+    sources = [candidate(n).node for n in range(1, 4)]
+    summary = summary_candidate(sources)
+    result = evidence([summary], {summary.node.node_id: 0.9})
+    result.sources = {node.node_id: node for node in sources}
+    result.evidence_pass = RETRY_PASS
+    passages = result.pack(50_000)
+    rendered = render_evidence(passages)
+    assert {str(p.chunk_id) for p in citable(passages)} == {node.node_id for node in sources}
+    assert all(node.get_content() in rendered for node in sources)
