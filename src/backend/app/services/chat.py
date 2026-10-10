@@ -399,14 +399,19 @@ async def save(
         return saved.model_dump(mode="json")
 
 
-async def record_evidence(resources, message_id, evidence, usage, planner=None) -> None:
+async def record_evidence(resources, message_id, evidence, usage, planner=None, calls=None) -> None:
     """How the evidence was found, stored before any provider call.
 
     `billed` keeps the tokens of the calls made for this answer besides the answer itself, which
-    the chat's cost meter prices."""
+    the chat's cost meter prices; `calls` adds earlier answer calls, such as the first attempt
+    of a retried answer."""
     async with resources.sessions() as session, session.begin():
         message = await leased(session, message_id)
-        billed = {**evidence.trace.get("billed", {}), **({"planner": planner} if planner else {})}
+        billed = {
+            **evidence.trace.get("billed", {}),
+            **({"planner": planner} if planner else {}),
+            **(calls or {}),
+        }
         message.retrieval = {
             **evidence.summary.model_dump(mode="json"),
             "trace": evidence.trace,
@@ -498,13 +503,29 @@ async def stream_answer(
             )
         return
     content, completed, client, task = "", False, None, None
-    evidence, transducer = None, None
     queue = asyncio.Queue(maxsize=32)
     last_checkpoint = asyncio.get_running_loop().time()
 
+    async def generate(assembled, evidence) -> HandleTransducer:
+        """Stream one attempt into the queue, its handles already mapped to source markers."""
+        transducer = HandleTransducer(HandleMap(evidence.citable))
+        await queue.put(("attempt", None))
+        await queue.put(("status", "generating"))
+        slots = nullcontext() if inference_slot else generation_slots(resources, assistant.model)
+        async with slots:
+            async for delta in client.stream_messages(
+                assistant.model, assistant.reasoning_effort, assembled.messages
+            ):
+                if text := transducer.feed(delta):
+                    await queue.put(("delta", text))
+        if tail := transducer.flush():
+            await queue.put(("delta", tail))
+        return transducer
+
     async def produce():
-        """Plan, retrieve and generate; the consumer turns stages and deltas into events."""
-        nonlocal client, evidence
+        """Plan, retrieve and generate, retrying once more widely when the first answer reports
+        insufficient evidence; the consumer turns stages and deltas into events."""
+        nonlocal client
         try:
             if wait_for_slot:
                 await admit_after_wait(
@@ -535,31 +556,52 @@ async def stream_answer(
             )
             if plan.standalone_question != prepared.question:
                 evidence.summary.standalone_query = plan.standalone_question
-            assembled = assemble_answer_prompt(
-                profile=prepared.limits,
-                papers=prepared.papers,
-                history=remembered.history,
-                memory_summary=remembered.summary,
-                recalled=await recalled_turns(resources, prepared, remembered, plan, evidence),
-                evidence_block=evidence.block,
-                question=prepared.question,
-                retrieved_for=plan.standalone_question,
-            )
+            recalled = await recalled_turns(resources, prepared, remembered, plan, evidence)
+
+            def assemble():
+                return assemble_answer_prompt(
+                    profile=prepared.limits,
+                    papers=prepared.papers,
+                    history=remembered.history,
+                    memory_summary=remembered.summary,
+                    recalled=recalled,
+                    evidence_block=evidence.block,
+                    question=prepared.question,
+                    retrieved_for=plan.standalone_question,
+                )
+
+            assembled = assemble()
             await record_evidence(resources, assistant.id, evidence, assembled.usage, plan.billed)
-            await queue.put(("evidence", HandleMap(evidence.passages)))
             selection = await validate_model_available(
                 resources, assistant.model, assistant.reasoning_effort
             )
             client = create_llm(resources, assistant.model, selection=selection)
-            await queue.put(("status", "generating"))
-            async with (
-                nullcontext() if inference_slot else generation_slots(resources, assistant.model)
-            ):
-                async for delta in client.stream_messages(
-                    assistant.model, assistant.reasoning_effort, assembled.messages
-                ):
-                    await queue.put(("delta", delta))
-            await queue.put(("done", None))
+            citable = evidence.citable
+            transducer = await generate(assembled, evidence)
+            # Step 10 (adapting Self-Route, Li et al., EMNLP 2024): at most one retry, only when
+            # the model reports the evidence insufficient and wider retrieval adds passages.
+            if transducer.insufficient and evidence.widen():
+                first = {"model": assistant.model, **memory.billed_tokens(client.usage)}
+                assembled = assemble()
+                try:
+                    await reserve(resources, assistant.model, assembled.usage.input_tokens)
+                except LLMError as exc:
+                    if exc.code != "DAILY_BUDGET_EXCEEDED":
+                        raise
+                else:
+                    evidence.summary.retried = True
+                    await queue.put(("status", "widening"))
+                    await record_evidence(
+                        resources,
+                        assistant.id,
+                        evidence,
+                        assembled.usage,
+                        plan.billed,
+                        {"first_answer": first},
+                    )
+                    citable = evidence.citable
+                    transducer = await generate(assembled, evidence)
+            await queue.put(("done", (transducer, citable)))
         except Exception as exc:
             await queue.put(("error", exc))
 
@@ -584,29 +626,25 @@ async def stream_answer(
             if kind == "error":
                 raise value
             if kind == "done":
+                transducer, citable = value
                 break
             if kind == "status":
                 yield event("message.status", {"message_id": str(assistant.id), "stage": value})
                 continue
-            if kind == "evidence":
-                transducer = HandleTransducer(value)
+            if kind == "attempt":
+                # A retry replaces the first attempt; only the final answer is kept.
+                content = ""
                 continue
-            text = transducer.feed(value)
-            if not text:
-                continue
-            content += text
+            content += value
             # Bound database writes while the final/disconnect paths always flush partial text.
             if asyncio.get_running_loop().time() - last_checkpoint >= 1:
                 await save(resources, assistant.id, content)
                 last_checkpoint = asyncio.get_running_loop().time()
-            yield event("message.delta", {"text": text})
-        if tail := transducer.flush():
-            content += tail
-            yield event("message.delta", {"text": tail})
+            yield event("message.delta", {"text": value})
         content, citations, grounding = grounded(
             content,
             transducer,
-            evidence.passages,
+            citable,
             {scope.document_id for scope in prepared.scopes},
         )
         final = await save(

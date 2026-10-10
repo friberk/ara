@@ -97,6 +97,31 @@ class EvidenceResult:
     # The limits of the attempt being packed: the first pass, or the one wider retry.
     evidence_pass: EvidencePass = FIRST_PASS
     question_type: str = "lookup"
+    # The evidence ceiling E the last packing was given, before the pass's own token cap.
+    ceiling: int = 0
+
+    @property
+    def citable(self) -> list[Passage]:
+        """The passages an answer may cite by handle."""
+        return list(self.passages)
+
+    def widen(self) -> bool:
+        """Switch to the retry pass when it sends passages the first pass did not (step 10);
+        otherwise keep the first pass as it was."""
+        first = self.passages
+        kept = (self.summary.model_copy(), dict(self.trace), self.evidence_pass)
+        self.evidence_pass = RETRY_PASS
+        wider = {item.chunk_id for item in self.pack(self.ceiling)}
+        if wider <= {item.chunk_id for item in first}:
+            self.passages = first
+            self.summary, self.trace, self.evidence_pass = kept
+            return False
+        self.trace["first_pass"] = {
+            "passages": len(first),
+            "evidence_tokens": kept[0].evidence_tokens,
+            "pruned": kept[0].pruned,
+        }
+        return True
 
     @property
     def reach(self) -> int | None:
@@ -106,6 +131,7 @@ class EvidenceResult:
     def pack(self, budget: int) -> list[Passage]:
         """Prune, then pack within the pass's caps and `budget` (the evidence ceiling E)."""
         limits = self.evidence_pass
+        self.ceiling = budget
         pruned = prune(self.ranked, self.scores, ratio=limits.prune_ratio, kept=self.kept)
         if limits.max_tokens is not None:
             budget = min(budget, limits.max_tokens)

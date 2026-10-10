@@ -115,6 +115,10 @@ def message_spend(spend: Spend, state: str, model, usage, billed) -> None:
     planner = billed.get("planner")
     if isinstance(planner, dict):
         spend.chat_call("planning", str(planner.get("model", "")), planner)
+    # The first attempt of an answer that one wider retry replaced (ARA-094).
+    first = billed.get("first_answer")
+    if isinstance(first, dict):
+        spend.chat_call("answers", str(first.get("model", "")), first)
     embedding, rerank = billed.get("embedding"), billed.get("rerank")
     if isinstance(embedding, dict):
         spend.retrieval_call(

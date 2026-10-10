@@ -42,6 +42,8 @@ class RetrievalSummary(BaseModel):
     evidence_tokens: int = 0
     # The planner's classification; a broad question grows chunks to their section (ARA-094).
     question_type: Literal["lookup", "broad", "comparative"] | None = None
+    # The first answer reported insufficient evidence and one wider retry replaced it (ARA-094).
+    retried: bool = False
     limited_by_context: bool = False
     note: str | None = None
 
