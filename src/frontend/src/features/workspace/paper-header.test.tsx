@@ -233,3 +233,11 @@ test('Given a PDF whose DOI belongs to another library paper, Then the header sa
   expect(within(top).getByText('This PDF’s DOI belongs to “The library paper” in your library.')).toBeVisible()
   expect(within(top).getByRole('link', { name: 'Open that paper' })).toHaveAttribute('href', '/papers/p-lib')
 })
+
+test('Given a narrow reader, Then Edit details shrinks to its icon and keeps its name, so the title keeps the width (visual check, 390px)', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  renderApp('/papers/p1')
+  const edit = within(await header()).getByRole('button', { name: 'Edit details' })
+  expect(within(edit).getByText('Edit details')).toHaveClass('sr-only', '@md:not-sr-only')
+  expect((await header()).firstElementChild).toHaveClass('@container')
+})

@@ -45,11 +45,12 @@ export function PaperHeader({ paper }: { paper: Paper }) {
   const authors = paper.authors.join(', ')
   return (
     <header aria-labelledby={`${id}-title`} className="border-b bg-background">
-      <div className="mx-auto grid max-w-3xl gap-3 px-5 pt-5 pb-6">
+      {/* A container, so a narrow reader (a phone, or a 30% panel) gives the title the room, not the button labels. */}
+      <div className="@container mx-auto grid max-w-3xl gap-3 px-5 pt-5 pb-6">
         <div className="flex items-start gap-3">
           <h2 id={`${id}-title`} className="min-w-0 flex-1 text-lg leading-snug font-semibold text-balance break-words">{paperName(paper)}</h2>
           <div className="-mt-0.5 -mr-2 flex shrink-0 items-center gap-0.5">
-            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEditing(true)}><Pencil data-icon="inline-start" aria-hidden="true" />Edit details</Button>
+            <Button variant="ghost" size="sm" className="text-muted-foreground @max-md:pr-1.5" onClick={() => setEditing(true)}><Pencil data-icon="inline-start" aria-hidden="true" /><span className="sr-only @md:not-sr-only">Edit details</span></Button>
             <PaperSourcesDialog paper={paper} />
           </div>
         </div>
