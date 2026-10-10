@@ -4,7 +4,7 @@ Assignment deadline: October10,11:59PM; plan targets10PM. Application60%, reflec
 
 ## Repository
 
-- GitHub pushing is deferred by the user for this session. When ready, authenticate locally, publish the AGPL-3.0 source/README/locks/configuration and verify the repository link.
+- Repository: <https://github.com/friberk/ara> (private, all branches; invite the course staff so the submitted link opens). Demo: <https://vps-eb56b28c.vps.ovh.us>, Purdue network or VPN only (ARA-107).
 - Exclude .env, original uploads, generated test data and private screenshots. Existing assignment files/writing skills are user references, not application dependencies.
 - Rehearse README startup in a clean isolated Compose project. Verify all five workflows and restart persistence.
 

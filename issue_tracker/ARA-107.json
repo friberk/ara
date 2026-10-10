@@ -1,0 +1,39 @@
+{
+  "id": "ARA-107",
+  "title": "Purdue-only demo deployment, a private GitHub repository and CI that deploys after it passes",
+  "type": "feature",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"I have the \\\"ssh ubuntu@15.204.210.41\\\" you can directly connect from this machine. Feel free to connect and do whatever required for the deployment. There shouldn't be any sudo password. Also configure the CI etc. for GitHub. Create a repo on GitHub and push as well. The repo should be named \\\"ara\\\". But first make a plan.\" Plan answers: private repository with all branches; deploy automatically after CI passes on main; \"Can we make it accessible only from Purdue University network? Either on campus or via VPN.\" The stack keeps its Compose services; a deploy override drops development reload and bind mounts, and Caddy serves the built frontend, proxies /api and /health, obtains TLS and refuses clients outside Purdue's AS17 address ranges.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given compose.yaml with compose.deploy.yaml, when Compose resolves the stack, then the api, worker, migrate and storage-init services have no source bind mounts and no reload or uv run commands, the Vite dev server is not started, and a caddy service runs on the host network with persistent certificate volumes.",
+    "Given a client whose address is outside Purdue's AS17 prefixes, when it requests the site, then Caddy answers 403 with a message naming the Purdue network or VPN; loopback on the server is allowed for health checks.",
+    "Given a client inside Purdue's prefixes, when it opens a client-side route, then the built SPA loads; /api and /health reach the api, chat answers stream, and 25 MiB uploads are accepted.",
+    "Given a push to main, when the verify job passes, then the deploy job copies the checkout to the server, rebuilds and waits for healthy services, checks /health/ready through Caddy on the server and checks that the runner (outside Purdue) gets 403.",
+    "Given pushes to other branches, when they reach GitHub, then CI does not run unless a pull request or a manual dispatch asks for it.",
+    "Given the browser CI step, when Playwright starts, then both synthetic paper fixtures (research.pdf and second.pdf) exist."
+  ],
+  "test_cases": [
+    "tests/infrastructure/test_compose_deploy.py: resolved deploy services, Caddyfile allow-list equals the AS17 prefixes plus loopback, SPA fallback, request body limit, reverse proxy to the api.",
+    "tests/infrastructure/test_ci_workflow.py: triggers, concurrency, second fixture, deploy job gated on verify and main.",
+    "Live: server health through Caddy returns 200; an off-campus client receives 403 with a valid certificate; on Purdue VPN the five demo workflows pass."
+  ],
+  "status": "in_progress",
+  "related_files": [
+    "compose.deploy.yaml",
+    "docker/caddy.Dockerfile",
+    "docker/Caddyfile",
+    ".github/workflows/ci.yaml",
+    ".env.example",
+    "tests/infrastructure/test_compose_deploy.py",
+    "tests/infrastructure/test_ci_workflow.py",
+    "README.md"
+  ],
+  "commits": [
+    "dd328f6",
+    "9624765"
+  ],
+  "pull_requests": [],
+  "verification": "Red first: test_compose_deploy, test_ci_workflow and test_deploy_script failed (missing compose.deploy.yaml, caddy.Dockerfile and deploy.sh; CI on every push; no second.pdf). The first live deploy failed on Compose 5.0.2 parallel builds of one tag; a new single-builder test failed first, then passed. 40 infrastructure tests pass. Live: health ready through Caddy; Let's Encrypt certificate; off-campus IPv4 and the server's public IPv4/IPv6 get 403; the five demo workflows passed in Chromium through the deployed Caddy (summary and a cited 28.4 BLEU answer); data survived restart and reboot; data volumes were reset for delivery. Pending: first GitHub Actions run.",
+  "updated_at": "2026-10-10"
+}

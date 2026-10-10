@@ -119,6 +119,34 @@ python3 scripts/test-stack.py reset --reset-data
 
 For development data reset, inspect the project and back up original PDFs/database first; `docker compose down --volumes` deliberately deletes the project's persistent volumes, including downloaded model weights. Ordinary shutdown uses `down` without that flag.
 
+## Deploy the demo
+
+The demo runs on one Ubuntu VM: the same Compose stack plus `compose.deploy.yaml`. The backend services run the image code without reload or source mounts. Caddy (`docker/caddy.Dockerfile`, `docker/Caddyfile`) replaces the Vite dev server: it serves the built frontend, proxies `/api` and `/health` to the API on `127.0.0.1:8000`, obtains the TLS certificate and answers 403 to clients outside the Purdue network. The allow-list is Purdue's AS17 address prefixes, so campus and Purdue VPN clients get in. Caddy uses host networking so it sees each client's real IPv4 or IPv6 address. PostgreSQL, Redis, MinIO and the API publish no public ports.
+
+The demo URL is <https://vps-eb56b28c.vps.ovh.us> (Purdue network or VPN only).
+
+One-time server setup: Docker CE with the Compose plugin, an `ara-deploy` user in the `docker` group without sudo, and `/opt/ara/.env` created by `scripts/bootstrap.py` with these additions:
+
+```bash
+APP_ENV=production
+CORS_ORIGINS=["https://vps-eb56b28c.vps.ovh.us"]
+COMPOSE_FILE=compose.yaml:compose.deploy.yaml
+SITE_ADDRESS=vps-eb56b28c.vps.ovh.us
+OPENAI_API_KEY=<key>
+```
+
+CI deploys `main` after the `verify` job passes. The `deploy` job runs `scripts/deploy.sh`, which ships the committed tree with `git archive`, syncs it into `/opt/ara` without touching `.env`, rebuilds with `docker compose up -d --build --wait`, and checks `/health/ready` through Caddy on the server. The job then checks that the runner, which is outside Purdue, receives 403. It needs the `production` environment secrets `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` and `DEPLOY_TARGET` (`ara-deploy@<server>`) and the repository variable `SITE_HOST`. CI runs on `main`, pull requests and manual dispatch only.
+
+Deploy a checkout by hand, roll back by deploying an older commit the same way, and inspect the server:
+
+```bash
+SITE_HOST=vps-eb56b28c.vps.ovh.us scripts/deploy.sh ara-deploy@15.204.210.41
+ssh ara-deploy@15.204.210.41 'cd /opt/ara && cat REVISION && docker compose ps'
+ssh ara-deploy@15.204.210.41 'cd /opt/ara && docker compose logs --tail 100 api worker caddy'
+```
+
+`docker compose down` on the server stops the demo and keeps its data; never add `--volumes` there.
+
 ## Models and source grounding
 
 Hosted IDs: `gpt-5.6-luna` (default), `gpt-5.6-terra`, `gpt-5.6-sol`. Supported reasoning controls come from backend capabilities; the GPT-5.6 catalog records `none`, `low`, `medium`, `high`, `xhigh` and `max` separately for Sol, Terra and Luna. Missing keys, provider outages and unavailable models are reported. Metadata-only papers require a processed PDF before analysis.

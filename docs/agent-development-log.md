@@ -1888,3 +1888,50 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
 - **Change.** The `<ThemeToggle />` footer item is removed from `AppSidebar.tsx`. `components/theme/ThemeToggle.tsx` is deleted; it had no test file of its own. `ThemeProvider` and the theme context stay. README and DESIGN.md no longer mention a sidebar theme switch.
 - **Corrected error.** The first `npm run check` failed one test: `App.test.tsx` opened the sidebar Theme menu. The test's behaviour (Dark applies and persists) is kept and now drives Settings > Appearance; it passes 8/8 and the full check passes.
 - **Result.** `npm run check`: 90 files, 722 tests passed, exit 0. `npm run build`: exit 0. Commit `794daed`.
+
+## 2026-10-10 - ARA-107 Purdue-only demo deployment, private GitHub repository and CI that deploys main
+
+- Prompts:
+  - First: "What would be the best and simplest way of deploying this project? It will be for demo not for prod workloads. What is the standard in 2026?" I recommended one VM running the existing Compose stack behind Caddy. I noted that hw1 asks for a repository and a video, not a hosted URL.
+  - Then: "I have the \"ssh ubuntu@15.204.210.41\" you can directly connect from this machine. Feel free to connect and do whatever required for the deployment. … Also configure the CI etc. for GitHub. Create a repo on GitHub and push as well. The repo should be named \"ara\". But first make a plan."
+  - Plan answers: a private repository with all branches; deploy automatically after CI passes on main; "Can we make it accessible only from Purdue University network? Either on campus or via VPN."
+- **Findings that shaped the plan.**
+  - The server is Ubuntu 25.04 (end of life), x86_64, 6 vCPU, 11 GiB RAM, with no Docker.
+  - Its OVH hostname has A and AAAA records. Docker's userland proxy presents IPv6 clients as the bridge gateway, so Caddy runs with host networking to see real addresses for the allow-list.
+  - The allow-list is the prefixes Purdue's AS17 announces, from RIPEstat. The check is in Caddy rather than a firewall, so certificate challenges still work.
+  - All 53 local branches carry a `ci.yaml` that runs on every push. Actions was turned off before pushing them, so 53 runs would not start.
+  - A history audit found no secrets, PDFs or generated output in the 605 commits.
+  - The CI audit found a real bug: `second.pdf` was never created, although three Playwright specs use it.
+- **Red first.** I wrote `test_compose_deploy.py`, `test_ci_workflow.py` and `test_deploy_script.py` before any implementation.
+  - Six setup classes or tests failed: no `compose.deploy.yaml` or `docker/caddy.Dockerfile`, `on` was still `[push, pull_request]`, no `second.pdf` step, and `scripts/deploy.sh` missing (exit 127).
+  - The "refuses without a target" test passed only because the script did not exist, so it was vacuous until the script existed.
+  - The Caddy tests run the real Caddyfile in the pinned `caddy:2.11.7-alpine` image. A request through Docker's port mapping gets 403 naming Purdue. Loopback gets the SPA shell on client routes and the files for assets, and a 502 for `/api` and `/health`, which shows they are proxied. `caddy adapt` gives the exact allow-list, the 30 MB body limit and the single upstream `127.0.0.1:8000`.
+- **Errors corrected.**
+  - My first `deploy.sh` piped `git archive` into `ssh … bash -s` and also gave ssh a heredoc, so the heredoc would have replaced the tarball. I found this before running it. The tar now goes to its own ssh call and the commands go as arguments.
+  - I created `feat/ara-107-deploy` by switching the root checkout, which another session shares. That session's ARA-105 merge landed on my branch, and it undid the merge (its entry above). I moved ARA-107 into `.superpowers/worktrees/deploy`, put the root back on `main` and reset the branch to `main` (`db2efcc`).
+- **Green.** 39 infrastructure tests pass. `caddy validate` accepts the config for the real hostname, and the image builds the frontend bundle.
+- **Server setup.**
+  - Docker CE 29.2.1 and Compose v5.0.2 from Docker's apt repository.
+  - An `ara-deploy` user in the `docker` group without sudo, authorized for the new CI key and for the user's existing keys.
+  - `/opt/ara/.env` from `bootstrap.py`, mode 600, with fresh internal passwords, `APP_ENV=production`, the HTTPS origin, `COMPOSE_FILE` and `SITE_ADDRESS`. The provider keys were piped from the local `.env` without printing; only their lengths were checked.
+  - Before the first deploy, the health check through Caddy failed with `curl: (7) … Could not connect` (exit 7).
+- **GitHub.**
+  - The private repository `friberk/ara` was created with Actions disabled.
+  - The `production` environment holds `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` (copied from the host keys already trusted locally and verified with `StrictHostKeyChecking=yes`) and `DEPLOY_TARGET`. The repository variable is `SITE_HOST`.
+  - The CI private key was deleted locally after it was stored.
+- **First deploy failed; fixed test-first.**
+  - On the server, Compose v5.0.2 (Docker's Ubuntu 25.04 repository stops there; this Mac has v5.1.2) built `api`, `migrate`, `storage-init` and `worker` in parallel. The second export of `ara-backend:development` failed: `image … already exists`.
+  - A throwaway project on the server reproduced it. `COMPOSE_BAKE=false` also failed, and a single builder with `pull_policy: never` on the other services worked.
+  - The new test (`only the api builds the shared backend image`) failed with `['api', 'migrate', 'storage-init', 'worker'] != ['api']`.
+  - My first fix put `build: !reset null` in a YAML merge anchor, and Compose ignored it (still red). Putting it on each service made all 40 tests green.
+- **Second deploy passed.**
+  - `scripts/deploy.sh` rebuilt, waited for every service to be healthy, and got `{"status":"ready",…}` through Caddy on the server. The first TLS attempt failed while the certificate was being issued, and the retry passed.
+  - Caddy obtained a Let's Encrypt certificate (issuer YE1, valid until 2027-01-08). HTTP redirects to HTTPS with 308.
+  - From this Mac (72.12.216.8, not Purdue): 403 with the Purdue message and a valid certificate. From the server's public IPv4 and IPv6 addresses: 403.
+  - One 200 came from the server itself because `/etc/hosts` maps the hostname to 127.0.1.1, which is loopback and allowed. Only 80 and 443 listen publicly; the API is on 127.0.0.1:8000.
+- **Five demo workflows through the deployed Caddy.**
+  - Chromium ran through an SSH SOCKS proxy, so it reached the site from the server's loopback and kept the real `Origin`.
+  - All five passed: search "Attention Is All You Need"; save, which also fetched OpenAlex's stored PDF; upload the arXiv PDF, which matched the paper and replaced its PDF; generate the summary; and ask "What BLEU score does the big Transformer reach on WMT 2014 English-to-German?", answered "28.4 BLEU" citing p. 8. There were no console errors.
+  - My first run stopped at the upload because the script did not click "Replace PDF". That was a script error, not an app error.
+- **Restart, reboot and clean state.** One paper survived `docker compose restart` and a server reboot, after which the services came back on their own. At the user's request ("don't forget to reset the DB. We will deliver at a clean state"), the Postgres, Redis and MinIO volumes were removed and recreated; Caddy's certificate volumes were kept. The API then listed 0 papers and 0 chats.
+- **API keys.** The user asked whether GitHub Secrets hold the API keys. They don't: GitHub holds only the deploy SSH key, host keys and target. The provider keys live only in the server's `/opt/ara/.env` (mode 600), and `deploy.sh` never syncs or prints it.
