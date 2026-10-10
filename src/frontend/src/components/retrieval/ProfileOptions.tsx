@@ -4,6 +4,7 @@ import type { EmbeddingProfile } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { useOpenModels, withoutOpenModels } from '@/hooks/queries/features'
 import { cn } from '@/lib/utils'
+import { priceLabel } from './profile-format'
 
 const statusBadges: Record<EmbeddingProfile['status'], { label: string; tone: string }> = {
   available: { label: 'Available', tone: 'bg-success-muted text-success' },
@@ -42,11 +43,6 @@ export function UnavailableReason({ profile }: { profile: Pick<EmbeddingProfile,
       {profile.local_model_key && openModels && <Link to="/settings#local-models" className="text-foreground underline decoration-foreground/25 hover:decoration-foreground">Go to Local models</Link>}
     </span>
   )
-}
-
-/** What a search model costs: hosted models by the million tokens, local models nothing. */
-function priceLabel(profile: Pick<EmbeddingProfile, 'provider' | 'price_per_million'>) {
-  return profile.price_per_million > 0 ? `$${profile.price_per_million} per million tokens` : profile.provider === 'ollama' ? 'Runs locally. No per-token cost.' : null
 }
 
 /** Radio list of the search models the whole library can use, in the style of the default-model list. */
