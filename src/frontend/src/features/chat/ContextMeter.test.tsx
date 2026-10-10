@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 const zero = '0.00000000'
 const empty: ChatUsage = {
-  context: { used_tokens: null, input_budget: 64_000, window: 1_050_000, model: 'gpt-5.6-luna' },
+  context: { used_tokens: null, input_budget: 272_000, window: 1_050_000, model: 'gpt-5.6-luna' },
   cost: { total: zero, answers: zero, planning: zero, compaction: zero, embeddings: zero, reranking: zero, local: false, unrecorded_turns: 0 },
 }
 const used: ChatUsage = {
@@ -28,17 +28,17 @@ function mount(usage: Routes[string], settings = luna) {
 
 test('Given a chat with no turns, Then the ring is empty and the name says $0.00', async () => {
   mount(empty)
-  const ring = await screen.findByRole('button', { name: 'Context 0% used of 64k tokens. $0.00 this chat.' })
+  const ring = await screen.findByRole('button', { name: 'Context 0% used of 272k tokens. $0.00 this chat.' })
   expect(ring.querySelector('[data-fraction]')).toHaveAttribute('data-fraction', '0')
 })
 
 test('Given a completed turn, When the ring is hovered, Then used and total tokens, percent and cost show', async () => {
   const { user } = mount(used)
-  const ring = await screen.findByRole('button', { name: 'Context 19% used of 64k tokens. $0.0123 this chat.' })
-  expect(ring.querySelector('[data-fraction]')).toHaveAttribute('data-fraction', String(12_400 / 64_000))
+  const ring = await screen.findByRole('button', { name: 'Context 5% used of 272k tokens. $0.0123 this chat.' })
+  expect(ring.querySelector('[data-fraction]')).toHaveAttribute('data-fraction', String(12_400 / 272_000))
   await user.hover(ring)
   const card = await screen.findByRole('dialog', { name: 'Context and cost' })
-  expect(within(card).getByText('12.4k / 64k tokens · 19%')).toBeVisible()
+  expect(within(card).getByText('12.4k / 272k tokens · 5%')).toBeVisible()
   expect(within(card).getByText('$0.0123 this chat')).toBeVisible()
   expect(within(card).getByText('Model window 1.05M tokens')).toBeVisible()
   for (const [label, value] of [['Answers', '$0.0090'], ['Follow-up planning', '$0.0010'], ['Conversation summaries', '$0.0020'], ['Query embeddings', '$0.0001'], ['Reranking', '$0.0002']] as const) {
@@ -47,8 +47,8 @@ test('Given a completed turn, When the ring is hovered, Then used and total toke
 })
 
 test('Given a free breakdown line, Then it is left out; a model whose window equals its budget shows no window line', async () => {
-  const { user } = mount({ ...used, context: { ...used.context, window: 64_000 }, cost: { ...used.cost, planning: zero, reranking: zero } })
-  await user.hover(await screen.findByRole('button', { name: /^Context 19%/ }))
+  const { user } = mount({ ...used, context: { ...used.context, window: 272_000 }, cost: { ...used.cost, planning: zero, reranking: zero } })
+  await user.hover(await screen.findByRole('button', { name: /^Context 5%/ }))
   const card = await screen.findByRole('dialog', { name: 'Context and cost' })
   expect(within(card).queryByText('Follow-up planning')).not.toBeInTheDocument()
   expect(within(card).queryByText('Reranking')).not.toBeInTheDocument()
@@ -93,7 +93,7 @@ test('Given a tap or click, Then the card toggles and stays open without hover',
 
 test('Given the model switches, Then the usage is requested for the new model and the total follows', async () => {
   const { calls, rerender, user } = mount(({ url }) => json(url.searchParams.get('model') === 'ifm' ? { ...used, context: { used_tokens: 12_400, input_budget: 3_072, window: 8_192, model: 'ifm' } } : used))
-  await screen.findByRole('button', { name: 'Context 19% used of 64k tokens. $0.0123 this chat.' })
+  await screen.findByRole('button', { name: 'Context 5% used of 272k tokens. $0.0123 this chat.' })
   expect(calls[0]?.url.searchParams.get('model')).toBe('gpt-5.6-luna')
   expect(calls[0]?.url.searchParams.get('reasoning_effort')).toBe('low')
   rerender({ model: 'ifm', reasoning_effort: 'default' })
