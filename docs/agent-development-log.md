@@ -908,3 +908,53 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
 - OpenAlex's record for the arXiv DOI of "Attention Is All You Need" reports 2025 and a different DOI, and a lookup copies that.
 - The paid LLM metadata step in ingestion still runs when authors are missing, which is often redundant now.
 - The sidebar still says "Untitled paper" while a PDF is read; it is outside ARA-086's files.
+
+### Follow-up: XMP, the LLM reversal, library matching and retrieval wording
+
+After the first round, the lead fast-forwarded the branch to the integration branch, which already contained ARA-083, ARA-084 and ARA-085. The follow-up was built on that state. Its baseline was 998 backend tests (that run also picked up the first, unfinished XMP tests) and 530 frontend tests.
+
+**Scope changes from the user, relayed by the lead:**
+- Read XMP.
+- No GROBID.
+- Remove LLM metadata extraction. The user then reversed this ("Let's keep the LLM based metadata extraction intact then. I think it makes sense."). Nothing had been removed, so nothing needed restoring.
+- Keep the LLM step on the saved default model and effort.
+- Match uploads to library papers, with the user's request: "if there is the same paper on the library let's indicate the user there is match. If that one on the library has no PDFs attached apply the PDF, if there is PDF attached ask user to replace."
+- From ARA-084's agent:
+  - name the processing view without a source;
+  - demote uploading while automatic retrieval runs;
+  - say a PDF is on its way in the header badge and the composer.
+- ARA-087 (OpenAlex-only retrieval) was noted, so no UI was built around publisher or VPN states.
+
+**Decisions:**
+- **XMP ranking.** The XMP `dc:title` ranks above the Info title. Both pass the junk filter and must be printed on the first pages to beat the printed title. `dc:creator` fills a missing author. `prism:doi` or `dc:identifier` is the first DOI clue. `prism:publicationName` becomes a venue clue that breaks ties between title matches. Cover and publication dates give the year; file dates never do.
+- **LLM step and catalog lookup.** The inline LLM step keeps its gating. The catalog lookup runs after it and reads the LLM's title and DOI as clues, so the order is unchanged. When a new upload matches a library paper by local identifiers, the LLM step is skipped. That paper already has its bibliography, and the pending case must not spend money. This narrows, not widens, when the model runs. The LLM provenance still records `settings.default_model` rather than the saved default it actually used; that predates this ticket and was left unchanged.
+- **Matching.**
+  - Only uploads without a target paper are matched; the ingest payload carries `new_paper`.
+  - Identity checks run in order: DOI, then arXiv DOI, then the strict title rule.
+  - No PDF on the matched paper: the upload is attached in the ingest commit, so ARA-084's automatic-summary hook fires for that paper (`active_document_id` equals the document).
+  - A PDF on the matched paper: ingestion stops before storing pages. The document stays `processing` and is never marked ready, so the summary hook, index reconciliation (which covers ready documents only) and the catalog lookup are never reached.
+  - Replace re-ingests the document on the library paper, so all paid work flows through the normal ready transition after the choice.
+  - Cancel deletes the placeholder, its document by cascade, and the stored original.
+- **Late matches.** A late match records the same pending state. Attaching a document that is already ready indexes it for its new paper and calls `queue_automatic_summary` once. Its chats and summaries move with it.
+- **Storage of match state.** State is keyed rows in `model_configurations`: `upload_match:`, `paper_redirect:` and `pdf_doi_owner:`. No migration was needed.
+- **Visibility of pending uploads.** Pending placeholders leave `GET /papers`, so the library, sidebar and picker do not show them, and appear under `GET /uploads/matches` instead. While a placeholder is still processing, before its match is known, it does appear as a new paper.
+- **Wording.** The processing badge reads "Preparing PDF". While retrieval runs, the header reads "Getting PDF", the composer reads "You can ask questions once the PDF is ready.", and the dropzone becomes "Upload your own copy instead". The edits to `ConversationComposer`'s callers were limited to the gate argument.
+
+**Red → green:**
+- **XMP:** `'Module While... Are Sleeping' == 'A Bad Dream:...'` (the Info title had won) and `KeyError: 'venue'`. The DOI-from-XMP tests passed at once, because the raw packet was already scanned for a DOI.
+- **Venue tie-break:** `TypeError: Clues.__init__() got an unexpected keyword argument 'venue'`.
+- **LLM characterization test.** The test pinning the saved default model and effort passed at once, because the behaviour already existed. Hardcoding the settings default made it fail with `'gpt-5.6-luna' == 'gpt-5.6-terra'`, and the original was restored.
+- **Matching:** 7 failed and 1 passed. The failures included the model being called (`assert [{'input': 'E...6-luna', ...}] == []`) and `'PaperDetail' object has no attribute 'upload_match'`.
+- **One intended behaviour change.** The old DOI-dedup test expected a new upload of a library paper to stay a duplicate. It now covers a new version uploaded into an existing paper, which keeps its target and reports `pdf_doi_owner`.
+- **Frontend:** 8 failed. The failures included `Unable to find … This PDF matches …`, `… role="region" and name "Library match"`, `… Getting PDF` and `… role="region" and name "Needs your choice"`.
+- **Live-check finding.** The live check showed the library still listing the placeholder as "Processing PDF" after it had joined a paper. A test for the list refreshing on settle went red (`Unable to find … Preparing PDF`), then green once settling refreshed every paper query.
+
+**Agent process errors:**
+- A new test name exceeded the line length; the just-made local commit was amended before anything else used it.
+- A row check treated mockApi's empty-collection default as a redirected paper. Real payloads always carry `id`, and the check now requires one.
+- Two full frontend runs on a machine with load average 17–18 timed out in unrelated suites and in the first lazy route load of the new test file. The failing files passed when run alone and in repeated runs, and the new file's first route wait was lengthened.
+
+**Live check** (isolated stack, real OpenAlex, the user's PDF copied read-only from `ara` and removed afterwards):
+- The USENIX paper was saved from OpenAlex, then the PDF was uploaded from home. It matched by the strict title rule (OpenAlex's lowercase title against the printed one, plus the surname Han) and was attached. The browser landed on the saved paper with the note.
+- A byte-different copy uploaded in the library showed "Matches “A bad dream…”, which already has a PDF" with Replace PDF and Cancel, while the API listing held one paper.
+- Replace re-read the copy on the saved paper, and the library still held one paper.

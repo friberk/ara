@@ -240,3 +240,34 @@ Lookup job:
   - `/jobs` accepts `kind=metadata` and links these jobs to their paper.
   - `POST /jobs/{id}/retry` accepts a failed lookup with those two codes.
   - Stages are `queued`, `finding_metadata`, `retry_wait`, `completed` and `failed`.
+
+### XMP clues and library matches (ARA-086 follow-up)
+
+**XMP clues.** The parser reads the PDF's XMP packet in the child process and ranks its fields above the Info dictionary:
+- `dc:title` comes first and passes the same junk-title and printed-title checks as the Info title;
+- `dc:creator` fills authors when the Info author is empty;
+- `prism:doi` or `dc:identifier` is the first DOI clue;
+- `prism:publicationName` becomes the `venue` clue, which breaks ties between equally good title matches;
+- `prism:coverDate`, `prism:publicationDate` or `prism:coverDisplayDate` gives the year. File dates such as `xmp:CreateDate` are ignored.
+
+A malformed packet gives no clues and never an error. The LLM metadata step keeps its behaviour and gating, with the saved default model and effort. A title that the junk filter rejects counts as missing, so that step can run for it, and its title and DOI then seed the catalog lookup.
+
+**Matching a new upload to the library.** This applies to uploads without `paper_id`, whose ingest payload carries `new_paper: true`. Ingestion compares the PDF's DOI (`normalized_doi`), the arXiv DOI `10.48550/arxiv.<id>` and, failing those, the strict title rule (title ratio ≥ 0.9 plus an agreeing author or year) against library papers:
+- **Match without a usable PDF** (no active document, or the active one failed). The upload is attached in the commit that makes it ready. The document moves to that paper, which gets it as its active document, and its processing and automatic summary continue there. The placeholder paper is deleted, `paper_redirect:<placeholder>` records the target, and the ingest job result carries `match: {paper_id, outcome: "attached", matched_by}`. No model metadata call is made.
+- **Match with a PDF.** Ingestion completes the job with `outcome: "match_pending"` before storing pages. The document stays `processing`, and `upload_match:<placeholder>` records `{paper_id, document_id, matched_by, found_by: "ingest"}`. No model metadata call, pages, chunks, index, catalog lookup or automatic summary start.
+- **Late match.** A catalog lookup for a new upload whose record another library paper owns records the same pending match, with `found_by: "lookup"` and job outcome `library_match`, and writes nothing to the upload.
+
+**API.**
+- `Paper.upload_match`: nullable `{paper_id, title, has_pdf, matched_by: doi|arxiv|title, found_by: ingest|lookup}`.
+- `Paper.pdf_doi_owner`: nullable `{paper_id, title}`. It is set when an upload into a chosen paper carries a DOI that another library paper owns. The upload stays on the chosen paper, and the state is recorded under `pdf_doi_owner:<document>`.
+- `GET /papers` leaves pending placeholders out. `GET /uploads/matches` lists them as `{items: Paper[]}`.
+- `GET /papers/{placeholder}` answers with the paper an attached or replaced upload joined. That paper's `id` differs, so the client redirects.
+
+`POST /uploads/{placeholder}/match {decision: "attach"|"discard"}`:
+- **`attach`** (Replace or Attach) moves the document to the library paper as its active PDF; earlier documents stay its versions. It also moves the placeholder's chats and summaries, deletes the placeholder and returns the library `Paper` (200).
+  - An unread document gets a fresh ingest job on that paper.
+  - A ready document is indexed for that paper, and the automatic summary is queued once.
+- **`discard`** deletes the placeholder, its document (by cascade) and the stored original, and returns 204.
+- **Repeats are safe.** A second `attach` returns the same paper, and a second `discard` returns 204. A paper without a pending match returns 409 `NO_PENDING_MATCH`.
+
+**Labels.** Matches and redirects live in `model_configurations`, with no migration. The `processing` document badge now reads "Preparing PDF".

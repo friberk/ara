@@ -13,9 +13,17 @@ The interface is a chat-centred workspace built with shadcn components, using th
   - You land in the paper's workspace, where one step list runs from Uploading through Reading pages and Finding paper details to Ready.
   - The library accepts several PDFs at once. Each becomes its own paper with its own progress row.
   - A PDF already in the library opens that paper with a note instead of an error.
+  - If an upload turns out to be a paper already in your library (same DOI or arXiv ID, or a strictly matched title), it joins that paper instead of creating a duplicate:
+    - If that paper has no PDF, the upload is attached and you land on it.
+    - If it has one, you choose Replace PDF or Cancel. Nothing paid starts while the choice waits.
+    - Library rows carry their own choice, and earlier undecided uploads are listed under "Needs your choice".
+    - An upload into a specific paper stays there, and Details names any other paper that owns its DOI.
+  - While a saved paper's PDF is being retrieved automatically, the header says "Getting PDF", the composer says questions open once it is ready, and uploading your own copy becomes the secondary option.
   - While a paper is being read, it is shown by its file name.
 - **Accurate metadata.**
   - Titles come from the first page when the PDF's built-in title is a file name or tool output, such as `paper.dvi` or `Microsoft Word - draft.docx`.
+  - The PDF's XMP metadata (title, creators, DOI, venue, publication date) ranks above its Info dictionary.
+  - The existing model step still fills a missing title or authors, with the saved default model and effort.
   - After the PDF is readable, the app looks the paper up in OpenAlex, or in Semantic Scholar if you choose it under Settings → Metadata source. It searches by DOI or arXiv ID first, then by title.
   - A title match is used only when an author or the year also agrees.
   - The catalog's title, authors, year, venue and abstract replace the values read from the PDF, which stay as the fallback. Details you edited are never replaced.

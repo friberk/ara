@@ -12,6 +12,8 @@ beforeEach(() => {
   })
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+// The first test of the file loads the lazy workspace route, which can take seconds on a busy machine.
+const firstLoad = { timeout: 10_000 }
 
 const library = { id: 'p-lib', title: 'Exploiting input sanitization for regex denial of service', authors: ['Efe Barlas'], year: 2022, abstract: null, doi: '10.1145/3510003.3510047', sources: [], document_status: 'ready', active_document_id: 'd-old', metadata_provenance: {}, file_name: 'old.pdf', upload_match: null, pdf_doi_owner: null }
 const pending = { id: 'p-new', title: null, authors: [], year: null, abstract: null, doi: null, sources: [], document_status: 'processing', active_document_id: 'd-new', metadata_provenance: {}, file_name: 'sec18.pdf', pdf_doi_owner: null, upload_match: { paper_id: 'p-lib', title: library.title, has_pdf: true, matched_by: 'doi', found_by: 'ingest' } }
@@ -19,7 +21,7 @@ const pending = { id: 'p-new', title: null, authors: [], year: null, abstract: n
 test('Given an upload that matches a library paper with a PDF, Then the reader asks to replace it and Replace opens that paper', async () => {
   const { calls } = mockApi({ 'GET /papers/p-new': pending, 'GET /papers/p-lib': { ...library, active_document_id: 'd-new', document_status: 'processing' }, 'POST /uploads/p-new/match': () => json({ ...library, active_document_id: 'd-new', document_status: 'processing' }) })
   const { user } = renderApp('/papers/p-new')
-  const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
+  const reader = await screen.findByRole('tabpanel', { name: 'PDF' }, firstLoad)
   expect(await within(reader).findByText(`This PDF matches “${library.title}” in your library.`)).toBeVisible()
   expect(within(reader).getByText('It already has a PDF. Replace it with this one?')).toBeVisible()
   expect(within(reader).queryByRole('heading', { name: 'Preparing the PDF' })).not.toBeInTheDocument()
