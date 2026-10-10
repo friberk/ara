@@ -27,8 +27,12 @@
     "src/frontend/e2e/multi-paper.spec.ts",
     "src/backend/tests/test_local_models_settlement.py"
   ],
-  "commits": [],
+  "commits": [
+    "76d7292",
+    "ba9f782",
+    "0356de6"
+  ],
   "pull_requests": [],
-  "verification": "Red: GitHub runs 38035168270 and 38073230139 failed only at Chromium browser checks (deploy skipped). Local full runs: 5 failed on a33bda7; on 70d13ee 10 failed, but that run reused stale e2e data because my zsh script never ran the reset (an unquoted $C is not word-split). Diagnosis: no app regressions. Stale specs: library link name gained the PDF state (ARA-098); ARA-109 save-on-select makes check() read the radio a tick early (local-models x2, Settings paper details); choosing the already-saved effort saves nothing; a just-finished summary opens in full (Collapse, ARA-102); the 'Models' tab also matched 'Open models'; mention pills put both titles first in the chat title (ARA-096/104). Races: Escape before Radix listens; a menu opened before the PDF loaded is closed by the toolbar re-render; arrow keys outrunning Chrome's asynchronous selectionchange (a debug run with paced keys selected and deleted the pill). After the fixes, a fresh stack (0 e2e volumes) ran 27 passed, 0 failed. Then GitHub run 38074979884 failed one timing-dependent backend test (a 50 ms pull budget that also covers the pre-transfer checks); a 1 ms budget reproduced it locally, a 2 s budget passes 6/6 with Ruff clean.",
+  "verification": "Red: GitHub runs 38035168270 and 38073230139 failed only at Chromium browser checks (deploy skipped). Local full runs: 5 failed on a33bda7; on 70d13ee 10 failed, but that run reused stale e2e data because my zsh script never ran the reset (an unquoted $C is not word-split). Diagnosis: no app regressions. Stale specs: library link name gained the PDF state (ARA-098); ARA-109 save-on-select makes check() read the radio a tick early (local-models x2, Settings paper details); choosing the already-saved effort saves nothing; a just-finished summary opens in full (Collapse, ARA-102); the 'Models' tab also matched 'Open models'; mention pills put both titles first in the chat title (ARA-096/104). Races: Escape before Radix listens; a menu opened before the PDF loaded is closed by the toolbar re-render; arrow keys outrunning Chrome's asynchronous selectionchange (a debug run with paced keys selected and deleted the pill). After the fixes, a fresh stack (0 e2e volumes) ran 27 passed, 0 failed. Then GitHub run 38074979884 failed one timing-dependent backend test (a 50 ms pull budget that also covers the pre-transfer checks); a 1 ms budget reproduced it locally, a 2 s budget passes 6/6 with Ruff clean. GitHub run 38078713751 on 0356de6: verify passed (backend, frontend, contract, 27 Chromium specs) and deploy shipped main.",
   "updated_at": "2026-10-10"
 }

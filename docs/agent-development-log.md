@@ -2139,3 +2139,16 @@ Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean,
   - A debug spec showed that hovering the pill on its own makes it `active` and renders the × on the same node, so there is no remount.
   - The cause: in the spec, the chat row renders under the mouse resting where the history option was clicked. `pointerenter` needs pointer movement, and repeated `.hover()` calls at the same point never move it.
   - Fix: move the mouse away before each hover attempt. The test passed 3 of 3 with `--repeat-each=3`. On a fresh stack the full suite ran 27 passed, 0 failed.
+- **CI green and deployed.** GitHub run 38078713751 (`0356de6`): `verify` passed (backend 1228, infrastructure, frontend check and build, API contract, 27 Chromium specs), then `deploy` shipped `main`. On the server: `REVISION 0356de6`, every service healthy, `/health/ready` ready, off-campus 401, and the demo data still empty (0 papers, 0 chats).
+
+### 2026-10-10 - ARA-107 access change: campus or the demo password
+
+- **Report.** The user wrote: "I cannot connect with vpn … it says This demo is only available on the Purdue network or Purdue VPN."
+  - This Mac's `ifconfig` `utun100` (100.71.58.175) turned out to be NetBird, and Cisco Secure Client said `Disconnected`.
+  - The user then connected from another Mac. A server-side `tcpdump` saw the reload arrive from 72.12.216.8, the home ISP.
+  - `vpn stats` showed `Tunnel Mode (IPv4): Split Include`. Purdue's VPN carries only Purdue destinations, so an IP allow-list can't admit remote users.
+- **Decision.** The user chose "Campus + password".
+- **Change.** Red first: 6 tests failed, then 45 passed. Caddy now asks clients outside Purdue's AS17 prefixes for a basic-auth login; campus and loopback need none.
+- **Server login.** The username is `ara-demo`. The password was generated on the server and kept in `/opt/ara/.env` (mode 600), with the bcrypt hash single-quoted.
+- **Deploy.** It went out by hand on top of the verified build (`a33bda7` plus the change), so the browser-unverified ARA-109 and ARA-110 stayed off the server until ARA-111.
+- **Checked live from off campus.** No login gave 401 with `Basic realm`, a wrong password gave 401, and the right one gave 200 for the app and the API.

@@ -18,7 +18,7 @@
     "tests/infrastructure/test_ci_workflow.py: triggers, concurrency, second fixture, deploy job gated on verify and main.",
     "Live: server health through Caddy returns 200; an off-campus client receives 403 with a valid certificate; on Purdue VPN the five demo workflows pass."
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "compose.deploy.yaml",
     "docker/caddy.Dockerfile",
@@ -30,10 +30,15 @@
     "README.md"
   ],
   "commits": [
+    "9624765",
+    "a33bda7",
+    "c8da54e",
     "dd328f6",
-    "9624765"
+    "e55a3fc",
+    "f26ab17",
+    "fe89340"
   ],
   "pull_requests": [],
-  "verification": "Red first: test_compose_deploy, test_ci_workflow and test_deploy_script failed (missing compose.deploy.yaml, caddy.Dockerfile and deploy.sh; CI on every push; no second.pdf). The first live deploy failed on Compose 5.0.2 parallel builds of one tag; a new single-builder test failed first, then passed. 40 infrastructure tests pass. Live: health ready through Caddy; Let's Encrypt certificate; off-campus IPv4 and the server's public IPv4/IPv6 get 403; the five demo workflows passed in Chromium through the deployed Caddy (summary and a cited 28.4 BLEU answer); data survived restart and reboot; data volumes were reset for delivery. Pending: first GitHub Actions run.",
+  "verification": "Red first: test_compose_deploy, test_ci_workflow and test_deploy_script failed (missing compose.deploy.yaml, caddy.Dockerfile and deploy.sh; CI on every push; no second.pdf). The first live deploy failed on Compose 5.0.2 parallel builds of one tag; a new single-builder test failed first, then passed. 40 infrastructure tests pass. Live: health ready through Caddy; Let's Encrypt certificate; off-campus IPv4 and the server's public IPv4/IPv6 get 403; the five demo workflows passed in Chromium through the deployed Caddy (summary and a cited 28.4 BLEU answer); data survived restart and reboot; data volumes were reset for delivery. Access changed at the user's choice (campus + password, e55a3fc) after Cisco Secure Client showed Split Include. GitHub run 38078713751: verify and deploy succeeded; the server runs 0356de6, all services healthy, off-campus 401, demo data empty (0 papers, 0 chats).",
   "updated_at": "2026-10-10"
 }
