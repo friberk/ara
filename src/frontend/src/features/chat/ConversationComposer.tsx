@@ -1,10 +1,9 @@
-import { useState } from 'react'
 import type { Paper } from '@/api/types'
-import { Composer, type Mention } from '@/components/composer/Composer'
-import { mentionName } from '@/lib/paper-names'
+import { Composer } from '@/components/composer/Composer'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
 import { PaperPicker } from '@/components/composer/PaperPicker'
+import { usePaperMention } from '@/components/composer/use-paper-mention'
 import { ContextMeter } from './ContextMeter'
 import type { QuestionGate } from './question-gate'
 
@@ -31,9 +30,7 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
   papers?: PaperSelection
 }) {
   const { settings } = useGenerationSettings()
-  const [picking, setPicking] = useState(false)
-  // Opened by typing @: a paper added then is mentioned in the question, and the cursor returns to it.
-  const [mention, setMention] = useState<Mention | undefined>(undefined)
+  const mention = usePaperMention({ selected: papers?.selected ?? [], onSelect: (paper) => papers?.onSelect(paper) })
   const several = (papers?.selected.length ?? 1) > 1
   return (
     <Composer
@@ -49,20 +46,10 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
       busy={busy}
       onStop={onStop}
       header={papers?.header}
-      onMention={papers ? (handle) => { setMention(handle); setPicking(true) } : undefined}
+      onMention={papers ? mention.onMention : undefined}
       leading={
         <>
-          {papers && (
-            <PaperPicker
-              label="Add or remove papers"
-              selected={papers.selected}
-              onSelect={(paper) => { if (mention && !papers.selected.includes(paper.id)) mention.insert(`@${mentionName(paper)} `); papers.onSelect(paper) }}
-              open={picking}
-              onOpenChange={setPicking}
-              disabled={gate.locked}
-              refocus={mention && (() => { mention.refocus(); setMention(undefined) })}
-            />
-          )}
+          {papers && <PaperPicker label="Add or remove papers" disabled={gate.locked} {...mention.picker} />}
           {chatId && <ContextMeter chatId={chatId} settings={settings} />}
         </>
       }

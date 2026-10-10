@@ -154,6 +154,12 @@ test('Given a new conversation, When a second paper is added with @, Then the fi
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   const question = screen.getByRole('textbox', { name: 'Question about these papers' })
   expect(screen.getByRole('button', { name: 'Remove Dense passage retrieval' })).toBeVisible()
+  await waitFor(() => expect(question).toHaveValue('@Karpukhin 2020 '))
+  // Typing @ again and choosing a paper already chosen only mentions it.
+  await user.type(question, 'or @')
+  await user.click(await screen.findByRole('option', { name: /Evidence based research/ }))
+  await waitFor(() => expect(question).toHaveValue('@Karpukhin 2020 or @Author 2024 '))
+  expect(screen.getByRole('button', { name: 'Remove Evidence based research' })).toBeVisible()
   await user.type(question, 'How do they compare?{Enter}')
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] }))
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c9'))
@@ -190,4 +196,33 @@ test('Given a chat over fifteen papers, Then three chips show and the rest colla
   expect(within(all).getAllByRole('listitem')).toHaveLength(15)
   await user.click(within(all).getByRole('button', { name: 'Remove Study 9 from this conversation' }))
   await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/m9')).toHaveLength(1))
+})
+
+test('Given a paper already in the chat, When @ is typed and it is chosen, Then it is mentioned and stays; the @ button still toggles', async () => {
+  let papers = [included(paper), included(paper2)]
+  const { calls } = mockApi({
+    ...settings,
+    'GET /chats': () => json({ items: [chatRow('c1', { papers })] }),
+    'GET /chats/c1/messages': { items: [] },
+    'GET /papers': { items: [paper, paper2] },
+    'DELETE /chats/c1/papers/p2': () => { papers = papers.filter((item) => item.paper_id !== 'p2'); return json(chatRow('c1', { papers })) },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  const input = await screen.findByRole('textbox', { name: 'Question about these papers' })
+  await waitFor(() => expect(input).toBeEnabled())
+  await user.type(input, 'What does @')
+  // The typed-@ picker mentions papers: included ones are checked, and choosing one only mentions it.
+  expect(await screen.findByPlaceholderText('Mention a paper')).toBeVisible()
+  const dense = await screen.findByRole('option', { name: /Dense passage retrieval/ })
+  expect(dense).toHaveAttribute('aria-checked', 'true')
+  await user.click(dense)
+  await waitFor(() => expect(input).toHaveValue('What does @Karpukhin 2020 '))
+  expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
+  expect(within(await chips()).getAllByRole('listitem')).toHaveLength(2)
+  // The @ button's picker adds and removes.
+  await user.click(screen.getByRole('button', { name: 'Add or remove papers' }))
+  expect(await screen.findByPlaceholderText('Find a paper in your library')).toBeVisible()
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/p2')).toHaveLength(1))
+  expect(input).toHaveValue('What does @Karpukhin 2020 ')
 })

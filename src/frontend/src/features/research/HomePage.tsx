@@ -5,10 +5,10 @@ import { toast } from 'sonner'
 import type { Paper, Provider } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Composer, type Mention } from '@/components/composer/Composer'
-import { mentionName } from '@/lib/paper-names'
+import { Composer } from '@/components/composer/Composer'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
 import { PaperChips, PaperPicker } from '@/components/composer/PaperPicker'
+import { usePaperMention } from '@/components/composer/use-paper-mention'
 import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -34,9 +34,6 @@ export default function HomePage() {
   // Library papers to ask about, in the order chosen; the first one's page is the chat's address (ARA-088).
   const [papers, setPapers] = useState<Paper[]>([])
   const picker = useRef<HTMLInputElement>(null)
-  const [picking, setPicking] = useState(false)
-  // Opened by typing @: a paper chosen then is mentioned in the question, and the cursor returns to it.
-  const [mention, setMention] = useState<Mention | undefined>(undefined)
   // A PDF chosen or dropped here uploads at once and opens its paper, where the same steps continue.
   const uploads = useUploads({
     onAccepted: (accepted) => {
@@ -61,6 +58,8 @@ export default function HomePage() {
   const asking = papers.length > 0
   const several = papers.length > 1
   const toggle = (choice: Paper) => setPapers((current) => current.some((item) => item.id === choice.id) ? current.filter((item) => item.id !== choice.id) : [...current, choice])
+  // Typing @ mentions a paper (adding it when new); the @ button adds or removes.
+  const mention = usePaperMention({ selected: papers.map((item) => item.id), onSelect: toggle })
 
   function search(q: string) {
     const params = { q: q.trim(), provider }
@@ -94,7 +93,7 @@ export default function HomePage() {
           maxLength={asking ? 8000 : 300}
           submitDisabled={asking ? createChat.isPending || !generation.usableFor('chat') : false}
           header={asking && <PaperChips papers={papers} onRemove={(item) => setPapers((current) => current.filter((chosen) => chosen.id !== item.id))} />}
-          onMention={(handle) => { setMention(handle); setPicking(true) }}
+          onMention={mention.onMention}
           leading={
             <>
               <DropdownMenu>
@@ -105,13 +104,7 @@ export default function HomePage() {
                   <DropdownMenuItem onSelect={() => picker.current?.click()}><FileUp aria-hidden="true" />Upload a PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <PaperPicker
-                selected={papers.map((item) => item.id)}
-                onSelect={(paper) => { if (mention && asking && !papers.some((item) => item.id === paper.id)) mention.insert(`@${mentionName(paper)} `); toggle(paper) }}
-                open={picking}
-                onOpenChange={setPicking}
-                refocus={mention && (() => { mention.refocus(); setMention(undefined) })}
-              />
+              <PaperPicker {...mention.picker} />
               {!asking && <ProviderSwitcher value={provider} onChange={setProvider} />}
             </>
           }

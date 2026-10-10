@@ -73,6 +73,25 @@ test('Given library papers chosen in the composer, When a question is asked, The
   expect(peekQuestion('c9')?.request_id).toMatch(/^[0-9a-f-]{36}$/)
 })
 
+test('Given a topic typed on home, When @ picks a paper, Then the paper is chosen and mentioned where @ was typed', async () => {
+  mockApi({
+    'GET /papers': { items: [readyPaper, otherPaper] },
+    'GET /models': { items: [luna] },
+    'GET /settings': { default_model: luna.key, reasoning_effort: 'low' },
+  })
+  const { user } = renderApp('/')
+  await user.type(screen.getByRole('textbox', { name: 'Research topic' }), 'Compare @')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  const question = screen.getByRole('textbox', { name: 'Question about this paper' })
+  await waitFor(() => expect(question).toHaveValue('Compare @Karpukhin 2020 '))
+  expect(screen.getByRole('button', { name: 'Stop asking about this paper' })).toBeVisible()
+  // Mentioning it again keeps it chosen.
+  await user.type(question, 'and @')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  await waitFor(() => expect(question).toHaveValue('Compare @Karpukhin 2020 and @Karpukhin 2020 '))
+  expect(screen.getByRole('button', { name: 'Stop asking about this paper' })).toBeVisible()
+})
+
 function recentRoutes(title: { value: string }) {
   return mockApi({
     'GET /chats': () => new Response(JSON.stringify({ items: [{ ...chat, title: title.value }] }), { headers: { 'Content-Type': 'application/json' } }),
