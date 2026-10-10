@@ -920,3 +920,42 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
   - no use of the stored block bboxes when text matching fails (23 of 27 stored citations have boxes).
 - **Next step.** The user approved a ticket and a Sonnet agent.
 - **Separate finding.** Existing papers processed before ARA-086, such as the user's `paper.dvi`, keep their old titles; ARA-086 fixes only new processing.
+
+## 2026-10-09 — ARA-089 obvious and robust citation highlights
+
+**Scope.** Frontend only, on `feat/ara-089-citation-highlight`, in `citation-region.ts`, `PdfViewer.tsx`, `PdfReader.tsx`, `pdf-viewer.css`, `index.css` and their tests. No backend change.
+
+**Decisions:**
+- **Fallback order** is text match, then the stored boxes, then page-only. The new outcome `'region'` reads "Outlined the cited region on page N." Its visible note says the exact text could not be found.
+- **Box conversion.** I checked the real conventions before writing the unit tests. For PDFs made with PyMuPDF (plain, CropBox, rotated 90/180/270), PyMuPDF block boxes are relative to the CropBox and are NOT rotated with the page. A rotated page therefore needs the rotation applied. Each point goes to PDF user space (`view[0] + x`, `view[3] - y`), then through pdf.js `viewport.convertToViewportPoint`, which handles rotation and offset. The result is stored as percentages of the page.
+- **Percentages mean zoom needs no re-measuring.** The outline is an absolutely positioned child of the page wrapper, so it stays aligned at any zoom.
+- **Context styling.** The earlier test "context lines carry no tint" was a deliberate decision about stripes on the 3,200-character chunk. I kept its intent (no background on context) and replaced the test. Context now gets a thin dotted underline, which is `text-decoration`, not a background.
+- **Strong highlight.** It uses the full `--evidence` tint plus a 2 px inset edge line. The new token `--evidence-edge` (oklch 0.58 0.13 75) measures 4.4:1 on white. Pages stay white paper in both themes, so the token has one value, as `--evidence` does.
+
+**Red → green (observed):**
+- `citation-region.test.ts` (7 tests) first failed with `Failed to resolve import "./citation-region"`. The next run failed with `TypeError: PageViewport is not a constructor`, because pdfjs-dist exports `PageViewport` as a type only. The test now uses a small replica of the scale-1 transform. The replica was checked against the real viewport in a scratch node run. It then went green.
+- `pdf-viewer-css.test.ts`: 4 new or changed tests failed, e.g. `expected '/* PDF reader (ARA-037). Pages stay w…' to match /\[data-citation-region\]…/`. They went green after the CSS and token change.
+- `PdfViewer.test.tsx` region block: 7 of 10 failed, e.g. `expected "vi.fn()" to be called with arguments: [ 'region' ]`. After implementing, 3 still failed, and each was fixed:
+  - `expected '10.000000000000005%' to be '10%'`, fixed by rounding percentages;
+  - a redraw test (`expected <div data-citation-region …> not to be <div …>`), fixed by keying outlines by jump nonce;
+  - `expected "vi.fn()" to be called 1 times, but got 2 times`. This was a test bug: the zoom test passed a new `highlight` object on each render, which restarts the jump. It now passes a stable one.
+- **Test-after.** The `workspace.test.tsx` test for the region copy was written after `PdfReader.tsx` was changed, so it passed immediately. It was not run red.
+
+**Errors and corrections:**
+- `npm run check` failed lint (`react-hooks/set-state-in-effect`) on my first clearing approach. I replaced it by hiding outlines whose nonce differs from the current jump.
+- `sed` with `|` in the replacement failed for the debug patch. I used a Python edit instead.
+- `nohup` could not detach under the harness. I started Vite as a plain background job and killed it at the end.
+
+**Visual verification** (Vite on port 5191, read-only against the user's dev API, Playwright Chromium, light and dark; screenshots are in the scratchpad and not committed):
+- **Highlight.** The strong sentences are a clearly visible amber with an edge line, and the context lines have a dotted underline. Both are readable on dense pages.
+- **Centring.** The passage centre was 0 px from the reader centre after settling on all 12 cold and warm clicks across the 3 papers. It is clamped when the passage is near the very top (page 1: -189 and -319 px). The ticket's claim that the reader scrolls only to the page did not reproduce. `markPage` already centred the first strong mark. What looked wrong in the screenshots was most likely the smooth scroll still moving: the offset reads about -170 to -330 px at 300 ms and 0 by 1.5 s.
+- **Box fallback.** I forced text matching to fail with a local, uncommitted toggle, since reverted. Stored boxes were outlined on pages 1, 2, 3, 7 and 15 of 3 papers, aligned with the text blocks. The paper "Attention Is All You Need" has no boxes on its chat citations (`bboxes: []`, older chunks), so those correctly stayed page-only. The other two papers' chats carry boxes on every citation (15 of 15 and 8 of 8).
+- **Clean and stable.** A second citation cleared the first (marks and outlines). After zooming twice, the outline and marks kept their page percentage (50.82 % and 59.44 % from the left), and the passage stayed in view (about 100 px off-centre).
+- **Real-PDF geometry.** PDFs made with PyMuPDF (plain, cropped, rotated 90/180/270, cropped and rotated) put the pdf.js text baseline inside the converted region in all 6 cases.
+
+**Verification:** `npm run check` passed with 73 files and 551 tests, and `npm run build` passed with the existing over-500 kB warning.
+
+**Open:**
+- No rotated PDF in the app.
+- Cited boxes sprawl across several blocks for a 3,200-character chunk, so the outline shows the whole chunk, not the claim's sentence. Only the first box is centred.
+- A citation spanning pages is text-matched on its first page only.

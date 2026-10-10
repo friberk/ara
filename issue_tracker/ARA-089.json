@@ -21,16 +21,29 @@
     "Component: highlight attributes and outline overlay rendered; fallback order text, then boxes, then page-only; clearing on a new citation; zoom realignment.",
     "Visual check: screenshots in light and dark themes on real papers through a read-only preview against the user's dev API."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/workspace/PdfViewer.tsx",
     "src/frontend/src/features/workspace/pdf-viewer.css",
     "src/frontend/src/features/workspace/text-highlight.ts",
     "src/frontend/src/features/workspace/evidence.ts",
-    "src/frontend/src/features/workspace/workspace-context.tsx"
+    "src/frontend/src/features/workspace/workspace-context.tsx",
+    "src/frontend/src/features/workspace/citation-region.ts",
+    "src/frontend/src/features/workspace/citation-region.test.ts",
+    "src/frontend/src/features/workspace/pdf-viewer-css.test.ts",
+    "src/frontend/src/features/workspace/PdfViewer.test.tsx",
+    "src/frontend/src/features/workspace/PdfReader.tsx",
+    "src/frontend/src/features/workspace/workspace.test.tsx",
+    "src/frontend/src/index.css",
+    "README.md"
   ],
-  "commits": [],
+  "commits": [
+    "cc50a7a",
+    "7c08612",
+    "a7e7205",
+    "c0eda63"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09. Branch feat/ara-089-citation-highlight.",
+  "verification": "Completed 2026-10-09 on feat/ara-089-citation-highlight. npm run check: typecheck and lint clean, 73 test files / 551 tests passed; npm run build passed (existing over-500 kB chunk warning). Real-PDF check: PyMuPDF boxes on plain, CropBox, and 90/180/270-rotated PDFs mapped through the real pdf.js viewport land on the pdf.js text positions (scratch script, not committed). Visual check, read-only preview on the user's dev API in light and dark: strong highlight plus dotted context visible; passage centred (0 px offset) after settling; forced text-match failure outlined stored boxes aligned with the text blocks on 3 papers; second citation cleared the first; zoom x2 kept the same page percentages. The ticket's 'scrolls to the page, not the passage' observation did not reproduce: centring already worked after the smooth scroll settled, and is clamped at the very top or bottom of the document. Not verified in the app: a rotated PDF (none of the user's papers is rotated; covered by the node check and unit tests).",
   "updated_at": "2026-10-09"
 }
