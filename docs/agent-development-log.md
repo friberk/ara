@@ -1573,3 +1573,16 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
 - *Clipped italic.* The truncating venue gets `pr-[0.15em]`. Red: `PaperCitation.test.tsx` expected the class and failed. The closing parenthesis in "arXiv (Cornell University)" is visible in light and dark.
 - *Tab stops.* Library icons are decorative and not focusable; the link's name carries the state ("Title, PDF attached"). Red: the row test failed with `Unable to find an accessible element with the role "link" and name "Attention is all you need, PDF attached"`. About 15 other Library test queries that matched a link by exact title now match by `^Title, `.
 - *Double announcement.* The tooltip content is `aria-hidden`. Red: a new test found no hidden tooltip. Full run afterwards: 647 of 647, tsc and eslint clean. An earlier full run in this round had flaky timeouts that passed on rerun.
+
+**Mention pills only, with titles, hover × and citation card (ARA-096 follow-up).**
+- **Trigger.** The home composer showed each @-mentioned paper twice: as a chip above the editor and as an inline pill.
+- **The user's decision.** Pills only; the pill shows the paper title rather than "Surname Year"; hovering highlights it and shows a remove × at the top-right corner; hovering also shows the short citation.
+- **The lead's design** (impeccable skill, Operate mode):
+  - no composer chips, and the @ button inserts a pill;
+  - a title truncated near 28ch;
+  - highlight plus a corner × on hover or node selection;
+  - a HoverCard with PaperCitation and the full title;
+  - tap-to-select on touch;
+  - history pills without the ×;
+  - the chat-scope paper row in existing chats unchanged.
+- **Handover.** The ARA-096 agent was resumed for it.
