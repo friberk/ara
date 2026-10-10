@@ -15,7 +15,7 @@ vi.mock('react-pdf', async () => {
   return {
     pdfjs: { GlobalWorkerOptions: {} },
     Document: function DocumentStub({ children, className, onLoadSuccess }: DocumentStubProps) {
-      useEffect(() => { onLoadSuccess?.({ numPages: 3, getPage: async () => ({ getViewport: () => ({ width: 612, height: 792 }) }) }) }, [onLoadSuccess])
+      useEffect(() => { onLoadSuccess?.({ numPages: 3, getPage: async () => ({ view: [0, 0, 612, 792], getViewport: () => ({ width: 612, height: 792, convertToViewportPoint: (x: number, y: number) => [x, 792 - y] }) }) }) }, [onLoadSuccess])
       return <div className={className}>{children}</div>
     },
     Page: function PageStub({ pageNumber, onRenderTextLayerSuccess, onRenderTextLayerError }: PageStubProps) {
@@ -44,6 +44,8 @@ class WidthObserver {
 
 const methodLines = ['Methodology', 'The method first extracts page text, then retrieves relevant', 'chunks and generates answers grounded in those passages.', 'Datasets', 'The experiment uses the Orion-12 dataset.']
 const cite = (page: number, excerpt: string): Citation => ({ chunk_id: `chunk-${page}`, document_id: 'doc-1', page, excerpt })
+const unmatched = 'The measured answer accuracy in this synthetic experiment is 86 percent of all cases.'
+const withBoxes = (citation: Citation, bboxes: number[][], page_end?: number): Citation => ({ ...citation, bboxes, page_end })
 const onMethod = cite(2, 'The method first extracts page text, then retrieves relevant\nchunks and generates answers grounded in those passages.')
 
 function renderViewer(highlight: PdfViewerProps['highlight']) {
@@ -187,5 +189,107 @@ describe('PdfViewer passage-level evidence (test-first)', () => {
     await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
     // The line's centre (1000 + 20 / 2) sits half the reader's height (600 / 2) below the top of the view.
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 710, behavior: 'smooth' })
+  })
+})
+
+describe('PdfViewer region fallback (ARA-089, test-first)', () => {
+  afterEach(() => vi.restoreAllMocks())
+  // PyMuPDF boxes: [page, x0, y0, x1, y1] in points, top-left origin; the stub page is 612 x 792.
+  const box = [2, 61.2, 79.2, 306, 158.4]
+  const regions = (page: number) => Array.from(screen.getByRole('group', { name: `Page ${page}` }).querySelectorAll<HTMLElement>('[data-citation-region]'))
+
+  test('Given text that cannot be found but stored boxes, Then the boxes are outlined on their page and the jump reports "region"', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    expect(onHighlight).toHaveBeenCalledTimes(1)
+    const [outline] = regions(2)
+    expect(outline).toBeDefined()
+    expect(outline!.style.left).toBe('10%')
+    expect(outline!.style.top).toBe('10%')
+    expect(outline!.style.width).toBe('40%')
+    expect(outline!.style.height).toBe('10%')
+    expect(outline).toHaveAttribute('data-citation-pulse')
+    expect(outline).toHaveAttribute('aria-hidden', 'true')
+    expect(marked(2)).toEqual([])
+  })
+
+  test('Given text that is found, Then the text is marked and the boxes are not drawn', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(onMethod, [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('highlighted'))
+    expect(regions(2)).toHaveLength(0)
+  })
+
+  test('Given neither text nor boxes, Then nothing is drawn and the jump reports "page-only"', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), []), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('page-only'))
+    expect(regions(2)).toHaveLength(0)
+  })
+
+  test('Given boxes that do not fit any page, Then the jump reports "page-only"', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [[2, 5, 5]]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('page-only'))
+  })
+
+  test('Given the text layer fails, Then stored boxes still give a region', async () => {
+    fixture.failing.add(2)
+    const { onHighlight } = renderViewer({ citation: withBoxes(onMethod, [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    expect(regions(2)).toHaveLength(1)
+  })
+
+  test('Given a citation across two pages, Then each page gets the boxes that carry its number', async () => {
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box, [2, 0, 700, 612, 790], [3, 0, 0, 612, 100]], 3), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    expect(regions(2)).toHaveLength(2)
+    expect(regions(3)).toHaveLength(1)
+  })
+
+  test('Given a second citation, Then the earlier outline and marks are cleared', async () => {
+    const { onHighlight, rehighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(1))
+    rehighlight({ citation: cite(3, 'Limitations\nTwelve examples do not establish performance.'), nonce: 2 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(2))
+    expect(regions(2)).toHaveLength(0)
+    expect(marked(3)).toEqual(['Limitations', 'Twelve examples do not establish performance.'])
+    rehighlight({ citation: withBoxes(cite(1, unmatched), [[1, 0, 0, 100, 100]]), nonce: 3 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(3))
+    expect(marked(3)).toEqual([])
+    expect(regions(1)).toHaveLength(1)
+  })
+
+  test('Given the same citation again, Then the outline is redrawn so it pulses again', async () => {
+    const citation = withBoxes(cite(2, unmatched), [box])
+    const { onHighlight, rehighlight } = renderViewer({ citation, nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(1))
+    const first = regions(2)[0]
+    rehighlight({ citation, nonce: 2 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledTimes(2))
+    expect(regions(2)).toHaveLength(1)
+    expect(regions(2)[0]).not.toBe(first)
+  })
+
+  test('Given the zoom changes, Then the outline stays on the page at the same percentages', async () => {
+    const citation = withBoxes(cite(2, unmatched), [box])
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const highlight = { citation, nonce: 1 }
+    const element = (zoom: number) => <PdfViewer documentId="doc-1" zoom={zoom} navigation={null} highlight={highlight} {...handlers} />
+    const view = render(element(1))
+    await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('region'))
+    view.rerender(element(2))
+    expect(regions(2)).toHaveLength(1)
+    expect(regions(2)[0]!.style.left).toBe('10%')
+    expect(handlers.onHighlight).toHaveBeenCalledTimes(1)
+  })
+
+  test('Given the region lands, Then its vertical centre is scrolled to the centre of the reader', async () => {
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.hasAttribute('data-citation-region') ? new DOMRect(0, 1000, 300, 80) : new DOMRect(0, 0, 0, 0)
+    })
+    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo')
+    const { onHighlight } = renderViewer({ citation: withBoxes(cite(2, unmatched), [box]), nonce: 1 })
+    await waitFor(() => expect(onHighlight).toHaveBeenCalledWith('region'))
+    // centre 1000 + 80 / 2, less half the reader's height
+    await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 740, behavior: 'smooth' }))
   })
 })

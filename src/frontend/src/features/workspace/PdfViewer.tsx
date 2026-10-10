@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page, pdfjs, type DocumentProps } from 'react-pdf'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -9,6 +9,7 @@ import type { Citation } from '@/api/types'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import type { PdfNavigation } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
+import { regionsFor, type PageGeometry, type Region } from './citation-region'
 import { findEvidence } from './evidence'
 import type { HighlightOutcome, SourceRequest } from './workspace-context'
 
@@ -32,11 +33,16 @@ export type PdfViewerProps = {
   onHighlight: (outcome: HighlightOutcome) => void
 }
 
-type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean }
+type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean; waitingForGeometry?: boolean }
 type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function offsetIn(root: HTMLElement, element: Element) { return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop }
+/** Scrolls so the vertical middle of `element` is the middle of the reader. */
+function centreIn(root: HTMLElement, element: Element) {
+  const middle = offsetIn(root, element) + element.getBoundingClientRect().height / 2
+  root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+}
 
 /**
  * Wraps characters [start, end) of a text-layer span in a <mark>, as pdf.js's own find highlighter does, so a passage
@@ -68,11 +74,17 @@ function clearMarks(root: HTMLElement) {
   })
 }
 
-const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTextLayer, onTextLayerError }: {
+const NO_REGIONS: Region[] = []
+const percent = (value: number) => `${Number(value.toFixed(3))}%`
+
+const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, regions, nonce, onTextLayer, onTextLayerError }: {
   pageNumber: number
   width: number
   height: number
   render: boolean
+  regions: Region[]
+  /** Changes with each jump, so an outline is redrawn (and pulses) even for the same boxes. */
+  nonce: number
   onTextLayer: (page: number) => void
   onTextLayerError: (page: number) => void
 }) {
@@ -82,6 +94,15 @@ const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, onTex
   return (
     <div data-pdf-page={pageNumber} role="group" aria-label={`Page ${pageNumber}`} className="pdf-page relative isolate shrink-0 overflow-hidden bg-card" style={{ width, height }}>
       {render && <Page pageNumber={pageNumber} width={width} devicePixelRatio={DEVICE_PIXEL_RATIO} loading={null} onRenderTextLayerSuccess={textRendered} onRenderTextLayerError={textFailed} />}
+      {regions.map((region, index) => (
+        <div
+          key={`${nonce}-${index}`}
+          data-citation-region=""
+          data-citation-pulse=""
+          aria-hidden="true"
+          style={{ left: percent(region.left), top: percent(region.top), width: percent(region.width), height: percent(region.height) }}
+        />
+      ))}
     </div>
   )
 })
@@ -102,6 +123,8 @@ export default function PdfViewer(props: PdfViewerProps) {
   const anchor = useRef({ page: 1, offset: 0 })
   const reportedPage = useRef(1)
   const frame = useRef(0)
+  const geometry = useRef<Map<number, PageGeometry> | null>(null)
+  const [regions, setRegions] = useState<{ nonce: number; list: Region[] }>({ nonce: 0, list: [] })
   const [width, setWidth] = useState(0)
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([])
@@ -129,6 +152,19 @@ export default function PdfViewer(props: PdfViewerProps) {
     latest.current.onHighlight(outcome)
   }, [])
 
+  /**
+   * The excerpt is not in the text layer: outline the citation's stored layout boxes instead, or settle page-only when
+   * there are none. Waits for the page geometry (fetched with the document) before deciding.
+   */
+  const outlineRegions = useCallback((nonce: number) => {
+    const active = request.current
+    if (!active || active.nonce !== nonce || active.reported) return
+    if (!geometry.current) { active.waitingForGeometry = true; return }
+    const list = regionsFor(active.citation, geometry.current)
+    if (list.length) setRegions({ nonce, list })
+    settle(list.length ? 'region' : 'page-only', nonce)
+  }, [settle])
+
   /** Marks the cited passage on its page if that page's text layer is complete; the first time also reports and centres it. */
   const markPage = useCallback((pageNumber: number) => {
     const root = rootRef.current
@@ -150,21 +186,19 @@ export default function PdfViewer(props: PdfViewerProps) {
       if (first) element.setAttribute('data-citation-pulse', '')
     }
     if (!first) return
-    settle(marks.length ? 'highlighted' : 'page-only', active.nonce)
+    if (marks.length) settle('highlighted', active.nonce)
+    else outlineRegions(active.nonce)
     const start = marks[0]
-    if (start) {
-      const middle = offsetIn(root, start) + start.getBoundingClientRect().height / 2
-      root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
-    }
+    if (start) centreIn(root, start)
     // A chip in a now-hidden tab had focus; keep keyboard users in the document they were sent to.
     const focused = document.activeElement
     if (!(focused instanceof HTMLElement) || focused === document.body || !focused.offsetParent) root.focus({ preventScroll: true })
-  }, [settle])
+  }, [settle, outlineRegions])
 
   const onTextLayerError = useCallback((pageNumber: number) => {
     const active = request.current
-    if (active?.citation.page === pageNumber) settle('page-only', active.nonce)
-  }, [settle])
+    if (active?.citation.page === pageNumber) outlineRegions(active.nonce)
+  }, [outlineRegions])
 
   // Width: measured at once, then re-measured after the panel stops resizing so canvases are not redrawn per frame.
   useEffect(() => {
@@ -226,12 +260,26 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!highlight) return
     const { citation, claim, nonce } = highlight
     request.current = { citation, claim, nonce, reported: false }
+    setRegions((current) => (current.list.length ? { nonce: 0, list: [] } : current))
     pendingPage.current = citation.page
     flushPendingPage()
     markPage(citation.page)
-    const timer = window.setTimeout(() => settle('page-only', nonce), HIGHLIGHT_TIMEOUT_MS)
+    const timer = window.setTimeout(() => outlineRegions(nonce), HIGHLIGHT_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [highlight, flushPendingPage, markPage, settle])
+  }, [highlight, flushPendingPage, markPage, outlineRegions])
+
+  // Once the outline is on the page, bring it to the middle of the reader.
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const outline = regions.list.length ? root?.querySelector('[data-citation-region]') : null
+    if (root && outline) centreIn(root, outline)
+  }, [regions])
+
+  const byPage = useMemo(() => {
+    const pages = new Map<number, Region[]>()
+    for (const region of regions.list) pages.set(region.page, [...(pages.get(region.page) ?? []), region])
+    return pages
+  }, [regions])
 
   useEffect(() => () => window.cancelAnimationFrame(frame.current), [])
 
@@ -258,9 +306,14 @@ export default function PdfViewer(props: PdfViewerProps) {
     latest.current.onDocumentLoad(pdf.numPages)
     void Promise.all(Array.from({ length: pdf.numPages }, (_, index) => pdf.getPage(index + 1).then((page) => {
       const viewport = page.getViewport({ scale: 1 })
-      return viewport.height / viewport.width
-    }))).then(setRatios, () => {})
-  }, [])
+      return { ratio: viewport.height / viewport.width, geometry: { view: page.view, viewport } as PageGeometry }
+    }))).then((pages) => {
+      setRatios(pages.map(({ ratio }) => ratio))
+      geometry.current = new Map(pages.map(({ geometry }, index) => [index + 1, geometry]))
+      const active = request.current
+      if (active?.waitingForGeometry) { active.waitingForGeometry = false; outlineRegions(active.nonce) }
+    }, () => {})
+  }, [outlineRegions])
 
   const goToItem = useCallback(({ pageNumber }: { pageNumber: number }) => {
     pendingPage.current = pageNumber
@@ -296,6 +349,8 @@ export default function PdfViewer(props: PdfViewerProps) {
               pageNumber={page}
               width={pageWidth}
               height={Math.round(pageWidth * (ratios[index] ?? ratios[0] ?? DEFAULT_RATIO))}
+              regions={byPage.get(page) ?? NO_REGIONS}
+              nonce={regions.nonce}
               render={nearby.has(page) || page === target || (nearby.size === 0 && page <= 2)}
               onTextLayer={markPage}
               onTextLayerError={onTextLayerError}

@@ -38,11 +38,13 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
           <Button size="xs" variant="outline" onClick={onShowCurrent}>Back to current PDF</Button>
         </div>
       )}
-      {/* One polite announcement per jump; the visible note repeats the page-only case for sighted readers. */}
+      {/* One polite announcement per jump; the visible note repeats the region and page-only cases for sighted readers. */}
       <div role="status" aria-live="polite" className="sr-only">
         {outcome === 'highlighted' && highlight && `Highlighted the cited passage on page ${highlight.citation.page}.`}
+        {outcome === 'region' && highlight && `Outlined the cited region on page ${highlight.citation.page}.`}
         {outcome === 'page-only' && highlight && `Showing page ${highlight.citation.page}. The cited passage could not be highlighted.`}
       </div>
+      {outcome === 'region' && highlight && <p aria-hidden="true" className="border-b px-4 py-2 text-xs text-muted-foreground">Couldn’t find the exact text, so outlined the cited region on page {highlight.citation.page}.</p>}
       {outcome === 'page-only' && highlight && <p aria-hidden="true" className="border-b px-4 py-2 text-xs text-muted-foreground">Couldn’t pinpoint the passage, so showing page {highlight.citation.page}.</p>}
       <div className="min-h-0 flex-1">
         <ReaderErrorBoundary key={documentId}>
