@@ -6,10 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Markdown, pageLabel, SourceList } from '@/features/content'
-import { GenerationMeta } from '@/features/summary'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
 import { mentionSegments, type MentionSpan } from '@/lib/mentions'
-import { AnswerDetails } from './AnswerDetails'
 import type { ChatSources } from './chat-sources'
 
 const sourceMarker = /\s?\[source:([0-9a-fA-F-]{36})\]/g
@@ -57,7 +55,7 @@ function CopyAnswer({ message, paperName }: { message: Message; paperName?: (cit
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={() => void copy()} className="-ml-1 text-muted-foreground hover:text-foreground">
+        <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={() => void copy()} className="-mr-1 ml-auto text-muted-foreground hover:text-foreground">
           {copied === 'copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
         </Button>
       </TooltipTrigger>
@@ -93,11 +91,9 @@ export function AssistantMessage({ message, sources, progress }: { message: Mess
       {message.citations.length > 0 && <SourceList citations={message.citations} documents={documents} paperName={paperName} context={message.content} onSelect={showSource} className="flex flex-wrap gap-1.5" />}
       {!writing && (
         <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {message.content && <CopyAnswer message={message} paperName={paperName} />}
-          <GenerationMeta model={message.model} effort={message.reasoning_effort} />
-          {message.retrieval && <AnswerDetails retrieval={message.retrieval} context={message.context} model={message.model} />}
           {message.state === 'interrupted' && <Badge variant="secondary" className="bg-warning-muted font-normal text-warning">Interrupted</Badge>}
           {message.state === 'failed' && <Badge variant="destructive" className="font-normal">Failed</Badge>}
+          {message.content && <CopyAnswer message={message} paperName={paperName} />}
         </div>
       )}
     </article>

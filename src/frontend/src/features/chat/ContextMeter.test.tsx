@@ -38,15 +38,20 @@ test('Given a completed turn, When the ring is hovered, Then used and total toke
   expect(ring.querySelector('[data-fraction]')).toHaveAttribute('data-fraction', String(12_400 / 272_000))
   await user.hover(ring)
   const card = await screen.findByRole('dialog', { name: 'Context and cost' })
-  expect(within(card).getByText('12.4k / 272k tokens · 5%')).toBeVisible()
-  expect(within(card).getByText('$0.0123 this chat')).toBeVisible()
-  expect(within(card).getByText('Model window 1.05M tokens')).toBeVisible()
+  expect(within(card).getByRole('heading', { name: 'Context' })).toBeVisible()
+  expect(within(card).getByRole('heading', { name: 'Cost' })).toBeVisible()
+  expect(within(card).getByText('12.4k of 272k tokens')).toBeVisible()
+  expect(within(card).getByText('5%')).toBeVisible()
+  expect(within(card).getByRole('progressbar', { name: 'Context used' })).toHaveAttribute('aria-valuenow', '5')
+  expect(within(card).getByText('Total').parentElement).toHaveTextContent('$0.0123')
+  expect(within(card).queryByText(/Model window/)).not.toBeInTheDocument()
+  expect(card.textContent).not.toContain('·')
   for (const [label, value] of [['Answers', '$0.0090'], ['Follow-up planning', '$0.0010'], ['Conversation summaries', '$0.0020'], ['Query embeddings', '$0.0001'], ['Reranking', '$0.0002']] as const) {
     expect(within(card).getByText(label).parentElement).toHaveTextContent(value)
   }
 })
 
-test('Given a free breakdown line, Then it is left out; a model whose window equals its budget shows no window line', async () => {
+test('Given a free breakdown line, Then it is left out; a model whose window differs from its budget still shows no window line', async () => {
   const { user } = mount({ ...used, context: { ...used.context, window: 272_000 }, cost: { ...used.cost, planning: zero, reranking: zero } })
   await user.hover(await screen.findByRole('button', { name: /^Context 5%/ }))
   const card = await screen.findByRole('dialog', { name: 'Context and cost' })
@@ -59,8 +64,10 @@ test('Given a local model, Then the card says so and shows $0.00', async () => {
   const { user } = mount({ context: { used_tokens: 1_900, input_budget: 3_072, window: 8_192, model: 'ifm' }, cost: { ...empty.cost, local: true } }, { model: 'ifm', reasoning_effort: 'default' })
   await user.hover(await screen.findByRole('button', { name: 'Context 62% used of 3.1k tokens. Local model, $0.00.' }))
   const card = await screen.findByRole('dialog', { name: 'Context and cost' })
-  expect(within(card).getByText('Local model · $0.00')).toBeVisible()
-  expect(within(card).getByText('Model window 8.2k tokens')).toBeVisible()
+  expect(within(card).getByText('Local model, no charge')).toBeVisible()
+  expect(within(card).getByText('Total').parentElement).toHaveTextContent('$0.00')
+  expect(within(card).queryByText(/Model window/)).not.toBeInTheDocument()
+  expect(card.textContent).not.toContain('·')
 })
 
 test('Given earlier answers from before costs were recorded, Then the card says they are not counted', async () => {
@@ -100,7 +107,8 @@ test('Given the model switches, Then the usage is requested for the new model an
   const ring = await screen.findByRole('button', { name: 'Context 404% used of 3.1k tokens. $0.0123 this chat.' })
   expect(ring.querySelector('[data-fraction]')).toHaveAttribute('data-fraction', '1')
   await user.hover(ring)
-  expect(await screen.findByText('12.4k / 3.1k tokens · 404%')).toBeVisible()
+  expect(await screen.findByText('12.4k of 3.1k tokens')).toBeVisible()
+  expect(screen.getByText('404%')).toBeVisible()
   expect(calls.filter((call) => call.path === '/chats/c1/usage').map((call) => call.url.searchParams.get('model'))).toEqual(['gpt-5.6-luna', 'ifm'])
 })
 

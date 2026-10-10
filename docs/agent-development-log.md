@@ -1840,3 +1840,11 @@ Deviations: (1) the popover's accessible name is "Chat history for this paper", 
     - A citation jump lands on page 7 with the passage 399px (desktop) or 325px (390px) below the bar.
     - The header title, the "PDF" heading and page 1 start at the same x in every variant: 272px on desktop and 16px at 390px. The no-PDF gate is aligned the same way.
     - The root and the bar are `oklch(1 0 0)` in light mode and `oklch(0.145 0 0)` in dark mode. The docked hairline is `oklch(0.922 0 0)` in light and `oklch(1 0 0 / 0.1)` in dark.
+
+## 2026-10-10 - ARA-106 Quieter answer footer, headed context and cost card, plain model picker
+
+- Prompt: the user asked for the copy button at the answer's bottom right, no model, effort or Details line, a "Cost" heading like the context heading, no "Model window" text, a better form for "3%" than a middle dot, and no "Set as default" or "Model settings" in the model picker.
+- **Red first.** Four test files were changed before any implementation (ContextMeter, ModelSwitcher, open-models-flag, ConversationPane.standalone). Run: 6 failed, 28 passed. Failures were the missing Context heading, the missing plain local wording, the picker items still present, and the footer still showing model text with the copy button not last.
+- **Card design.** Both sections have the same small medium-weight heading. Context is a row with "12.4k of 272k tokens" muted on the left and the percentage as its own medium-weight value on the right, then a thin meter using the existing Progress component, red from 90% like the ring. Cost mirrors it: a Total row, then the breakdown rows. A local model reads "Local model, no charge". The reason for the row form is that it matches the breakdown rows, so the card has one rhythm. The ring's aria-label is unchanged.
+- **Error corrected on the way.** Removing `generation-meta.tsx` before its export line made the whole standalone test file fail to import; a first `sed -i` also failed on macOS (BSD sed needs `-i ''`). Two ConversationPane tests then failed because they asserted the old historical effort labels, and were updated to assert those labels are gone.
+- **Verification.** `npm run check`: 715 passed in 90 files. `npm run build` passed. Screenshots are listed in the ticket.

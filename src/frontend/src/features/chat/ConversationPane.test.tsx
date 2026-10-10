@@ -8,7 +8,7 @@ import { paperChatsKey } from './use-paper-chats'
 
 afterEach(() => vi.unstubAllGlobals())
 
-test.each(['default', 'on'])('Given saved native %s aliases High, When a new message is sent, Then it requests high and past aliases keep historical labels', async (reasoning) => {
+test.each(['default', 'on'])('Given saved native %s aliases High, When a new message is sent, Then it requests high and past answers stay readable without a reasoning label', async (reasoning) => {
   const local = { ...luna, key: 'native', provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } }
   const legacy = [assistantMessage('old-preset', 'Earlier runtime preset response.', { model: local.key, reasoning_effort: 'default' }), assistantMessage('old-enabled', 'Earlier enabled response.', { model: local.key, reasoning_effort: 'on' })]
   const answer = assistantMessage('new-high', 'New explicit response.', { model: local.key, reasoning_effort: 'high' })
@@ -23,8 +23,9 @@ test.each(['default', 'on'])('Given saved native %s aliases High, When a new mes
   await ask(user, 'What changed?')
   await screen.findByText('New explicit response.')
   expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ model: local.key, reasoning_effort: 'high' })
-  expect(screen.getByText('Runtime preset')).toBeVisible()
-  expect(screen.getByText('Reasoning enabled')).toBeVisible()
+  expect(screen.getByText('Earlier runtime preset response.')).toBeVisible()
+  expect(screen.queryByText('Runtime preset')).not.toBeInTheDocument()
+  expect(screen.queryByText('Reasoning enabled')).not.toBeInTheDocument()
   expect(calls.some((call) => call.method === 'PUT')).toBe(false)
 })
 
