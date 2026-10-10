@@ -12,7 +12,7 @@ const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', mo
 const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: 'qwen3-embedding:8b', display_name: 'Qwen3 Embedding 8B', dimensions: 4096, unavailable_reason: 'Download Qwen3 Embedding 8B in Settings', local_model_key: 'qwen3-embedding-8b' }
 const profiles = { items: [openai, small, qwen4b, qwen8b], default_profile: openai.key }
 const saved: RetrievalSettings = { embedding_profile: openai.key, reranker: 'openai-gpt-6-luna' }
-const estimate = { profile: 'openai-3-small', papers: 12, tokens: 480000, price_per_million: 0.02, estimated_cost_usd: 0.0096 }
+const estimate = { profile: 'openai-3-small', papers: 12, tokens: 481234, price_per_million: 0.02, estimated_cost_usd: 0.0096 }
 const base = { 'GET /retrieval/reindex-estimate': estimate, 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'GET /retrieval/profiles': profiles }
 afterEach(() => vi.unstubAllGlobals())
 // Local model tests run with open models on, as the server reports them (ARA-090).
@@ -97,7 +97,7 @@ test('Given one hosted reranker turned on, Then Reranking is a switch that says 
   const toggle = await within(section).findByRole('switch', { name: 'Reranking' })
   expect(toggle).toBeChecked()
   expect(within(section).getByText('After search, a second model reads the 40 best matches and puts the passages that answer your question first, so answers cite better evidence.')).toBeVisible()
-  expect(within(section).getByText('Uses OpenAI GPT-6 Luna. Adds about 2 to 3 seconds and $0.004 to each question.')).toBeVisible()
+  expect(within(section).getByText('Runs on OpenAI GPT-6 Luna, separate from the model that answers. Adds about 2 to 3 seconds and $0.004 to each question.')).toBeVisible()
   expect(within(section).queryByRole('radiogroup')).not.toBeInTheDocument()
   expect(within(section).queryByText('gpt-6-luna')).not.toBeInTheDocument()
 })

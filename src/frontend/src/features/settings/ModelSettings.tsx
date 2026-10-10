@@ -33,10 +33,11 @@ function ModelDetails({ model }: { model: Model }) {
       {(purpose || limits.length > 0) && <span>{[purpose, ...limits].filter(Boolean).join(' ')}</span>}{' '}
       {model.status === 'unavailable' ? <span>{unavailableNote(model)}</span> : (
         // Spaces between the facts keep them apart when a screen reader reads the row's description as one line.
-        <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
+        // Fixed columns from the small breakpoint keep the figures in line from one model to the next.
+        <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums sm:grid sm:grid-cols-[6rem_7.5rem_1fr] sm:gap-x-2">
           {model.input_price_per_million != null && <span>Input <span className="text-foreground">{price(model.input_price_per_million)}</span></span>}{' '}
           {model.output_price_per_million != null && <span>Output <span className="text-foreground">{price(model.output_price_per_million)}</span></span>}{' '}
-          <span>Context <span className="text-foreground">{formatTokens(model.context_window)}</span></span>
+          <span>Context <span className="text-foreground">{formatTokens(model.context_window)} tokens</span></span>
         </span>
       )}
     </>

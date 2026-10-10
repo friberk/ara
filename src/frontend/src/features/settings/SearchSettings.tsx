@@ -11,6 +11,8 @@ import { useEmbeddingProfiles, useReindexEstimate, useRetrievalSettings, useSave
 import { ChoiceList, ChoiceRow, SettingsSection } from './parts'
 
 function papers(count: number) { return count === 1 ? 'the one paper' : `all ${count.toLocaleString()} papers` }
+// An estimate reads as one: two significant figures, so 52,964 tokens is "about 53,000".
+function roughly(count: number) { return Number(count.toPrecision(2)).toLocaleString() }
 function cost(estimate: ReindexEstimate) {
   if (estimate.price_per_million === 0) return 'none, because this model runs on this server'
   return estimate.estimated_cost_usd < 0.01 ? 'less than $0.01' : `$${estimate.estimated_cost_usd.toFixed(2)}`
@@ -32,7 +34,7 @@ function RebuildDialog({ profile, open, onCancel, onConfirm }: { profile: Embedd
                 {empty
                   ? `Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with ${profile.display_name}.`
                   : data
-                    ? `Switching to ${profile.display_name} rebuilds the index for ${papers(data.papers)} in your library, about ${data.tokens.toLocaleString()} tokens, in the background.`
+                    ? `Switching to ${profile.display_name} rebuilds the index for ${papers(data.papers)} in your library, about ${roughly(data.tokens)} tokens, in the background.`
                     : `Switching to ${profile.display_name} rebuilds the index for every paper in your library, in the background.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -113,7 +115,7 @@ function Reranking({ rerankers, saved }: { rerankers: Reranker[]; saved: Retriev
         <>
           <p>After search, a second model reads the {reads ? `${reads} ` : ''}best matches and puts the passages that answer your question first, so answers cite better evidence.</p>
           {!listed.length && <p>This server offers no reranking model.</p>}
-          {current !== null && listed.length === 1 && active?.status === 'available' && <p>{[`Uses ${active.display_name}.`, note(active)].filter(Boolean).join(' ')}</p>}
+          {current !== null && listed.length === 1 && active?.status === 'available' && <p>{[`Runs on ${active.display_name}, separate from the model that answers.`, note(active)].filter(Boolean).join(' ')}</p>}
         </>
       )}
       control={<Switch aria-labelledby={id} checked={current !== null} disabled={!usable && current === null} onCheckedChange={(on) => choose(on ? usable?.key ?? null : null)} className="mt-0.5" />}
