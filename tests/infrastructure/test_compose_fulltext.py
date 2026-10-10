@@ -54,6 +54,8 @@ class FullTextComposeTests(unittest.TestCase):
             "POSTGRES_PASSWORD": "fixture-only",
             "REDIS_PASSWORD": "fixture-only",
             "MINIO_ROOT_PASSWORD": "fixture-only",
+            # The model worker runs only under the open-models profile (ARA-090).
+            "COMPOSE_PROFILES": "open-models",
         }
         result = subprocess.run(
             ["docker", "compose", "config", "--format", "json"],
