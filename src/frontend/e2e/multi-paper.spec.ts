@@ -39,8 +39,8 @@ test('ARA-088 Given two ready papers, when one chat compares them, then each is 
 
   // The chat is listed under the second paper too, and opens at its first paper's address.
   await page.goto(`/papers/${second.id}`)
-  await page.getByRole('button', { name: 'New conversation' }).first().click()
-  await page.getByRole('menuitemradio', { name: /How do the two papers compare/ }).click()
+  await page.getByRole('button', { name: 'Chat history' }).click()
+  await page.getByRole('option', { name: /How do the two papers compare/ }).click()
   await expect(page).toHaveURL(chatUrl)
 
   // Removing the second paper keeps the answer's citation to it.
