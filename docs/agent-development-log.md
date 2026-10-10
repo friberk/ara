@@ -1178,3 +1178,11 @@ After the first round, the lead fast-forwarded the branch to the integration bra
   - one Self-Route-style wider retry;
   - map-reduce on small windows.
 - **Tickets.** ARA-093 implements the budgets, ARA-088 multi-paper chats, and ARA-094 the evidence changes (ARA-079 folded in). No check set is possible, so these are research-backed but unmeasured on the user's papers.
+
+**No paper cap in multi-paper chats (2026-10-10).** The user expected an unlimited number of papers per chat. The 5-paper cap was the lead's own carry-over from the frozen local-model budget and was never approved. The ARA-088 agent was told to remove the cap and design for any N:
+- one filtered search across the chat's documents, with a fixed candidate pool;
+- per-paper floors while they fit, then routing by relevance, always keeping papers the question names;
+- sub-questions only for targeted papers;
+- chip and tab overflow in the UI;
+- a 30-paper test.
+The design doc is updated.

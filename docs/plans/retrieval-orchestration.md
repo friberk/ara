@@ -30,11 +30,12 @@ E  = W − F − H                               (evidence ceiling)
 3. **Rerank** the pool, as in Anthropic Contextual Retrieval, where a reranker narrows about 150 candidates to 20.
 4. **Prune, never pad.** Drop passages far below the top score. Retrieved hard negatives degrade long-context generation (Jin et al., ICLR 2025).
 5. **First pass is conservative.** Use at most 24 passages and at most min(16K, E) tokens, close to OpenAI file search's defaults: up to 20 chunks of 800 tokens, a 16K retrieval budget for GPT-4-class models.
-6. **Per-paper floor.** In multi-paper chats each paper gets a floor of about 2 passages before relevance shares the rest. If the papers in scope exceed what fits (m = E1 / floor), route to the most relevant papers. On small windows, comparisons go map-reduce: one call per paper, then a synthesis.
-7. **Expand** selected chunks to neighbours or their section while the paper's share allows (small-to-big).
-8. **Order.** Group passages by paper with a short header; within each paper, order by page; put the strongest passages at the start and end. This is the retrieval-reordering finding of Jin et al., ICLR 2025, which builds on "lost in the middle".
-9. **Retry once.** If the model reports the evidence insufficient, retry with a lower prune bar, about twice the cap and section expansion, up to E. This adapts Self-Route (Li et al., EMNLP 2024 Industry), which escalates only when the model judges the evidence insufficient. Here the escalation is wider retrieval, not whole documents.
-10. **Observable.** Each answer records passage count, evidence tokens, pruned count, scores and whether it retried. "Details" and the context meter show them.
+6. **Any number of papers** (no cap; user decision on 2026-10-10). Search is one filtered query across the chat's documents, so its cost doesn't grow with N, and the candidate pool is a fixed size. Papers the question names are always kept.
+7. **Per-paper floor.** In multi-paper chats each paper gets a floor of about 2 passages before relevance shares the rest. If the papers in scope exceed what fits (m = E1 / floor), route to the most relevant papers. On small windows, comparisons go map-reduce: one call per paper, then a synthesis.
+8. **Expand** selected chunks to neighbours or their section while the paper's share allows (small-to-big).
+9. **Order.** Group passages by paper with a short header; within each paper, order by page; put the strongest passages at the start and end. This is the retrieval-reordering finding of Jin et al., ICLR 2025, which builds on "lost in the middle".
+10. **Retry once.** If the model reports the evidence insufficient, retry with a lower prune bar, about twice the cap and section expansion, up to E. This adapts Self-Route (Li et al., EMNLP 2024 Industry), which escalates only when the model judges the evidence insufficient. Here the escalation is wider retrieval, not whole documents.
+11. **Observable.** Each answer records passage count, evidence tokens, pruned count, scores and whether it retried. "Details" and the context meter show them.
 
 ## Window sizes (all derived)
 
