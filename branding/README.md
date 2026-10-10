@@ -11,7 +11,7 @@ curl -L -o "$TMPDIR/InstrumentSerif-Italic.ttf" https://github.com/google/fonts/
 uv run --no-project --with fonttools==4.55.3 --with uharfbuzz==0.43.0 python -I branding/make_wordmark.py "$TMPDIR/InstrumentSerif-Italic.ttf" branding/
 ```
 
-Do not commit the font file. After regenerating, update the inlined paths in `AraBrand.tsx` and copy `favicon.svg` to `src/frontend/public/favicon.svg` (a test checks the favicon copy).
+Do not commit the font file. After regenerating, update the inlined paths in `AraBrand.tsx` and copy `favicon.svg` to `src/frontend/public/favicon.svg` (`AraBrand.test.tsx` fails if the inlined paths differ from the SVGs, and `index-html.test.ts` checks the favicon copy).
 
 ## PNG fallbacks
 

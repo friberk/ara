@@ -38,13 +38,14 @@
     "PRODUCT.md",
     "branding/render_icons.mjs",
     "src/frontend/public/favicon-32.png",
-    "src/frontend/public/apple-touch-icon.png"
+    "src/frontend/public/apple-touch-icon.png",
+    "src/frontend/src/components/brand/AraBrand.test.tsx"
   ],
   "commits": [
     "820e65c",
     "1b17d70"
   ],
   "pull_requests": [],
-  "verification": "Red first: shell.test.tsx (no link named 'ara.') and index-html.test.ts (title did not match /<title>ara\\.<\\/title>/) failed, 3 tests. Green after implementation. Full run: 86 files, 669+ tests passing (see journal), npm run check and build clean. Visual check in light, dark, collapsed and 390px via Vite on port 5391 (no backend, 502s expected): found the wordmark shrunk to 16px by the shadcn button svg rule; fixed with h-[26px]! w-auto!. Not verified: real browser tab favicon in dark chrome, 16px legibility on a real display. Addendum: PNG fallbacks (favicon-32.png RGBA, apple-touch-icon.png 180x180 opaque square) rendered by branding/render_icons.mjs; the index-html test failed red on the missing png link, then passed.",
+  "verification": "Red first: shell.test.tsx (no link named 'ara.') and index-html.test.ts (title did not match /<title>ara\\.<\\/title>/) failed, 3 tests. Green after implementation. Full run: 86 files, 669+ tests passing (see journal), npm run check and build clean. Visual check in light, dark, collapsed and 390px via Vite on port 5391 (no backend, 502s expected): found the wordmark shrunk to 16px by the shadcn button svg rule; fixed with h-[26px]! w-auto!. Not verified: real browser tab favicon in dark chrome, 16px legibility on a real display. Addendum: PNG fallbacks (favicon-32.png RGBA, apple-touch-icon.png 180x180 opaque square) rendered by branding/render_icons.mjs; the index-html test failed red on the missing png link, then passed. Path drift guard AraBrand.test.tsx: red with an altered path character (expected 'M89.0 9Q53.1 9...' to be 'M89.0 9Q53.0 9...'), green when restored.",
   "updated_at": "2026-10-10"
 }

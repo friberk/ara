@@ -1582,3 +1582,5 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
 - Playwright MCP could not find Chrome, so screenshots used the project's own Playwright Chromium.
 
 **ARA-099 addendum, PNG favicon fallbacks.** Red: the extended `index-html.test.ts` failed with `expected '<!doctype html>...' to contain '<link rel="icon" type="image/png" siz...'`. `branding/render_icons.mjs` renders the SVG with the frontend's Playwright. First render of the 32px icon was opaque RGB (white corners); `omitBackground: true` made it RGBA. The touch icon is an opaque square without rounded corners.
+
+**ARA-099 path drift guard.** `AraBrand.test.tsx` compares the inlined paths and viewBoxes to `branding/*.svg`. My first red attempt used a sed that silently did not apply, so the test passed; a corrected edit then failed both cases with `expected 'M89.0 9Q53.1 9...' to be 'M89.0 9Q53.0 9...'`, and restoring the file made it pass.
