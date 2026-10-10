@@ -8,7 +8,6 @@ export type GenerationSettingsValue = {
   setSettings: (next: GenerationSettings) => void
   models: Model[]
   selectedModel: Model | undefined
-  savedDefaults: GenerationSettings | null
   loading: boolean
   error: unknown
   retry: () => void
