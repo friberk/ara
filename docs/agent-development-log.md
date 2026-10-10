@@ -1292,3 +1292,5 @@ The design doc is updated.
   - No live OpenAI calls were made.
   - The UI has had no visual check.
   - Name detection is literal: a paraphrased title or an author mentioned without a year is not a named paper.
+
+**Paper deletion and metadata editing (ARA-095).** The user asked why papers cannot be deleted or their metadata edited. The lead checked the code. Deletion was never built: there is no endpoint and no UI. Editing exists only in the workspace Details tab (Edit) and covers title, authors, year, DOI and abstract, but not venue. It is not reachable from the Library, and "Look up again" appears only after a failed lookup. The user approved ARA-095, assigned to an Opus agent, in parallel with ARA-094.

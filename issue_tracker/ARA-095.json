@@ -1,0 +1,42 @@
+{
+  "id": "ARA-095",
+  "title": "Delete papers from the library and make metadata editing complete and discoverable",
+  "type": "feature",
+  "priority": "P1",
+  "description": "User question on 2026-10-10: \"Why we cannot delete papers from our library? Similarly edit the metadata and stuff?\" There is no paper deletion at all: no endpoint and no UI. Metadata editing exists but is easy to miss. It lives in the paper workspace Details tab, under Edit, with BibliographyEditor and PATCH /papers/{id}, and covers title, authors, year, DOI and abstract. It lacks venue (stored since ARA-086), editing from the Library list, and a 'Look up again' action available at any time; today that action appears only after a lookup gave up. The user approved this ticket and an Opus agent.",
+  "dependencies": [
+    "ARA-007",
+    "ARA-086",
+    "ARA-088",
+    "ARA-092"
+  ],
+  "acceptance_criteria": [
+    "Given a paper, when the user chooses Delete (from its workspace or its Library row) and confirms, then the paper, its PDFs, summaries, search index and any chat whose only paper it is are removed. Multi-paper chats keep their other papers, and their saved citations stay readable.",
+    "Given the confirmation dialog, when it opens, then it states plainly what will be removed (counts of PDFs, chats deleted, and multi-paper chats that lose this paper) and requires an explicit confirm.",
+    "Given a deleted paper's stored PDFs, when deletion commits, then a durable background job removes the objects from storage. A storage failure retries and never resurrects the paper. Duplicate deliveries are safe.",
+    "Given download, processing, summary, metadata or indexing jobs still running for the paper, when it is deleted, then they settle safely as cancelled or failed without crashing workers, looping lease recovery, or recreating rows. Activity shows them without broken links.",
+    "Given the Library, when the user selects several papers, then they can be deleted together with one confirmation.",
+    "Given a paper, when the user edits its details from the workspace or from its Library row, then title, authors, year, venue, DOI and abstract are editable. Manual edits keep winning over automatic lookups.",
+    "Given a paper with a DOI or provider record, when the user chooses 'Look up again' at any time, then the configured metadata source refreshes non-manual fields, with the existing rate-limit behaviour.",
+    "Given a request for a paper that was deleted, when the API or UI loads it, then it answers 404 or redirects to the Library with a short note, never a crash."
+  ],
+  "test_cases": [
+    "Backend: deletion cascade (documents, chunks, embeddings, summaries, chats, chat_papers trigger, upload matches, redirects); storage cleanup job; idempotency; in-flight job settlement.",
+    "Backend: PATCH with venue; Look up again respecting manual provenance.",
+    "Frontend: delete from workspace and library row, bulk delete, confirmation copy with counts, Library edit, deleted-paper 404 handling.",
+    "A browser spec for delete and edit, run at integration."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/routes/research.py",
+    "src/backend/app/repositories/papers.py",
+    "src/backend/app/services/metadata.py",
+    "src/frontend/src/features/library/LibraryPage.tsx",
+    "src/frontend/src/features/workspace/DetailsPanel.tsx",
+    "src/frontend/src/features/workspace/BibliographyEditor.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 with the user's approval. Branch feat/ara-095-library-delete-edit.",
+  "updated_at": "2026-10-10"
+}
