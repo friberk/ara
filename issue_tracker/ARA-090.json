@@ -1,0 +1,44 @@
+{
+  "id": "ARA-090",
+  "title": "Move open (local) models behind an experimental flag and freeze them",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User decision on 2026-10-09: open models are hard to manage well right now. Move everything related to them behind an experimental flag; unless it is on, nothing related to open models exists in the running app. Open-model development is frozen, freeing time for work such as ARA-088. The flag-off app uses only hosted OpenAI chat, embedding and reranking profiles. Lead check of the user's dev data: all 6 papers use the default OpenAI embedding profile and every assistant answer used a hosted model, so turning the flag off loses nothing.",
+  "dependencies": [
+    "ARA-022",
+    "ARA-021",
+    "ARA-083"
+  ],
+  "acceptance_criteria": [
+    "Given EXPERIMENTAL_OPEN_MODELS is unset or false (the default), when the app runs, then no open-model surface exists: no local chat models in /models or the composer, no Local models settings, no local embedding or reranker profiles, no model download, verify or delete endpoints or jobs, no local-model activity and no startup verification jobs.",
+    "Given the flag is off, when Compose starts with the documented command, then the Ollama and model-worker services do not run, readiness never depends on them, and existing model volumes and weights are untouched.",
+    "Given the flag is on, together with the documented Compose profile, when the app runs, then today's open-model behaviour returns unchanged.",
+    "Given stored state referencing open models (a saved local default, local-model history, a paper on a local embedding profile, a local reranker setting), when the flag is off, then history stays readable, nothing silently switches to a paid model, the user is asked to choose a hosted model, and retrieval settings resolve to hosted profiles.",
+    "Given the flag is off, when the backend and frontend suites run, then they pass, and the existing open-model tests still pass with the flag on in tests.",
+    "Given README and AGENTS.md, when read, then open models appear only in an Experimental section that states the freeze and how to enable them."
+  ],
+  "test_cases": [
+    "Backend: catalogs, routes, jobs and readiness with the flag off and on.",
+    "Backend: a saved local default and a local retrieval profile with the flag off.",
+    "Frontend: settings, composer, Activity and Details hide open-model UI when the API reports the flag off.",
+    "Compose config check: profiles exclude ollama and model-worker by default."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/core/config.py",
+    "src/backend/app/integrations/model_catalog.py",
+    "src/backend/app/integrations/embedding_catalog.py",
+    "src/backend/app/integrations/reranker_catalog.py",
+    "src/backend/app/routes/local_models.py",
+    "src/backend/app/services/health.py",
+    "src/frontend/src/features/settings/LocalModels.tsx",
+    "src/frontend/src/components/composer/ModelSwitcher.tsx",
+    "compose.yaml",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09 from the user's decision. Branch feat/ara-090-open-models-flag.",
+  "updated_at": "2026-10-09"
+}

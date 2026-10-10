@@ -920,3 +920,9 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
   - no use of the stored block bboxes when text matching fails (23 of 27 stored citations have boxes).
 - **Next step.** The user approved a ticket and a Sonnet agent.
 - **Separate finding.** Existing papers processed before ARA-086, such as the user's `paper.dvi`, keep their old titles; ARA-086 fixes only new processing.
+
+**Open models moved behind a flag and frozen (ARA-090); multi-document RAG standard for ARA-088.**
+- **The decision.** The user decided open models can't be managed well right now. Everything related to them moves behind an experimental flag, with no open-model surface when it's off, and open-model development is frozen to free time for features such as ARA-088. ARA-080 and ARA-081 are deferred, and AGENTS.md records the freeze.
+- **The user's data.** A read-only check of the user's data found nothing that depends on open models: all 6 papers use the default OpenAI embedding profile and all answers came from hosted models.
+- **A correction.** The user assumed OpenAI's small/medium/large embeddings are compatible. They are not mutually compatible: there is no "medium"; small is 1536-dimensional and large 3072-dimensional; and separately trained models produce different vector spaces even at equal length. One index needs one model, and switching re-embeds.
+- **ARA-088's design.** It now follows the industry pattern: one shared index filtered by document metadata, hybrid retrieval with RRF and reranking, per-document coverage, and LlamaIndex-style sub-question decomposition for comparisons. It favours a library-wide embedding model over per-paper overrides.

@@ -18,13 +18,13 @@
     "Compaction integration tests with an Ollama fixture returning deltas, repeats and length-limited output.",
     "Opt-in live check: IFM 7B over at least eight local turns produces at least two updated summary versions."
   ],
-  "status": "planned",
+  "status": "deferred",
   "related_files": [
     "src/backend/app/services/memory.py",
     "src/backend/tests/test_compaction_integration.py"
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09. Live evidence: chat c644855c on the ara-rag-live stack; v1 succeeded, later attempts failed MODEL_INCOMPLETE twice, and a retry stored v2 byte-identical to v1 before 671bb9d rejected such summaries.",
+  "verification": "Planned on 2026-10-09. Live evidence: chat c644855c on the ara-rag-live stack; v1 succeeded, later attempts failed MODEL_INCOMPLETE twice, and a retry stored v2 byte-identical to v1 before 671bb9d rejected such summaries. Deferred on 2026-10-09: the user froze open-model development and moved open models behind the EXPERIMENTAL_OPEN_MODELS flag (ARA-090).",
   "updated_at": "2026-10-09"
 }

@@ -4,6 +4,7 @@ Single-user CS 59300 homework application. `hw1.md` is the assignment authority;
 
 ## Architecture
 
+- **Open (local) models are experimental and frozen (2026-10-09, ARA-090).** Everything open-model sits behind `EXPERIMENTAL_OPEN_MODELS` (default off) and the `open-models` Compose profile. Don't develop them further, or plan features around them, unless the user lifts the freeze. Keep their tests passing with the flag on. The open-model rules below apply only when the flag is on.
 - `src/backend`: Python 3.13, FastAPI/Pydantic v2, async SQLAlchemy/psycopg 3, Alembic, httpx, Dramatiq/Redis, PyMuPDF. Separate routes/schemas/models/repositories/services/integrations/jobs.
 - `src/frontend`: React/Vite, strict TypeScript, Tailwind v4/shadcn, React Router, TanStack Query; React Hook Form/Zod for forms. No initial Zustand.
 - Compose runs frontend, api, worker, model-worker, Ollama, PostgreSQL, Redis and MinIO plus migration/bucket-init gates. Default local inference uses CPU; NVIDIA/AMD overrides are optional and require compatible Linux hosts.
