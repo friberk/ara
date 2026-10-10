@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     ollama_pull_timeout_seconds: float = Field(default=21600, gt=0, le=21600)
     ollama_stall_seconds: float = Field(default=120, gt=0, le=3600)
     ollama_memory_limit: str = "12g"
+    # Open (local) models are experimental and frozen (ARA-090): nothing of them exists unless on.
+    experimental_open_models: bool = False
     default_model: str = "gpt-5.6-luna"
     default_reasoning_effort: str = "low"
     llm_daily_budget_usd: float = Field(default=5, gt=0)

@@ -123,6 +123,12 @@ class Model(DTO):
     context_window: int = 1050000
 
 
+class Features(BaseModel):
+    """Server features the browser adapts to (ARA-090)."""
+
+    open_models: bool
+
+
 class Defaults(BaseModel):
     default_model: str = "gpt-5.6-luna"
     reasoning_effort: str = "low"

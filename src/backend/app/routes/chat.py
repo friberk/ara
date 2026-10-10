@@ -7,6 +7,7 @@ from sqlalchemy import select
 from starlette.background import BackgroundTask
 
 from app.core.errors import AppError
+from app.integrations import open_models
 from app.integrations.context_registry import context_profile
 from app.integrations.llm import (
     LLMError,
@@ -156,6 +157,8 @@ async def chat_usage(chat_id: UUID, model: str, reasoning_effort: str, request: 
         selection = validate_selection(model, reasoning_effort)
     except LLMError as exc:
         raise AppError(exc.status, exc.code, exc.message) from None
+    if open_models.open_chat_model(resources.settings, model):
+        raise open_models.disabled()
     if local_spec(model):
         selection = next(
             item
@@ -187,7 +190,8 @@ async def answer(chat_id: UUID, body: ChatInput, request: Request):
     wait_for_slot = False
     try:
         validate_selection(body.model, body.reasoning_effort)
-        if local_spec(body.model):
+        # With open models off, a local model is refused below unless this is a replay (ARA-090).
+        if local_spec(body.model) and open_models.enabled(resources.settings):
             async with resources.sessions() as session:
                 replay_id = await session.scalar(
                     select(ChatMessage.id).where(

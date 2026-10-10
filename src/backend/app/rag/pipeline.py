@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
 from app.integrations.embeddings import cl100k, create_embedder
+from app.integrations.open_models import KEYWORD_NOTE, offered
 from app.integrations.tokens import TokenCounter
 from app.models.research import DocumentChunk
 from app.models.retrieval import RetrievalIndex
@@ -176,9 +177,17 @@ async def retrieve_evidence(
     started = time.monotonic()
     timings = {}
     summary = RetrievalSummary(mode="keyword", search_queries=list(queries))
+    usable = offered(resources.settings, PROFILES)
     async with resources.sessions() as session:
-        index = await ready_index(session, document_id, preferred_profile)
-        if index is None:
+        # An open model while open models are off: keywords, never a paid profile (ARA-090).
+        index = (
+            await ready_index(session, document_id, preferred_profile, profiles=usable)
+            if preferred_profile in usable
+            else None
+        )
+        if preferred_profile not in usable:
+            summary.note = KEYWORD_NOTE
+        elif index is None:
             summary.note = await keyword_note(session, document_id, chunk_set, preferred_profile)
     vectors, billed = None, {}
     if index is not None:

@@ -202,18 +202,18 @@ async def fail(sessions, job_id, generation, token, *, permanent: bool = False) 
         return True
 
 
-async def recover(sessions) -> None:
+async def recover(sessions, *, open_models: bool = True) -> None:
+    statement = select(BackgroundJob).where(
+        BackgroundJob.state == "processing", BackgroundJob.lease_expires_at <= func.now()
+    )
+    if not open_models:
+        # Open-model work keeps its unsettled state until the flag is on again (ARA-090).
+        from app.integrations.open_models import lane_jobs
+
+        statement = statement.where(~lane_jobs())
     async with sessions() as session, session.begin():
         expired = (
-            await session.scalars(
-                select(BackgroundJob)
-                .where(
-                    BackgroundJob.state == "processing",
-                    BackgroundJob.lease_expires_at <= func.now(),
-                )
-                .with_for_update(skip_locked=True)
-                .limit(100)
-            )
+            await session.scalars(statement.with_for_update(skip_locked=True).limit(100))
         ).all()
         for job in expired:
             retry_locked(

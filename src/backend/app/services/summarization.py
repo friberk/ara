@@ -502,6 +502,7 @@ async def summary_blocker(session, resources, model, effort, *, input_tokens=0):
 
     Reads only settings and the database, so the ingestion transaction can call it.
     """
+    from app.integrations import open_models
     from app.integrations.model_catalog import local_spec
     from app.models.local_models import ModelInstallation
     from app.models.research import GenerationReservation
@@ -514,6 +515,8 @@ async def summary_blocker(session, resources, model, effort, *, input_tokens=0):
             ensure_configured(resources.settings)
     except LLMError as exc:
         return exc
+    if open_models.open_chat_model(resources.settings, model):
+        return LLMError(open_models.DISABLED, open_models.CHOOSE_MODEL, 409)
     if spec:
         selection = model_dto(
             spec,

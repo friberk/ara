@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
+from app.integrations import open_models
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
 from app.integrations.reranker_catalog import RERANKERS, reranker_profile
 from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
@@ -35,13 +36,26 @@ from app.schemas.retrieval import (
 router = APIRouter(prefix="/api/v1", tags=["retrieval"])
 
 
+async def listed(session, settings, catalog: dict, saved: str | None) -> list:
+    """The offered profiles, plus a saved open-model choice reported unavailable (ARA-090)."""
+    shown = open_models.offered(settings, catalog)
+    if saved in catalog and saved not in shown:
+        shown[saved] = catalog[saved]
+    return [
+        (profile, *await profile_status(session, settings, profile)) for profile in shown.values()
+    ]
+
+
 @router.get("/retrieval/profiles", response_model=EmbeddingProfilePage)
 async def profiles(request: Request):
     resources = request.app.state.resources
+    settings = resources.settings
     async with resources.sessions() as session:
+        default = await default_profile(session)
+        row = await session.get(ModelConfiguration, "retrieval")
+        saved = RetrievalSettings.from_stored(row.value if row else None).reranker
         items = []
-        for profile in PROFILES.values():
-            status, reason = await profile_status(session, resources.settings, profile)
+        for profile, status, reason in await listed(session, settings, PROFILES, default):
             items.append(
                 EmbeddingProfileOut(
                     key=profile.key,
@@ -51,12 +65,11 @@ async def profiles(request: Request):
                     dimensions=profile.dimensions,
                     status=status,
                     unavailable_reason=reason,
-                    local_model_key=profile.local_model_key,
+                    local_model_key=local_key(settings, profile),
                 )
             )
         rerankers = []
-        for profile in RERANKERS.values():
-            status, reason = await profile_status(session, resources.settings, profile)
+        for profile, status, reason in await listed(session, settings, RERANKERS, saved):
             rerankers.append(
                 RerankerOut(
                     key=profile.key,
@@ -65,13 +78,16 @@ async def profiles(request: Request):
                     display_name=profile.display_name,
                     status=status,
                     unavailable_reason=reason,
-                    local_model_key=profile.local_model_key,
+                    local_model_key=local_key(settings, profile),
                     candidates=profile.candidates,
                 )
             )
-        return EmbeddingProfilePage(
-            items=items, default_profile=await default_profile(session), rerankers=rerankers
-        )
+        return EmbeddingProfilePage(items=items, default_profile=default, rerankers=rerankers)
+
+
+def local_key(settings, profile) -> str | None:
+    """The local model that would serve a profile; none to install while open models are off."""
+    return None if open_models.open_profile(settings, profile) else profile.local_model_key
 
 
 @router.get("/retrieval/settings", response_model=RetrievalSettings)
@@ -84,12 +100,23 @@ async def retrieval_settings(request: Request):
 @router.put("/retrieval/settings", response_model=RetrievalSettings)
 async def update_retrieval_settings(body: RetrievalSettings, request: Request):
     # Availability is not required: a default can be chosen before its model is installed.
-    embedding_profile(body.embedding_profile)
-    if body.reranker is not None:
-        reranker_profile(body.reranker)
+    embedder = embedding_profile(body.embedding_profile)
+    reranker = reranker_profile(body.reranker) if body.reranker is not None else None
     resources = request.app.state.resources
     async with resources.sessions() as session, session.begin():
         previous = await default_profile(session)
+        row = await session.get(ModelConfiguration, "retrieval")
+        stored = RetrievalSettings.from_stored(row.value if row else None)
+        # With open models off, a saved open-model choice is kept but never newly chosen.
+        if (
+            open_models.open_profile(resources.settings, embedder)
+            and body.embedding_profile != previous
+        ) or (
+            reranker is not None
+            and open_models.open_profile(resources.settings, reranker)
+            and body.reranker != stored.reranker
+        ):
+            raise open_models.disabled(open_models.CHOOSE_SEARCH)
         await session.execute(
             insert(ModelConfiguration)
             .values(key="retrieval", value=body.model_dump())
@@ -118,6 +145,14 @@ def index_out(index: RetrievalIndex) -> RetrievalIndexOut:
     )
 
 
+def disabled_index(index: RetrievalIndex) -> RetrievalIndexOut:
+    """An open-model index while open models are off: stored, but it cannot serve (ARA-090)."""
+    out = index_out(index)
+    out.state = "unavailable"
+    out.error = JobError(code=open_models.DISABLED, message=open_models.SEARCH_NOTE)
+    return out
+
+
 def unready_note(index: RetrievalIndex | None) -> str:
     if index is None:
         return "Search index has not been built yet."
@@ -128,7 +163,7 @@ def unready_note(index: RetrievalIndex | None) -> str:
     return f"Search index is building ({percent(index)}%)."
 
 
-async def paper_retrieval(session, paper_id: UUID) -> PaperRetrieval:
+async def paper_retrieval(session, paper_id: UUID, settings) -> PaperRetrieval:
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
@@ -179,9 +214,16 @@ async def paper_retrieval(session, paper_id: UUID) -> PaperRetrieval:
     rebuilding = {row.profile: row for row in rows if row.chunk_set != chunk_set}
     # One entry per profile: an unfinished rebuild reports its own progress.
     shown = {**serving, **rebuilding}
-    result.indexes = [index_out(index) for index in shown.values()]
+    usable = open_models.offered(settings, PROFILES)
+    result.indexes = [
+        index_out(index) if index.profile in usable else disabled_index(index)
+        for index in shown.values()
+    ]
+    if profile not in usable:
+        result.mode, result.mode_note = "keyword", open_models.SEARCH_NOTE
+        return result
     ready = sorted(
-        (row for row in serving.values() if row.state == "ready"),
+        (row for row in serving.values() if row.state == "ready" and row.profile in usable),
         key=lambda row: (row.profile == profile, row.updated_at),
         reverse=True,
     )
@@ -208,8 +250,9 @@ async def paper_retrieval(session, paper_id: UUID) -> PaperRetrieval:
 
 @router.get("/papers/{paper_id}/retrieval", response_model=PaperRetrieval)
 async def read_paper_retrieval(paper_id: UUID, request: Request):
-    async with request.app.state.resources.sessions() as session:
-        return await paper_retrieval(session, paper_id)
+    resources = request.app.state.resources
+    async with resources.sessions() as session:
+        return await paper_retrieval(session, paper_id, resources.settings)
 
 
 async def replayed(session, request_id: UUID, intent: dict) -> PaperRetrieval | None:
@@ -250,10 +293,13 @@ async def indexable_document(session, paper: Paper) -> Document | None:
 
 @router.put("/papers/{paper_id}/retrieval", response_model=PaperRetrieval)
 async def update_paper_retrieval(paper_id: UUID, body: PaperRetrievalUpdate, request: Request):
-    if body.profile is not None:
-        embedding_profile(body.profile)
+    resources = request.app.state.resources
+    if body.profile is not None and open_models.open_profile(
+        resources.settings, embedding_profile(body.profile)
+    ):
+        raise open_models.disabled(open_models.CHOOSE_SEARCH)
     intent = {"paper_id": str(paper_id), "action": "profile", "profile": body.profile}
-    async with request.app.state.resources.sessions() as session, session.begin():
+    async with resources.sessions() as session, session.begin():
         paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
         if paper is None:
             raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
@@ -264,7 +310,7 @@ async def update_paper_retrieval(paper_id: UUID, body: PaperRetrievalUpdate, req
         if document is not None:
             profile, _ = await effective_profile(session, paper)
             await ensure_index(session, document.id, profile)
-        response = await paper_retrieval(session, paper_id)
+        response = await paper_retrieval(session, paper_id, resources.settings)
         await remember(session, body.request_id, intent, response)
         return response
 
@@ -272,7 +318,8 @@ async def update_paper_retrieval(paper_id: UUID, body: PaperRetrievalUpdate, req
 @router.post("/papers/{paper_id}/retrieval/rebuild", response_model=PaperRetrieval, status_code=202)
 async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput, request: Request):
     intent = {"paper_id": str(paper_id), "action": "rebuild"}
-    async with request.app.state.resources.sessions() as session, session.begin():
+    resources = request.app.state.resources
+    async with resources.sessions() as session, session.begin():
         paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
         if paper is None:
             raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
@@ -284,8 +331,10 @@ async def rebuild_paper_retrieval(paper_id: UUID, body: RebuildInput, request: R
                 409, "DOCUMENT_NOT_INDEXABLE", "Upload and process a PDF before rebuilding."
             )
         profile, _ = await effective_profile(session, paper)
+        if open_models.open_profile(resources.settings, PROFILES[profile]):
+            raise open_models.disabled(open_models.CHOOSE_SEARCH)
         await ensure_index(session, document.id, profile, rebuild=True)
-        response = await paper_retrieval(session, paper_id)
+        response = await paper_retrieval(session, paper_id, resources.settings)
         await remember(session, body.request_id, intent, response)
         return response
 
