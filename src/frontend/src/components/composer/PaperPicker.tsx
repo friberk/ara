@@ -16,12 +16,12 @@ import { cn } from '@/lib/utils'
  * cmdk way, and choosing one again hands it back to onSelect to remove. Search matches the title, author surnames, year
  * and venue. A conversation may include any number of papers (ARA-088).
  */
-export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper: Paper) => void; selected?: readonly string[] }) {
+export function PaperPickerList({ onSelect, selected = [], placeholder = 'Find a paper in your library' }: { onSelect: (paper: Paper) => void; selected?: readonly string[]; placeholder?: string }) {
   const papers = usePapers('', { pageSize: 50 })
   const items = papers.data?.pages.flatMap((page) => page.items) ?? []
   return (
     <Command>
-      <CommandInput placeholder="Find a paper in your library" />
+      <CommandInput placeholder={placeholder} />
       <CommandList>
         <CommandEmpty>{papers.isPending ? 'Loading your library…' : 'No matching papers. Save or upload one first.'}</CommandEmpty>
         <CommandGroup heading="Library">
@@ -46,7 +46,7 @@ export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper:
   )
 }
 
-export function PaperPicker({ onSelect, selected, disabled, open: controlled, onOpenChange, label = 'Ask about a library paper', refocus }: {
+export function PaperPicker({ onSelect, selected, disabled, open: controlled, onOpenChange, label = 'Ask about a library paper', refocus, mentioning }: {
   onSelect: (paper: Paper) => void
   /** Ids of the papers already chosen, shown as added. */
   selected?: readonly string[]
@@ -57,6 +57,8 @@ export function PaperPicker({ onSelect, selected, disabled, open: controlled, on
   label?: string
   /** Where focus goes when the picker closes; by default it returns to the @ button. */
   refocus?: () => void
+  /** Opened by typing @: the picker mentions a paper rather than adding or removing it. */
+  mentioning?: boolean
 }) {
   const [uncontrolled, setUncontrolled] = useState(false)
   const open = controlled ?? uncontrolled
@@ -72,7 +74,7 @@ export function PaperPicker({ onSelect, selected, disabled, open: controlled, on
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
       <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] p-0" onCloseAutoFocus={refocus && ((event) => { event.preventDefault(); refocus() })}>
-        <PaperPickerList selected={selected} onSelect={(paper) => { onSelect(paper); setOpen(false) }} />
+        <PaperPickerList selected={selected} placeholder={mentioning ? 'Mention a paper' : undefined} onSelect={(paper) => { onSelect(paper); setOpen(false) }} />
       </PopoverContent>
     </Popover>
   )
