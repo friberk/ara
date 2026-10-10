@@ -42,3 +42,14 @@ test('Given a hovered icon, Then its tooltip is hidden from screen readers becau
   await userEvent.setup().hover(screen.getByRole('img', { name: 'PDF attached' }))
   expect((await screen.findAllByText('PDF attached')).some((node) => node.closest('[data-slot="tooltip-content"]')?.getAttribute('aria-hidden') === 'true')).toBe(true)
 })
+
+test('Given an icon inside a paper pill, When it has no tooltip, Then hovering it opens nothing and it stays decorative', async () => {
+  const user = userEvent.setup()
+  const { container } = render(<TooltipProvider><PdfStateIcon state="ready" decorative tooltip={false} /></TooltipProvider>)
+  const icon = container.firstElementChild as HTMLElement
+  expect(icon).toHaveAttribute('aria-hidden', 'true')
+  expect(icon).not.toHaveAttribute('data-slot', 'tooltip-trigger')
+  await user.hover(icon)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(screen.queryByText('PDF attached')).not.toBeInTheDocument()
+})

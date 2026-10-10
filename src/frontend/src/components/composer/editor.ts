@@ -5,18 +5,22 @@ import Mention from '@tiptap/extension-mention'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { Placeholder, UndoRedo } from '@tiptap/extensions'
-import { Fragment, Slice, type DOMOutputSpec, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, Selection, type EditorState } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { ReactNodeViewRenderer } from '@tiptap/react'
 import { exitSuggestion } from '@tiptap/suggestion'
-import { pillClass, pillIconClass, pillLabelClass } from '@/components/paper/pill'
+import type { PillPaper } from '@/components/paper/PaperPill'
 import { codePoints, type Draft, type DraftMention } from '@/lib/mentions'
 import { cn } from '@/lib/utils'
+import { MentionView } from './MentionView'
 
-/** A paper as a pill: its id, its label ("Karpukhin 2020") and the citation that names it for screen readers. */
-export type PaperPill = { id: string; label: string; citation: string }
+/** A paper as a pill: its id, its label (the title, which the question carries as text) and its citation details. */
+export type PaperPill = { id: string; label: string; paper: PillPaper }
 /** What typing @ hands the paper picker: insert a pill where @ was typed, or put the caret back after it. */
 export type Mention = { refocus: () => void; insert: (pill: PaperPill) => void }
+/** What the @ button hands the paper picker: insert a pill at the caret, or at the end when the question had no focus. */
+export type MentionTarget = { insert: (pill: PaperPill) => void; focus: () => void }
 
 /** The composer's props that the editor, created once, reads from its state; `configure` updates them. */
 export type ComposerSettings = { label: string; placeholder: string; disabled: boolean; size: 'default' | 'large'; limit: number; mentionable: boolean }
@@ -35,23 +39,18 @@ const settingsOf = (state: EditorState) => settingsKey.getState(state)!
 const mentionKey = new PluginKey('paper-mention')
 /** Marks a draft set by the composer's owner (cleared after sending, restored from a queue): never limited, never undone. */
 const fromOutside = 'composer-from-outside'
-const svg = 'http://www.w3.org/2000/svg'
-// lucide-react's FileText, the icon every paper chip uses; the history pill renders the React icon.
-const fileText = ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M10 9H8', 'M16 13H8', 'M16 17H8']
 
-function pillDom(attributes: Record<string, unknown>, label: string, citation: string | null): DOMOutputSpec {
-  const icon: DOMOutputSpec = [
-    `${svg} svg`,
-    { width: '24', height: '24', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: `lucide lucide-file-text ${pillIconClass}`, 'aria-hidden': 'true' },
-    ...fileText.map((d): DOMOutputSpec => [`${svg} path`, { d }]),
-  ]
-  return ['span', { ...attributes, class: pillClass, role: 'img', 'aria-roledescription': 'paper', 'aria-label': citation || label }, icon, ['span', { class: pillLabelClass }, label]]
-}
-
-/** The official Mention node with a citation attribute; its text is its label, so the question reads naturally. */
+/**
+ * The official Mention node, drawn by the shared paper pill (MentionView) and selectable, so a click, a tap or the
+ * arrow keys select it whole. It keeps the paper's citation details for its card; its text is its label.
+ */
 const PaperMention = Mention.extend({
+  selectable: true,
   addAttributes() {
-    return { ...this.parent?.(), citation: { default: null, renderHTML: () => ({}), parseHTML: (element) => element.getAttribute('aria-label') } }
+    return { ...this.parent?.(), paper: { default: null, renderHTML: () => ({}), parseHTML: () => null } }
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(MentionView, { as: 'span' })
   },
 })
 
@@ -68,7 +67,7 @@ export function toDraft(doc: ProseMirrorNode): Draft {
       else if (node.type.name === 'hardBreak') add('\n')
       else if (node.type.name === 'mention') {
         const label = String(node.attrs.label ?? '')
-        mentions.push({ paper_id: String(node.attrs.id), label, start: at, end: at + codePoints(label).length, ...(node.attrs.citation ? { citation: String(node.attrs.citation) } : {}) })
+        mentions.push({ paper_id: String(node.attrs.id), label, start: at, end: at + codePoints(label).length, ...(node.attrs.paper ? { paper: node.attrs.paper as PillPaper } : {}) })
         add(label)
       }
     })
@@ -85,7 +84,7 @@ export function toContent(draft: Draft): JSONContent {
   let at = 0
   for (const mention of draft.mentions) {
     if (mention.start < at || chars.slice(mention.start, mention.end).join('') !== mention.label) continue
-    content.push(...lines(chars.slice(at, mention.start).join('')), { type: 'mention', attrs: { id: mention.paper_id, label: mention.label, citation: mention.citation ?? null } })
+    content.push(...lines(chars.slice(at, mention.start).join('')), { type: 'mention', attrs: { id: mention.paper_id, label: mention.label, paper: mention.paper ?? null } })
     at = mention.end
   }
   content.push(...lines(chars.slice(at).join('')))
@@ -97,13 +96,31 @@ export const draftKey = (draft: Draft) => JSON.stringify([draft.text, draft.ment
 
 const length = (doc: ProseMirrorNode) => codePoints(toDraft(doc).text).length
 
-/** Replaces the typed @ (and the space after it, if any) with a pill and one space; nothing changes if it would overflow. */
-function insertPill(editor: Editor, range: Range, pill: PaperPill) {
+/**
+ * Puts a pill in place of `at` (the typed @, or the selection) followed by one space, reusing a space already there and
+ * adding one before it when the pill would touch a word. Nothing changes if it would pass the limit.
+ */
+function insertPill(editor: Editor, at: Range, pill: PaperPill) {
   const { doc } = editor.state
+  const range = { ...at }
+  if (doc.textBetween(range.to, Math.min(range.to + 1, doc.content.size)) === ' ') range.to += 1
+  const before = range.from > 1 ? doc.textBetween(range.from - 1, range.from, '\n', '\n') : ''
+  const pad = before && !/\s/.test(before) ? [{ type: 'text', text: ' ' }] : []
+  editor.chain().focus().insertContentAt(range, [...pad, { type: 'mention', attrs: { id: pill.id, label: pill.label, paper: pill.paper } }, { type: 'text', text: ' ' }]).run()
+}
+
+/** A pill where @ was typed, or at the caret if the document changed since. */
+function insertForTyped(editor: Editor, range: Range, pill: PaperPill) {
+  const { doc, selection } = editor.state
   const typed = range.to <= doc.content.size && doc.textBetween(range.from, range.to).startsWith('@')
-  const at = typed ? { ...range } : { from: editor.state.selection.from, to: editor.state.selection.to }
-  if (doc.textBetween(at.to, Math.min(at.to + 1, doc.content.size)) === ' ') at.to += 1
-  editor.chain().focus().insertContentAt(at, [{ type: 'mention', attrs: { id: pill.id, label: pill.label, citation: pill.citation } }, { type: 'text', text: ' ' }]).run()
+  insertPill(editor, typed ? range : { from: selection.from, to: selection.to }, pill)
+}
+
+/** A pill from the @ button: at the caret when the question had focus before the button took it, else at the end. */
+export function insertAtCaret(editor: Editor, pill: PaperPill, atCaret: boolean) {
+  const { selection, doc } = editor.state
+  const end = Selection.atEnd(doc).from
+  insertPill(editor, atCaret ? { from: selection.from, to: selection.to } : { from: end, to: end }, pill)
 }
 
 /** Pasted text arrives as plain text with line breaks, cut to the room left under the limit. */
@@ -194,14 +211,14 @@ export function composerExtensions(initial: ComposerSettings) {
     PaperMention.configure({
       deleteTriggerWithBackspace: true,
       renderText: ({ node }) => String(node.attrs.label ?? ''),
-      renderHTML: ({ options, node }) => pillDom(options.HTMLAttributes, String(node.attrs.label ?? ''), node.attrs.citation),
+      renderHTML: ({ options, node }) => ['span', options.HTMLAttributes, String(node.attrs.label ?? '')],
       suggestion: {
         pluginKey: mentionKey,
         allowedPrefixes: [' ', ' '],
         allow: ({ editor, state }) => settingsOf(state).mentionable && editor.isFocused,
         render: () => ({
           onStart: ({ editor, range }) => editor.emit('composerMention', {
-            insert: (pill) => insertPill(editor, range, pill),
+            insert: (pill) => insertForTyped(editor, range, pill),
             // A picker closed without a pick leaves the @ as text, so typing on does not reopen it.
             refocus: () => { exitSuggestion(editor.view, mentionKey); editor.commands.focus() },
           }),

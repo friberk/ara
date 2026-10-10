@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AtSign, FileText, X } from 'lucide-react'
+import { AtSign, FileText } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -8,8 +8,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { DocumentStatusBadge } from '@/components/feedback/DocumentStatusBadge'
 import { PaperCitation } from '@/components/paper/PaperCitation'
 import { usePapers } from '@/hooks/queries/papers'
-import { VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
-import { cn } from '@/lib/utils'
 
 /**
  * Lists library papers; only papers with a processed PDF can be asked about. Each row gives the title and a short
@@ -78,48 +76,5 @@ export function PaperPicker({ onSelect, selected, disabled, open: controlled, on
         <PaperPickerList selected={selected} placeholder={mentioning ? 'Mention a paper' : undefined} onSelect={(paper) => { onSelect(paper); setOpen(false) }} />
       </PopoverContent>
     </Popover>
-  )
-}
-
-export function PaperContextChip({ paper, onRemove, removeLabel = 'Stop asking about this paper' }: { paper: Pick<Paper, 'title'>; onRemove?: () => void; removeLabel?: string }) {
-  return (
-    <span className={cn('inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-muted/60 py-1 pl-2 text-sm', onRemove ? 'pr-1' : 'pr-2')}>
-      <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate">{paper.title ?? 'Untitled paper'}</span>
-      {onRemove && <Button type="button" variant="ghost" size="icon-xs" className="rounded-md" aria-label={removeLabel} onClick={onRemove}><X aria-hidden="true" /></Button>}
-    </span>
-  )
-}
-
-/**
- * The papers chosen in a composer as removable chips. Beyond VISIBLE_PAPER_CHIPS they collapse into "+N more", which
- * lists every chosen paper with its own remove button.
- */
-export function PaperChips({ papers, onRemove }: { papers: Pick<Paper, 'id' | 'title'>[]; onRemove: (paper: Pick<Paper, 'id' | 'title'>) => void }) {
-  const several = papers.length > 1
-  const label = (paper: Pick<Paper, 'title'>) => `Remove ${paper.title ?? 'Untitled paper'}`
-  const hidden = papers.length - VISIBLE_PAPER_CHIPS
-  return (
-    <>
-      {papers.slice(0, VISIBLE_PAPER_CHIPS).map((paper) => <PaperContextChip key={paper.id} paper={paper} removeLabel={several ? label(paper) : undefined} onRemove={() => onRemove(paper)} />)}
-      {hidden > 0 && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button type="button" variant="outline" size="sm" className="h-auto rounded-lg py-1 font-normal text-muted-foreground">+{hidden} more</Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] p-1">
-            <ul aria-label="Chosen papers" className="max-h-72 overflow-y-auto">
-              {papers.map((paper) => (
-                <li key={paper.id} className="flex items-center gap-2 rounded-md py-1 pr-1 pl-2 text-sm hover:bg-muted">
-                  <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{paper.title ?? 'Untitled paper'}</span>
-                  <Button type="button" variant="ghost" size="icon-xs" aria-label={label(paper)} onClick={() => onRemove(paper)}><X aria-hidden="true" /></Button>
-                </li>
-              ))}
-            </ul>
-          </PopoverContent>
-        </Popover>
-      )}
-    </>
   )
 }
