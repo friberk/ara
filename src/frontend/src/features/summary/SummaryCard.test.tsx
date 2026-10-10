@@ -40,8 +40,9 @@ test('Given no summary, When Generate summary is pressed, Then staged progress i
   expect(within(card).getByText('Summarizing sections')).toBeVisible()
   expect(await within(card).findByText('The study evaluates the Orion-12 dataset.', undefined, { timeout: 4000 })).toBeVisible()
   expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument()
-  expect(within(card).getByText('Luna')).toBeVisible()
-  expect(within(card).getByText('Low reasoning')).toBeVisible()
+  expect(within(card).queryByText('Luna')).not.toBeInTheDocument()
+  expect(within(card).queryByText(/reasoning/i)).not.toBeInTheDocument()
+  expect(card.querySelector('time')).toBeNull()
   const post = calls.find((call) => call.method === 'POST')
   expect(post?.body).toMatchObject({ model: luna.key, reasoning_effort: 'low' })
   expect((post?.body as { request_id: string }).request_id).toMatch(/^[0-9a-f-]{36}$/)
@@ -61,20 +62,22 @@ test('Given a summary job already running, When the card mounts after a reload, 
   expect(calls.some((call) => call.method === 'POST')).toBe(false)
 })
 
-test('Given two summary versions, Then the latest shows first and an earlier version can be chosen', async () => {
+test('Given two summary versions, Then only the latest shows, with no version menu, model, effort or time', async () => {
   mockApi({
     ...settings,
     'GET /papers/p1/summaries': { items: [summary('s2', 'Second version text.', '2026-10-08T13:00:00Z'), summary('s1', 'First version text.', '2026-10-08T12:00:00Z', 'gpt-5.6-unlisted')] },
   })
-  const { user } = mount()
+  mount()
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('Second version text.')).toBeInTheDocument()
-  await user.click(within(card).getByRole('button', { name: 'Version 2 of 2' }))
-  await user.click(await screen.findByRole('menuitemradio', { name: /Version 1/ }))
-  expect(await within(card).findByText('First version text.')).toBeInTheDocument()
-  expect(within(card).getByRole('button', { name: 'Version 1 of 2' })).toBeVisible()
-  // A model the server no longer lists keeps its exact stored ID.
-  expect(within(card).getByText('gpt-5.6-unlisted')).toBeVisible()
+  expect(within(card).queryByText('First version text.')).not.toBeInTheDocument()
+  expect(within(card).queryByText(/Version/)).not.toBeInTheDocument()
+  expect(within(card).queryByRole('button', { name: /Version/ })).not.toBeInTheDocument()
+  expect(within(card).queryByText('Luna')).not.toBeInTheDocument()
+  expect(within(card).queryByText('gpt-5.6-unlisted')).not.toBeInTheDocument()
+  expect(within(card).queryByText(/reasoning/i)).not.toBeInTheDocument()
+  expect(card.querySelector('time')).toBeNull()
+  expect(within(card).getByRole('button', { name: 'Show full summary' })).toBeVisible()
 })
 
 test('Given a long summary, When expanded and collapsed, Then the full text toggles behind one control', async () => {

@@ -44,25 +44,19 @@ test('E2E-04 Given ready text, when summarized, then a stored grounded summary a
   await page.goto(`/papers/${paper.id}`)
   const summary = page.getByRole('article', { name: 'Paper summary' })
   const generate = summary.getByRole('button', { name: 'Generate summary', exact: true })
-  const versions = summary.getByRole('button', { name: /^Version \d+ of \d+$/ })
-  // The fixture paper is shared across runs: the first run has no summary, later runs add a version.
-  await expect(generate.or(versions)).toBeVisible()
-  const before = (await versions.isVisible()) ? Number((await versions.innerText()).match(/of (\d+)/)?.[1]) : 0
-  if (before) {
-    await versions.click()
-    await page.getByRole('menuitem', { name: 'Generate summary' }).click()
-  } else {
+  const toggle = summary.getByRole('button', { name: /^(Show full summary|Collapse summary)$/ })
+  // The fixture paper is shared across runs: the first run generates, later runs show the stored summary.
+  await expect(generate.or(toggle)).toBeVisible()
+  if (await generate.isVisible()) {
     await generate.click()
+    // A summary that just finished opens in full, with its page sources.
+    await expect(summary.getByRole('button', { name: 'Collapse summary' })).toBeVisible({ timeout: 45_000 })
+    await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()
   }
-  const latest = `Version ${before + 1} of ${before + 1}`
-  await expect(summary.getByRole('button', { name: latest })).toBeVisible({ timeout: 45_000 })
-  await expect(summary).toContainText('Orion-12')
-  // A summary that just finished opens in full, with its page sources.
-  await expect(summary.getByRole('button', { name: 'Collapse summary' })).toBeVisible()
-  await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()
+  await expect(summary).toContainText('Orion-12', { timeout: 45_000 })
 
   await page.reload()
-  await expect(summary.getByRole('button', { name: latest })).toBeVisible()
+  await expect(summary.getByRole('button', { name: 'Show full summary' })).toBeVisible()
   await expect(summary).toContainText('Orion-12')
   await summary.getByRole('button', { name: 'Show full summary' }).click()
   await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()

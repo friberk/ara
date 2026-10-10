@@ -133,15 +133,11 @@ test('E2E-12 Given verified local weights, when summarizing and asking a paper, 
   expect((await (await request.get('/api/v1/settings')).json()).reasoning_effort).toBe('low')
   await page.goto(`/papers/${paper.id}`)
   const summary = page.getByRole('article', { name: 'Paper summary' })
-  const versions = summary.getByRole('button', { name: /^Version \d+ of \d+$/ })
-  await expect(summary.getByRole('button', { name: 'Generate summary', exact: true }).or(versions)).toBeVisible()
-  const before = await versions.isVisible() ? Number((await versions.innerText()).match(/of (\d+)/)?.[1]) : 0
-  if (before) {
-    await versions.click()
-    await page.getByRole('menuitem', { name: 'Generate summary', exact: true }).click()
-  } else await summary.getByRole('button', { name: 'Generate summary', exact: true }).click()
-  await expect(summary.getByRole('button', { name: `Version ${before + 1} of ${before + 1}` })).toBeVisible({ timeout: 45_000 })
-  await expect(summary).toContainText('Orion-12')
+  const generate = summary.getByRole('button', { name: 'Generate summary', exact: true })
+  await expect(generate.or(summary.getByRole('button', { name: /^(Show full summary|Collapse summary)$/ }))).toBeVisible()
+  // The card has no regenerate control once a summary exists, so a shared fixture paper keeps its stored summary.
+  if (await generate.isVisible()) await generate.click()
+  await expect(summary).toContainText('Orion-12', { timeout: 45_000 })
   const summaries = await (await request.get(`/api/v1/papers/${paper.id}/summaries`)).json()
   expect(summaries.items[0].model).toBe(modelKey)
   expect(summaries.items[0].reasoning_effort).toBe('low')
