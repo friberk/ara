@@ -926,3 +926,10 @@ The lead assigned ARA-086 to an agent in the `upload-metadata` worktree on `feat
 - **The user's data.** A read-only check of the user's data found nothing that depends on open models: all 6 papers use the default OpenAI embedding profile and all answers came from hosted models.
 - **A correction.** The user assumed OpenAI's small/medium/large embeddings are compatible. They are not mutually compatible: there is no "medium"; small is 1536-dimensional and large 3072-dimensional; and separately trained models produce different vector spaces even at equal length. One index needs one model, and switching re-embeds.
 - **ARA-088's design.** It now follows the industry pattern: one shared index filtered by document metadata, hybrid retrieval with RRF and reranking, per-document coverage, and LlamaIndex-style sub-question decomposition for comparisons. It favours a library-wide embedding model over per-paper overrides.
+
+**User decisions on embeddings and ARA-088 (2026-10-09).**
+- **Embedding model.** One library-wide embedding model replaces the per-paper choice. OpenAI small and large are both offered, with a clear warning that switching re-embeds the whole library (ARA-091, run in parallel with ARA-090).
+- **ARA-088 timing.** It starts after ARA-090 and ARA-091 land.
+- **Reader tabs.** A citation to another paper opens that PDF in a closable reader tab.
+- **Routing.** A multi-paper chat's URL uses the first paper in its list.
+- **Code check.** The lead confirmed embeddings are dimensionless HALFVEC with document-scoped exact scans, so the small profile needs no ANN index change.

@@ -1,0 +1,37 @@
+{
+  "id": "ARA-091",
+  "title": "One library-wide embedding model, with OpenAI small and large",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Embeddings from different models live in different vector spaces, so one search cannot mix them. Multi-paper chats (ARA-088) need every paper indexed with the same model. User decisions on 2026-10-09:\n- one library-wide embedding model, removing the per-paper choice in Details > Advanced;\n- offer OpenAI text-embedding-3-small alongside -large, and say clearly that switching re-embeds the whole library.\nToday the catalog has only openai-3-large (3072 dimensions, $0.13 per million tokens) plus local Qwen3 profiles that ARA-090 gates behind the open-models flag. papers.retrieval_profile holds per-paper overrides. Embeddings are stored as dimensionless HALFVEC with document-scoped exact scans, so adding a 1536-dimensional profile needs no ANN index change.",
+  "dependencies": [
+    "ARA-021",
+    "ARA-090"
+  ],
+  "acceptance_criteria": [
+    "Given Settings, when the user views retrieval, then one library-wide embedding choice offers OpenAI text-embedding-3-small and text-embedding-3-large (large is the default), each with its price.",
+    "Given the user picks a different embedding model, when they confirm, then a dialog states that the whole library is re-embedded in the background, with the number of papers and an estimated cost, before anything changes.",
+    "Given a confirmed switch, when re-embedding runs, then every paper's ready document is indexed with the new model, questions keep working during the transition, and old-model vectors are removed once a paper's new index is ready.",
+    "Given a paper, when Details > Advanced renders, then there is no per-paper embedding choice; the per-paper override is removed end to end (API, UI and database column) rather than kept for compatibility.",
+    "Given papers that had a per-paper override, when the migration runs, then they follow the library model and are re-indexed if it differs.",
+    "Given ARA-090's flag is on, when Settings renders, then local embedding profiles may still appear as library-wide choices; nothing per-paper returns."
+  ],
+  "test_cases": [
+    "Backend: catalog includes small; library switch reconciles every paper; old vectors pruned after ready; retrieval during transition.",
+    "Migration: drop papers.retrieval_profile with overrides folded into the library setting; upgrade test from the current head.",
+    "Frontend: settings choice with price, confirmation dialog with paper count and cost, no per-paper selector in Details."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/integrations/embedding_catalog.py",
+    "src/backend/app/routes/retrieval.py",
+    "src/backend/app/services/reindex.py",
+    "src/backend/app/models/research.py",
+    "src/frontend/src/features/settings/RetrievalSettingsSection.tsx",
+    "src/frontend/src/features/workspace/SearchIndexPanel.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-09 from the user's decisions. Branch feat/ara-091-library-embeddings.",
+  "updated_at": "2026-10-09"
+}
