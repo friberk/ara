@@ -1000,6 +1000,8 @@ export interface components {
             request_id: string;
             /** Content */
             content: string;
+            /** Mentions */
+            mentions?: components["schemas"]["PaperMention"][];
         };
         /** ChatLink */
         ChatLink: {
@@ -1517,6 +1519,8 @@ export interface components {
             context?: components["schemas"]["ContextUsage"] | null;
             /** Grounding */
             grounding?: ("supported" | "insufficient") | null;
+            /** Mentions */
+            mentions?: components["schemas"]["PaperMention"][];
         };
         /** MessagePage */
         MessagePage: {
@@ -1651,6 +1655,25 @@ export interface components {
             paper_id: string;
             /** Title */
             title: string | null;
+        };
+        /**
+         * PaperMention
+         * @description A library paper a question mentions with a composer pill (ARA-096). `label` is the pill's
+         *     text, which the question holds at [start, end): Unicode code points of the trimmed content,
+         *     as Python indexes strings.
+         */
+        PaperMention: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Label */
+            label: string;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
         };
         /** PaperPage */
         PaperPage: {
@@ -1830,6 +1853,33 @@ export interface components {
              * @default 0
              */
             passages_used: number;
+            /**
+             * Pruned
+             * @default 0
+             */
+            pruned: number;
+            /**
+             * Evidence Tokens
+             * @default 0
+             */
+            evidence_tokens: number;
+            /**
+             * Summaries Used
+             * @default 0
+             */
+            summaries_used: number;
+            /** Question Type */
+            question_type?: ("lookup" | "broad" | "comparative") | null;
+            /**
+             * Retried
+             * @default false
+             */
+            retried: boolean;
+            /**
+             * Map Reduce
+             * @default false
+             */
+            map_reduce: boolean;
             /**
              * Limited By Context
              * @default false
@@ -2199,7 +2249,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 paper_id?: string | null;
-                kind?: ("ingest" | "summary" | "fulltext" | "metadata" | "model_download" | "model_delete") | null;
+                kind?: ("ingest" | "summary" | "section_summaries" | "fulltext" | "metadata" | "model_download" | "model_delete") | null;
                 active?: boolean | null;
             };
             header?: never;

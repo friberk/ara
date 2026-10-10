@@ -8,6 +8,7 @@ import type { Citation, Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkspaceContext, type WorkspaceContextValue } from '@/features/workspace/workspace-context'
+import { isEditable } from '@/test/editor'
 import { testClient } from '@/test/render'
 import { CurrentPath, PaneRoute } from './pane-test-routes'
 
@@ -62,7 +63,7 @@ export function mount(path: string, { value = paper, others = [], workspace = wo
 }
 export async function ask(user: ReturnType<typeof userEvent.setup>, question: string) {
   const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
-  await waitFor(() => expect(input).toBeEnabled())
+  await waitFor(() => expect(isEditable(input)).toBe(true))
   await user.type(input, question)
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
 }

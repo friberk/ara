@@ -195,9 +195,9 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 ### Tertiary
 - **Evidence Marker Yellow** (oklch(0.93 0.13 96 / 0.75), applied as a 55% mix over the canvas): the cited-sentence highlight in the PDF text layer and its one-shot pulse ring. Nothing else. The `--evidence` token has a single value in both themes because the pages under it are always white paper.
-- **Status Green** (text oklch(0.45 0.11 155) on oklch(0.96 0.03 155); dark text oklch(0.8 0.12 155) on oklch(0.3 0.05 155)): status badges that mean done or usable, such as a document ready to read, a completed job or an available model.
-- **Status Amber** (text oklch(0.5 0.11 70) on oklch(0.96 0.04 85); dark text oklch(0.82 0.12 80) on oklch(0.32 0.05 75)): status badges that mean in progress or incomplete, such as processing, running or an interrupted answer.
-- **Destructive Red** (light oklch(0.577 0.245 27.325), dark oklch(0.704 0.191 22.216)): errors and destructive actions only. It appears as a 10% tint behind red text on inline alerts, failed badges and delete menu items, never as a solid fill.
+- **Status Green** (text oklch(0.45 0.11 155) on oklch(0.96 0.03 155); dark text oklch(0.8 0.12 155) on oklch(0.3 0.05 155)): status badges that mean done or usable, such as a completed job or an available model.
+- **Status Amber** (text oklch(0.5 0.11 70) on oklch(0.96 0.04 85); dark text oklch(0.82 0.12 80) on oklch(0.32 0.05 75)): status badges that mean in progress or incomplete, such as a running job or an interrupted answer.
+- **Destructive Red** (light oklch(0.577 0.245 27.325), dark oklch(0.704 0.191 22.216)): errors and destructive actions only. It appears as a 10% tint behind red text on inline alerts, failed badges, the failed-PDF icon and delete menu items, never as a solid fill.
 
 ### Neutral
 - **Paper** (light oklch(1 0 0), dark oklch(0.145 0 0)): the app ground, the composer in light mode, and outline buttons.
@@ -315,8 +315,11 @@ On desktop the overlay is transparent, so the PDF stays legible while a click ou
 ### PDF menu
 The reader toolbar ends with a vertical-ellipsis button named "PDF options". Its dropdown starts with a non-interactive label: the file name, then pages and size in tabular figures, then the source ("Uploaded" or "Downloaded from OpenAlex"), in muted label text. Open original and Download follow. For the paper's current PDF the menu adds Replace PDF, which opens the upload in a dialog, and Remove PDF, a destructive item. Remove PDF opens an alert dialog that states what happens, from the server's preview, with Cancel focused. Earlier versions and other papers' PDFs only open or download.
 
+### PDF state icon
+`PdfStateIcon` is the leading icon of every paper row (Library, sidebar Papers, command palette, @ picker) and appears in the paper workspace header only when the PDF is not ready. It is 16px and uses ink, muted and destructive only, never green or amber: attached is `FileText` in foreground ink, none is `FileQuestion` in muted ink, preparing is a muted `LoaderCircle` that spins only when motion is allowed, and failed is a destructive `FileWarning`. A tooltip opens on hover and keyboard focus ("PDF attached", "No PDF yet", "Preparing PDF…", "PDF couldn’t be read") and the same text names the icon for screen readers. Inside a link or option the icon is not a tab stop. There is no text badge for PDF state.
+
 ### Status Badges
-Fully round, 20px tall, label size at regular weight, with a leading 12px icon. Ready, completed and available states use the green tints. Processing, running and interrupted use the amber tints. Failed uses the destructive tint, and metadata-only uses muted grey. The processing icon spins only when the user allows motion.
+Fully round, 20px tall, label size at regular weight, with a leading 12px icon. Completed and available states use the green tints. Processing, running and interrupted use the amber tints. Failed uses the destructive tint. PDF state is not a badge; see the PDF state icon. The processing icon spins only when the user allows motion.
 
 ### Composer (signature)
 The single input surface of the app. It is a 22px-radius floating form on paper (card in dark mode) with the soft composer shadow. An optional header row holds context chips. The auto-growing textarea runs from 44px (64px on home) up to 240px. Below it, a toolbar holds leading controls (attach, provider switcher) on the left, trailing controls (model and reasoning switcher) on the right, and a 28px round ink send button that becomes Stop while generating. Enter sends and Shift+Enter adds a new line. An optional centred footnote of 12px muted text sits beneath it and explains why it is disabled or reminds the user to check claims.

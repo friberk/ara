@@ -266,19 +266,34 @@ async def delete_papers(
         titles,
     )
     await release_uploads(session, resources, deleted)
-    if documents:
-        uploading = any(row.status == "uploading" for row in documents)
-        await enqueue(
-            session,
-            kind=STORAGE_CLEANUP,
-            payload={
-                "object_keys": sorted(row.object_key for row in documents),
-                "paper_titles": [titles[paper_id] for paper_id in deleted],
-            },
-            delay_seconds=UPLOADING_DELAY_SECONDS if uploading else 0,
-        )
+    await queue_storage_cleanup(
+        session, documents, paper_titles=[titles[paper_id] for paper_id in deleted]
+    )
     await session.execute(delete(Paper).where(Paper.id.in_(deleted)))
     return deleted, missing
+
+
+async def queue_storage_cleanup(
+    session, documents: Sequence, *, paper_titles: Sequence[str | None] = ()
+) -> BackgroundJob | None:
+    """Queue removal of these documents' stored PDFs in the caller's transaction, which also
+    deletes their rows; nothing when there are none.
+
+    Deleting papers uses it, and so can removing a single PDF. Each item needs `object_key` and
+    `status`; a PDF still uploading waits out the upload grace first.
+    """
+    if not documents:
+        return None
+    uploading = any(document.status == "uploading" for document in documents)
+    return await enqueue(
+        session,
+        kind=STORAGE_CLEANUP,
+        payload={
+            "object_keys": sorted(document.object_key for document in documents),
+            "paper_titles": list(paper_titles),
+        },
+        delay_seconds=UPLOADING_DELAY_SECONDS if uploading else 0,
+    )
 
 
 async def run_storage_cleanup_job(resources, job_id, generation, token, payload) -> None:

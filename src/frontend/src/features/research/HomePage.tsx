@@ -2,13 +2,14 @@ import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText, FileUp, History, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Paper, Provider } from '@/api/types'
+import type { Provider } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Composer } from '@/components/composer/Composer'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
 import { PaperChips, PaperPicker } from '@/components/composer/PaperPicker'
 import { usePaperMention } from '@/components/composer/use-paper-mention'
+import { useDraftPapers } from '@/components/composer/use-draft-papers'
 import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -20,6 +21,7 @@ import { usePageDrop } from '@/components/upload/use-page-drop'
 import { useUploads } from '@/components/upload/use-upload'
 import { useCreateChat } from '@/hooks/queries/chats'
 import { useRecordSearch, useSearchHistory } from '@/hooks/queries/search'
+import { trimDraft } from '@/lib/mentions'
 import { queueQuestion } from '@/lib/pending-questions'
 
 const exampleTopics = ['Retrieval-augmented generation', 'Graph neural networks for molecules', 'Evaluating large language models']
@@ -29,10 +31,9 @@ const chip = 'max-w-full rounded-full font-normal text-muted-foreground'
 /** The first viewport: one composer that searches the literature, or asks a paper from the library. */
 export default function HomePage() {
   const navigate = useNavigate()
-  const [text, setText] = useState('')
   const [provider, setProvider] = useState<Provider>('openalex')
-  // Library papers to ask about, in the order chosen; the first one's page is the chat's address (ARA-088).
-  const [papers, setPapers] = useState<Paper[]>([])
+  // Library papers to ask about, in the order chosen or mentioned; the first one's page is the chat's address (ARA-088).
+  const { draft, onDraftChange, papers, mentioned, toggle, remove } = useDraftPapers()
   const picker = useRef<HTMLInputElement>(null)
   // A PDF chosen or dropped here uploads at once and opens its paper, where the same steps continue.
   const uploads = useUploads({
@@ -57,9 +58,8 @@ export default function HomePage() {
   const createChat = useCreateChat()
   const asking = papers.length > 0
   const several = papers.length > 1
-  const toggle = (choice: Paper) => setPapers((current) => current.some((item) => item.id === choice.id) ? current.filter((item) => item.id !== choice.id) : [...current, choice])
-  // Typing @ mentions a paper (adding it when new); the @ button adds or removes.
-  const mention = usePaperMention({ selected: papers.map((item) => item.id), onSelect: toggle })
+  // Typing @ mentions a paper with a pill, which chooses it; the @ button adds or removes (ARA-096).
+  const mention = usePaperMention({ selected: papers.map((item) => item.id), onToggle: toggle, onMentioned: mentioned })
 
   function search(q: string) {
     const params = { q: q.trim(), provider }
@@ -68,10 +68,10 @@ export default function HomePage() {
   }
   function ask() {
     if (!asking) return
-    const content = text.trim()
+    const { text: content, mentions } = trimDraft(draft)
     createChat.mutate({ paperIds: papers.map((item) => item.id) }, {
       onSuccess: (chat) => {
-        queueQuestion(chat.id, { content, settings: generation.settings })
+        queueQuestion(chat.id, { content, mentions, settings: generation.settings })
         navigate(chatHref(chat))
       },
     })
@@ -84,15 +84,16 @@ export default function HomePage() {
         <Composer
           size="large"
           autoFocus
-          value={text}
-          onValueChange={setText}
-          onSubmit={() => (asking ? ask() : search(text))}
+          value={draft.text}
+          mentions={draft.mentions}
+          onValueChange={onDraftChange}
+          onSubmit={() => (asking ? ask() : search(draft.text))}
           label={several ? 'Question about these papers' : asking ? 'Question about this paper' : 'Research topic'}
           placeholder={several ? 'Ask a question about these papers' : asking ? 'Ask a question about this paper' : 'Search papers by topic, title or research question'}
           submitLabel={asking ? 'Ask question' : 'Search papers'}
           maxLength={asking ? 8000 : 300}
           submitDisabled={asking ? createChat.isPending || !generation.usableFor('chat') : false}
-          header={asking && <PaperChips papers={papers} onRemove={(item) => setPapers((current) => current.filter((chosen) => chosen.id !== item.id))} />}
+          header={asking && <PaperChips papers={papers} onRemove={remove} />}
           onMention={mention.onMention}
           leading={
             <>

@@ -1,5 +1,6 @@
 // Test-after coverage (ARA-036 TDD audit): behaviour that shipped before any test covered it. Each test was
 // confirmed by breaking the behaviour it covers, watching the test fail, and restoring the code.
+import { isEditable, textIn } from '@/test/editor'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { testClient } from '@/test/render'
 import { json, mockApi } from '@/test/fetch-routes'
@@ -31,10 +32,10 @@ test('Given a question sent with Enter, Then one answer is requested and the com
   const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': controlledStream().handler })
   const { user } = mount('/papers/p1/chats/c1')
   const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
-  await waitFor(() => expect(input).toBeEnabled())
+  await waitFor(() => expect(isEditable(input)).toBe(true))
   await user.type(input, 'Sent with Enter{Enter}')
   await waitFor(() => expect(calls.filter((call) => call.path === '/chats/c1/messages/stream')).toHaveLength(1))
-  expect(input).toHaveValue('')
+  expect(textIn(input)).toBe('')
 })
 
 test('Given an answer starting, Then it reads "Preparing a response…" and screen readers hear it start and finish', async () => {
@@ -177,7 +178,7 @@ test('Given a paper whose PDF failed, Then the composer explains how to enable q
   mockApi(settings)
   mount('/papers/p1', { value: { ...paper, document_status: 'failed' } })
   expect(await screen.findByText('PDF processing failed. Attach a text-based PDF to ask questions.')).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
+  expect(isEditable(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe(false)
 })
 
 test('Given the server refuses a new chat, Then the reason is shown inline', async () => {
@@ -235,6 +236,6 @@ test('Given a queued question while an answer is still processing, Then it waits
   const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': { items: [userMessage('u1', 'First'), assistantMessage('m1', '', { state: 'processing' })] } })
   queueQuestion('c1', { content: 'Queued behind an answer', settings: { model: 'gpt-5.6-luna', reasoning_effort: 'low' } })
   mount('/papers/p1/chats/c1')
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toHaveValue('Queued behind an answer'))
+  await waitFor(() => expect(textIn(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe('Queued behind an answer'))
   expect(calls.some((call) => call.path.endsWith('/messages/stream'))).toBe(false)
 })

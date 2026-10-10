@@ -1,3 +1,4 @@
+import { isEditable } from '@/test/editor'
 import { screen, waitFor, within } from '@testing-library/react'
 import { json, mockApi } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
@@ -137,7 +138,7 @@ test('Given a metadata-only paper, Then the composer is disabled and the footnot
   mockApi(settings)
   mount('/papers/p1', { value: { ...paper, document_status: 'metadata_only', active_document_id: null } })
   expect(await screen.findByText('Attach a PDF to ask questions about this paper.')).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
+  expect(isEditable(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe(false)
   // Finish review: no dead controls. Questions are offered once the PDF is ready; the summary card offers the next step.
   expect(screen.queryByRole('group', { name: 'Suggested questions' })).not.toBeInTheDocument()
   expect(await within(screen.getByRole('article', { name: 'Paper summary' })).findByRole('button', { name: 'Attach PDF' })).toBeEnabled()

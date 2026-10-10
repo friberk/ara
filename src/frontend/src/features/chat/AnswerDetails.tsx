@@ -19,7 +19,12 @@ export function AnswerDetails({ retrieval, context, model }: { retrieval: Retrie
     query && `Searched for “${query}”`,
     `${retrieval.mode === 'hybrid' ? 'Keyword and meaning search' : 'Keyword search'}${retrieval.note ? `. ${retrieval.note}` : ''}`,
     retrieval.reranked ? 'Results were reranked' : 'Results were not reranked',
-    `Used ${count(retrieval.passages_used)} of ${count(retrieval.passages_found)} relevant passages${retrieval.limited_by_context ? ` (limited by ${modelName ? `${modelName}’s` : 'the model’s'} context)` : ''}`,
+    `Used ${count(retrieval.passages_used)} of ${count(retrieval.passages_found)} relevant passages${retrieval.evidence_tokens ? `, ${count(retrieval.evidence_tokens)} tokens` : ''}${retrieval.limited_by_context ? ` (limited by ${modelName ? `${modelName}’s` : 'the model’s'} context)` : ''}`,
+    // Relevance-driven evidence (ARA-094); answers saved before it have none of these.
+    !!retrieval.summaries_used && `Included ${count(retrieval.summaries_used)} section ${retrieval.summaries_used === 1 ? 'summary' : 'summaries'}`,
+    !!retrieval.pruned && `Left out ${count(retrieval.pruned)} ${retrieval.pruned === 1 ? 'passage that' : 'passages that'} scored far below the best one`,
+    retrieval.retried && 'The first answer found too little, so the search was widened once',
+    retrieval.map_reduce && 'Read each paper in its own request, then combined the notes',
     context && `Context: ${count(context.input_tokens)} of ${count(context.input_budget ?? context.window)} tokens${context.summary_version ? ' (earlier messages summarized)' : ''}`,
   ].filter((row): row is string => !!row)
   return (

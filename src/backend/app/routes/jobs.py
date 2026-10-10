@@ -26,7 +26,15 @@ def router(development: bool, *, open_models: bool = True) -> APIRouter:
         request: Request,
         limit: int = Query(default=50, ge=1, le=100),
         paper_id: UUID | None = None,
-        kind: Literal["ingest", "summary", "fulltext", "metadata", "model_download", "model_delete"]
+        kind: Literal[
+            "ingest",
+            "summary",
+            "section_summaries",
+            "fulltext",
+            "metadata",
+            "model_download",
+            "model_delete",
+        ]
         | None = None,
         active: bool | None = None,
     ):
@@ -44,7 +52,9 @@ def router(development: bool, *, open_models: bool = True) -> APIRouter:
             statement = statement.where(
                 or_(
                     and_(
-                        BackgroundJob.kind.in_(["summary", "fulltext", "embed", "metadata"]),
+                        BackgroundJob.kind.in_(
+                            ["summary", "section_summaries", "fulltext", "embed", "metadata"]
+                        ),
                         BackgroundJob.payload["paper_id"].astext == str(paper_id),
                     ),
                     and_(
@@ -103,7 +113,7 @@ def router(development: bool, *, open_models: bool = True) -> APIRouter:
                 raise AppError(
                     409, "JOB_NOT_RETRYABLE", "Only eligible failed jobs can be retried."
                 )
-            if job.kind == "summary":
+            if job.kind in {"summary", "section_summaries"}:
                 raise AppError(
                     409,
                     "NEW_GENERATION_REQUEST_REQUIRED",

@@ -1,4 +1,4 @@
-import { authorShort, citationLine, mentionName, shortPaperName } from './paper-names'
+import { authorShort, citationLine, citationText, mentionName, shortPaperName } from './paper-names'
 
 const paper = (authors: string[], year: number | null = null, venue: string | null = null) => ({ title: 'Attention Is All You Need', authors, year, venue })
 
@@ -21,4 +21,10 @@ test('Given what a paper has, Then the citation parts are the short authors, the
 test('Given one naming source, Then chips and mentions name a paper by its first author and year', () => {
   expect(shortPaperName({ title: 'Attention Is All You Need', first_author: 'Ashish Vaswani', year: 2017 })).toBe('Vaswani 2017')
   expect(mentionName(paper(['Ashish Vaswani', 'Noam Shazeer'], 2017))).toBe('Vaswani 2017')
+})
+
+test('Given what a paper has, Then its citation as one line names a mention pill for screen readers', () => {
+  expect(citationText(paper(['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar'], 2017, 'NeurIPS'))).toBe('Vaswani et al. (2017). Attention Is All You Need. NeurIPS.')
+  expect(citationText(paper(['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar']))).toBe('Vaswani et al. Attention Is All You Need.')
+  expect(citationText({ title: null, authors: [], year: 2017 })).toBe('2017. Untitled paper.')
 })

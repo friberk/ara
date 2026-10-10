@@ -1,13 +1,17 @@
 import { z } from 'zod'
 const page = z.number().int().positive()
 // Fields added by the retrieval overhaul are optional, so answers saved before it still parse (docs/api-contract.md).
+// paper_id names the cited paper (ARA-088), so an answer may cite a paper its question just brought in (ARA-096).
 const citation = z.object({
-  chunk_id: z.string(), document_id: z.string(), page, excerpt: z.string(),
+  chunk_id: z.string(), document_id: z.string(), paper_id: z.string().nullish(), page, excerpt: z.string(),
   page_end: page.nullish(), section: z.string().nullish(), kind: z.enum(['front_matter', 'text', 'table', 'references']).nullish(), bboxes: z.array(z.array(z.number())).optional(),
 })
 const retrieval = z.object({
   mode: z.enum(['hybrid', 'keyword']), profile: z.string().nullish(), reranked: z.boolean().default(false), standalone_query: z.string().nullish(), search_queries: z.array(z.string()).optional(),
   passages_found: z.number().int().default(0), passages_used: z.number().int().default(0), limited_by_context: z.boolean().default(false), note: z.string().nullish(),
+  // Relevance-driven evidence (ARA-094); absent on answers saved before it.
+  pruned: z.number().int().default(0), evidence_tokens: z.number().int().default(0), summaries_used: z.number().int().default(0), retried: z.boolean().default(false), map_reduce: z.boolean().default(false),
+  question_type: z.enum(['lookup', 'broad', 'comparative']).nullish(), sub_questions: z.array(z.string()).optional(),
 })
 const context = z.object({
   window: z.number().int(), input_tokens: z.number().int(), output_reserved: z.number().int(), summary_version: z.number().int().nullish(),

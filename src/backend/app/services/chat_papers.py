@@ -98,6 +98,28 @@ async def add_paper(session, chat_id: UUID, paper_id: UUID) -> ChatSession:
     return chat
 
 
+async def add_mentioned(session, chat_id: UUID, paper_ids: Sequence[UUID]) -> list[UUID]:
+    """Add the mentioned papers the chat lacks, each with its active PDF, in the transaction
+    that stores the question that mentions them (ARA-096). Returns the chat's papers by ordinal.
+    """
+    links = await pinned(session, chat_id)
+    included = [link.paper_id for link in links]
+    missing = [paper_id for paper_id in dict.fromkeys(paper_ids) if paper_id not in included]
+    if missing:
+        documents = await ready_documents(session, missing)
+        session.add_all(
+            ChatPaper(
+                chat_id=chat_id,
+                paper_id=document.paper_id,
+                document_id=document.id,
+                ordinal=links[-1].ordinal + n,
+            )
+            for n, document in enumerate(documents, start=1)
+        )
+        await session.flush()
+    return included + missing
+
+
 async def remove_paper(session, chat_id: UUID, paper_id: UUID) -> ChatSession:
     """Remove a paper; earlier answers keep their citations to it."""
     chat = await locked_chat(session, chat_id)
@@ -134,8 +156,9 @@ def surname(name: str) -> str:
 
 
 def named_papers(question: str, papers: Sequence[PaperHeader]) -> list[int]:
-    """Indexes of the papers a question names: by full title, or as citation chips name them,
-    "Surname Year" (ARA-088). Named papers are always kept in a multi-paper answer."""
+    """Indexes of the papers a question names as typed text: by full title, or as citation chips
+    name them, "Surname Year" (ARA-088). Named papers are always kept in a multi-paper answer;
+    composer pills name theirs by id (ARA-096)."""
     asked = normalized(question)
     found = []
     for index, paper in enumerate(papers):

@@ -1,5 +1,6 @@
 // Test-after coverage (ARA-038): these behaviours shipped before their tests. Each test was checked
 // against a deliberate mutation of the implementation to confirm it can fail.
+import { textIn } from '@/test/editor'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -62,9 +63,9 @@ test('Given /search without a query, Then an intro and a focused empty composer 
   mount('/search')
   expect(await screen.findByRole('heading', { level: 1, name: 'Search the literature' })).toBeVisible()
   const composer = screen.getByRole('textbox', { name: 'Research topic' })
-  expect(composer).toHaveValue('')
+  expect(textIn(composer)).toBe('')
   expect(composer).toHaveFocus()
-  expect(composer).toHaveAttribute('placeholder', 'Search papers by topic, title or research question')
+  expect(composer).toHaveAttribute('aria-placeholder', 'Search papers by topic, title or research question')
   expect(screen.getByRole('button', { name: 'Search papers' })).toBeDisabled()
   expect(calls.some((call) => call.path === '/search')).toBe(false)
 })

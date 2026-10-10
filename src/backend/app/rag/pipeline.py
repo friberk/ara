@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
-from sqlalchemy import case, func, select, tuple_
+from sqlalchemy import case, func, or_, select, tuple_
 
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
@@ -25,23 +25,33 @@ from app.integrations.embeddings import cl100k, create_embedder
 from app.integrations.open_models import KEYWORD_NOTE, offered
 from app.integrations.tokens import TokenCounter
 from app.models.research import DocumentChunk
-from app.models.retrieval import RetrievalIndex
+from app.models.retrieval import RetrievalIndex, SectionSummary
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.packing import (
-    FLOOR,
     SEPARATOR,
+    SOURCE_MARKER,
+    SUMMARY,
+    WIDEST_SOURCE,
     Passage,
+    citable,
     node_passage,
     pack_evidence,
     render_evidence,
     render_header,
 )
 from app.rag.rerank import rerank_candidates
-from app.rag.retrievers import PgLexicalRetriever, PgVectorRetriever, chunk_node
+from app.rag.retrievers import (
+    PgLexicalRetriever,
+    PgSummaryLexicalRetriever,
+    PgSummaryVectorRetriever,
+    PgVectorRetriever,
+    chunk_node,
+    summary_node,
+)
+from app.rag.selection import FIRST_PASS, FLOOR, RETRY_PASS, EvidencePass, prune
 from app.schemas.ai import RetrievalSummary
 
 TOP_K = 30
-MAX_PASSAGES = 16
 # Sub-questions enter evidence headers cut to this length, so headers stay short and bounded.
 SUB_QUESTION_CHARS = 300
 SUB_QUESTION_LABEL = "\nSub-question: "
@@ -59,8 +69,6 @@ SOME_OPENING_NOTE = (
     "No passage matched in {count} papers the question names, so their opening passages were used."
 )
 ROUTED_NOTE = "Only the {count} most relevant papers fit in the context for this answer."
-# At most this many papers can answer one turn: each needs its floor within the passage cap.
-ANSWERING_PAPERS = MAX_PASSAGES // FLOOR
 # Without an OpenAI key the default reranker cannot run at all; Settings already says why.
 QUIET_RERANK_SKIPS = {"MODEL_NOT_CONFIGURED"}
 
@@ -95,21 +103,105 @@ class EvidenceResult:
     notes: list[str] = field(default_factory=list)
     # Documents of the papers the question names, which answer first.
     kept: set[str] = field(default_factory=set)
+    # The reranker's relevance per candidate id; empty when results were not reranked.
+    scores: dict[str, float] = field(default_factory=dict)
+    # The limits of the attempt being packed: the first pass, or the one wider retry.
+    evidence_pass: EvidencePass = FIRST_PASS
+    question_type: str = "lookup"
+    # The evidence ceiling E the last packing was given, before the pass's own token cap.
+    ceiling: int = 0
+    # Chunk id -> the chunks that summary candidates cite (ARA-079).
+    sources: dict[str, TextNode] = field(default_factory=dict)
 
-    def pack(self, budget: int) -> list[Passage]:
-        self.passages = pack_evidence(
-            self.ranked,
+    @property
+    def citable(self) -> list[Passage]:
+        """The passages an answer may cite by handle: chunks sent and those summaries cite."""
+        return citable(self.passages)
+
+    def widen(self) -> bool:
+        """Switch to the retry pass when it reads passages the first pass did not (step 10);
+        otherwise keep the first pass as it was. With several papers the retry may read beyond
+        E paper by paper, so its own target counts too."""
+        first = self.passages
+        kept = (self.summary.model_copy(), dict(self.trace), self.evidence_pass)
+        self.evidence_pass = RETRY_PASS
+        wider = {item.chunk_id for item in self.pack(self.ceiling)}
+        if len(self.target_papers()) > 1:
+            target = self.select(
+                self.pruned().kept, self.evidence_pass.target_tokens, headers=self.headers
+            )
+            wider |= {item.chunk_id for item in target}
+        if wider <= {item.chunk_id for item in first}:
+            self.passages = first
+            self.summary, self.trace, self.evidence_pass = kept
+            return False
+        self.trace["first_pass"] = {
+            "passages": len(first),
+            "evidence_tokens": kept[0].evidence_tokens,
+            "pruned": kept[0].pruned,
+        }
+        return True
+
+    @property
+    def reach(self) -> int | None:
+        """How far chunks grow in their section: a broad question takes the whole section."""
+        return None if self.question_type == "broad" else self.evidence_pass.reach
+
+    def pruned(self):
+        return prune(self.ranked, self.scores, ratio=self.evidence_pass.prune_ratio, kept=self.kept)
+
+    def select(self, candidates, budget: int, **options) -> list[Passage]:
+        return pack_evidence(
+            candidates,
             budget=budget,
             counter=self.counter,
             neighbours=self.neighbours,
-            max_passages=MAX_PASSAGES,
-            headers=self.headers,
             kept=self.kept,
+            reach=self.reach,
+            sources=self.sources,
+            scores=self.scores,
+            **{"max_passages": self.evidence_pass.max_passages, **options},
         )
+
+    def wanted(self) -> int:
+        """Tokens the pass's selection takes at its own target, before E bounds it."""
+        chosen = self.select(
+            self.pruned().kept, self.evidence_pass.target_tokens, headers=self.headers
+        )
+        return self.counter.count(render_evidence(chosen, self.headers))
+
+    def target_papers(self) -> list[str]:
+        """The papers the pass's selection reaches at its own target, in evidence order: those a
+        per-paper reading answers from when they do not all fit E."""
+        chosen = self.select(
+            self.pruned().kept, self.evidence_pass.target_tokens, headers=self.headers
+        )
+        return list(dict.fromkeys(str(item.document_id) for item in chosen))
+
+    def paper_passages(self, document: str, budget: int, first_handle: int) -> list[Passage]:
+        """One paper's share of the pass for a per-paper (map) call, handles from
+        `first_handle`."""
+        share = max(FLOOR, self.evidence_pass.max_passages // max(1, len(self.target_papers())))
+        own = [item for item in self.pruned().kept if item.node.metadata["document_id"] == document]
+        return self.select(own, budget, max_passages=share, first_handle=first_handle)
+
+    def pack(self, budget: int) -> list[Passage]:
+        """Prune, then pack within the pass's caps and `budget` (the evidence ceiling E)."""
+        limits = self.evidence_pass
+        self.ceiling = budget
+        pruned = self.pruned()
+        if limits.max_tokens is not None:
+            budget = min(budget, limits.max_tokens)
+        self.passages = self.select(pruned.kept, budget, headers=self.headers)
         chosen = {str(item.chunk_id) for item in self.passages}
         self.summary.passages_used = len(self.passages)
+        self.summary.summaries_used = sum(item.kind == SUMMARY for item in self.passages)
+        self.summary.pruned = pruned.pruned
+        self.summary.evidence_tokens = (
+            self.counter.count(render_evidence(self.passages, self.headers)) if self.counter else 0
+        )
         self.summary.limited_by_context = any(
-            item.node.node_id not in chosen for item in self.ranked[:MAX_PASSAGES]
+            item.node.node_id not in chosen for item in pruned.kept[: limits.max_passages]
         )
         used = Counter(str(item.document_id) for item in self.passages)
         candidates = {item.node.metadata["document_id"] for item in self.ranked}
@@ -117,11 +209,26 @@ class EvidenceResult:
         routed = len(candidates) > answering > 0
         notes = [*self.notes, *([ROUTED_NOTE.format(count=answering)] if routed else [])]
         self.summary.note = " ".join(notes) or None
-        self.trace["selected"] = {item.handle: str(item.chunk_id) for item in self.passages}
+        self.trace["selected"] = {item.handle: str(item.chunk_id) for item in self.citable}
+        self.trace["summaries"] = [
+            str(item.chunk_id) for item in self.passages if item.kind == SUMMARY
+        ]
         self.trace["papers"] = dict(used)
         self.trace["papers_in_scope"] = len(self.documents)
         self.trace["routed_out"] = len(candidates) - answering
         self.trace["budget"] = budget
+        self.trace["pass"] = limits.name
+        self.trace["prune"] = {
+            "ratio": limits.prune_ratio,
+            "top": pruned.top,
+            "bar": pruned.bar,
+            "pruned": pruned.pruned,
+        }
+        self.trace["selected_scores"] = {
+            item.handle or f"summary:{item.chunk_id}": self.scores[str(item.chunk_id)]
+            for item in self.passages
+            if str(item.chunk_id) in self.scores
+        }
         return self.passages
 
     def block(self, budget: int) -> str:
@@ -171,8 +278,8 @@ def scoped(scopes: Sequence[Scope]):
 
 
 def header_bound(counter, scopes: Sequence[Scope]) -> int:
-    """The most the evidence headers can cost: one per group, at most MAX_PASSAGES groups, the
-    longest headers with a sub-question of the longest length."""
+    """The most the first pass's evidence headers can cost: one per group, at most one group per
+    passage, the longest headers with a sub-question of the longest length."""
     if len(scopes) < 2:
         return 0
     longest = SUB_QUESTION_LABEL + "x" * SUB_QUESTION_CHARS
@@ -184,29 +291,50 @@ def header_bound(counter, scopes: Sequence[Scope]) -> int:
         ),
         reverse=True,
     )
-    return sum(costs[:MAX_PASSAGES])
+    return sum(costs[: FIRST_PASS.max_passages])
 
 
 async def evidence_ceiling(session, scopes: Sequence[Scope], counter) -> int:
-    """The most evidence packing can choose: the costliest passages, at most MAX_PASSAGES, and
-    the papers' headers."""
+    """The most evidence the first pass can choose: its costliest passages and section summaries,
+    at most its passage cap, and the papers' headers, within its token cap. A retry reserves for
+    itself."""
+    limit = FIRST_PASS.max_passages
     chunks = await session.scalars(
         scoped(scopes)
         .order_by(DocumentChunk.token_count.desc(), DocumentChunk.ordinal)
-        .limit(MAX_PASSAGES)
+        .limit(limit)
     )
-    widest = f"S{MAX_PASSAGES}"
-    return header_bound(counter, scopes) + sum(
-        counter.count(node_passage(chunk_node(chunk), widest).render()) + counter.count(SEPARATOR)
+    summaries = await session.scalars(
+        select(SectionSummary)
+        .where(
+            tuple_(SectionSummary.document_id, SectionSummary.chunk_set).in_(
+                [scope.key for scope in scopes]
+            )
+        )
+        .order_by(SectionSummary.token_count.desc())
+        .limit(limit)
+    )
+    widest, separator = f"S{limit}", counter.count(SEPARATOR)
+    costs = [
+        counter.count(node_passage(chunk_node(chunk), widest).render()) + separator
         for chunk in chunks
-    )
+    ]
+    for summary in summaries:
+        # Each source marker shows as a handle of the widest form.
+        shown = SOURCE_MARKER.sub(f"[{WIDEST_SOURCE}]", summary.content)
+        node = summary_node(summary)
+        node.metadata["content"] = shown
+        costs.append(counter.count(node_passage(node, widest).render()) + separator)
+    total = header_bound(counter, scopes) + sum(sorted(costs, reverse=True)[:limit])
+    return min(total, FIRST_PASS.max_tokens)
 
 
 async def opening_nodes(resources, scopes: Sequence[Scope]) -> list[NodeWithScore]:
-    """The first passages of up to ANSWERING_PAPERS papers in order, in one query: each paper's
-    share of MAX_PASSAGES, at least its floor."""
-    scopes = list(scopes)[:ANSWERING_PAPERS]
-    share = max(FLOOR, -(-MAX_PASSAGES // len(scopes)))
+    """The first passages of up to the first pass's answering papers in order, in one query:
+    each paper's share of its passage cap, at least its floor."""
+    limit = FIRST_PASS.max_passages
+    scopes = list(scopes)[: FIRST_PASS.answering_papers]
+    share = max(FLOOR, -(-limit // len(scopes)))
     position = func.row_number().over(
         partition_by=DocumentChunk.document_id, order_by=DocumentChunk.ordinal
     )
@@ -220,48 +348,83 @@ async def opening_nodes(resources, scopes: Sequence[Scope]) -> list[NodeWithScor
         chunks = await session.scalars(
             chunk.where(ranked.c.position <= share)
             .order_by(order, DocumentChunk.ordinal)
-            .limit(MAX_PASSAGES)
+            .limit(limit)
         )
         return [NodeWithScore(node=chunk_node(chunk), score=0.0) for chunk in chunks]
 
 
-async def neighbour_nodes(
+async def section_nodes(
     resources, scopes: Sequence[Scope], ranked: Sequence[NodeWithScore]
 ) -> dict[str, list[TextNode]]:
-    """The passages just before and after each candidate, when they share its section."""
+    """Each candidate's section around it, nearest first, for small-to-big expansion (step 8).
+
+    A section is the chunks sharing the candidate's heading; a candidate without a heading gets
+    only the passages just before and after it that have none either.
+    """
     chunk_sets = {str(scope.document_id): scope.chunk_set for scope in scopes}
-    wanted = {
+    # A summary already covers its section.
+    ranked = [item for item in ranked if item.node.metadata["kind"] != SUMMARY]
+    sections = {
+        (UUID(item.node.metadata["document_id"]), item.node.metadata["section"])
+        for item in ranked
+        if item.node.metadata["section"]
+    }
+    nearby = {
         (UUID(item.node.metadata["document_id"]), item.node.metadata["ordinal"] + step)
         for item in ranked
+        if not item.node.metadata["section"]
         for step in (-1, 1)
+    }
+    key = (DocumentChunk.document_id, DocumentChunk.chunk_set)
+    found_by = []
+    if sections:
+        wanted = [(document, chunk_sets[str(document)], title) for document, title in sections]
+        found_by.append(tuple_(*key, DocumentChunk.heading).in_(wanted))
+    if nearby:
+        wanted = [(document, chunk_sets[str(document)], ordinal) for document, ordinal in nearby]
+        found_by.append(tuple_(*key, DocumentChunk.ordinal).in_(wanted))
+    if not found_by:
+        return {}
+    async with resources.sessions() as session:
+        rows = await session.scalars(
+            select(DocumentChunk).where(or_(*found_by), DocumentChunk.kind != "references")
+        )
+        grouped: dict[tuple[str, str], list[DocumentChunk]] = {}
+        for chunk in rows:
+            grouped.setdefault((str(chunk.document_id), chunk.heading), []).append(chunk)
+    found = {}
+    for item in ranked:
+        metadata = item.node.metadata
+        document, own, heading = metadata["document_id"], metadata["ordinal"], metadata["section"]
+        same = sorted(
+            (
+                chunk
+                for chunk in grouped.get((document, heading), ())
+                if chunk.ordinal != own and (heading or abs(chunk.ordinal - own) == 1)
+            ),
+            key=lambda chunk: (abs(chunk.ordinal - own), chunk.ordinal),
+        )
+        if same:
+            found[item.node.node_id] = [chunk_node(chunk) for chunk in same]
+    return found
+
+
+async def summary_sources(
+    resources, scopes: Sequence[Scope], ranked: Sequence[NodeWithScore]
+) -> dict[str, TextNode]:
+    """The chunks the summary candidates cite, in one query; only chunks of the papers in scope
+    and their current chunk sets, so a summary can never lend a citation to another paper."""
+    wanted = {
+        UUID(source)
+        for item in ranked
+        if item.node.metadata["kind"] == SUMMARY
+        for source in item.node.metadata["sources"]
     }
     if not wanted:
         return {}
     async with resources.sessions() as session:
-        rows = await session.scalars(
-            select(DocumentChunk).where(
-                tuple_(
-                    DocumentChunk.document_id, DocumentChunk.chunk_set, DocumentChunk.ordinal
-                ).in_(
-                    [(document, chunk_sets[str(document)], ordinal) for document, ordinal in wanted]
-                ),
-                DocumentChunk.kind != "references",
-            )
-        )
-        nearby = {(str(chunk.document_id), chunk.ordinal): chunk for chunk in rows}
-    found = {}
-    for item in ranked:
-        metadata = item.node.metadata
-        document, ordinal = metadata["document_id"], metadata["ordinal"]
-        same = [
-            chunk_node(nearby[(document, step)])
-            for step in (ordinal - 1, ordinal + 1)
-            if (document, step) in nearby
-            and nearby[(document, step)].heading == metadata["section"]
-        ]
-        if same:
-            found[item.node.node_id] = same
-    return found
+        chunks = await session.scalars(scoped(scopes).where(DocumentChunk.id.in_(wanted)))
+        return {str(chunk.id): chunk_node(chunk) for chunk in chunks}
 
 
 def interleaved(nodes: Sequence[NodeWithScore]) -> list[NodeWithScore]:
@@ -279,9 +442,10 @@ def interleaved(nodes: Sequence[NodeWithScore]) -> list[NodeWithScore]:
 
 def floor_candidates(ranked: Sequence[NodeWithScore], kept: Collection[str]) -> list:
     """The first FLOOR candidates of the papers that can answer: the named ones, then the most
-    relevant, at most ANSWERING_PAPERS of them."""
+    relevant, as many as the widest pass (the retry) admits."""
     order = list(dict.fromkeys(item.node.metadata["document_id"] for item in ranked))
-    papers = sorted(order, key=lambda document: document not in kept)[:ANSWERING_PAPERS]
+    papers = sorted(order, key=lambda document: document not in kept)
+    papers = papers[: RETRY_PASS.answering_papers]
     seen: Counter = Counter()
     found = []
     for item in ranked:
@@ -336,6 +500,7 @@ async def retrieve_evidence(
     sub_questions: Sequence[tuple[int, str]] = (),
     kept: Collection[int] = (),
     on_stage: Callable[[str], Awaitable[None]] | None = None,
+    question_type: str = "lookup",
 ) -> EvidenceResult:
     """`queries` are searched in every paper; each (scope index, text) of `sub_questions` only in
     its paper; the `kept` scope indexes (papers the question names) share one more search with
@@ -350,6 +515,7 @@ async def retrieve_evidence(
         mode="keyword",
         search_queries=list(queries),
         sub_questions=[text for _, text in asked],
+        question_type=question_type,
     )
     notes: list[str] = []
     usable = offered(resources.settings, PROFILES)
@@ -399,13 +565,24 @@ async def retrieve_evidence(
     searches = []
 
     def search(kind: str, text: str, paper: int | None, within: Sequence[Scope], vector=None):
+        """Chunks and, beside them, section summaries (step 2; RAPTOR's collapsed tree)."""
         keys = [scope.key for scope in within]
-        if kind == "keyword":
-            found = PgLexicalRetriever(resources.sessions, keys, top_k=TOP_K).aretrieve(text)
-        else:
-            retriever = PgVectorRetriever(resources.sessions, keys, profile, top_k=TOP_K)
-            found = retriever.aretrieve(QueryBundle(query_str=text, embedding=vector))
-        searches.append((kind, text, paper, found))
+        if vector is None:
+            lexical = [
+                ("keyword", PgLexicalRetriever),
+                ("summary-keyword", PgSummaryLexicalRetriever),
+            ]
+            for name, kind in lexical:
+                found = kind(resources.sessions, keys, top_k=TOP_K).aretrieve(text)
+                searches.append((name, text, paper, found))
+            return
+        bundle = QueryBundle(query_str=text, embedding=vector)
+        for name, kind in (
+            ("vector", PgVectorRetriever),
+            ("summary-vector", PgSummaryVectorRetriever),
+        ):
+            found = kind(resources.sessions, keys, profile, top_k=TOP_K).aretrieve(bundle)
+            searches.append((name, text, paper, found))
 
     for position, query in enumerate(queries):
         search("keyword", query, None, scopes)
@@ -449,8 +626,9 @@ async def retrieve_evidence(
     summary.passages_found = len(fused)
     kept_documents = {str(scope.document_id) for scope in keep}
     floors = floor_candidates(ranked, kept_documents)
-    expand = {item.node.node_id: item for item in [*ranked[:MAX_PASSAGES], *floors]}
-    neighbours = await neighbour_nodes(resources, scopes, list(expand.values()))
+    expand = {item.node.node_id: item for item in [*ranked[: RETRY_PASS.max_passages], *floors]}
+    neighbours = await section_nodes(resources, scopes, list(expand.values()))
+    sources = await summary_sources(resources, scopes, ranked)
     width = TOP_K
     trace = {
         "queries": list(queries),
@@ -499,6 +677,9 @@ async def retrieve_evidence(
         documents=[str(scope.document_id) for scope in scopes],
         notes=notes,
         kept=kept_documents,
+        scores=dict(reranked.scores) if reranked.reranked else {},
+        question_type=question_type,
+        sources=sources,
     )
     result.pack(budget)
     timings["total"] = elapsed(started)

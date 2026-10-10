@@ -1,34 +1,52 @@
+// The composer is a TipTap editor (ARA-096). userEvent types into it through ProseMirror's DOM observer. Carets are
+// placed with the editor's own commands (editorOf, deletePill) because jsdom has no layout for arrow keys or clicks, and
+// keys next to a pill are dispatched as keydown events for ProseMirror's keymap, as a browser would.
 import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { Composer, type ComposerProps } from './Composer'
+import type { DraftMention } from '@/lib/mentions'
+import { deletePill, draftIn, editorOf, isEditable, textIn } from '@/test/editor'
+import { Composer, type ComposerProps, type Mention } from './Composer'
 
-function Harness(props: Partial<ComposerProps> & { onSend?: (value: string) => void }) {
-  const [value, setValue] = useState(props.value ?? '')
+const dense = { id: 'p2', label: 'Karpukhin 2020', citation: 'Karpukhin & Oguz (2020). Dense passage retrieval. EMNLP.' }
+
+type HarnessProps = Partial<ComposerProps> & { onSend?: (text: string, mentions: DraftMention[]) => void }
+
+function Harness({ onSend, value = '', mentions = [], ...props }: HarnessProps) {
+  const [draft, setDraft] = useState({ text: value, mentions: [...mentions] })
   return (
     <TooltipProvider>
-      <Composer label="Question about this paper" placeholder="Ask a question" submitLabel="Ask question" {...props} value={value} onValueChange={setValue} onSubmit={() => props.onSend?.(value)} />
+      <Composer label="Question about this paper" placeholder="Ask a question" submitLabel="Ask question" {...props} value={draft.text} mentions={draft.mentions} onValueChange={(text, next) => setDraft({ text, mentions: next })} onSubmit={() => onSend?.(draft.text, draft.mentions)} />
+      <button type="button" onClick={() => setDraft({ text: '', mentions: [] })}>Clear</button>
     </TooltipProvider>
   )
+}
+
+function field() { return screen.getByRole('textbox', { name: 'Question about this paper' }) }
+
+/** Types "Compare @" and returns the handle the composer gave its @ listener. */
+async function startMention(user: ReturnType<typeof userEvent.setup>, onMention = vi.fn<(mention: Mention) => void>()) {
+  await user.type(field(), 'Compare @')
+  await waitFor(() => expect(onMention).toHaveBeenCalledTimes(1))
+  return onMention.mock.calls[0]![0]
 }
 
 test('Given text, When Enter is pressed, Then the composer submits it; Shift+Enter adds a line instead', async () => {
   const onSend = vi.fn()
   const user = userEvent.setup()
   render(<Harness onSend={onSend} />)
-  const input = screen.getByRole('textbox', { name: 'Question about this paper' })
-  await user.type(input, 'line one{Shift>}{Enter}{/Shift}line two')
+  await user.type(field(), 'line one{Shift>}{Enter}{/Shift}line two')
   expect(onSend).not.toHaveBeenCalled()
   await user.keyboard('{Enter}')
-  expect(onSend).toHaveBeenCalledWith('line one\nline two')
+  expect(onSend).toHaveBeenCalledWith('line one\nline two', [])
 })
 
 test('Given blank text, Then neither Enter nor the send button submits', async () => {
   const onSend = vi.fn()
   const user = userEvent.setup()
   render(<Harness onSend={onSend} />)
-  await user.type(screen.getByRole('textbox', { name: 'Question about this paper' }), '   {Enter}')
+  await user.type(field(), '   {Enter}')
   expect(screen.getByRole('button', { name: 'Ask question' })).toBeDisabled()
   expect(onSend).not.toHaveBeenCalled()
 })
@@ -36,8 +54,9 @@ test('Given blank text, Then neither Enter nor the send button submits', async (
 test('Given an IME composition, When Enter confirms a character, Then it does not submit', () => {
   const onSend = vi.fn()
   render(<Harness value="日本" onSend={onSend} />)
-  const input = screen.getByRole('textbox', { name: 'Question about this paper' })
-  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }))
+  fireEvent.keyDown(field(), { key: 'Enter', keyCode: 13, isComposing: true })
+  fireEvent.compositionStart(field())
+  fireEvent.keyDown(field(), { key: 'Enter', keyCode: 13 })
   expect(onSend).not.toHaveBeenCalled()
 })
 
@@ -50,27 +69,118 @@ test('Given a running generation, Then Stop replaces send and calls onStop', asy
   expect(onStop).toHaveBeenCalledTimes(1)
 })
 
-test('Given a disabled composer, Then the field is disabled and the footnote explains why', () => {
+test('Given a disabled composer, Then the field cannot be edited and the footnote explains why', () => {
   render(<Harness value="Why?" disabled footnote="Attach the PDF to ask questions." header={<span>Context chip</span>} leading={<button type="button">Attach</button>} trailing={<button type="button">Model</button>} />)
-  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeDisabled()
+  expect(isEditable(field())).toBe(false)
+  expect(field()).toHaveAttribute('aria-disabled', 'true')
   expect(screen.getByRole('button', { name: 'Ask question' })).toBeDisabled()
   expect(screen.getByText('Attach the PDF to ask questions.')).toBeVisible()
   for (const name of ['Attach', 'Model']) expect(screen.getByRole('button', { name })).toBeVisible()
   expect(screen.getByText('Context chip')).toBeVisible()
 })
 
-test('Given a mention handler, When @ starts a word, Then it opens the paper picker instead of typing; an email address types normally', async () => {
+test('Given the composer, Then it is a labelled multi-line textbox that announces its placeholder', () => {
+  render(<Harness />)
+  expect(field()).toHaveAttribute('aria-multiline', 'true')
+  expect(field()).toHaveAttribute('aria-placeholder', 'Ask a question')
+  expect(isEditable(field())).toBe(true)
+})
+
+test('Given a mention handler, When @ starts a word, Then the picker opens; an email address types normally', async () => {
   const onMention = vi.fn()
   const user = userEvent.setup()
   render(<Harness onMention={onMention} />)
-  const input = screen.getByRole('textbox', { name: 'Question about this paper' })
-  await user.type(input, '@')
+  await user.type(field(), '@')
+  await waitFor(() => expect(onMention).toHaveBeenCalledTimes(1))
+  await user.type(field(), ' then ada@example.org')
   expect(onMention).toHaveBeenCalledTimes(1)
-  expect(input).toHaveValue('')
-  await user.type(input, 'Compare with @')
-  expect(onMention).toHaveBeenCalledTimes(2)
-  expect(input).toHaveValue('Compare with ')
-  await user.type(input, 'ada@example.org')
-  expect(onMention).toHaveBeenCalledTimes(2)
-  expect(input).toHaveValue('Compare with ada@example.org')
+  expect(textIn(field())).toBe('@ then ada@example.org')
+})
+
+test('Given @ typed, When a paper is picked, Then an atomic pill named by its citation replaces the @ and the draft records its code-point span', async () => {
+  const onMention = vi.fn()
+  const user = userEvent.setup()
+  render(<Harness onMention={onMention} />)
+  await user.type(field(), '🔬 ')
+  const mention = await startMention(user, onMention)
+  act(() => mention.insert(dense))
+  const pill = within(field()).getByRole('img', { name: dense.citation })
+  expect(pill).toHaveAttribute('aria-roledescription', 'paper')
+  expect(pill).toHaveTextContent('Karpukhin 2020')
+  // One code point for the emoji, as the server counts.
+  expect(draftIn(field())).toEqual({ text: '🔬 Compare Karpukhin 2020 ', mentions: [{ paper_id: 'p2', label: 'Karpukhin 2020', start: 10, end: 24, citation: dense.citation }] })
+  await user.type(field(), 'please')
+  expect(textIn(field())).toBe('🔬 Compare Karpukhin 2020 please')
+})
+
+test('Given the picker closes without a pick, Then the typed @ stays as text and the caret returns after it', async () => {
+  const onMention = vi.fn()
+  const user = userEvent.setup()
+  render(<Harness onMention={onMention} />)
+  const mention = await startMention(user, onMention)
+  act(() => mention.refocus())
+  await waitFor(() => expect(field()).toHaveFocus())
+  await user.keyboard('home')
+  expect(textIn(field())).toBe('Compare @home')
+  expect(onMention).toHaveBeenCalledTimes(1)
+})
+
+for (const [key, side] of [['Backspace', 'after'], ['Delete', 'before']] as const) {
+  test(`Given the caret ${side} a pill, When ${key} is pressed, Then the pill is removed as one unit`, async () => {
+    const onMention = vi.fn()
+    const user = userEvent.setup()
+    render(<Harness onMention={onMention} />)
+    const mention = await startMention(user, onMention)
+    act(() => mention.insert(dense))
+    deletePill(field(), 0, key)
+    expect(draftIn(field())).toEqual({ text: 'Compare  ', mentions: [] })
+  })
+}
+
+test('Given a selection over pills, When it is deleted or cut, Then the pills go with it', async () => {
+  const onMention = vi.fn()
+  const user = userEvent.setup()
+  render(<Harness onMention={onMention} />)
+  const mention = await startMention(user, onMention)
+  act(() => mention.insert(dense))
+  await user.keyboard('{Control>}a{/Control}{Backspace}')
+  expect(draftIn(field())).toEqual({ text: '', mentions: [] })
+
+  await user.type(field(), 'Again @')
+  await waitFor(() => expect(onMention).toHaveBeenCalledTimes(2))
+  act(() => onMention.mock.calls[1]![0].insert(dense))
+  act(() => { editorOf(field()).commands.selectAll() })
+  fireEvent.cut(field(), { clipboardData: { clearData: () => {}, setData: () => {}, getData: () => '' } })
+  expect(draftIn(field())).toEqual({ text: '', mentions: [] })
+})
+
+test('Given text on the clipboard, When it is pasted, Then only its plain text arrives, with line breaks', () => {
+  render(<Harness />)
+  act(() => { editorOf(field()).commands.focus() })
+  fireEvent.paste(field(), { clipboardData: { types: ['text/plain', 'text/html'], getData: (type: string) => (type === 'text/plain' ? 'first\nsecond' : '<b>first</b><p>second</p>') } })
+  expect(textIn(field())).toBe('first\nsecond')
+  expect(field().querySelector('b, strong')).toBeNull()
+})
+
+test('Given a length limit, Then typing and pasting stop at it and a pill that would overflow is not inserted', async () => {
+  const onMention = vi.fn()
+  const user = userEvent.setup()
+  render(<Harness onMention={onMention} maxLength={20} />)
+  const mention = await startMention(user, onMention)
+  act(() => mention.insert(dense))
+  // "Compare " and the pill with its space would be 23 characters.
+  expect(draftIn(field())).toEqual({ text: 'Compare @', mentions: [] })
+  fireEvent.paste(field(), { clipboardData: { types: ['text/plain'], getData: () => 'abcdefghijklmnop' } })
+  expect(textIn(field())).toBe('Compare @abcdefghijk')
+  await user.type(field(), 'z')
+  expect(textIn(field())).toBe('Compare @abcdefghijk')
+})
+
+test('Given a draft set from outside, Then the editor shows it with its pills, and clearing empties it', async () => {
+  const user = userEvent.setup()
+  render(<Harness value="See Karpukhin 2020 now" mentions={[{ paper_id: 'p2', label: 'Karpukhin 2020', start: 4, end: 18, citation: dense.citation }]} />)
+  expect(within(field()).getByRole('img', { name: dense.citation })).toBeVisible()
+  expect(textIn(field())).toBe('See Karpukhin 2020 now')
+  await user.click(screen.getByRole('button', { name: 'Clear' }))
+  expect(draftIn(field())).toEqual({ text: '', mentions: [] })
 })

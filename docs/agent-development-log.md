@@ -1380,6 +1380,194 @@ An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in it
 - Real concurrent races were not run; the skip-locked path is simulated by deleting the paper with plain SQL.
 - Clicking a saved citation to a deleted paper opens the reader's error notice rather than a page; its excerpt still reads.
 
+**Addition from the user, the same day: a one-time metadata refresh.** The lead found that all 6 papers in a migrated copy of the user's library had no venue. They were saved or read before ARA-086. One upload, with no provider record, was still titled `paper.dvi`. The user asked for a durable refresh that runs once per existing paper. The lead also asked that the edit, lookup and delete pieces be reusable for ARA-097, and that the storage cleanup be callable for a single PDF.
+- **Design.**
+  - `queue_backfill` runs at API startup in `prepare_search`, before re-indexing. Under an identity lock it queues one `metadata` job with `refresh: "backfill"` for each library paper that has a provider record or a ready PDF, 3 s apart. It commits the `model_configurations` row `metadata_backfill` with them, so later startups queue nothing.
+  - Look up again (`refresh: "again"`) takes the same job path.
+  - **Saved papers** read their record again by ID.
+  - **Uploads without a record** have their stored PDF read again by `parse_in_child(..., layout=False)`. The layout model is skipped because both passes extract the metadata alike. The PDF's values replace earlier PDF values and fill missing ones, and the clues are checkpointed (`reread: true`), so a retry never parses twice.
+  - **Precedence.** A backfill keeps ARA-086's rule and also fills empty fields, with a venue counting as empty when no record names one. Look up again replaces every value except manual ones.
+- **Cleanup.** `queue_storage_cleanup(session, documents)` now holds the cleanup enqueue, so ARA-097 can remove one PDF.
+- **Red, then green:**
+  - The backfill tests failed with `ImportError: cannot import name 'queue_backfill'` (five), and the Look up again variant with `assert 0 == 1`: the PDF was not read again. All 6 then passed.
+  - The single-PDF cleanup test failed with `ImportError: cannot import name 'queue_storage_cleanup'`, then passed.
+  - My first version of a test helper deleted every job and hit `documents_ingest_job_id_fkey`; it now deletes only lookups.
+- **Full suite.**
+  - First run: 1 failed and 1115 passed. The failure was `test_integration.py::test_real_redis_worker_canary_end_to_end`: "Real Redis worker did not complete canary within 30 seconds".
+  - It passed alone twice (7 s each). A second full run passed with 1116 in 252.80 s and Ruff clean.
+  - I take it as a timing failure under load, since about 46 test containers were running on the machine; I did not investigate further.
+- **Not verified:** that a re-ingest sees the queued backfill and queues no second lookup. This follows from `queue_lookup`'s existing check of earlier jobs for the document, but no test covers it. The refresh has also not run against the user's library or live catalogs.
+
+**Follow-up after the merge (same day).** The lead merged ARA-095 at `5001423` (merge `1e30b1b`), before the refresh commits, so the automatic refresh appeared to be missing. It is in `f32965d`, `3791436` and `52494fa` on this branch.
+- **New test.** I added one test that drives the refresh through `prepare_search`:
+  - the first start queues exactly one refresh for each existing paper, spaced out;
+  - a second start queues nothing;
+  - against the fixture catalog, the saved paper gains its venue and keeps its edited title;
+  - the `paper.dvi` upload, matched by arXiv ID, ends with the record's title (provenance `openalex`), venue and authors.
+- **Red, then green.** Against the merged code (`metadata.py`, `reindex.py` and `ingestion.py` restored from `5001423` for the run) it failed with `assert [] == ['4a84882b-…', …]`: startup queued nothing. On the branch head all 7 refresh tests passed.
+- **Verification.** Full backend 1117 passed in 254.17 s, Ruff clean. The frontend is unchanged since its 611-test check.
+**Remove PDF semantics decided by the user (ARA-097).**
+- **The agent's proposal.** The ARA-097 agent asked how Remove PDF should treat chats pinned to that PDF. It proposed tombstone rows that would lock those chats.
+- **The lead's first call.** The lead first decided that chats should follow the paper's current PDF, using a migration, and told the user. That reversed the established pinned semantics.
+- **The user's correction.** "Yes, even if the PDF is removed continue older chats as is. You can do migrations if you want."
+- **Final semantics.**
+  - Chats keep their pinned PDF forever, after Replace as before.
+  - Remove PDF detaches the paper's active PDF, deleting only documents no chat pins.
+  - Pinned documents stay fully intact so their chats keep working.
+  - Garbage collection deletes a document when it is neither active nor pinned.
+  - Re-uploading the same file re-activates a kept document.
+- **Agent instructed.** The agent was told to delete any tombstone or re-pin code. No migration is expected.
+
+## 2026-10-10 - ARA-094 relevance-driven evidence, section summaries (ARA-079) and one wider retry
+
+An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` from `d02a988`, testing only in its own `ara-evidence-test` Compose project. The user's `ara` and `ara-live` stacks were not touched. Design: `docs/plans/retrieval-orchestration.md`, steps 2–5 and 8–11, now recorded under "Evidence as built".
+
+**Not measured.** Every threshold below follows published practice or is marked as a design choice. None is measured on the user's papers: the user decided against a check set.
+
+**Decisions:**
+- **Prune (step 4).** After reranking, candidates scoring below 0.5 × the best score are dropped, and so are unscored ones (past the reranker's head of 40, or a failed call). Nothing is padded (Jin et al., ICLR 2025).
+  - The first two candidates always remain, and each named paper keeps its first two.
+  - Without reranker scores nothing is pruned, because fusion ranks are not relevance judgements.
+  - The 0.5 is my design choice: it is the relevance predicate's own boundary when the top passage scores 1.0.
+- **First pass (step 5).** At most 24 passages and min(16K, E) tokens (OpenAI file search: up to 20 chunks within 16K; Anthropic Contextual Retrieval: rerank to 20). `MAX_PASSAGES` (16) is deleted, not kept behind a flag. Floors and routing derive from the cap, so up to 12 papers answer. The reservation ceiling is the costliest 24 passages or summaries, within 16K.
+- **Order (step 9).** Paper groups go strongest first, second strongest last, weakest in the middle (Lost in the Middle; Jin et al.; LlamaIndex LongContextReorder). Pages stay in order within a paper, so a one-paper chat keeps page order.
+- **Classification and expansion (steps 1 and 8).** The planner schema gains `question_type` (lookup, broad, comparative), after LlamaIndex RouterQueryEngine and Adaptive-RAG (NAACL 2024).
+  - Selected chunks grow small-to-big, one step on each side at a time, each paper within an equal share of the budget.
+  - A lookup takes the neighbours; a broad question and the retry take the whole section.
+  - The first question of a one-paper chat is still not planned (unchanged, to avoid a call and its latency), so it counts as a lookup.
+- **Section summaries (ARA-079).**
+  - Migration `0011_section_summaries` adds `section_summaries` (cascading from `document_sections`, so a new reading drops them) and `section_summary_embeddings`. `SCHEMA_REVISION` moved.
+  - Each top-level body section with at least two passages gets one summary of at most 100 words (near RAPTOR's 131-token average; the 100 is mine). A durable `section_summaries` job writes them with the saved default model and effort, as ARA-084 does: no other model, and nothing when `summary_blocker` refuses.
+  - The job is queued where chunks are persisted, so new readings and late library matches get one, and by a startup backfill for ready active PDFs of the current chunk set. Each reading is queued at most once, in any state.
+  - Each summary must cite its section's passages and is validated against them; a reply that does not is skipped. Usage is stored per summary, and the job result has `usage` and `cost_usd`.
+  - An interrupted paid call is never repeated, and retry is refused with `NEW_GENERATION_REQUEST_REQUIRED`.
+  - Summaries are embedded with the library model at the end of the job, by the index job of a new library model, and pruned with the chunks.
+- **How summaries are cited.** Summaries are searched beside chunks for every question (RAPTOR's collapsed tree, which beat chunk-only retrieval on QASPER).
+  - I did not limit them to broad questions: a first question is not planned, and broad questions such as "list the limitations" are most often first questions.
+  - In the prompt a summary reads `Section summary · <section> · p. <pages>` with its source chunks' handles inside it, and it has no handle of its own (prompt version 5 says so).
+  - Its source chunks become citable, even when not sent as passages. They are read only from the chat's pinned PDFs and current chunk sets.
+  - Every citation therefore stays a real chunk and page of that paper, and validation is unchanged and strict.
+- **Retry (step 10, adapting Self-Route, EMNLP 2024).**
+  - *Trigger.* An `insufficient` first answer, provided wider retrieval adds passages. The retry uses a bar of 0.25, 48 passages and whole sections, up to E, from the same candidate pool, so there are no new searches or reranking calls.
+  - *Streaming.* The producer now maps handles itself. The stream emits `widening`, the consumer drops the first attempt, and only the final answer is saved. A request UUID replay returns it without generating.
+  - *Cost.* The retry is reserved on the daily ledger; a spent budget keeps the first answer. The first call's usage is `retrieval.billed.first_answer`, priced under answers.
+- **Small windows (step 7).**
+  - *Trigger.* A comparison, or the retry, over several papers whose selection at its own target (16K; 32K for the retry) exceeds E.
+  - *Reading.* The server emits `mapping` and reads each paper in its own call within W; handles run on across papers. It then streams the answer from the notes, citing only handles the notes cite.
+  - *Cost.* Each call is reserved and recorded in `billed.map`.
+  - Every hosted window is 1M, so only a synthetic 16K entry exercises this.
+- **Observability (step 11).** `RetrievalSummary` gains `pruned`, `evidence_tokens`, `summaries_used`, `question_type`, `retried` and `map_reduce`. The trace adds `pass`, `prune {ratio, top, bar, pruned}`, `selected_scores`, `summaries` and `first_pass`. Details shows the tokens, summaries used, passages left out, the widened search and per-paper reading. Activity names the job.
+
+**Red → green (observed):**
+- **Baseline.** 1080 passed in 226.88 s.
+- **Prune and caps.** 11 failed with `No module named 'app.rag.selection'` and `EvidenceResult.__init__() got an unexpected keyword argument 'scores'`. The thirty-paper test then failed with `cannot import name 'MAX_PASSAGES'`; it now asserts 12 answering papers.
+- **Ordering.** `['A', 'A', 'B', 'B', 'C', 'C'] == ['C', 'C', 'B', 'B', 'A', 'A']`; the old chat-order test was rewritten on purpose. A second test failed with `['A', 'B', 'C', 'D'] == ['D', 'A', 'C', 'B']`.
+- **Expansion and classification.** `pack_evidence() got an unexpected keyword argument 'reach'` (3 tests). The planner tests failed 5 times (`'QueryPlan' object has no attribute 'question_type'`, a schema without `question_type`, `'fallback' == 'model'`). Then `retrieve_evidence() got an unexpected keyword argument 'question_type'`. The chat wiring test passed at first run because I had wired it first; deleting the line reproduced `'lookup' == 'broad'`.
+- **Retry.** 5 failed (`assert 1 == 2` calls, `KeyError: 'retried'`, reservations `assert (1 == 1 and 1 == 2)`).
+- **Map-reduce.** `assert (0 == 2)` and `KeyError: 'map_reduce'`.
+  - My fixture cited only paper 1, which I fixed.
+  - The retry-at-16K test showed `widen()` compared packs only at E, so a small window never retried. It now also counts the retry's own target when several papers are in reach.
+  - ARA-088's shrunk-budget test failed with `not enough values to unpack`: map calls hit its stream-only fixture. It now expects five per-paper reads; this is an intended change.
+- **Section summaries.**
+  - The migration failed with `relation "section_summaries" does not exist`, and readiness failed with `'unavailable' == 'ok'` until I migrated my test database.
+  - The service failed with `No module named 'app.services.section_summaries'`.
+  - The backfill failed with `0 == 2` because my seed used a non-current chunk set; the test was corrected.
+  - The 7 wiring tests failed, starting with the hook rejecting `resources`. ARA-070's hook test then needed its fake hook to accept that argument.
+  - Packing failed with `cannot import name 'citable'`.
+  - Retrieval failed with `KeyError: 'summary-vector'` and with no completed answer.
+  - The first implementation raised `UnmappedInstanceError` because it read a column attribute through an instance; it is now read from the class.
+  - The rules test failed, and so did the ceiling test (`259 <= 208`).
+  - The scoping test passed at first run; removing the scope filter reproduced a foreign chunk becoming citable.
+- **Frontend.**
+  - *Initial red.* `Unable to find … Searching more widely…`, `expected [ …(5) ] to deeply equal [ …(8) ]`, `… to include 'Read each paper…'` and `'section summaries' to be 'Section summaries for search'`.
+  - *After regenerating `generated.ts`.* tsc required the new fields in a test fixture. `sse.test.ts` failed because zod defaults added fields to a fixture that lacked them; the fixture now carries what the server always sends.
+
+**Verification:**
+- **Backend.** `test-stack.py test`: 1134 passed in 234.34 s with Ruff clean, and again after the final refactor: 1134 passed in 241.37 s, Ruff clean (baseline 1080).
+- **Frontend.** `npm run check` passed with 603 tests in 77 files, and `npm run build` passed with the existing chunk-size warning.
+- **Contract.** `generated.ts` was regenerated from the flag-on `app.openapi()`; it differs only by the new fields and job kind.
+
+**Agent process notes.** The full suite runs in the same project as focused runs, so I ran nothing else during it. Sources were checked by read-only fetches: RAPTOR's collapsed tree, QASPER and 131-token summaries; Adaptive-RAG's NAACL 2024 classifier; LlamaIndex's RouterQueryEngine and LongContextReorder pages.
+
+**Not verified:**
+- No Playwright run and no live OpenAI call.
+- No visual browser check.
+- Section summaries were not generated for real papers, so their cost on the user's library is unknown. The order of magnitude is one paper summary per PDF.
+- ARA-079's original local small-model case is not exercised while open models are frozen.
+
+**Section summaries now ground through their passages (ARA-079/094 follow-up).**
+- **The user's question.** The user asked why section summaries were needed and how they are cited. The lead explained:
+  - they came from ARA-079, bundled into the approved retrieval plan without separate discussion;
+  - they answer broad questions under retrieval-always, as in RAPTOR, LlamaIndex hierarchical retrieval and GraphRAG global search.
+- **A gap the lead found.** Reading `rag/packing.py`, the lead saw that a summary's unselected source chunks received handles without their text being sent. Grounding was indirect: claim → summary → passage.
+- **The user's choice.** The user chose "summaries route, passages ground": send the summary's key source passages as real evidence and strip markers to unsent chunks. The ARA-094 agent was resumed for it.
+
+**Summaries route, passages ground: implemented (2026-10-10, ARA-094 agent).**
+- **Merge.** At the lead's request I merged `feat/ux-feedback-round` into `feat/ara-094-evidence`. The branch was an ancestor, so it fast-forwarded to `54144ca` (ARA-095 and the lead's `continue_upload` fix included), with no merge commit.
+- **The user's choice.** A selected section summary now brings up to `MAX_SUMMARY_SOURCES` = 4 of the passages it cites as ordinary evidence, with their own handles and full text. This is RAPTOR's tree traversal: from a selected summary node to its top children.
+  - *Source order.* Best reranker score first, then the order the summary cites them.
+  - *Bounds.* Sources are added after floors and right after their summary in the relevance fill. They stay within the paper's equal share and the pass's caps.
+  - *The 4.* A design choice. RAPTOR's summaries average 5.7 children on QASPER (6.7 overall), and a summary with its passages stays within a fifth of the 24-passage first pass.
+- **No handle without its text.**
+  - Markers to passages that were not sent are stripped.
+  - `citable()` is now only the passages sent whole, so the old cite-only handles are gone, and citing an unsent passage fails as an unknown handle (`UNGROUNDED_OUTPUT`).
+  - The rules say to cite only passages shown in full (prompt version 6).
+  - The retry and map-reduce pack the same way.
+- **Red → green.**
+  - *Rewritten summary tests: 5 failed.*
+    - `['summary', 'text'] == ['summary', …, 'text', 'text']` (no sources sent);
+    - `cannot import name 'MAX_SUMMARY_SOURCES'`;
+    - a summary whose sources did not fit kept a cite-only `S1` (`[Passage(… S1 …)] == []`);
+    - `assert (4 < 4)` (sources ignored the paper's share);
+    - the rules text.
+  - *Tests written after the change, proven red on the old code.* I restored the previous `packing.py` and `pipeline.py` from HEAD and ran these four; all failed, and the new code was then put back. The four were the validation test (`DID NOT RAISE LLMError`), the cap test (a handle's passage text was not in the evidence), the retry test (source texts not sent) and the integration test where only the summary matches the search (`'We index every passage … Okapi weighting.' in 'Paper passages: …'` was false). That last test checks that every cited passage's text was in the prompt, on its real page.
+  - *Green.* 180 passed across the retrieval and chat suites; Ruff flagged one long line, since fixed.
+- **Verification.** The full backend after the merge: 1180 passed in 252.84 s, Ruff clean. The frontend did not change, so it was not re-run.
+- **Not verified.** No live OpenAI call, no Playwright run. The cap of 4 is not measured on the user's papers.
+
+## 2026-10-10 - ARA-098 PDF state icons (phase 1)
+
+- **Scope.** Frontend only. Added one shared `PdfStateIcon` (`components/paper/PdfStateIcon.tsx`, labels in `pdf-state.ts`) and used it in the Library rows, the sidebar Papers list and the command palette. Library rows now use `PaperCitation` and have no status badge. DESIGN.md documents the icon and removes PDF state from the green and amber tints.
+- **Red.** `PdfStateIcon.test.tsx` failed first because the module did not exist. Then the library and shell tests failed with `Unable to find an accessible element with the role "img" and name "No PDF yet"` and `Unable to find an element with the text: Vaswani et al. (2017)`.
+- **Green.** After implementation one full `npx vitest run` passed 646 of 646. Two later full runs, made while Vite and a seed server ran, each had one or two timeouts in unrelated files (library-manage, workspace, a palette test); those files passed 36 of 36 when rerun alone.
+- **Correction.** My first icon test guessed the lucide class name `lucide-file-question-mark`; the real class is `lucide-file-question`. This was a test bug, not a component bug.
+- **Decision.** In the sidebar and palette the icon is not a tab stop, because the row is already the stop, so its tooltip opens on hover only there. Its label becomes part of the link name, so two sidebar tests now match by regex.
+- **Visual round.** Chromium from the project's Playwright, a seeded stub API and Vite on port 5198. Light, dark, 1100px and 390px: no horizontal overflow, the venue truncates first, the red failed icon and muted question icon read clearly, and the tooltip shows on hover. Screenshots stayed outside the repo.
+- **Pending.** Phase 2 after ARA-096 and ARA-097 merge: picker, workspace header, deleting the old badge components, and the e2e text.
+
+## 2026-10-10 — ARA-096 paper mention pills with TipTap
+
+An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pills` worktree and tested only in its own Compose project, `ara-pills-test`. The user's `ara` and `ara-live` stacks were not touched. Baseline: backend 1083 passed with Ruff clean; frontend `npm run check` 618 tests in 80 files.
+
+**Packages.** TipTap 3.31.4, pinned exactly in `package.json` and the lockfile: `@tiptap/core`, `react`, `pm`, `extension-document`, `extension-paragraph`, `extension-text`, `extension-hard-break`, `extension-mention`, `suggestion` and `extensions`. In TipTap 3, `@tiptap/extension-history` and `@tiptap/extension-placeholder` only re-export `UndoRedo` and `Placeholder` from `@tiptap/extensions`, so that package is installed directly instead of the two wrappers. There is no starter kit. Every added package is MIT, including ProseMirror; `docs/third-party-notices.md` lists them. The main chunk grew from 466.25 kB (gzip 140.69 kB) to 811.37 kB (gzip 247.94 kB). A sourcemap breakdown showed TipTap core with its command set and the ProseMirror view, model, transform, state, commands and history modules, and no unexpected library.
+
+**Decisions:**
+- **Editor.** One composer for the home, new-chat and chat views. Enter sends, Shift+Enter adds a hard break, and Cmd/Ctrl+Enter still sends, as before. Paste is plain text with line breaks, cut to the room left under the limit. A change that would pass `maxLength` is refused whole, so a pill is never cut. Autosize, placeholder (`aria-placeholder` too), disabled state (`contenteditable=false` plus `aria-disabled`) and the context meter slot are kept.
+- **Lint-driven structure.** eslint-plugin-react-hooks 7 rejects refs passed into the editor's construction (`react-hooks/refs`) and writes to `editor.storage` (`react-hooks/immutability`). The editor's settings (label, placeholder, limit, whether @ mentions) therefore live in a ProseMirror plugin state, updated by meta transactions from an effect. The editor reports Enter and @ through editor events, which the component handles with `useEffectEvent`.
+- **@ and pills.** The official Mention node opens the existing `PaperPicker` through `@tiptap/suggestion` when @ starts a word; an email address types normally. The paper picked replaces the @ with an atomic pill showing the file icon and `mentionName`, with `role="img"`, `aria-roledescription="paper"` and `citationText` ("Karpukhin & Oguz (2020). Dense passage retrieval.") as its name. Backspace (the Mention option `deleteTriggerWithBackspace`) and a new Delete shortcut remove a pill whole. Behaviour change: a picker closed without a pick now leaves the typed @ as text and dismisses the suggestion, where the textarea swallowed the @; this also lets an @ start a word.
+- **Attachment sync.** On the home screen and in a new chat, `useDraftPapers` chooses the papers the pills mention plus those added with the @ button. A pill-only paper leaves with its last pill, and removing a paper (its chip ×, the "+N more" list or the button) also removes its pills. In an existing chat, typing @ only inserts a pill; the send carries `mentions`, and the chips show the chat's papers only. Decision beyond the plan: removing a paper from an existing chat also removes its pills from the draft, as on home, because a remaining pill would add it back on send.
+- **Server.** `ChatInput.mentions` is a list of `{paper_id, label, start, end}`. Spans count code points of the trimmed content and must match their labels, in order and without overlaps (otherwise 422). `prepare()` adds missing mentioned papers with `add_mentioned` in the transaction that stores the question; replays return before it, and a replay with other mentions is a 409. The local-model refusal counts mentioned papers. Mentioned papers join the named papers by id (`named_in`). Typed titles and "Surname Year" detection is unchanged; `named_papers` had no @-specific code (its normalization dropped the @), so only the test for "@Surname Year" text was removed. Mentions are stored in `configuration` and returned as `Message.mentions` through an `AliasPath`. No migration.
+- **Stream.** The SSE citation schema now keeps `paper_id`, so the client accepts a citation to a paper that the question itself added.
+
+**Red → green, with the actual failures:**
+- **Backend.** 12 failed first: `'ChatInput' object has no attribute 'mentions'`; five `DID NOT RAISE ValidationError`; `cannot import name 'named_in'`; `'Prepared' object has no attribute 'mentioned'`; links missing the mentioned paper; a DELETE of it answering 404 `CHAT_PAPER_NOT_FOUND`; `DID NOT RAISE AppError`; and `('LOCAL_MODEL_NOT_READY', 409) == ('MULTI_PAPER_LOCAL', 409)`. Then 15 passed. Three were my own test bugs, not product failures: two overlapping spans in one question, `AppError.status` instead of `status_code`, and `QueryPlan` missing its required fields. Mutation check: committing the add in its own transaction failed the rollback and local-model tests.
+- **Composer.** Against the textarea (with the serializer stubbed), 12 of 14 failed: six `This element is not a composer editor`, missing pill roles, missing `aria-multiline`/`aria-disabled`, `onSend` lacking mentions, and the IME case submitting after `compositionstart`. Then 15 passed (the Backspace/Delete test split in two). Mutation checks: without the Delete shortcut, or without the limit filter, the matching test failed.
+- **lib/mentions and citationText.** `Failed to resolve import "./mentions"` and `citationText is not a function`, then green.
+- **Features.** The first run of the rewritten home, chat and history tests, before the wiring, had 15 failures: the 10 new or rewritten pill tests (their messages were not read one by one), two existing focus tests (`toHaveFocus`, TipTap's delayed autofocus, below) and three existing workspace-opening tests that hit the 3 s timeout and passed when run again. After the wiring, removing the paper-id allowance in the stream failed the cited-new-paper test (`toHaveTextContent`).
+
+**Agent errors and corrections:**
+- My first controlled Composer dropped typed characters (`"lieoe"` for `"line one"`). A passive effect from an earlier render compared a stale `value` with a newer editor state and reset the content. Every draft the editor reports is now remembered, and a returning echo is ignored.
+- TipTap's `autofocus` waits for a timer, which broke the skip-link test; the composer now focuses on mount, and after the first full suite found `view['focus']` thrown by an editor not yet mounted, waits for TipTap's `mount` event in that case.
+- jsdom delivered a queued `selectionchange` between placing a caret and a key press, so one pill test was flaky. `deletePill` now places the caret and dispatches the key in one step. Typing after a click can land elsewhere in jsdom, so one assertion no longer depends on where typed text lands.
+- TipTap's injected ProseMirror CSS is unlayered and sets `font-feature-settings: "liga" 0`, which would have dropped Geist's `ss01`/`cv11` in the composer; `.ProseMirror.composer-editor` restores them.
+- The existing e2e `multi-paper.spec.ts` used `fill()` after picking with @, which would replace the pill and its paper; it now types after the pill.
+
+**Tests.** jsdom got `elementFromPoint` and `Range` geometry stubs in `src/test/setup.ts`. `src/test/editor.ts` reads the editor's draft from its DOM node (`editorOf`, `draftIn`, `textIn`, `isEditable`), and `deletePill` uses the editor's own selection command, because jsdom has no layout for arrow keys or clicks. userEvent typing works through ProseMirror's DOM observer. Existing tests that read `toHaveValue`, `toBeEnabled` or `toBeDisabled` on the composer now use these helpers.
+
+**Verification.** Backend 1094 passed in 232.66 s, Ruff clean. Frontend `npm run check`: 637 tests in 82 files. One of the two final runs was under heavy machine load (77 s against a 35 s baseline) and timed out the first, cold workspace test; alone, that test takes 1.0–1.5 s on both the baseline and this branch. `npm run build` passed with the existing chunk-size warning. `generated.ts` was regenerated from the flag-on `app.openapi()`; its diff has only the mention fields.
+
+**Not verified:** the Playwright specs (`e2e/mention-pills.spec.ts` and the updated `multi-paper.spec.ts`; not run, by instruction); a visual check in a browser (the MCP browser needs a Chrome install, and Playwright was not to be run); real IME input; mobile virtual keyboards; and actual screen reader output.
+
 ## 2026-10-10 - ARA-097 workspace without tabs, the ⓘ details sheet and Remove PDF
 
 An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 merge, `1e30b1b`). Backend tests ran only in its own `ara-workspace-test` Compose project, and the browser check in a separate `ara-wsvisual-test` project, removed afterwards. The user's `ara` and `ara-live` stacks were not touched. Before any edit it ran the impeccable design context for `PaperWorkspacePage.tsx` and read the craft floor; after the UI work, the mechanical detector found nothing in the changed files. No migration was written, and no new dependency was added. `rag/*`, answer generation and the composer files of ARA-094 and ARA-096 were left alone. Small edits went into `ConversationThread.tsx` (the question gate), `Messages.tsx` (one class), `ThreadLayout.tsx`, `ChatPapers.tsx` and `ChatSwitcher.tsx`.

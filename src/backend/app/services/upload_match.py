@@ -227,7 +227,7 @@ async def continue_upload(session, resources, document: Document) -> None:
     from app.services.summarization import queue_automatic_summary
 
     if document.status == "ready":
-        await hooks.after_chunks_persisted(session, document_id=document.id)
+        await hooks.after_chunks_persisted(session, document_id=document.id, resources=resources)
         await queue_automatic_summary(session, resources, document)
     else:
         # Held before its pages were stored.

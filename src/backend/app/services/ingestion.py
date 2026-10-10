@@ -83,7 +83,9 @@ async def run_parser(source: Path, output: Path, deadline_seconds: float, legacy
     return await asyncio.to_thread(read_parsed, output)
 
 
-async def parse_in_child(data: bytes, deadline_seconds: float = 120) -> dict:
+async def parse_in_child(data: bytes, deadline_seconds: float = 120, *, layout=True) -> dict:
+    """Parse in a child process. `layout=False` skips the layout model, for callers that need
+    only the PDF's metadata, which both passes extract alike (ARA-095)."""
     slot = _parse_slots.setdefault(asyncio.get_running_loop(), asyncio.Lock())
     async with slot:
         with tempfile.TemporaryDirectory(prefix="ara-pdf-") as temporary:
@@ -92,8 +94,12 @@ async def parse_in_child(data: bytes, deadline_seconds: float = 120) -> dict:
             await asyncio.to_thread(source.write_bytes, data)
             clock = asyncio.get_running_loop()
             started = clock.time()
-            parsed = await run_parser(
-                source, directory / "layout.json", deadline_seconds * LAYOUT_SHARE, False
+            parsed = (
+                await run_parser(
+                    source, directory / "layout.json", deadline_seconds * LAYOUT_SHARE, False
+                )
+                if layout
+                else None
             )
             if parsed is None or (parsed.get("error") or {}).get("code") == "PDF_PARSE_TIMEOUT":
                 # A crashed or overlong layout pass gets one fresh child without the layout
@@ -457,7 +463,7 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         job.lease_token, job.lease_expires_at = None, None
         job.updated_at = now()
         await session.flush()
-        await hooks.after_chunks_persisted(session, document_id=document.id)
+        await hooks.after_chunks_persisted(session, document_id=document.id, resources=resources)
         if became_ready:
             from app.services.summarization import queue_automatic_summary
 

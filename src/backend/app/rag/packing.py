@@ -3,9 +3,15 @@
 Several papers (ARA-088) follow docs/plans/retrieval-orchestration.md, steps 6 and 7: papers
 the question names come first, then each paper in relevance order gets a floor of FLOOR
 passages while floors fit, and relevance shares the rest; the others add nothing to this turn.
-Passages are grouped under a short paper header.
+Passages are grouped under a short paper header, the strongest groups at both ends (step 9).
+
+A section summary (ARA-079) routes, its passages ground: a selected summary brings its key cited
+passages as evidence with their own handles and text, and keeps only the handles of passages
+that were sent, so an answer can cite only text it was shown (RAPTOR's tree traversal).
 """
 
+import re
+from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from itertools import groupby
@@ -14,46 +20,66 @@ from uuid import UUID
 from llama_index.core.schema import BaseNode, NodeWithScore
 
 from app.integrations.tokens import TokenCounter
+from app.rag.selection import FIRST_PASS_PASSAGES, FLOOR, MAX_SUMMARY_SOURCES
 
 SEPARATOR = "\n"
-# "About 2 passages" per paper before relevance shares the rest: the design's per-paper floor,
-# a per-document quota so one long paper cannot crowd out the others (LlamaIndex's
-# multi-document pattern; docs/plans/retrieval-orchestration.md, step 6).
-FLOOR = 2
+SUMMARY = "summary"
+SOURCE_MARKER = re.compile(r"\[source:([^\]]+)\]")
+# The widest handle the grammar allows (four digits), for costing a summary's markers.
+WIDEST_SOURCE = "S9999"
 
 
 @dataclass(frozen=True)
 class Passage:
     handle: str
+    # A chunk's id; for a section summary, the summary's id, which is never cited.
     chunk_id: UUID
     document_id: UUID
     page: int
     page_end: int
     section: str
     kind: str
+    # A summary's text keeps its canonical source markers.
     text: str
     ordinal: int = 0
     bboxes: list[list[float]] = field(default_factory=list)
+    # The passages a summary cites that were sent with it; markers to any other chunk are
+    # stripped when it renders.
+    sources: tuple["Passage", ...] = ()
 
     def render(self) -> str:
         pages = f"{self.page}–{self.page_end}" if self.page_end != self.page else str(self.page)
-        return f"[{self.handle}] {self.section or 'Untitled section'} · p. {pages}\n{self.text}\n"
+        section = self.section or "Untitled section"
+        if self.kind == SUMMARY:
+            handles = {str(source.chunk_id): source.handle for source in self.sources}
+            body = SOURCE_MARKER.sub(
+                lambda match: f"[{handles[match[1]]}]" if match[1] in handles else "", self.text
+            )
+            return f"Section summary · {section} · p. {pages}\n{body}\n"
+        return f"[{self.handle}] {section} · p. {pages}\n{self.text}\n"
 
 
-def node_passage(node: BaseNode, handle: str) -> Passage:
+def node_passage(node: BaseNode, handle: str, sources: Sequence["Passage"] = ()) -> Passage:
     metadata = node.metadata
+    summary = metadata["kind"] == SUMMARY
     return Passage(
-        handle=handle,
+        handle="" if summary else handle,
         chunk_id=UUID(node.node_id),
         document_id=UUID(metadata["document_id"]),
         page=metadata["page"],
         page_end=metadata["page_end"],
         section=metadata["section"],
         kind=metadata["kind"],
-        text=node.get_content(),
+        text=metadata["content"] if summary else node.get_content(),
         ordinal=metadata["ordinal"],
         bboxes=metadata.get("bboxes", []),
+        sources=tuple(sources),
     )
+
+
+def citable(passages: Sequence[Passage]) -> list[Passage]:
+    """The passages an answer may cite by handle: those sent whole. A summary never is."""
+    return [item for item in passages if item.kind != SUMMARY]
 
 
 def render_header(header: str) -> str:
@@ -72,17 +98,29 @@ def render_evidence(passages: Sequence[Passage], headers: Mapping[str, str] | No
     return SEPARATOR.join(blocks)
 
 
+def ends_first(ranked: Sequence[str]) -> list[str]:
+    """Strongest first, second strongest last, the weakest in the middle: models use the start
+    and end of a long context best (Liu et al., "Lost in the Middle", TACL 2024), and reordering
+    retrieved passages this way helps long-context RAG (Jin et al., ICLR 2025). LlamaIndex's
+    LongContextReorder places nodes the same way."""
+    return [*ranked[::2], *reversed(ranked[1::2])]
+
+
 def pack_evidence(
     nodes: Sequence[NodeWithScore],
     *,
     budget: int,
     counter: TokenCounter,
     neighbours: Mapping[str, Sequence[BaseNode]] | None = None,
-    max_passages: int = 16,
+    max_passages: int = FIRST_PASS_PASSAGES,
     headers: Mapping[str, str] | None = None,
     kept: Collection[str] = (),
+    reach: int | None = 1,
+    first_handle: int = 1,
+    sources: Mapping[str, BaseNode] | None = None,
+    scores: Mapping[str, float] | None = None,
 ) -> list[Passage]:
-    """Floors first, then the most relevant passages, then same-section neighbours.
+    """Floors first, then the most relevant passages, then each chunk's section around it.
 
     Papers are taken with the `kept` ones (named by the question) first, then in relevance order
     (their best candidate's rank). Each gets its first FLOOR candidates that fit; a named paper
@@ -90,28 +128,59 @@ def pack_evidence(
     every paper after it, is left out. The first paper always keeps whatever of its floor fits.
     A passage that does not fit is skipped whole, never truncated. Passages and headers are
     costed with the widest handle and their separator, so the rendered evidence stays within
-    `budget`. With `headers`, groups follow their order (the chat's order).
+    `budget`. With `headers`, each paper's passages form one group in page order, and the groups
+    are ordered by their best candidate's rank with the strongest at both ends.
+
+    `neighbours` maps a candidate to chunks of its section; they are added `reach` ordinals away
+    at most (1: the neighbours; None: the whole section), nearest first. Handles are numbered
+    from `first_handle`, so several packs can share one set of handles.
+
+    `sources` maps chunk ids to the chunks that summaries cite. A selected summary brings up to
+    MAX_SUMMARY_SOURCES of them, best reranker `scores` first and then in the order the summary
+    cites them, within its paper's equal share of the budget and the passage cap. A source that
+    does not fit is not sent, and the summary drops its marker.
     """
-    widest = f"S{max_passages}"
+    widest = f"S{first_handle + max_passages - 1}"
     separator = counter.count(SEPARATOR)
     headers = headers or {}
+    sources, scores = sources or {}, scores or {}
     chosen: dict[str, Passage] = {}
+    summaries: dict[str, BaseNode] = {}
+    spent: Counter = Counter()
     remaining = budget
 
     def size(node: BaseNode) -> int:
-        return counter.count(node_passage(node, widest).render()) + separator
+        passage = node_passage(node, widest)
+        if passage.kind == SUMMARY:
+            # Costed as if every marker became a handle; unsent ones are stripped, never added.
+            passage = replace(passage, text=SOURCE_MARKER.sub(f"[{WIDEST_SOURCE}]", passage.text))
+        return counter.count(passage.render()) + separator
 
     def header_size(document: str) -> int:
         return counter.count(render_header(headers[document])) + separator if headers else 0
 
-    def add(node: BaseNode) -> None:
+    def add(node: BaseNode, share: int | None = None) -> None:
         nonlocal remaining
         if node.node_id in chosen or len(chosen) >= max_passages:
             return
-        cost = size(node)
-        if cost <= remaining:
+        cost, document = size(node), node.metadata["document_id"]
+        if cost <= remaining and (share is None or spent[document] + cost <= share):
             chosen[node.node_id] = node_passage(node, widest)
             remaining -= cost
+            spent[document] += cost
+            if chosen[node.node_id].kind == SUMMARY:
+                summaries[node.node_id] = node
+
+    def ground(key: str, share: int) -> None:
+        """A selected summary's key passages, sent whole (summaries route, passages ground)."""
+        cited = [sources[item] for item in summaries[key].metadata["sources"] if item in sources]
+
+        def rank(position: int) -> tuple:
+            score = scores.get(cited[position].node_id)
+            return (score is None, -(score or 0), position)
+
+        for position in sorted(range(len(cited)), key=rank)[:MAX_SUMMARY_SOURCES]:
+            add(cited[position], share)
 
     candidates: dict[str, list[BaseNode]] = {}
     for item in nodes:
@@ -138,6 +207,7 @@ def pack_evidence(
             break
         answering.append(document)
         remaining -= header_size(document)
+        spent[document] += header_size(document)
         for node in floor:
             add(node)
     if not answering and candidates:
@@ -145,15 +215,59 @@ def pack_evidence(
         if header_size(best) <= remaining:
             answering.append(best)
             remaining -= header_size(best)
+            spent[best] += header_size(best)
+    # Each answering paper's equal share bounds what summaries bring and what sections add.
+    share = budget // max(1, len(answering))
+    for key in list(summaries):
+        ground(key, share)
     for item in nodes:
         if item.node.metadata["document_id"] in answering:
             add(item.node)
-    for key in list(chosen):
-        for neighbour in (neighbours or {}).get(key, ()):
-            add(neighbour)
-    groups = {document: rank for rank, document in enumerate(headers)}
+            if item.node.node_id in summaries:
+                ground(item.node.node_id, share)
+    # Small-to-big (step 8): every selected chunk grows by one step on each side before any grows
+    # by two, and each paper only within an equal share of the budget, so one long section
+    # cannot take the room of the others.
+    selected = [(key, chosen[key].ordinal) for key in chosen]
+    around = {key: (neighbours or {}).get(key, ()) for key, _ in selected}
+    furthest = max(
+        (abs(node.metadata["ordinal"] - own) for key, own in selected for node in around[key]),
+        default=0,
+    )
+    for distance in range(1, min(furthest, reach or furthest) + 1):
+        for key, own in selected:
+            for node in around[key]:
+                if abs(node.metadata["ordinal"] - own) == distance:
+                    add(node, share)
+    # Groups open and close with the strongest papers (step 9); pages stay in order within each.
+    strength = list(dict.fromkeys(item.node.metadata["document_id"] for item in nodes))
+    groups = {document: rank for rank, document in enumerate(ends_first(strength))}
     ordered = sorted(
         chosen.values(),
-        key=lambda item: (groups.get(str(item.document_id), 0), item.page, item.ordinal),
+        key=lambda item: (
+            groups.get(str(item.document_id), 0),
+            item.page,
+            item.ordinal,
+            item.kind != SUMMARY,
+        ),
     )
-    return [replace(item, handle=f"S{number}") for number, item in enumerate(ordered, start=1)]
+    # Passages are numbered in order; a summary points only to passages that were sent.
+    numbered = {
+        item.chunk_id: replace(item, handle=f"S{number}")
+        for number, item in enumerate(
+            (item for item in ordered if item.kind != SUMMARY), start=first_handle
+        )
+    }
+    return [
+        numbered.get(item.chunk_id)
+        or replace(
+            item,
+            handle="",
+            sources=tuple(
+                numbered[UUID(key)]
+                for key in summaries[str(item.chunk_id)].metadata["sources"]
+                if UUID(key) in numbered
+            ),
+        )
+        for item in ordered
+    ]
