@@ -16,6 +16,9 @@ import { usePapers } from '@/hooks/queries/papers'
  * cmdk way, and choosing one again hands it back to onSelect to remove. Search matches the title, author surnames, year
  * and venue. A conversation may include any number of papers (ARA-088).
  */
+/** Ends a label as a sentence, unless it already ends in punctuation such as an ellipsis. */
+const sentence = (label: string) => (/[.…!?]$/u.test(label) ? label : `${label}.`)
+
 export function PaperPickerList({ onSelect, selected = [], placeholder = 'Find a paper in your library' }: { onSelect: (paper: Paper) => void; selected?: readonly string[]; placeholder?: string }) {
   const papers = usePapers('', { pageSize: 50 })
   const items = papers.data?.pages.flatMap((page) => page.items) ?? []
@@ -38,7 +41,7 @@ export function PaperPickerList({ onSelect, selected = [], placeholder = 'Find a
                   <span className="line-clamp-2 text-sm">{paper.title ?? 'Untitled paper'}</span>
                   <PaperCitation paper={paper} />
                 </div>
-                {blocked && <span className="sr-only">{pdfStateLabels[paper.document_status]}. {paper.document_status === 'processing' ? 'You can ask once it is ready.' : 'Add one to ask about this paper.'}</span>}
+                {blocked && <span className="sr-only">{sentence(pdfStateLabels[paper.document_status])} {paper.document_status === 'processing' ? 'You can ask once it is ready.' : 'Add one to ask about this paper.'}</span>}
               </CommandItem>
             )
           })}

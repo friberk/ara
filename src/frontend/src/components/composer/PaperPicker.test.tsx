@@ -61,7 +61,9 @@ test('Given library papers, Then each row gives a short citation under its title
   const waitingRow = screen.getByRole('option', { name: /Paper being read/ })
   expect(waitingRow).toHaveTextContent('Researcher (2024)')
   expect(waitingRow.querySelector('[data-slot="badge"]')).toBeNull()
-  expect(waitingRow).toHaveAccessibleName(/Preparing PDF…/)
+  expect(waitingRow).toHaveAccessibleName(/Preparing PDF… You can ask once it is ready\./)
+  // The label's own ellipsis ends the phrase; no full stop is added after it.
+  expect(waitingRow).not.toHaveAccessibleName(/…\./)
   expect(screen.queryByText(/undefined|null|Ready to ask/)).not.toBeInTheDocument()
   expect(document.body.textContent).not.toContain('·')
 
