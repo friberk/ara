@@ -1,8 +1,10 @@
 """A storage cleanup that failed its attempts is revived by recovery, never by a page (ARA-100)."""
 
 import asyncio
+import io
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from minio.error import S3Error
@@ -11,6 +13,7 @@ from test_paper_deletion_integration import client_for
 from test_paper_deletion_storage_integration import storage_down, stored, uploaded
 
 from app.models.jobs import BackgroundJob, JobOutbox
+from app.models.research import Document
 from app.repositories.jobs import STORAGE_MAX_REVIVALS, STORAGE_REVIVE_SECONDS, recover
 from tests.support.cleanup import cleanup_job, run_cleanup
 
@@ -112,3 +115,41 @@ async def test_a_rejected_removal_fails_at_once_and_is_not_revived(resources):
     await recover(resources.sessions)
     assert (await cleanup_job(resources)).state == "failed"
     assert await stored(resources, key)
+
+
+async def test_a_cleanup_queued_by_removing_a_detached_pdf_is_revived_too(resources):
+    """Given a detached PDF deleted through pdf_removal (ARA-097) whose cleanup failed, then
+    recovery queues it again and the object is removed."""
+    from app.services.pdf_removal import delete_detached
+
+    paper, _ = await uploaded(resources, "Live")
+    key = f"originals/{uuid4()}.pdf"
+    async with resources.sessions() as session, session.begin():
+        document = Document(
+            paper_id=paper,
+            status="ready",
+            object_key=key,
+            sha256=uuid4().hex + uuid4().hex,
+            original_filename="older.pdf",
+            byte_size=10,
+            request_id=uuid4(),
+        )
+        session.add(document)
+        await session.flush()
+        assert await delete_detached(session, [document.id]) == [document.id]
+    await resources.storage_call(
+        resources.storage.put_object, resources.settings.minio_bucket, key, io.BytesIO(b"x"), 1
+    )
+    with storage_down(resources):
+        for _ in range(3):
+            failed = await run_cleanup(resources)
+    assert (failed.state, failed.error_code) == ("failed", "STORAGE_UNAVAILABLE")
+    async with resources.sessions() as session, session.begin():
+        (await session.get(BackgroundJob, failed.id)).updated_at = datetime.now(UTC) - timedelta(
+            seconds=STORAGE_REVIVE_SECONDS + 1
+        )
+
+    await recover(resources.sessions)
+
+    assert (await run_cleanup(resources)).state == "completed"
+    assert not await stored(resources, key)

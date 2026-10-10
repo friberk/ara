@@ -1,0 +1,30 @@
+{
+  "id": "ARA-103",
+  "title": "Paper actions behind a hover \"…\" in the sidebar's Papers list",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"In the sidebar, for papers, can we show the \"...\" thing to show controls for papers? They should appear on hover.\" Recent chats and searches in the sidebar already have a hover \"…\" (SidebarRecent). Library rows already have the paper actions menu (PaperActions: Edit details, Look up details again, Delete…). The sidebar's Papers rows get the same menu through a single implementation.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given the sidebar's Papers list on desktop, when the pointer is over a paper row or the row has keyboard focus, then a \"…\" button appears at its right edge, as on recent chats. Otherwise it is hidden. On touch or narrow screens it stays visible, as shadcn's showOnHover does.",
+    "Given the \"…\" button, when it is opened, then it shows the same actions as the Library row (Edit details, Look up details again when available, Delete…), from the same PaperActions code with no copy of the menu.",
+    "Given the paper open in the workspace, when it is deleted from the sidebar menu, then the app leaves its page for home. Deleting another paper leaves the current page alone.",
+    "Given the collapsed (icon) sidebar, when it shows, then no paper menu appears, matching the hidden Papers group.",
+    "Given the Library page, when it renders, then its row menus behave exactly as before."
+  ],
+  "test_cases": [
+    "Sidebar paper row exposes an 'Actions for <title>' button inside the row item.",
+    "Menu items match the Library's; Edit opens the edit dialog; Delete opens the delete dialog.",
+    "Deleting the open paper navigates home; deleting another doesn't.",
+    "Library PaperActions tests still pass."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/src/features/library/PaperActions.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-103-sidebar-paper-actions.",
+  "updated_at": "2026-10-10"
+}

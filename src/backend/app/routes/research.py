@@ -18,12 +18,14 @@ from app.schemas.research import (
     PaperIds,
     PaperPage,
     PaperPatch,
+    PdfRemovalPreview,
     Provider,
     SavePaper,
     SearchPage,
 )
 from app.services.deletion import delete_papers, deletion_preview
 from app.services.metadata import queue_refresh
+from app.services.pdf_removal import removal_preview, remove_pdfs
 from app.services.upload_match import library_papers
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
@@ -137,3 +139,18 @@ async def delete_several(body: PaperIds, request: Request):
     async with resources.sessions() as session, session.begin():
         deleted, missing = await delete_papers(session, resources, body.paper_ids)
     return DeletedPapers(deleted=deleted, missing=missing)
+
+
+@router.get("/papers/{paper_id}/pdf/removal-preview", response_model=PdfRemovalPreview)
+async def preview_pdf_removal(paper_id: UUID, request: Request):
+    """What removing the paper's PDF changes; nothing changes (ARA-097)."""
+    async with request.app.state.resources.sessions() as session:
+        return await removal_preview(session, paper_id)
+
+
+@router.delete("/papers/{paper_id}/pdf", status_code=204, response_class=Response)
+async def remove_pdf(paper_id: UUID, request: Request):
+    """Remove every PDF of the paper (services/pdf_removal.py); a repeat changes nothing."""
+    async with request.app.state.resources.sessions() as session, session.begin():
+        await remove_pdfs(session, paper_id)
+    return Response(status_code=204)

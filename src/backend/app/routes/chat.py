@@ -16,7 +16,7 @@ from app.integrations.llm import (
     validate_selection,
 )
 from app.integrations.model_catalog import local_spec
-from app.models.research import ChatMessage, ChatSession, Paper
+from app.models.research import ChatMessage, ChatPaper, ChatSession, Paper
 from app.repositories.chats import (
     chat_dto,
     chat_spend,
@@ -42,6 +42,7 @@ from app.schemas.usage import ChatContext, ChatUsage
 from app.services.chat import expire, held_by_background, prepare, stream_answer
 from app.services.chat_papers import add_paper, create_chat, locked_chat, remove_paper
 from app.services.local_models import list_local_models
+from app.services.pdf_removal import delete_detached, lock_pdfs
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
@@ -61,9 +62,20 @@ async def include_paper(chat_id: UUID, body: ChatPaperAdd, request: Request):
 
 @router.delete("/chats/{chat_id}/papers/{paper_id}", response_model=Chat)
 async def exclude_paper(chat_id: UUID, paper_id: UUID, request: Request):
-    """The response's `paper_id` is the chat's first paper after the removal."""
+    """The response's `paper_id` is the chat's first paper after the removal. A PDF the chat was
+    the last to use, and that is not its paper's current PDF, goes with it (ARA-097)."""
     async with request.app.state.resources.sessions() as session, session.begin():
-        return await chat_view(session, await remove_paper(session, chat_id, paper_id))
+        pinned = (
+            await session.scalars(
+                select(ChatPaper.document_id).where(
+                    ChatPaper.chat_id == chat_id, ChatPaper.paper_id == paper_id
+                )
+            )
+        ).all()
+        await lock_pdfs(session, pinned)
+        chat = await remove_paper(session, chat_id, paper_id)
+        await delete_detached(session, pinned)
+        return await chat_view(session, chat)
 
 
 @router.get("/papers/{paper_id}/chats", response_model=ChatPage)
@@ -115,7 +127,13 @@ async def rename_chat(chat_id: UUID, body: ChatRename, request: Request):
 
 @router.delete("/chats/{chat_id}", status_code=204, response_class=Response)
 async def delete_chat(chat_id: UUID, request: Request):
+    """PDFs this chat was the last to use, and that are not their paper's current PDF, go with
+    it (ARA-097)."""
     async with request.app.state.resources.sessions() as session, session.begin():
+        pinned = (
+            await session.scalars(select(ChatPaper.document_id).where(ChatPaper.chat_id == chat_id))
+        ).all()
+        await lock_pdfs(session, pinned)
         chat = await locked_chat(session, chat_id)
         await expire(session, chat_id)
         if await session.scalar(
@@ -130,6 +148,7 @@ async def delete_chat(chat_id: UUID, request: Request):
             )
         # Messages go with the chat through the session_id ON DELETE CASCADE foreign key.
         await session.delete(chat)
+        await delete_detached(session, pinned)
     return Response(status_code=204)
 
 

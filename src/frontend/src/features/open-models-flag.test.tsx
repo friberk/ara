@@ -1,11 +1,11 @@
 // Open models are experimental and off unless the server reports them on (ARA-090).
 import { screen, within } from '@testing-library/react'
-import type { EmbeddingProfile, Model, ModelInstallation, Paper, PaperRetrieval, Reranker } from '@/api/types'
+import type { EmbeddingProfile, Model, ModelInstallation, PaperRetrieval, Reranker } from '@/api/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
-import { DetailsPanel } from '@/features/workspace/DetailsPanel'
+import { SearchIndexPanel } from '@/features/workspace/SearchIndexPanel'
 import { mockApi } from '@/test/fetch-routes'
 import { renderApp, renderWithProviders } from '@/test/render'
 
@@ -106,16 +106,15 @@ test('Given a saved local default with open models off, Then the composer report
   expect(screen.getByRole('status', { name: 'Selection' })).toHaveTextContent(`${savedLocal.key}/default`)
 })
 
-test('Given a local library search model with open models off, Then Details explains keyword search', async () => {
+test('Given a local library search model with open models off, Then the paper’s search index explains keyword search', async () => {
   const reason = 'Open models are turned off on this server. This paper is searched by keywords until you choose a hosted search model.'
-  const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: [], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'doc-1', metadata_provenance: {} }
   const retrieval: PaperRetrieval = {
     paper_id: 'p1', document_id: 'doc-1', effective_profile: qwen.key, parser: 'pymupdf4llm', chunk_count: 12, section_count: 3, mode: 'keyword', mode_note: reason,
     indexes: [{ profile: qwen.key, state: 'unavailable', embedded: 12, total: 12, updated_at: null, error: { code: 'OPEN_MODELS_DISABLED', message: reason } }],
   }
   mockApi({ ...off, 'GET /retrieval/profiles': { items: [openai, { ...qwen, status: 'unavailable', unavailable_reason: searchReason, local_model_key: null }], default_profile: qwen.key }, 'GET /papers/p1/retrieval': retrieval })
-  const { user } = renderWithProviders(<DetailsPanel paper={paper} onOpenPdf={() => {}} />)
-  await user.click(screen.getByRole('button', { name: /^Search index/ }))
+  const { user } = renderWithProviders(<SearchIndexPanel paperId="p1" />)
+  await user.click(screen.getByRole('button', { name: 'Advanced' }))
   expect(await screen.findByText(reason)).toBeVisible()
   expect(screen.getByText(/Searching with/)).toHaveTextContent(`Searching with ${qwen.display_name}`)
 })

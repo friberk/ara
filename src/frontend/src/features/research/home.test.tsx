@@ -42,7 +42,7 @@ test('Given Upload a PDF on home, When a file is chosen, Then it uploads and the
   expect(click).toHaveBeenCalled()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   await user.upload(input, pdf())
-  const reader = await screen.findByRole('tabpanel', { name: 'PDF' }, { timeout: 4000 })
+  const reader = await screen.findByRole('region', { name: 'PDF reader' }, { timeout: 4000 })
   const steps = await within(reader).findByRole('list', { name: 'Preparation steps' })
   expect(within(steps).getByText('Uploaded')).toBeVisible()
   expect(within(steps).getByText('Reading pages').closest('li')).toHaveAttribute('aria-current', 'step')

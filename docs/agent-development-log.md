@@ -1594,6 +1594,72 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
 - Visual error: the first screenshots showed the wordmark about 16px wide, because the shadcn menu button forces `size-4` on child svgs. Fixed with `h-[26px]! w-auto!`; a second round showed it crisp in light, dark, collapsed and at 390px. The first stub-API attempt rendered a blank page; running without stubs (502s) worked for the sidebar check.
 - Playwright MCP could not find Chrome, so screenshots used the project's own Playwright Chromium.
 
+**ARA-099 addendum, PNG favicon fallbacks.** Red: the extended `index-html.test.ts` failed with `expected '<!doctype html>...' to contain '<link rel="icon" type="image/png" siz...'`. `branding/render_icons.mjs` renders the SVG with the frontend's Playwright. First render of the 32px icon was opaque RGB (white corners); `omitBackground: true` made it RGBA. The touch icon is an opaque square without rounded corners.
+
+**ARA-099 path drift guard.** `AraBrand.test.tsx` compares the inlined paths and viewBoxes to `branding/*.svg`. My first red attempt used a sed that silently did not apply, so the test passed; a corrected edit then failed both cases with `expected 'M89.0 9Q53.1 9...' to be 'M89.0 9Q53.0 9...'`, and restoring the file made it pass.
+
+## 2026-10-10 - ARA-097 workspace without tabs, the ⓘ details sheet and Remove PDF
+
+An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 merge, `1e30b1b`), and later merged `feat/ux-feedback-round` (`7fbcf96`) into it at the lead's request. Backend tests ran only in its own `ara-workspace-test` Compose project, and the browser check in a separate `ara-wsvisual-test` project, removed afterwards. The user's `ara` and `ara-live` stacks were not touched. Before any edit it ran the impeccable design context for `PaperWorkspacePage.tsx` and read the craft floor; after the UI work, the mechanical detector found nothing in the changed files. No migration and no new dependency.
+
+**Decisions:**
+- **No tabs.** The reader is a section named "PDF reader" that shows the PDF or the existing ReaderGate states. Narrow screens get Chat and PDF, and an old `?view=details` link opens Chat. `DetailsPanel.tsx`, `readerTab`/`setReaderTab` and `MobilePdfView` are deleted.
+- **ⓘ sheet.** "Paper details" sits beside the title and badge, and ARA-095's ⋯ menu left the header; Library rows keep theirs. The sheet is a stock Sheet:
+  - right, 440px, on desktop, with a transparent overlay (new `overlayClassName` on `SheetContent`), so the PDF stays legible;
+  - bottom, `100dvh − 2rem`, on mobile.
+  - Sections: citation (running text, so a long venue wraps; new `wrap` on `PaperCitation`) and authors; Edit details and Look up again (`LookupNotice` takes the other actions as children), with DOI and record links; the abstract (`ClampedText`, extracted from `PaperCard`); identifiers in mono with copy; "Where this information came from" (`MetadataSources` as a field → source list); Advanced (`SearchIndexPanel`, now the Collapsible itself); Delete paper (`DeletePapersDialog`).
+- **PDF menu.** The toolbar centres paging and zoom and ends with ⋮ "PDF options". Its label shows the file name, pages · size and Uploaded or Downloaded from OpenAlex, from the new `GET /documents/{id}`. Open original and Download apply to any PDF; Replace PDF and Remove PDF apply only to the workspace paper's current one.
+  - Replace hands the new job to the reader through the router state the gate already reads.
+  - Remove's AlertDialog is fed by `GET /papers/{id}/pdf/removal-preview`, keeps Cancel focused, waits while a chat answers, and moves focus to the reader afterwards.
+- **Remove PDF, final semantics.**
+  - My first build emptied a pinned PDF and left a "removed" row, and chats that used it were locked. The lead relayed the user's correction: "even if the PDF is removed continue older chats as is"; Replace keeps today's pins. That design was replaced with forward commits and its tests deleted.
+  - Now `DELETE /papers/{id}/pdf` only nulls `active_document_id`. A PDF a chat pins stays whole, and the chat keeps asking. In the frontend, a chat pinned to an earlier PDF skips the paper's PDF gate, and the earlier-PDF banner offers "Add a new PDF" when the paper has none.
+  - **Detached PDFs.** `delete_detached` deletes PDFs that are no paper's current PDF and no chat pins. It removes summaries, then the row (section summaries cascade), fails their jobs with `PDF_REMOVED` (skip-locked) and queues `queue_storage_cleanup`. It runs after Remove PDF, `DELETE /chats/{id}` and `DELETE /chats/{id}/papers/{pid}`, with the `pdf:` identity locks taken before the chat lock.
+  - **Uploading the same bytes again.** A ready, non-current PDF of the target paper becomes current again (`duplicate: false`). From the home page that happens only when its paper has no PDF.
+- **Defects, real causes.**
+  - **Answer overflow.** The assistant message is a `grid` whose implicit track grew to its widest unbreakable content. Measured at 390px on seeded long answers, the thread's `scrollWidth` was 1257 against a `clientWidth` of 390, from a 748px link, a 744px inline identifier, a 506px table and a code block. `grid-cols-1` brought it to 390.
+  - **Chip row.** It is not sticky in CSS. The thread's 24px top mask faded text right under the transparent chips. The chips are now `bg-background`, and the thread draws a hairline while scrolled.
+
+**Red, then green:**
+- **Backend, first build.** 13 failed (`assert 404 == 204`, `KeyError: 'answering'`). The ingest guard was written before its test; stubbing it out showed `('completed', None, None) == ('failed', 'PDF_REMOVED', None)`.
+- **Backend, correction.** The rewritten 17 tests failed 11:
+  - the pinned PDF was emptied: `('failed', 'removed/…') == ('ready', …)`;
+  - `'pdf_removed' not in …`;
+  - re-upload gave a new id;
+  - `KeyError: 'deleted_pdfs'`;
+  - `assert <Document …> is None` ×3 for the garbage-collection paths;
+  - deletion preview `0 == 1`.
+  After the change, two re-upload tests failed with my own fixture error: seeded PDFs had no ingest job, so the response was `UPLOAD_IN_PROGRESS`. With the re-activation stubbed out, they failed with `True is False` and `None == …`.
+- **Frontend, first build.** 42 failed first (`… "Paper details"`, `"PDF options"`, `"Advanced"`, region `"PDF reader"`). Then my test mistakes: the computed description drops the nbsp; the Replace hand-off race; the h1 behind the modal sheet; `home.test.tsx`'s tabpanel. Removed-PDF chat: 4 failed. Overflow and chips: 3 failed (`grid-cols-1`, `bg-background`, `border-t …`). Venue: `not.toHaveClass("truncate")`. The tooltip passed in jsdom with user-event, then failed with raw pointer events. Focus after removal failed twice.
+- **Frontend, correction.**
+  - The pinned chat kept asking: `Unable to find … "This conversation uses an earlier PDF of this paper."`.
+  - The dialog's new copy and items failed.
+  - The banner failed: `Unable to find … "Add a new PDF"`.
+  - The new-conversation test passed at its first run, since that gate already existed.
+  - Activity showed work stopped by Remove PDF as Failed; `isCancelledJob` now counts `PDF_REMOVED` as well, so it shows as Cancelled. Its test failed first with `Unable to find … Cancelled`.
+  - My first gate skipped the PDF checks for every existing chat; an existing test caught it ("queued question … processing"). The gate now skips them only when the chat's PDF is not the paper's current one.
+
+**Merges.** The second merge (`574b547`, ARA-098's Library fixes) conflicted only in this journal. The lead's last message asked for the dialog line "Conversations that use this PDF keep using it. New questions need a new PDF."; the test failed on the old wording, then passed. In the first merge, conflicts came in DESIGN.md (both sections kept), README (integration text plus the details sheet), the contract, the journal (this section kept last) and `ConversationThread.tsx`. For `ConversationThread.tsx`, ARA-096's mention-aware gate was kept, with my option until it was replaced. Section summaries cascade from documents; `queue_storage_cleanup` replaced my own enqueue.
+
+**Visual check.** Fixture PDFs were seeded through the API, with chats holding long links, identifiers, a wide table, a code block and an eight-turn two-paper chat. They ran on an API at 8097 and Vite at 5197 and were screenshotted with the project's Playwright library. The shots are in the session scratch directory.
+- **Round 1.** Desktop light and dark, and 390px light and dark. Phone document and thread were 390 wide; focus returned to ⓘ after Esc, close and an outside click. It found the "PDF options" tooltip staying over the open menu (the menu opens on pointerdown, so the click that cancels Radix's pending tooltip never lands) and a truncated venue.
+- **Round 2.** Both fixes were confirmed, along with Remove PDF end to end under the first design, and focus falling to `BODY` after removal (fixed, jsdom only). The final semantics were not screenshotted: the check was bounded to two rounds.
+
+**Verification:**
+- **Backend:** `test-stack.py test --project-name ara-workspace-test`: Ruff "All checks passed!", 1209 passed in 275.14 s after the second merge (baseline before the branch: 1112 passed in 252.32 s).
+- **Frontend:** `npm run check` was clean with 685 tests in 89 files after the second merge (the integration branch adds ARA-094/096/098 tests). `npm run build` passed with the existing chunk-size warning.
+- **Contract:** `generated.ts` was regenerated from the flag-on `app.openapi()`.
+
+**Not verified:**
+- The updated Playwright specs (`e2e/workspace.spec.ts`, `e2e/fulltext.spec.ts`) were type-checked only.
+- No live OpenAlex download was made.
+- No real concurrent races were run.
+- The final Remove PDF semantics and focus after removal were not seen in a browser.
+
+### 2026-10-10 — Lead: the user rejected ARA-097's details sheet (ARA-101)
+
+I approved ARA-097's design, which put every paper detail behind ⓘ in a side sheet, bibliography included, and I merged it at `bbf480a` after a browser check that judged only whether it worked. The user rejected it: "ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." My error was reading the earlier request ("This kind of detailed info should go to modal") as covering the bibliography too. The user meant only the behind-the-scenes details. ARA-101 moves the bibliography back above the PDF and makes ⓘ a small modal for provenance, identifiers and the search index. The user also asked why "Ready to read" was still on the paper page. ARA-098 phase 2a had held that header until ARA-097 merged, and it went in at `2b368e1`. A browser check on the test copy then found no "Ready to read" text, and only the "No PDF yet" icon on a paper without a PDF.
+
 ## 2026-10-10 - ARA-100 Remove the Activity page
 
 - Prompt: the user decided "I think we should remove the Activity page. It doesn't make sense in a product like this." The lead assigned the removal, the in-context checks and automatic recovery for storage cleanup.

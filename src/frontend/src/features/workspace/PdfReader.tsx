@@ -35,7 +35,8 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
         <div className="flex items-center gap-3 border-b bg-muted/50 px-4 py-2 text-sm">
           <History className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <p className="min-w-0 flex-1">Showing an earlier PDF version</p>
-          <Button size="xs" variant="outline" onClick={onShowCurrent}>Back to current PDF</Button>
+          {/* After Remove PDF a chat's kept PDF has no current one to go back to, so the way out is adding one (ARA-097). */}
+          <Button size="xs" variant="outline" onClick={onShowCurrent}>{paper.active_document_id ? 'Back to current PDF' : 'Add a new PDF'}</Button>
         </div>
       )}
       {/* One polite announcement per jump; the visible note repeats the region and page-only cases for sighted readers. */}
