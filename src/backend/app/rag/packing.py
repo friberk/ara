@@ -4,8 +4,12 @@ Several papers (ARA-088) follow docs/plans/retrieval-orchestration.md, steps 6 a
 the question names come first, then each paper in relevance order gets a floor of FLOOR
 passages while floors fit, and relevance shares the rest; the others add nothing to this turn.
 Passages are grouped under a short paper header, the strongest groups at both ends (step 9).
+
+A section summary (ARA-079) is evidence without a handle of its own: it shows its source chunks'
+handles inside it, so an answer cites those chunks, as strictly as any other passage.
 """
 
+import re
 from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -18,40 +22,71 @@ from app.integrations.tokens import TokenCounter
 from app.rag.selection import FIRST_PASS_PASSAGES, FLOOR
 
 SEPARATOR = "\n"
+SUMMARY = "summary"
+SOURCE_MARKER = re.compile(r"\[source:([^\]]+)\]")
+# Source handles are numbered after the passages; costing them with the widest handle the
+# grammar allows (four digits) keeps the rendered evidence within its budget.
+WIDEST_SOURCE = "S9999"
 
 
 @dataclass(frozen=True)
 class Passage:
     handle: str
+    # A chunk's id; for a section summary, the summary's id, which is never cited.
     chunk_id: UUID
     document_id: UUID
     page: int
     page_end: int
     section: str
     kind: str
+    # A summary's text keeps its canonical source markers.
     text: str
     ordinal: int = 0
     bboxes: list[list[float]] = field(default_factory=list)
+    # A summary's cited chunks, each with its handle.
+    sources: tuple["Passage", ...] = ()
 
     def render(self) -> str:
         pages = f"{self.page}–{self.page_end}" if self.page_end != self.page else str(self.page)
-        return f"[{self.handle}] {self.section or 'Untitled section'} · p. {pages}\n{self.text}\n"
+        section = self.section or "Untitled section"
+        if self.kind == SUMMARY:
+            handles = {str(source.chunk_id): source.handle for source in self.sources}
+            body = SOURCE_MARKER.sub(
+                lambda match: f"[{handles[match[1]]}]" if match[1] in handles else "", self.text
+            )
+            return f"Section summary · {section} · p. {pages}\n{body}\n"
+        return f"[{self.handle}] {section} · p. {pages}\n{self.text}\n"
 
 
-def node_passage(node: BaseNode, handle: str) -> Passage:
+def node_passage(node: BaseNode, handle: str, sources: Sequence["Passage"] = ()) -> Passage:
     metadata = node.metadata
+    summary = metadata["kind"] == SUMMARY
     return Passage(
-        handle=handle,
+        handle="" if summary else handle,
         chunk_id=UUID(node.node_id),
         document_id=UUID(metadata["document_id"]),
         page=metadata["page"],
         page_end=metadata["page_end"],
         section=metadata["section"],
         kind=metadata["kind"],
-        text=node.get_content(),
+        text=metadata["content"] if summary else node.get_content(),
         ordinal=metadata["ordinal"],
         bboxes=metadata.get("bboxes", []),
+        sources=tuple(sources),
     )
+
+
+def citable(passages: Sequence[Passage]) -> list[Passage]:
+    """The passages an answer may cite by handle: the chunks sent, then the chunks the sent
+    summaries cite. A summary itself never is."""
+    found: dict[UUID, Passage] = {}
+    for item in passages:
+        if item.kind != SUMMARY:
+            found.setdefault(item.chunk_id, item)
+    for item in passages:
+        for source in item.sources:
+            found.setdefault(source.chunk_id, source)
+    return list(found.values())
 
 
 def render_header(header: str) -> str:
@@ -89,6 +124,7 @@ def pack_evidence(
     kept: Collection[str] = (),
     reach: int | None = 1,
     first_handle: int = 1,
+    sources: Mapping[str, BaseNode] | None = None,
 ) -> list[Passage]:
     """Floors first, then the most relevant passages, then each chunk's section around it.
 
@@ -103,17 +139,24 @@ def pack_evidence(
 
     `neighbours` maps a candidate to chunks of its section; they are added `reach` ordinals away
     at most (1: the neighbours; None: the whole section), nearest first. Handles are numbered
-    from `first_handle`, so several packs can share one set of handles.
+    from `first_handle`, so several packs can share one set of handles. `sources` maps chunk
+    ids to the chunks that summaries cite; their handles follow the passages'.
     """
     widest = f"S{first_handle + max_passages - 1}"
     separator = counter.count(SEPARATOR)
     headers = headers or {}
+    sources = sources or {}
     chosen: dict[str, Passage] = {}
     spent: Counter = Counter()
     remaining = budget
 
+    def cited(node: BaseNode, handle: str) -> list[Passage]:
+        found = [sources[key] for key in node.metadata.get("sources", ()) if key in sources]
+        return [node_passage(source, handle) for source in found]
+
     def size(node: BaseNode) -> int:
-        return counter.count(node_passage(node, widest).render()) + separator
+        passage = node_passage(node, widest, cited(node, WIDEST_SOURCE))
+        return counter.count(passage.render()) + separator
 
     def header_size(document: str) -> int:
         return counter.count(render_header(headers[document])) + separator if headers else 0
@@ -124,7 +167,7 @@ def pack_evidence(
             return
         cost, document = size(node), node.metadata["document_id"]
         if cost <= remaining and (share is None or spent[document] + cost <= share):
-            chosen[node.node_id] = node_passage(node, widest)
+            chosen[node.node_id] = node_passage(node, widest, cited(node, WIDEST_SOURCE))
             remaining -= cost
             spent[document] += cost
 
@@ -185,9 +228,29 @@ def pack_evidence(
     groups = {document: rank for rank, document in enumerate(ends_first(strength))}
     ordered = sorted(
         chosen.values(),
-        key=lambda item: (groups.get(str(item.document_id), 0), item.page, item.ordinal),
+        key=lambda item: (
+            groups.get(str(item.document_id), 0),
+            item.page,
+            item.ordinal,
+            item.kind != SUMMARY,
+        ),
     )
+    # Passages are numbered in order; a summary's sources reuse a sent chunk's handle or take
+    # the next ones.
+    handles: dict[UUID, str] = {}
+    for item in ordered:
+        if item.kind != SUMMARY:
+            handles[item.chunk_id] = f"S{first_handle + len(handles)}"
+    for item in ordered:
+        for source in item.sources:
+            handles.setdefault(source.chunk_id, f"S{first_handle + len(handles)}")
     return [
-        replace(item, handle=f"S{number}")
-        for number, item in enumerate(ordered, start=first_handle)
+        replace(
+            item,
+            handle=handles.get(item.chunk_id, ""),
+            sources=tuple(
+                replace(source, handle=handles[source.chunk_id]) for source in item.sources
+            ),
+        )
+        for item in ordered
     ]

@@ -40,6 +40,8 @@ class RetrievalSummary(BaseModel):
     # (ARA-094).
     pruned: int = 0
     evidence_tokens: int = 0
+    # Section summaries among the passages used (ARA-079).
+    summaries_used: int = 0
     # The planner's classification; a broad question grows chunks to their section (ARA-094).
     question_type: Literal["lookup", "broad", "comparative"] | None = None
     # The first answer reported insufficient evidence and one wider retry replaced it (ARA-094).

@@ -29,14 +29,22 @@ from app.models.retrieval import RetrievalIndex
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.packing import (
     SEPARATOR,
+    SUMMARY,
     Passage,
+    citable,
     node_passage,
     pack_evidence,
     render_evidence,
     render_header,
 )
 from app.rag.rerank import rerank_candidates
-from app.rag.retrievers import PgLexicalRetriever, PgVectorRetriever, chunk_node
+from app.rag.retrievers import (
+    PgLexicalRetriever,
+    PgSummaryLexicalRetriever,
+    PgSummaryVectorRetriever,
+    PgVectorRetriever,
+    chunk_node,
+)
 from app.rag.selection import FIRST_PASS, FLOOR, RETRY_PASS, EvidencePass, prune
 from app.schemas.ai import RetrievalSummary
 
@@ -99,11 +107,13 @@ class EvidenceResult:
     question_type: str = "lookup"
     # The evidence ceiling E the last packing was given, before the pass's own token cap.
     ceiling: int = 0
+    # Chunk id -> the chunks that summary candidates cite (ARA-079).
+    sources: dict[str, TextNode] = field(default_factory=dict)
 
     @property
     def citable(self) -> list[Passage]:
-        """The passages an answer may cite by handle."""
-        return list(self.passages)
+        """The passages an answer may cite by handle: chunks sent and those summaries cite."""
+        return citable(self.passages)
 
     def widen(self) -> bool:
         """Switch to the retry pass when it reads passages the first pass did not (step 10);
@@ -145,6 +155,7 @@ class EvidenceResult:
             neighbours=self.neighbours,
             kept=self.kept,
             reach=self.reach,
+            sources=self.sources,
             **{"max_passages": self.evidence_pass.max_passages, **options},
         )
 
@@ -184,6 +195,7 @@ class EvidenceResult:
         self.passages = self.select(pruned.kept, budget, headers=self.headers)
         chosen = {str(item.chunk_id) for item in self.passages}
         self.summary.passages_used = len(self.passages)
+        self.summary.summaries_used = sum(item.kind == SUMMARY for item in self.passages)
         self.summary.pruned = pruned.pruned
         self.summary.evidence_tokens = (
             self.counter.count(render_evidence(self.passages, self.headers)) if self.counter else 0
@@ -197,7 +209,10 @@ class EvidenceResult:
         routed = len(candidates) > answering > 0
         notes = [*self.notes, *([ROUTED_NOTE.format(count=answering)] if routed else [])]
         self.summary.note = " ".join(notes) or None
-        self.trace["selected"] = {item.handle: str(item.chunk_id) for item in self.passages}
+        self.trace["selected"] = {item.handle: str(item.chunk_id) for item in self.citable}
+        self.trace["summaries"] = [
+            str(item.chunk_id) for item in self.passages if item.kind == SUMMARY
+        ]
         self.trace["papers"] = dict(used)
         self.trace["papers_in_scope"] = len(self.documents)
         self.trace["routed_out"] = len(candidates) - answering
@@ -210,7 +225,7 @@ class EvidenceResult:
             "pruned": pruned.pruned,
         }
         self.trace["selected_scores"] = {
-            item.handle: self.scores[str(item.chunk_id)]
+            item.handle or f"summary:{item.chunk_id}": self.scores[str(item.chunk_id)]
             for item in self.passages
             if str(item.chunk_id) in self.scores
         }
@@ -329,6 +344,8 @@ async def section_nodes(
     only the passages just before and after it that have none either.
     """
     chunk_sets = {str(scope.document_id): scope.chunk_set for scope in scopes}
+    # A summary already covers its section.
+    ranked = [item for item in ranked if item.node.metadata["kind"] != SUMMARY]
     sections = {
         (UUID(item.node.metadata["document_id"]), item.node.metadata["section"])
         for item in ranked
@@ -372,6 +389,24 @@ async def section_nodes(
         if same:
             found[item.node.node_id] = [chunk_node(chunk) for chunk in same]
     return found
+
+
+async def summary_sources(
+    resources, scopes: Sequence[Scope], ranked: Sequence[NodeWithScore]
+) -> dict[str, TextNode]:
+    """The chunks the summary candidates cite, in one query; only chunks of the papers in scope
+    and their current chunk sets, so a summary can never lend a citation to another paper."""
+    wanted = {
+        UUID(source)
+        for item in ranked
+        if item.node.metadata["kind"] == SUMMARY
+        for source in item.node.metadata["sources"]
+    }
+    if not wanted:
+        return {}
+    async with resources.sessions() as session:
+        chunks = await session.scalars(scoped(scopes).where(DocumentChunk.id.in_(wanted)))
+        return {str(chunk.id): chunk_node(chunk) for chunk in chunks}
 
 
 def interleaved(nodes: Sequence[NodeWithScore]) -> list[NodeWithScore]:
@@ -512,13 +547,24 @@ async def retrieve_evidence(
     searches = []
 
     def search(kind: str, text: str, paper: int | None, within: Sequence[Scope], vector=None):
+        """Chunks and, beside them, section summaries (step 2; RAPTOR's collapsed tree)."""
         keys = [scope.key for scope in within]
-        if kind == "keyword":
-            found = PgLexicalRetriever(resources.sessions, keys, top_k=TOP_K).aretrieve(text)
-        else:
-            retriever = PgVectorRetriever(resources.sessions, keys, profile, top_k=TOP_K)
-            found = retriever.aretrieve(QueryBundle(query_str=text, embedding=vector))
-        searches.append((kind, text, paper, found))
+        if vector is None:
+            lexical = [
+                ("keyword", PgLexicalRetriever),
+                ("summary-keyword", PgSummaryLexicalRetriever),
+            ]
+            for name, kind in lexical:
+                found = kind(resources.sessions, keys, top_k=TOP_K).aretrieve(text)
+                searches.append((name, text, paper, found))
+            return
+        bundle = QueryBundle(query_str=text, embedding=vector)
+        for name, kind in (
+            ("vector", PgVectorRetriever),
+            ("summary-vector", PgSummaryVectorRetriever),
+        ):
+            found = kind(resources.sessions, keys, profile, top_k=TOP_K).aretrieve(bundle)
+            searches.append((name, text, paper, found))
 
     for position, query in enumerate(queries):
         search("keyword", query, None, scopes)
@@ -564,6 +610,7 @@ async def retrieve_evidence(
     floors = floor_candidates(ranked, kept_documents)
     expand = {item.node.node_id: item for item in [*ranked[: RETRY_PASS.max_passages], *floors]}
     neighbours = await section_nodes(resources, scopes, list(expand.values()))
+    sources = await summary_sources(resources, scopes, ranked)
     width = TOP_K
     trace = {
         "queries": list(queries),
@@ -614,6 +661,7 @@ async def retrieve_evidence(
         kept=kept_documents,
         scores=dict(reranked.scores) if reranked.reranked else {},
         question_type=question_type,
+        sources=sources,
     )
     result.pack(budget)
     timings["total"] = elapsed(started)

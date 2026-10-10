@@ -467,3 +467,134 @@ async def test_given_a_new_library_model_when_its_index_is_built_then_summaries_
             )
         ).all()
     assert profiles == [SMALL]
+
+
+async def write_summary(resources, document_id, path, sentence, cited, *, profile=None):
+    """A stored summary of `path` whose sentence cites the `cited` chunks."""
+    from app.integrations.embedding_catalog import PROFILES
+    from app.models.retrieval import DocumentSection
+    from tests.support.vectors import fixture_vector
+
+    markers = "".join(f"[source:{chunk_id}]" for chunk_id in cited)
+    async with resources.sessions() as session, session.begin():
+        section = await session.scalar(
+            select(DocumentSection).where(
+                DocumentSection.document_id == document_id, DocumentSection.path == list(path)
+            )
+        )
+        summary = SectionSummary(
+            document_id=document_id,
+            section_id=section.id,
+            chunk_set=section.chunk_set,
+            title=" > ".join(path),
+            page=section.page,
+            page_end=section.page_end + 1,
+            ordinal=0,
+            content=f"{sentence} {markers}",
+            sources=[str(chunk_id) for chunk_id in cited],
+            context_text=sentence,
+            token_count=len(sentence.split()),
+            model="gpt-5.6-luna",
+            reasoning_effort="low",
+            usage={},
+        )
+        session.add(summary)
+        await session.flush()
+        if profile is not None:
+            session.add(
+                SectionSummaryEmbedding(
+                    summary_id=summary.id,
+                    profile=profile,
+                    document_id=document_id,
+                    embedding=fixture_vector(sentence, PROFILES[profile].dimensions),
+                    input_hash="fixture",
+                )
+            )
+        return summary.id
+
+
+LIMITS = "The section admits two limitations: missed paraphrases and a small benchmark"
+
+
+async def test_given_a_broad_question_when_answering_then_a_summary_is_evidence_cited_by_chunk(
+    resources, monkeypatch
+):
+    from test_fulltext_integration import app_client
+
+    from tests.support.answers import ask, named, use_hosted
+    from tests.support.chats import new_chat
+
+    hosted(resources)
+    paper_id, document_id, chunks = await seed_sections(resources)
+    limitations = chunks[("3 Limitations",)]
+    await write_summary(resources, document_id, ["3 Limitations"], LIMITS, limitations)
+    # Another paper's summary never reaches this chat.
+    _, other, other_chunks = await seed_sections(resources, title="Other paper")
+    await write_summary(
+        resources, other, ["3 Limitations"], LIMITS, other_chunks[("3 Limitations",)]
+    )
+    chat_id = await new_chat(resources, (paper_id, document_id))
+    calls = []
+
+    def answer(body):
+        prompt = body["input"][-1]["content"]
+        summary = prompt[prompt.index("Section summary · 3 Limitations") :]
+        handle = re.search(r"\[(S\d+)\]", summary)[1]
+        return f"The paper names two limitations [{handle}]."
+
+    use_hosted(monkeypatch, resources, calls, answer)
+    _, events = await ask(resources, chat_id, "What limitations does the paper admit?")
+    (completed,) = named(events, "message.completed")
+    prompt = calls[0]["input"][-1]["content"]
+    # The summary is evidence without a handle of its own.
+    assert "\nSection summary · 3 Limitations · p. 4–5\n" in "\n" + prompt
+    assert not re.search(r"^\[S\d+\] Section summary", prompt, re.M)
+    assert prompt.count("admits two limitations") == 1
+    assert completed["retrieval"]["summaries_used"] == 1
+    (citation,) = completed["citations"]
+    # The citation is a real chunk of this paper, on its own page.
+    assert UUID(citation["chunk_id"]) in limitations
+    assert citation["document_id"] == str(document_id) and citation["page"] == 4
+    async with app_client(resources) as client:
+        source = await client.get(f"/api/v1/documents/{document_id}/chunks/{citation['chunk_id']}")
+    assert source.status_code == 200 and source.json()["page"] == citation["page"]
+
+
+async def test_given_summary_vectors_when_retrieving_then_meaning_search_finds_summaries(
+    resources, monkeypatch
+):
+    from app.integrations import embeddings
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag import pipeline
+    from app.rag.pipeline import Scope, retrieve_evidence
+    from tests.support.sections import CHUNK_SET
+
+    hosted(resources)
+    monkeypatch.setattr(
+        pipeline,
+        "create_embedder",
+        lambda resources, profile: embeddings.create_embedder(
+            resources, profile, transport=openai_fixture([])
+        ),
+    )
+    _, document_id, chunks = await seed_sections(resources, profile="openai-3-large")
+    summary_id = await write_summary(
+        resources,
+        document_id,
+        ["3 Limitations"],
+        LIMITS,
+        chunks[("3 Limitations",)],
+        profile="openai-3-large",
+    )
+    result = await retrieve_evidence(
+        resources,
+        scopes=[Scope(document_id, CHUNK_SET)],
+        preferred_profile="openai-3-large",
+        queries=[LIMITS],
+        question=LIMITS,
+        budget=8000,
+        counter=TiktokenCounter(),
+    )
+    lists = {item["retriever"]: item["results"] for item in result.trace["lists"]}
+    assert str(summary_id) in {node for node, _, _ in lists["summary-vector"]}
+    assert str(summary_id) in {node for node, _, _ in lists["summary-keyword"]}

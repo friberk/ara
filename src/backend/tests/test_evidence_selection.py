@@ -243,3 +243,81 @@ def test_given_two_papers_when_expanding_then_each_grows_only_within_its_share()
     assert header + sum(cost(candidate(p.ordinal, paper="A", words=30).node) for p in used_a) <= (
         budget // 2
     )
+
+
+def summary_candidate(sources, *, ordinal: int = 1, title: str = "2 Method"):
+    """A section-summary candidate whose content cites `sources` (chunk nodes)."""
+    markers = "".join(f"[source:{node.node_id}]" for node in sources)
+    content = f"The method weights terms with Okapi {markers}."
+    node = TextNode(
+        id_=str(UUID(int=0xABC000 + ordinal)),
+        text="The method weights terms with Okapi.",
+        metadata={
+            "page": 2,
+            "page_end": 3,
+            "section": title,
+            "kind": "summary",
+            "ordinal": ordinal,
+            "document_id": str(DOCUMENT),
+            "bboxes": [],
+            "content": content,
+            "sources": [node.node_id for node in sources],
+        },
+    )
+    return NodeWithScore(node=node, score=0.0)
+
+
+def test_given_a_section_summary_when_packing_then_it_cites_its_chunks_and_has_no_handle():
+    from app.rag.packing import citable, pack_evidence, render_evidence
+
+    first, second = candidate(1).node, candidate(2).node
+    summary = summary_candidate([first, second])
+    hit = candidate(9)
+    passages = pack_evidence(
+        [summary, hit],
+        budget=100_000,
+        counter=COUNTER,
+        sources={first.node_id: first, second.node_id: second},
+    )
+    rendered = render_evidence(passages)
+    assert [p.kind for p in passages] == ["summary", "text"]
+    # Only real chunks get handles; the summary shows its sources' handles inside it.
+    assert rendered.startswith("Section summary · 2 Method · p. 2–3\n")
+    allowed = citable(passages)
+    assert [p.handle for p in allowed] == ["S1", "S2", "S3"]
+    assert {str(p.chunk_id) for p in allowed} == {first.node_id, second.node_id, hit.node.node_id}
+    assert "Okapi [S2][S3]." in rendered and "[S1] Results · p. 10" in rendered
+    assert all(p.kind != "summary" for p in allowed)
+
+
+def test_given_a_summary_source_that_is_also_sent_when_packing_then_one_handle_serves_both():
+    from app.rag.packing import citable, pack_evidence, render_evidence
+
+    source = candidate(1)
+    summary = summary_candidate([source.node])
+    passages = pack_evidence(
+        [summary, source], budget=100_000, counter=COUNTER, sources={source.node_id: source.node}
+    )
+    assert [p.handle for p in citable(passages)] == ["S1"]
+    assert "Okapi [S1]." in render_evidence(passages)
+
+
+def test_given_summaries_when_packing_any_budget_then_the_rendered_evidence_fits():
+    from app.rag.packing import pack_evidence, render_evidence
+
+    chunks = [candidate(n, words=40) for n in range(10)]
+    sources = {item.node.node_id: item.node for item in chunks}
+    summaries = [summary_candidate([chunks[n].node, chunks[n + 1].node], ordinal=n) for n in (0, 4)]
+    for budget in (0, 60, 150, 400, 900, 2000):
+        passages = pack_evidence(
+            [*summaries, *chunks[2:]], budget=budget, counter=COUNTER, sources=sources
+        )
+        assert COUNTER.count(render_evidence(passages)) <= budget
+
+
+def test_given_the_answer_rules_then_summaries_are_cited_through_the_handles_inside_them():
+    from app.services.context import INSTRUCTIONS_VERSION, RULES
+
+    assert "section summary has no handle of its own" in RULES
+    assert "cite the handles inside it" in RULES
+    assert INSTRUCTIONS_VERSION == "5"

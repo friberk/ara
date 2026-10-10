@@ -15,7 +15,7 @@ from app.integrations.context_registry import hosted_reasoning_headroom
 from app.integrations.llm import LLMError, reserve
 from app.integrations.tokens import keep_head
 from app.rag.citations import SOURCE, HandleMap, HandleTransducer
-from app.rag.packing import Passage, render_evidence, render_header
+from app.rag.packing import Passage, citable, render_evidence, render_header
 from app.services.context import assemble_answer_prompt
 from app.services.memory import billed_tokens
 
@@ -84,6 +84,7 @@ async def read_papers(
         chosen: list[Passage] = []
 
         def block(budget: int, document=document, chosen=chosen) -> str:
+            # Handles run on across papers, so the notes' handles never collide.
             first = len(found.passages) + 1
             chosen[:] = evidence.paper_passages(document, min(budget, target), first)
             return render_evidence(chosen)
@@ -106,11 +107,12 @@ async def read_papers(
                 assembled.messages,
                 max_output_tokens=note_tokens + hosted_reasoning_headroom(effort),
             )
-        transducer = HandleTransducer(HandleMap(chosen))
+        allowed = citable(chosen)
+        transducer = HandleTransducer(HandleMap(allowed))
         text = transducer.feed(result.content) + transducer.flush()
         if transducer.unknown:
             raise LLMError("UNGROUNDED_OUTPUT", "A paper's notes cited unavailable evidence.")
         found.notes.append((document, NO_NOTES if transducer.insufficient else text.strip()))
-        found.passages.extend(chosen)
+        found.passages.extend(allowed)
         found.calls.append({"model": model, **billed_tokens(result.usage)})
     return found
