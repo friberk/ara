@@ -4,7 +4,7 @@ A local research workspace for CS59300. Search Semantic Scholar or OpenAlex, sav
 
 ## Features
 
-The interface is a chat-centred workspace built with shadcn components, using the default neutral black-and-white theme in light and dark (it follows your system setting; switch in the sidebar or Settings).
+The interface is a chat-centred workspace built with shadcn components, using the default neutral black-and-white theme in light and dark (it follows your system setting; switch in Settings > Appearance or with the ⌘K palette).
 
 - **Search.** The home screen is one composer. Type a topic and choose OpenAlex or Semantic Scholar. Results show title, authors, year, abstract and DOI or PDF links. Each result can be saved to the library, and papers already saved show "In library".
 - **Library.** Saved and uploaded papers persist across restarts. Filter by title, and see each paper's PDF status.

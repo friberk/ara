@@ -82,6 +82,38 @@ test('Given the sidebar search entry, Then it opens the same palette', async () 
   expect(await screen.findByRole('dialog', { name: 'Find papers and chats' })).toBeVisible()
 })
 
+const sidebarOf = (link: HTMLElement) => {
+  const sidebar = link.closest<HTMLElement>('[data-slot="sidebar"]')
+  if (!sidebar) throw new Error('Settings link is outside the sidebar')
+  return sidebar
+}
+
+test('Given the expanded sidebar, Then its footer keeps Settings and has no Theme control', () => {
+  mockApi({})
+  renderApp('/')
+  const sidebar = sidebarOf(screen.getByRole('link', { name: 'Settings' }))
+  expect(within(sidebar).getByRole('link', { name: 'Settings' })).toBeVisible()
+  expect(within(sidebar).queryByText(/Theme/)).not.toBeInTheDocument()
+})
+
+test('Given the sidebar collapsed to icons, Then its footer keeps Settings and has no Theme control', async () => {
+  mockApi({})
+  renderApp('/')
+  fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
+  await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
+  const sidebar = sidebarOf(screen.getByRole('link', { name: 'Settings' }))
+  expect(within(sidebar).getByRole('link', { name: 'Settings' })).toBeInTheDocument()
+  expect(within(sidebar).queryByText(/Theme/)).not.toBeInTheDocument()
+})
+
+test('Given the ⌘K palette, When its dark theme command is chosen, Then the dark theme applies', async () => {
+  mockApi({})
+  const { user } = renderApp('/')
+  await user.keyboard('{Control>}k{/Control}')
+  await user.click(await screen.findByRole('option', { name: 'Switch to dark theme' }))
+  await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
+})
+
 test('Given a header slot, Then page controls render into it and nothing renders without one', () => {
   const slot = document.createElement('div')
   const { unmount } = renderWithProviders(<HeaderSlotContext.Provider value={slot}><ShellHeader><span>Paper title</span></ShellHeader></HeaderSlotContext.Provider>)

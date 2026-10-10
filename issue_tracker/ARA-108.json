@@ -1,0 +1,31 @@
+{
+  "id": "ARA-108",
+  "title": "Remove the Theme control from the sidebar footer",
+  "type": "improvement",
+  "priority": "P2",
+  "description": "User request on 2026-10-10: \"I am annoyed with the Theme button at the bottom. Should it be there?\" and, after the lead's recommendation, \"OK. Go ahead and remove that from the sidebar\". Theme is a set-once preference. It already lives in Settings > Appearance (System, Light, Dark) and in the ⌘K palette, as in ChatGPT, Claude.ai, Notion, Linear and GitHub, so the sidebar footer keeps only Settings.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given the sidebar, expanded or collapsed to icons, when it renders, then its footer has no Theme control and keeps Settings.",
+    "Given Settings > Appearance and the ⌘K theme command, when used, then they still change the theme as before.",
+    "Given the codebase, when this lands, then ThemeToggle and anything used only by it are deleted, with their tests. ThemeProvider and the theme context stay."
+  ],
+  "test_cases": [
+    "Sidebar: no element named Theme; Settings link present.",
+    "Settings Appearance and palette theme command still switch the theme."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/components/shell/AppSidebar.tsx",
+    "src/frontend/src/components/shell/shell.test.tsx",
+    "src/frontend/src/App.test.tsx",
+    "README.md",
+    "DESIGN.md"
+  ],
+  "commits": [
+    "794daed"
+  ],
+  "pull_requests": [],
+  "verification": "Red first: src/components/shell/shell.test.tsx, before AppSidebar.tsx changed: 2 failed | 17 passed (19); both new sidebar tests failed on the Theme span (expanded and collapsed). Green: npx vitest run src/components/shell src/components/theme src/features/settings: Test Files 9 passed (9), Tests 80 passed (80). App.test.tsx retargeted to Settings > Appearance: 8 passed (8). npm run check (typecheck, eslint, vitest) on the final tree: Test Files 90 passed (90), Tests 722 passed (722), exit 0. An earlier check run failed one test (App.test.tsx theme-menu) because it opened the removed sidebar menu; retargeted to Settings and rerun green. npm run build: exit 0 on the final tree.",
+  "updated_at": "2026-10-10"
+}
