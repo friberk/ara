@@ -452,7 +452,7 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         job.lease_token, job.lease_expires_at = None, None
         job.updated_at = now()
         await session.flush()
-        await hooks.after_chunks_persisted(session, document_id=document.id)
+        await hooks.after_chunks_persisted(session, document_id=document.id, resources=resources)
         if became_ready:
             from app.services.summarization import queue_automatic_summary
 

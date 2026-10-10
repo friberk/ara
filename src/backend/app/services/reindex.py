@@ -66,14 +66,18 @@ async def enqueue_reindex(resources) -> int:
 
 
 async def prepare_search(resources) -> None:
-    """API startup: re-ingest outdated documents, then queue missing or unavailable indexes.
+    """API startup: re-ingest outdated documents, then queue missing or unavailable indexes and
+    the section summaries of ready PDFs read before they existed (ARA-079).
 
     Retries until the database answers; every step is idempotent under concurrent runs.
     """
+    from app.services import section_summaries
+
     while True:
         try:
             await enqueue_reindex(resources)
             await reconcile_indexes(resources)
+            await section_summaries.backfill_section_summaries(resources)
             return
         except Exception:
             logger.warning("Search preparation unavailable; retrying later")

@@ -145,11 +145,11 @@ async def test_given_a_comparative_question_when_answering_then_each_paper_is_se
     assert retrieval["sub_questions"] == [item["question"] for item in asks]
     trace = await stored_trace(resources, prepared.assistant.id)
     scoped = [item for item in trace["lists"] if item.get("paper")]
+    # Each sub-question searches its paper's chunks and, beside them, its section summaries.
     assert {(item["paper"], item["retriever"]) for item in scoped} == {
-        (1, "keyword"),
-        (1, "vector"),
-        (2, "keyword"),
-        (2, "vector"),
+        (paper, retriever)
+        for paper in (1, 2)
+        for retriever in ("keyword", "vector", "summary-keyword", "summary-vector")
     }
     assert trace["papers"] == {str(sparse_pdf): len(evidence[1]), str(dense_pdf): len(evidence[2])}
 

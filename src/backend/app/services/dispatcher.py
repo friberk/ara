@@ -10,7 +10,7 @@ from app.repositories.jobs import now, recover
 
 logger = logging.getLogger(__name__)
 # Long CPU generation runs on its own lane, off the worker that ingests and embeds.
-LOCAL_GENERATION_KINDS = {"summary", "compact_chat"}
+LOCAL_GENERATION_KINDS = {"summary", "section_summaries", "compact_chat"}
 
 
 async def dispatch_once(

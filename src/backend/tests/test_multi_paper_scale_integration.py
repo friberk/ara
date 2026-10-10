@@ -167,8 +167,7 @@ async def test_given_thirty_papers_when_asking_then_named_and_relevant_papers_an
     resources, monkeypatch, embeddings
 ):
     from app.integrations.context_registry import context_profile
-    from app.rag.packing import FLOOR
-    from app.rag.pipeline import MAX_PASSAGES
+    from app.rag.selection import FIRST_PASS, FLOOR
 
     seeded = await library(resources, 30)
     chat_id = await new_chat(resources, *[(paper, document) for paper, document, _ in seeded])
@@ -202,7 +201,8 @@ async def test_given_thirty_papers_when_asking_then_named_and_relevant_papers_an
     labels = list(evidence)
     assert any(label.startswith(NAMED) for label in labels)
     assert any(label.startswith(TITLE) for label in labels)
-    assert len(labels) <= MAX_PASSAGES // FLOOR
+    # At most 24 / 2 = 12 papers keep their floor in the first pass (ARA-094).
+    assert len(labels) <= FIRST_PASS.answering_papers == 12
     assert all(count >= FLOOR for count in evidence.values())
     assert "most relevant papers" in completed["retrieval"]["note"]
     assert completed["context"]["input_tokens"] <= profile.input_budget

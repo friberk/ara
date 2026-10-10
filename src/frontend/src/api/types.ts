@@ -58,8 +58,12 @@ export type ChatMemoryState = Schemas['ChatMemoryState']
 // The composer's context and cost meter (ARA-085).
 export type ChatUsage = Schemas['ChatUsage']
 export type ChatCost = Schemas['ChatCost']
-/** `waiting`: background local work holds the runtime; the question waits up to a minute for it. */
-export type RetrievalStage = 'waiting' | 'planning' | 'retrieving' | 'reranking' | 'generating'
+/**
+ * `waiting`: background local work holds the runtime; the question waits up to a minute for it.
+ * `widening`: the first answer found too little, so the one wider retry replaces it (ARA-094).
+ * `mapping`: a small window reads each paper in its own request before answering.
+ */
+export type RetrievalStage = 'waiting' | 'planning' | 'retrieving' | 'reranking' | 'generating' | 'widening' | 'mapping'
 export type Reranker = Schemas['RerankerOut']
 export type RerankerKey = NonNullable<RetrievalSettings['reranker']>
 

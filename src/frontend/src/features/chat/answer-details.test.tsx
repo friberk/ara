@@ -6,7 +6,7 @@ import { assistantMessage, chatRow, mount, settings, userMessage } from './pane-
 
 afterEach(() => vi.unstubAllGlobals())
 
-const hybrid: RetrievalSummary = { mode: 'hybrid', profile: 'openai-3-large', reranked: false, standalone_query: 'What recall did BM25 reach on Natural Questions?', search_queries: ['BM25 recall Natural Questions'], passages_found: 12, passages_used: 6, limited_by_context: false, note: null }
+const hybrid: RetrievalSummary = { mode: 'hybrid', profile: 'openai-3-large', reranked: false, standalone_query: 'What recall did BM25 reach on Natural Questions?', search_queries: ['BM25 recall Natural Questions'], passages_found: 12, passages_used: 6, limited_by_context: false, note: null, pruned: 0, evidence_tokens: 0, summaries_used: 0, retried: false, map_reduce: false }
 const usage: ContextUsage = { window: 8192, input_tokens: 5120, output_reserved: 2048, summary_version: null, recent_turns: 4, recalled_turns: 0, truncated: false }
 
 function showAnswer(overrides: Record<string, unknown>) {
@@ -71,4 +71,30 @@ test('Given the paper lacks evidence for the question, Then the answer carries a
   const answer = await screen.findByRole('article', { name: 'Assistant message' })
   expect(within(answer).getByText('The paper doesn’t contain enough evidence for this.')).toBeVisible()
   expect(within(answer).queryByRole('alert')).not.toBeInTheDocument()
+})
+
+test('Given an answer from relevance-driven evidence, When Details is opened, Then it shows the passages, their tokens, what was pruned and the wider retry (ARA-094)', async () => {
+  const driven = { ...hybrid, passages_used: 9, evidence_tokens: 4210, pruned: 7, summaries_used: 2, retried: true, map_reduce: false }
+  const { user } = showAnswer({ retrieval: driven, context: usage, grounding: 'supported' })
+  const details = await openDetails(user)
+  const rows = within(details).getAllByRole('listitem').map((row) => row.textContent)
+  expect(rows).toEqual([
+    'Searched for “What recall did BM25 reach on Natural Questions?”',
+    'Keyword and meaning search',
+    'Results were not reranked',
+    'Used 9 of 12 relevant passages, 4,210 tokens',
+    'Included 2 section summaries',
+    'Left out 7 passages that scored far below the best one',
+    'The first answer found too little, so the search was widened once',
+    'Context: 5,120 of 8,192 tokens',
+  ])
+})
+
+test('Given a small window that read each paper apart, When Details is opened, Then it says so', async () => {
+  const mapped = { ...hybrid, evidence_tokens: 900, pruned: 0, summaries_used: 0, retried: false, map_reduce: true }
+  const { user } = showAnswer({ retrieval: mapped, context: usage })
+  const details = await openDetails(user)
+  const rows = within(details).getAllByRole('listitem').map((row) => row.textContent)
+  expect(rows).toContain('Read each paper in its own request, then combined the notes')
+  expect(rows).not.toContainEqual(expect.stringMatching(/^Left out|^Included|widened/))
 })

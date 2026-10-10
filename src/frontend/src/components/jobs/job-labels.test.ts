@@ -37,3 +37,8 @@ test('Given a catalog lookup for an uploaded paper, Then Activity names it plain
   expect(jobKindLabel('metadata')).toBe('Paper details lookup')
   expect(jobStageLabel({ state: 'processing', stage: 'finding_metadata' })).toBe('Finding paper details')
 })
+
+test('Given section summaries for retrieval, Then Activity names them plainly (ARA-079)', () => {
+  expect(jobKindLabel('section_summaries')).toBe('Section summaries for search')
+  expect(jobStageLabel({ state: 'processing', stage: 'summarizing_sections' })).toBe('Summarizing each section')
+})

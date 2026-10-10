@@ -20,7 +20,12 @@ from app.integrations.embeddings import create_embedder
 from app.models.jobs import BackgroundJob
 from app.models.local_models import ModelInstallation
 from app.models.research import Document, DocumentChunk, ModelConfiguration
-from app.models.retrieval import ChunkEmbedding, RetrievalIndex
+from app.models.retrieval import (
+    ChunkEmbedding,
+    RetrievalIndex,
+    SectionSummary,
+    SectionSummaryEmbedding,
+)
 from app.repositories.jobs import continue_locked, enqueue, fence, now, payload_uuid
 
 # A job yields its lease after this much work, so long local embeddings never hit
@@ -161,6 +166,13 @@ async def prune_other_models(session, document_id: UUID, keep: str) -> None:
     await session.execute(
         delete(ChunkEmbedding).where(
             ChunkEmbedding.document_id == document_id, ChunkEmbedding.profile.not_in(kept)
+        )
+    )
+    # Section summaries are searched beside the chunks, in the same model (ARA-079).
+    await session.execute(
+        delete(SectionSummaryEmbedding).where(
+            SectionSummaryEmbedding.document_id == document_id,
+            SectionSummaryEmbedding.profile.not_in(kept),
         )
     )
     await session.execute(
@@ -354,6 +366,45 @@ class Run:
             job.updated_at = now()
             return True
 
+    async def pending_summaries(self) -> list[tuple[UUID, str]]:
+        """Section summaries of this chunk set without a vector of this model (ARA-079)."""
+        async with self.resources.sessions() as session:
+            rows = await session.execute(
+                select(SectionSummary.id, SectionSummary.context_text).where(
+                    SectionSummary.document_id == self.document_id,
+                    SectionSummary.chunk_set == self.chunk_set,
+                    ~exists().where(
+                        SectionSummaryEmbedding.summary_id == SectionSummary.id,
+                        SectionSummaryEmbedding.profile == self.profile,
+                    ),
+                )
+            )
+            return [(row.id, row.context_text) for row in rows]
+
+    async def save_summaries(self, embedder, batch, vectors) -> bool:
+        async with self.resources.sessions() as session, session.begin():
+            if await fenced_job(session, self.job_id, self.generation, self.token) is None:
+                return False
+            await session.execute(
+                insert(SectionSummaryEmbedding)
+                .values(
+                    [
+                        {
+                            "summary_id": summary_id,
+                            "profile": self.profile,
+                            "document_id": self.document_id,
+                            "embedding": vector,
+                            "input_hash": hashlib.sha256(
+                                embedder.sent_text(text).encode()
+                            ).hexdigest(),
+                        }
+                        for (summary_id, text), vector in zip(batch, vectors, strict=True)
+                    ]
+                )
+                .on_conflict_do_nothing(index_elements=["summary_id", "profile"])
+            )
+            return True
+
     async def pause(self, *, stage: str, delay_seconds: float = 0) -> None:
         async with self.resources.sessions() as session, session.begin():
             job = await fenced_job(session, self.job_id, self.generation, self.token)
@@ -466,6 +517,11 @@ async def run_embed_job(resources, job_id, generation, token, payload) -> None:
                 return
             if time.monotonic() - started >= WORK_SECONDS:
                 await run.pause(stage="embedding")
+                return
+        # A new model also embeds the document's section summaries, which are few.
+        if not run.rebuild and (summaries := await run.pending_summaries()):
+            vectors = await embedder.embed_documents([text for _, text in summaries])
+            if not await run.save_summaries(embedder, summaries, vectors):
                 return
         await run.finish()
     except AppError as error:

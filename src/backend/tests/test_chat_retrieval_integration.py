@@ -83,7 +83,13 @@ async def test_given_ready_index_when_answering_then_hybrid_evidence_is_cited_ca
     assert row.grounding == "supported" and row.state == "completed"
     trace = row.retrieval["trace"]
     assert trace["queries"] == [question]
-    assert {item["retriever"] for item in trace["lists"]} == {"keyword", "vector"}
+    # Section summaries are searched beside the chunks (ARA-079); this paper has none.
+    assert {item["retriever"] for item in trace["lists"]} == {
+        "keyword",
+        "vector",
+        "summary-keyword",
+        "summary-vector",
+    }
     assert trace["selected"][first_handle(request)] == cited["chunk_id"]
     assert trace["fused"] and trace["budget"] > 0 and "total" in trace["timings_ms"]
     rerank = trace["rerank"]

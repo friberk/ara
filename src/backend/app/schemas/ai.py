@@ -36,6 +36,18 @@ class RetrievalSummary(BaseModel):
     sub_questions: list[str] = Field(default_factory=list)
     passages_found: int = 0
     passages_used: int = 0
+    # Candidates dropped for scoring far below the best one, and the tokens of the evidence sent
+    # (ARA-094).
+    pruned: int = 0
+    evidence_tokens: int = 0
+    # Section summaries among the passages used (ARA-079).
+    summaries_used: int = 0
+    # The planner's classification; a broad question grows chunks to their section (ARA-094).
+    question_type: Literal["lookup", "broad", "comparative"] | None = None
+    # The first answer reported insufficient evidence and one wider retry replaced it (ARA-094).
+    retried: bool = False
+    # A small window read each paper in its own call, then combined their notes (ARA-094).
+    map_reduce: bool = False
     limited_by_context: bool = False
     note: str | None = None
 

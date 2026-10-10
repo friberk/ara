@@ -75,6 +75,8 @@ async def test_given_first_turn_when_planning_then_question_is_the_query_without
         needs_paper_evidence=True,
         source="first_turn",
     )
+    # An unplanned question is treated as a lookup: the conservative first pass (ARA-094).
+    assert plan.question_type == "lookup"
 
 
 async def test_given_unfinished_first_turn_when_planning_then_it_still_counts_as_first(
@@ -132,7 +134,11 @@ async def test_given_follow_up_on_hosted_chat_when_planning_then_sol_names_the_s
         "search_queries",
         "needs_paper_evidence",
         "sub_questions",
+        "question_type",
     ]
+    # Step 1 of docs/plans/retrieval-orchestration.md: the planner classifies the question.
+    assert schema["properties"]["question_type"]["enum"] == ["lookup", "broad", "comparative"]
+    assert plan.question_type == "lookup"
     sent = json.dumps(body["input"])
     # The summary and the last two turns, with citations rendered as page references.
     assert "compare retrieval methods" in sent
@@ -464,3 +470,23 @@ async def test_given_many_papers_when_planning_then_the_list_is_bounded_named_fi
     assert "5 more papers" in body["instructions"]
     assert body["text"]["format"]["schema"]["properties"]["sub_questions"]["maxItems"] == 5
     assert body["max_output_tokens"] == 300 + 5 * 80 + 1024
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("kind", ["broad", "comparative", "lookup"])
+async def test_given_a_classified_question_when_planning_then_the_plan_carries_its_type(
+    resources, monkeypatch, kind
+):
+    from app.services import memory
+
+    hosted_responses(monkeypatch, resources, lambda body: plan_output(question_type=kind))
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=rag_history(),
+        memory_summary=None,
+        question="List every limitation the paper reports.",
+    )
+    assert plan.source == "model" and plan.question_type == kind
+    assert "question_type" in memory.PLANNER_INSTRUCTIONS
