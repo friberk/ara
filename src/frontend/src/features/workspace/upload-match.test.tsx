@@ -62,11 +62,11 @@ test('Given an upload that ingestion attached to a library paper, When its old l
 const saved = { ...library, id: 'p2', title: 'Saved paper', document_status: 'metadata_only', active_document_id: null, doi: '10.5555/saved' }
 const retrieving = { paper_id: 'p2', availability: 'open_copy_reported', locations: [], retrieval_job: { id: 'r1', kind: 'fulltext', state: 'processing', stage: 'fetching_pdf', progress: 40, result: null }, document_id: null, ingest_job_id: null, attempts: [], source_host: 'arxiv.org' }
 
-test('Given a PDF being retrieved automatically, Then the badge, the composer and the upload option all say it is on its way', async () => {
+test('Given a PDF being retrieved automatically, Then the header icon, the composer and the upload option all say it is on its way', async () => {
   mockApi({ 'GET /papers/p2': saved, 'GET /papers/p2/fulltext': retrieving })
   renderApp('/papers/p2')
-  expect(await screen.findByText('Getting PDF')).toBeVisible()
-  expect(screen.queryByText('PDF needed')).not.toBeInTheDocument()
+  expect(await screen.findByRole('img', { name: 'Preparing PDF…' })).toBeVisible()
+  expect(screen.queryByRole('img', { name: 'No PDF yet' })).not.toBeInTheDocument()
   expect(await screen.findByText('You can ask questions once the PDF is ready.')).toBeVisible()
   const reader = screen.getByRole('region', { name: 'PDF reader' })
   expect(within(reader).queryByText('Attach the PDF to read, summarize and ask')).not.toBeInTheDocument()
@@ -79,6 +79,6 @@ test('Given no retrieval running, Then upload stays the primary way to add the P
   renderApp('/papers/p2')
   const reader = await screen.findByRole('region', { name: 'PDF reader' })
   expect(await within(reader).findByText('Attach the PDF to read, summarize and ask')).toBeVisible()
-  expect(screen.getByText('PDF needed')).toBeVisible()
+  expect(screen.getByRole('img', { name: 'No PDF yet' })).toBeVisible()
   expect(await screen.findByText('Attach a PDF to ask questions about this paper.')).toBeVisible()
 })

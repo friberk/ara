@@ -17,9 +17,9 @@ import { paperName } from '@/features/research/paper-format'
 import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { JoinedRedirect } from './JoinedRedirect'
-import { PaperStatusBadge } from './PaperStatusBadge'
 import type { ReaderTab } from './ReaderDocuments'
 import { PaperDetailsSheet } from './PaperDetailsSheet'
+import { PaperPdfStatus } from './PaperPdfStatus'
 import { ReaderPanel } from './ReaderPanel'
 import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type WorkspaceContextValue, type WorkspaceView } from './workspace-context'
 
@@ -27,12 +27,12 @@ import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type Works
 const views: WorkspaceView[] = ['chat', 'pdf']
 const parseView = (value: string | null): WorkspaceView => views.find((view) => view === value) ?? 'chat'
 
-/** The paper's name and PDF status, with ⓘ for its details beside them (ARA-097). */
+/** The paper's name and, when the PDF is not ready, its state icon, with ⓘ for its details beside them (ARA-097). */
 function PaperTitle({ paper, onDeleted }: { paper: Paper; onDeleted: () => void }) {
   return (
     <>
       <h1 className="min-w-0 truncate text-sm font-medium md:text-base">{paperName(paper)}</h1>
-      <PaperStatusBadge paper={paper} className="shrink-0" />
+      <PaperPdfStatus paper={paper} />
       <PaperDetailsSheet paper={paper} onDeleted={onDeleted} />
     </>
   )
