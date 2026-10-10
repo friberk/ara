@@ -94,7 +94,7 @@ jobs:
           DEPLOY_TARGET: ${{ secrets.DEPLOY_TARGET }}
           SITE_HOST: ${{ vars.SITE_HOST }}
         run: scripts/deploy.sh "$DEPLOY_TARGET"
-      - name: Clients outside Purdue are refused
+      - name: Clients outside Purdue must sign in
         env:
           SITE_HOST: ${{ vars.SITE_HOST }}
-        run: test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$SITE_HOST/")" = 403
+        run: test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$SITE_HOST/")" = 401

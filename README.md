@@ -122,9 +122,9 @@ For development data reset, inspect the project and back up original PDFs/databa
 
 ## Deploy the demo
 
-The demo runs on one Ubuntu VM: the same Compose stack plus `compose.deploy.yaml`. The backend services run the image code without reload or source mounts. Caddy (`docker/caddy.Dockerfile`, `docker/Caddyfile`) replaces the Vite dev server: it serves the built frontend, proxies `/api` and `/health` to the API on `127.0.0.1:8000`, obtains the TLS certificate and answers 403 to clients outside the Purdue network. The allow-list is Purdue's AS17 address prefixes, so campus and Purdue VPN clients get in. Caddy uses host networking so it sees each client's real IPv4 or IPv6 address. PostgreSQL, Redis, MinIO and the API publish no public ports.
+The demo runs on one Ubuntu VM: the same Compose stack plus `compose.deploy.yaml`. The backend services run the image code without reload or source mounts. Caddy (`docker/caddy.Dockerfile`, `docker/Caddyfile`) replaces the Vite dev server: it serves the built frontend, proxies `/api` and `/health` to the API on `127.0.0.1:8000`, obtains the TLS certificate and lets clients on Purdue's network straight in. The allow-list is Purdue's AS17 address prefixes. Purdue's VPN is split-tunnel (only Purdue destinations go through it), so remote users, including those on the VPN, arrive from their home addresses and sign in with the demo username and password instead. Caddy uses host networking so it sees each client's real IPv4 or IPv6 address. PostgreSQL, Redis, MinIO and the API publish no public ports.
 
-The demo URL is <https://vps-eb56b28c.vps.ovh.us> (Purdue network or VPN only).
+The demo URL is <https://vps-eb56b28c.vps.ovh.us>: no password on campus, the demo login everywhere else.
 
 One-time server setup: Docker CE with the Compose plugin, an `ara-deploy` user in the `docker` group without sudo, and `/opt/ara/.env` created by `scripts/bootstrap.py` with these additions:
 
@@ -133,10 +133,12 @@ APP_ENV=production
 CORS_ORIGINS=["https://vps-eb56b28c.vps.ovh.us"]
 COMPOSE_FILE=compose.yaml:compose.deploy.yaml
 SITE_ADDRESS=vps-eb56b28c.vps.ovh.us
+DEMO_USERNAME=<username>
+DEMO_PASSWORD_HASH='<output of caddy hash-password, single-quoted>'
 OPENAI_API_KEY=<key>
 ```
 
-CI deploys `main` after the `verify` job passes. The `deploy` job runs `scripts/deploy.sh`, which ships the committed tree with `git archive`, syncs it into `/opt/ara` without touching `.env`, rebuilds with `docker compose up -d --build --wait`, and checks `/health/ready` through Caddy on the server. The job then checks that the runner, which is outside Purdue, receives 403. It needs the `production` environment secrets `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` and `DEPLOY_TARGET` (`ara-deploy@<server>`) and the repository variable `SITE_HOST`. CI runs on `main`, pull requests and manual dispatch only.
+CI deploys `main` after the `verify` job passes. The `deploy` job runs `scripts/deploy.sh`, which ships the committed tree with `git archive`, syncs it into `/opt/ara` without touching `.env`, rebuilds with `docker compose up -d --build --wait`, and checks `/health/ready` through Caddy on the server. The job then checks that the runner, which is outside Purdue, is asked to sign in (401). It needs the `production` environment secrets `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` and `DEPLOY_TARGET` (`ara-deploy@<server>`) and the repository variable `SITE_HOST`. CI runs on `main`, pull requests and manual dispatch only.
 
 Deploy a checkout by hand, roll back by deploying an older commit the same way, and inspect the server:
 

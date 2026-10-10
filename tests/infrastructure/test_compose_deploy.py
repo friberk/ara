@@ -1,5 +1,6 @@
-"""The demo runs built code behind a Caddy that only answers Purdue clients (ARA-107)."""
+"""The demo runs built code behind Caddy: Purdue clients go straight in, others need the password (ARA-107)."""
 
+import base64
 import json
 from pathlib import Path
 import subprocess
@@ -32,6 +33,9 @@ PURDUE = {
 # Health checks on the server itself.
 LOOPBACK = {"127.0.0.1/8", "::1"}
 UPLOAD_LIMIT = 25 * 1024 * 1024
+# Purdue's VPN is split-tunnel, so remote Purdue users arrive from home addresses and sign in instead.
+USERNAME, PASSWORD = "demo", "fixture-password"
+ACCESS = {"DEMO_USERNAME": USERNAME, "DEMO_PASSWORD_HASH": "$2a$14$fixture.hash.only"}
 
 
 def caddy_image() -> str:
@@ -46,10 +50,20 @@ def walk(node):
         yield from walk(child)
 
 
+def password_hash() -> str:
+    return subprocess.run(
+        ["docker", "run", "--rm", caddy_image(), "caddy", "hash-password", "--plaintext", PASSWORD],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
 def adapted_caddyfile() -> dict:
     result = subprocess.run(
         [
             "docker", "run", "--rm", "-e", "SITE_ADDRESS=demo.example.org",
+            "-e", f"DEMO_USERNAME={USERNAME}", "-e", f"DEMO_PASSWORD_HASH={password_hash()}",
             "-v", f"{ROOT / 'docker/Caddyfile'}:/etc/caddy/Caddyfile:ro",
             caddy_image(), "caddy", "adapt", "--config", "/etc/caddy/Caddyfile",
         ],
@@ -63,7 +77,7 @@ def adapted_caddyfile() -> dict:
 class DeployComposeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.services = compose_services(*DEPLOY, SITE_ADDRESS="demo.example.org")
+        cls.services = compose_services(*DEPLOY, SITE_ADDRESS="demo.example.org", **ACCESS)
 
     def test_backend_runs_the_image_code_without_reload_or_runtime_installs(self):
         for name in BACKEND:
@@ -98,6 +112,16 @@ class DeployComposeTests(unittest.TestCase):
         self.assertEqual(named, {"/data", "/config"})
         self.assertEqual(caddy["depends_on"]["api"]["condition"], "service_healthy")
 
+    def test_caddy_gets_the_demo_login_from_the_server_env(self):
+        environment = self.services["caddy"]["environment"]
+        self.assertEqual(environment["DEMO_USERNAME"], USERNAME)
+        # `config` writes `$` as `$$` so its output stays a valid Compose file; containers get `$`.
+        self.assertEqual(environment["DEMO_PASSWORD_HASH"].replace("$$", "$"), ACCESS["DEMO_PASSWORD_HASH"])
+
+    def test_the_stack_refuses_to_start_without_a_demo_password(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            compose_services(*DEPLOY, SITE_ADDRESS="demo.example.org", DEMO_USERNAME=USERNAME)
+
     def test_the_api_port_stays_on_loopback(self):
         hosts = {port["host_ip"] for port in self.services["api"]["ports"]}
         self.assertEqual(hosts, {"127.0.0.1"})
@@ -116,6 +140,15 @@ class CaddyfileTests(unittest.TestCase):
             for cidr in node["remote_ip"]["ranges"]
         }
         self.assertEqual(ranges, PURDUE | LOOPBACK)
+
+    def test_clients_outside_purdue_must_sign_in(self):
+        accounts = [
+            account
+            for node in walk(self.config)
+            if isinstance(node, dict) and node.get("handler") == "authentication"
+            for account in node["providers"]["http_basic"]["accounts"]
+        ]
+        self.assertEqual([account["username"] for account in accounts], [USERNAME])
 
     def test_uploads_up_to_the_app_limit_pass_the_proxy(self):
         limits = [
@@ -148,6 +181,7 @@ class CaddySiteTests(unittest.TestCase):
         started = subprocess.run(
             [
                 "docker", "run", "-d", "--rm", "-e", "SITE_ADDRESS=http://:8080",
+                "-e", f"DEMO_USERNAME={USERNAME}", "-e", f"DEMO_PASSWORD_HASH={password_hash()}",
                 "-p", "127.0.0.1::8080",
                 "-v", f"{ROOT / 'docker/Caddyfile'}:/etc/caddy/Caddyfile:ro",
                 "-v", f"{site.name}:/srv:ro",
@@ -180,6 +214,13 @@ class CaddySiteTests(unittest.TestCase):
                     raise
                 time.sleep(0.5)
 
+    def from_outside(self, path: str, password: str | None = None):
+        request = urllib.request.Request(f"{self.outside}{path}")
+        if password is not None:
+            token = base64.b64encode(f"{USERNAME}:{password}".encode()).decode()
+            request.add_header("Authorization", f"Basic {token}")
+        return urllib.request.urlopen(request, timeout=10)
+
     def from_loopback(self, path: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["docker", "exec", self.container, "wget", "-qO-", f"http://127.0.0.1:8080{path}"],
@@ -187,11 +228,16 @@ class CaddySiteTests(unittest.TestCase):
             text=True,
         )
 
-    def test_clients_outside_purdue_are_refused_with_a_reason(self):
-        with self.assertRaises(urllib.error.HTTPError) as refused:
-            urllib.request.urlopen(f"{self.outside}/papers/1", timeout=5)
-        self.assertEqual(refused.exception.code, 403)
-        self.assertIn("Purdue", refused.exception.read().decode())
+    def test_clients_outside_purdue_are_asked_to_sign_in(self):
+        for password in (None, "wrong-password"):
+            with self.assertRaises(urllib.error.HTTPError) as refused:
+                self.from_outside("/papers/1", password)
+            self.assertEqual(refused.exception.code, 401, password)
+            self.assertTrue(refused.exception.headers["WWW-Authenticate"].startswith("Basic"))
+
+    def test_clients_outside_purdue_with_the_password_get_the_app(self):
+        with self.from_outside("/papers/1", PASSWORD) as response:
+            self.assertIn("ARA shell", response.read().decode())
 
     def test_client_side_routes_load_the_app_shell(self):
         result = self.from_loopback("/papers/1/chats/2")

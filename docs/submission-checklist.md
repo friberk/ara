@@ -4,7 +4,7 @@ Assignment deadline: October10,11:59PM; plan targets10PM. Application60%, reflec
 
 ## Repository
 
-- Repository: <https://github.com/friberk/ara> (private, all branches; invite the course staff so the submitted link opens). Demo: <https://vps-eb56b28c.vps.ovh.us>, Purdue network or VPN only (ARA-107).
+- Repository: <https://github.com/friberk/ara> (private, all branches; invite the course staff so the submitted link opens). Demo: <https://vps-eb56b28c.vps.ovh.us>, open on campus, demo username and password elsewhere (ARA-107); share the login with the course staff.
 - Exclude .env, original uploads, generated test data and private screenshots. Existing assignment files/writing skills are user references, not application dependencies.
 - Rehearse README startup in a clean isolated Compose project. Verify all five workflows and restart persistence.
 

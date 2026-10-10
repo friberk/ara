@@ -65,10 +65,10 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertEqual(deploy["environment"], "production")
         self.assertFalse(deploy["concurrency"]["cancel-in-progress"])
 
-    def test_deploy_uses_the_shared_script_and_checks_that_outsiders_are_refused(self):
+    def test_deploy_uses_the_shared_script_and_checks_that_outsiders_must_sign_in(self):
         commands = runs(self.jobs["deploy"])
         self.assertIn("scripts/deploy.sh", commands)
-        self.assertIn("403", commands)
+        self.assertIn("= 401", commands)
 
     def test_secrets_reach_commands_only_through_the_environment(self):
         for name, job in self.jobs.items():

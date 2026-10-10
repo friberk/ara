@@ -40,6 +40,9 @@ services:
     network_mode: host
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS in .env}
+      # Off-campus sign-in; the .env holds a bcrypt hash from `caddy hash-password`, single-quoted.
+      DEMO_USERNAME: ${DEMO_USERNAME:?Set DEMO_USERNAME in .env}
+      DEMO_PASSWORD_HASH: ${DEMO_PASSWORD_HASH:?Set DEMO_PASSWORD_HASH in .env}
     volumes:
       - caddy-data:/data
       - caddy-config:/config

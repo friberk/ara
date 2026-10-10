@@ -7,13 +7,16 @@
 		max_size 30MB
 	}
 
-	# Prefixes announced by Purdue University's AS17 (RIPEstat, 2026-10-10), which campus and
-	# VPN clients use, plus loopback for health checks on the server.
+	# Prefixes announced by Purdue University's AS17 (RIPEstat, 2026-10-10), plus loopback for
+	# health checks on the server. Purdue's VPN is split-tunnel (only Purdue destinations go through
+	# it), so remote Purdue users arrive from home addresses and sign in with the demo password.
 	@outside_purdue not remote_ip 128.10.0.0/16 128.46.0.0/16 128.210.0.0/16 128.211.0.0/16 192.5.40.0/24 192.5.48.0/24 192.5.91.0/24 192.5.102.0/24 192.12.63.0/24 192.31.0.0/24 2607:ac80::/32 2001:18e8:800::/44 127.0.0.1/8 ::1
 
-	# route keeps this order: refuse, then proxy, then the single-page app.
+	# route keeps this order: sign-in outside Purdue, then proxy, then the single-page app.
 	route {
-		respond @outside_purdue "This demo is only available on the Purdue network or Purdue VPN." 403
+		basic_auth @outside_purdue {
+			{$DEMO_USERNAME} {$DEMO_PASSWORD_HASH}
+		}
 		reverse_proxy /api/* 127.0.0.1:8000
 		reverse_proxy /health/* 127.0.0.1:8000
 		root * /srv
