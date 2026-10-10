@@ -52,7 +52,7 @@ from app.repositories.local_models import use_held
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
 from app.services import memory
-from app.services.chat_papers import named_papers, pinned
+from app.services.chat_papers import add_mentioned, named_papers, pinned
 from app.services.context import (
     INSTRUCTIONS_VERSION,
     RECALL_SHARE,
@@ -131,6 +131,7 @@ async def replayed(session, chat_id: UUID, body) -> tuple[ChatSession, ChatMessa
     if (
         user is None
         or user.content != body.content
+        or user.configuration.get("mentions", []) != mentions_json(body)
         or replay.model != body.model
         or replay.reasoning_effort != body.reasoning_effort
     ):
@@ -158,6 +159,8 @@ class Prepared:
     retrieval_profile: str | None = None
     reranker: str | None = None
     papers: list[PaperHeader] = field(default_factory=list)
+    # Indexes into `papers` of the papers the question mentions with pills (ARA-096).
+    mentioned: list[int] = field(default_factory=list)
     history: list[ChatMessage] = field(default_factory=list)
     limits: ContextProfile | None = None
     evidence_budget: int = 0
@@ -200,10 +203,16 @@ async def chat_scopes(session, chat_id: UUID) -> tuple[list[Scope], list[PaperHe
     return scopes, headers
 
 
+def mentions_json(body) -> list[dict]:
+    return [mention.model_dump(mode="json") for mention in body.mentions]
+
+
 async def prepare(resources, chat_id: UUID, body) -> Prepared:
+    mentioned = [mention.paper_id for mention in body.mentions]
     async with resources.sessions() as session, session.begin():
         _, replay = await replayed(session, chat_id, body)
-        several = len(await pinned(session, chat_id)) > 1
+        # Mentioned papers join the chat with this question.
+        several = len({link.paper_id for link in await pinned(session, chat_id)} | {*mentioned}) > 1
     if replay is not None:
         return Prepared(replay, replay=True)
     # Open models are frozen (ARA-090), so multi-paper evidence is built for hosted models only.
@@ -225,6 +234,8 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             )
         ):
             raise HTTPException(409, "Another answer is already processing in this chat")
+        # Same transaction as the question: a refusal below adds nothing, and replays return above.
+        order = await add_mentioned(session, chat_id, mentioned)
         scopes, headers = await chat_scopes(session, chat_id)
         history = list(
             (
@@ -262,6 +273,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             model=None,
             reasoning_effort=None,
             citations=[],
+            configuration={"mentions": mentions_json(body)} if body.mentions else {},
             request_id=body.request_id,
             created_at=now(),
         )
@@ -293,6 +305,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             retrieval_profile=profile,
             reranker=reranker,
             papers=headers,
+            mentioned=sorted({order.index(paper_id) for paper_id in mentioned}),
             history=history,
             limits=limits,
             evidence_budget=sizing.allocation.evidence,
@@ -324,8 +337,14 @@ async def plan_for_answer(resources, prepared: Prepared, remembered: AnswerMemor
         memory_summary=remembered.summary[1] if remembered.summary else None,
         question=prepared.question,
         papers=prepared.papers,
-        named=named_papers(prepared.question, prepared.papers) if len(prepared.papers) > 1 else (),
+        named=named_in(prepared, prepared.question) if len(prepared.papers) > 1 else (),
     )
+
+
+def named_in(prepared: Prepared, text: str) -> list[int]:
+    """Papers the question names: its pills by paper id (ARA-096), and full titles or
+    "Surname Year" typed as plain text (ARA-088)."""
+    return sorted({*prepared.mentioned, *named_papers(text, prepared.papers)})
 
 
 def kept_papers(prepared: Prepared, plan: QueryPlan) -> list[int]:
@@ -335,7 +354,7 @@ def kept_papers(prepared: Prepared, plan: QueryPlan) -> list[int]:
         return []
     asked = f"{prepared.question}\n{plan.standalone_question}"
     targets = [index for index, _ in plan.sub_questions]
-    return sorted({*named_papers(asked, prepared.papers), *targets})
+    return sorted({*named_in(prepared, asked), *targets})
 
 
 async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory, plan, evidence):
