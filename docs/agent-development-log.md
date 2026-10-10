@@ -1379,3 +1379,15 @@ An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in it
 - No live provider calls were made.
 - Real concurrent races were not run; the skip-locked path is simulated by deleting the paper with plain SQL.
 - Clicking a saved citation to a deleted paper opens the reader's error notice rather than a page; its excerpt still reads.
+
+**Remove PDF semantics decided by the user (ARA-097).**
+- **The agent's proposal.** The ARA-097 agent asked how Remove PDF should treat chats pinned to that PDF. It proposed tombstone rows that would lock those chats.
+- **The lead's first call.** The lead first decided that chats should follow the paper's current PDF, using a migration, and told the user. That reversed the established pinned semantics.
+- **The user's correction.** "Yes, even if the PDF is removed continue older chats as is. You can do migrations if you want."
+- **Final semantics.**
+  - Chats keep their pinned PDF forever, after Replace as before.
+  - Remove PDF detaches the paper's active PDF, deleting only documents no chat pins.
+  - Pinned documents stay fully intact so their chats keep working.
+  - Garbage collection deletes a document when it is neither active nor pinned.
+  - Re-uploading the same file re-activates a kept document.
+- **Agent instructed.** The agent was told to delete any tombstone or re-pin code. No migration is expected.
