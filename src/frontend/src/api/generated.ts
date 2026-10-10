@@ -1356,10 +1356,7 @@ export interface components {
              * @default true
              */
             supports_structured_output: boolean;
-            /**
-             * Context Window
-             * @default 1050000
-             */
+            /** Context Window */
             context_window: number;
         };
         /** ModelOperationInput */

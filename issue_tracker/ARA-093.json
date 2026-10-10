@@ -24,7 +24,7 @@
     "Cached-token pricing in costs.",
     "/models and meter totals per model."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "docs/plans/retrieval-orchestration.md",
     "src/backend/app/core/config.py",
@@ -34,10 +34,23 @@
     "src/backend/app/schemas/ai.py",
     "src/backend/app/services/context.py",
     "src/backend/app/services/costs.py",
-    "src/backend/app/services/memory.py"
+    "src/backend/app/services/memory.py",
+    "src/backend/app/integrations/hosted_catalog.py",
+    "src/backend/app/rag/rerank.py",
+    "src/backend/tests/test_hosted_catalog.py",
+    "src/frontend/src/api/generated.ts",
+    "docs/api-contract.md",
+    "README.md",
+    "compose.yaml",
+    ".env.example"
   ],
-  "commits": [],
+  "commits": [
+    "8d6c695",
+    "079651a",
+    "12618ea",
+    "e44bb33"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10; revised to derive budgets from X per docs/plans/retrieval-orchestration.md. Branch feat/ara-093-hosted-catalog.",
+  "verification": "Backend full stack (isolated project ara-catalog-test): 1048 passed in 204.19 s, Ruff clean. Frontend npm run check: 583 passed; npm run build passed. Values checked against the OpenAI model pages and prompt-caching guide on 2026-10-10; cache-write prices are 1.25x derived. Tests written first (19 ImportError reds); see the 2026-10-10 ARA-093 section of the journal.",
   "updated_at": "2026-10-10"
 }

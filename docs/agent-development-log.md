@@ -1179,6 +1179,42 @@ After the first round, the lead fast-forwarded the branch to the integration bra
   - map-reduce on small windows.
 - **Tickets.** ARA-093 implements the budgets, ARA-088 multi-paper chats, and ARA-094 the evidence changes (ARA-079 folded in). No check set is possible, so these are research-backed but unmeasured on the user's papers.
 
+**No paper cap in multi-paper chats (2026-10-10).** The user expected an unlimited number of papers per chat. The 5-paper cap was the lead's own carry-over from the frozen local-model budget and was never approved. The ARA-088 agent was told to remove the cap and design for any N:
+- one filtered search across the chat's documents, with a fixed candidate pool;
+- per-paper floors while they fit, then routing by relevance, always keeping papers the question names;
+- sub-questions only for targeted papers;
+- chip and tab overflow in the UI;
+- a 30-paper test.
+The design doc is updated.
+
+## 2026-10-10 - ARA-093 hosted catalog and window budgets
+
+**Catalog.** `integrations/hosted_catalog.py` holds one `HostedModel` per GPT-5.6 model: window, native maximum output, answer reserve (policy, 4,000), prices for input, cached input, cache write and output, the 272K price-tier boundary, reasoning levels and encoding, with the model-page URL as source. `HOSTED_WINDOW`, `HOSTED_OUTPUT_TOKENS`, `PRICES`, `HOSTED_REASONING_EFFORTS` and `OUTPUT_LIMIT` were deleted, not mirrored, so tests that patched them now patch the catalog.
+
+**Verified against OpenAI (read-only fetches, 2026-10-10).**
+- Each model page (`developers.openai.com/api/docs/models/gpt-5.6-{sol,terra,luna}`) gives a 1,050,000 window, 128,000 maximum output and reasoning levels none to max.
+- Input, cached input and output per million tokens: Sol 4, 0.4, 20; Terra 2, 0.2, 12; Luna 0.2, 0.02, 1.2.
+- Prompts over 272K input tokens bill the whole request at 2x input and 1.5x output.
+- The prompt-caching guide says GPT-5.6 cache writes bill at 1.25x the uncached rate, that reads and writes are subsets of `input_tokens`, and that usage reports `cached_tokens` and `cache_write_tokens` in `input_tokens_details`.
+- The cache-write prices are derived (1.25x), not listed on the pages. The pages give max input as 922,000, which this app never approaches. The reasoning headroom per effort is the app's own policy, not an OpenAI figure.
+
+**Budget.** W = min(window - answer reserve - reasoning headroom - 512 safety, price-tier boundary); H = min(32K, 25% of W); the shares of H are summary 15, recent turns 70 and recall 15 percent, and evidence keeps the rest. The planner reads at most a quarter of H (capped at its existing 1,500). The compaction trigger and summary target already read the recent and summary shares, so they follow H. `HOSTED_WORKING_CONTEXT_TOKENS` was removed from settings, Compose, `.env.example` and the README. W is 272,000 for every real model and effort. For synthetic entries: 16,384 at low effort gives W 10,848 and H 2,712; 128,000 at none gives 123,488 and 30,872; 1,050,000 gives 272,000 and 32,000. The share percentages and the planner quarter are my choices within the design; they are not measured.
+
+**Cached-token pricing.** `services/costs.py` splits `input_tokens` into uncached, cached and cache-write at the catalog rates. An implausible count (negative, non-integer, or reads plus writes above the input) is ignored, so a call is never priced cheaper than it was. The planner's recorded usage now keeps `input_tokens_details`. The daily-ledger reservation stays an uncached upper bound, because cache hits are unknown before the call.
+
+**Order and evidence (TDD).**
+- The new tests in `tests/test_hosted_catalog.py` were written first. The first run failed with 19 `ImportError: cannot import name 'hosted_catalog'` errors; the other 8 tests passed on that run (they exercise code that already existed, or only needed the module they import lazily).
+- After the catalog and budgets were in, a parameter in my own test was wrong (history at 128K with the max effort is a quarter of W, not 32K); it failed with `assert 26776 == 32000` and I corrected the test.
+- The cache-write test failed first with `Decimal('0.00128') == Decimal('0.00138')`, then passed.
+- The compose test for the removed setting failed with `'HOSTED_WORKING_CONTEXT_TOKENS' unexpectedly found` before the setting was deleted.
+- Tests that assumed the 64K budget failed for that reason: `test_ai.py` (over-budget prompt), `test_context_registry.py` (profile, `model_limits`, configuration, hosted prompt, the removed setting), `test_ollama_llm.py` (`model_limits`), `test_provider_messages.py` (oversized list), `test_context_assembly.py` (`allocate` now takes H), `test_chat_reservation_integration.py` and `test_chat_usage_integration.py` (planner usage keeps its cache counts), and the ContextMeter frontend test. `test_local_models_contracts.py` needed `context_window` because the field is now required.
+
+**Meter and contract.** The meter already showed the budget as the total with the native window as secondary text, so only its fixtures changed. `Model.context_window` lost its 1,050,000 default and is required; `/models` reports the catalog window. `generated.ts` was regenerated with open models on, so it differs by that one field.
+
+**Verification.** Backend `test-stack.py test` in isolated project `ara-catalog-test`: 1048 passed in 204.19 s. Ruff check clean. Frontend `npm run check`: 583 passed; `npm run build` passed.
+
+**Not done or unverified.** Evidence selection (16 passages) is unchanged for ARA-094. OpenAI's tier multipliers are recorded in the catalog comment but not modelled in cost, because no request exceeds 272K. The cache-write rate is applied to the `cache_write_tokens` count that the SDK model reports; I have not seen a live response with a non-zero value.
+
 **ARA-088 implemented: chats over several library papers (2026-10-10).** An Opus agent built it on `feat/ara-088-multi-paper-chats`, testing only in its own `ara-multi-test` Compose project. The user's `ara` stack was not touched. ARA-093 ran in parallel; this branch changed `services/context.py` and `services/memory.py` only where noted below.
 
 **Decisions:**

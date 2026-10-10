@@ -3,15 +3,17 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from app.integrations.hosted_catalog import hosted_model
 from app.integrations.tokens import TiktokenCounter
 
-HOSTED_WINDOW = 1_050_000
-HOSTED_OUTPUT_TOKENS = 4000
-# tiktoken.encoding_for_model("gpt-5.6-luna") resolves to o200k_base, and OpenAI's
-# token-count endpoint matched it exactly (ARA-070 S1).
-HOSTED_ENCODING = "o200k_base"
 LOCAL_ENCODING = "o200k_base"
 SAFETY_TOKENS = 512
+# Conversation history (summary, recent turns, recalled turns) is capped at 32K tokens or a
+# quarter of the working budget W, whichever is smaller; older turns are summarised. Small
+# windows therefore summarise sooner and large ones keep up to 32K verbatim, in step with long
+# prompts degrading answers (docs/plans/retrieval-orchestration.md, "Budget").
+HISTORY_TARGET_TOKENS = 32_000
+HISTORY_SHARE_PERCENT = 25
 # Hosted reasoning tokens count against max_output_tokens, so an intermediate call that asks
 # for a short answer at a high effort needs room above it or it ends incomplete.
 HOSTED_REASONING_HEADROOM = {
@@ -39,6 +41,15 @@ class ContextProfile:
     input_budget: int
     counter: TiktokenCounter
 
+    @property
+    def history_budget(self) -> int:
+        """H = min(32K, 25% of W); the evidence ceiling is W - F - H."""
+        return history_budget(self.input_budget)
+
+
+def history_budget(input_budget: int) -> int:
+    return min(HISTORY_TARGET_TOKENS, input_budget * HISTORY_SHARE_PERCENT // 100)
+
 
 def local_thinks(effort: str, thinking: dict | None) -> bool:
     """Whether a local request may think; `default` follows the model's verified default."""
@@ -47,19 +58,22 @@ def local_thinks(effort: str, thinking: dict | None) -> bool:
     return effort != "none"
 
 
-def hosted_profile(settings, model: str) -> ContextProfile:
+def hosted_profile(model: str, effort: str = "none") -> ContextProfile:
+    """W = min(window - answer reserve - reasoning reserve - safety, price-tier cap)."""
+    entry = hosted_model(model)
+    if entry is None:
+        raise KeyError(model)
+    reserves = entry.answer_reserve + hosted_reasoning_headroom(effort) + SAFETY_TOKENS
+    working = entry.window - reserves
     return ContextProfile(
         model=model,
         provider="openai",
-        window=HOSTED_WINDOW,
-        max_output=HOSTED_OUTPUT_TOKENS,
+        window=entry.window,
+        max_output=entry.answer_reserve,
         thinking_allowance=0,
         safety=SAFETY_TOKENS,
-        input_budget=min(
-            HOSTED_WINDOW - HOSTED_OUTPUT_TOKENS - SAFETY_TOKENS,
-            settings.hosted_working_context_tokens,
-        ),
-        counter=TiktokenCounter(HOSTED_ENCODING),
+        input_budget=max(0, min(working, entry.price_tier_tokens)),
+        counter=TiktokenCounter(entry.encoding),
     )
 
 
@@ -90,4 +104,4 @@ def context_profile(
 
     if local_spec(model):
         return local_profile(resources.settings, model, effort, thinking=thinking)
-    return hosted_profile(resources.settings, model)
+    return hosted_profile(model, effort)
