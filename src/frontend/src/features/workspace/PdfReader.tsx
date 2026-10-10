@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import type { PdfControls } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
-import { PaperHeader } from './PaperHeader'
+import { PaperHeader, PdfHeading } from './PaperHeader'
 import { ReaderGate } from './ReaderGate'
 import { useWorkspace } from './workspace-context'
 
@@ -30,9 +30,13 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
   if (!documentId) return <ReaderGate paper={paper} />
   const highlight = sourceRequest?.citation.document_id === documentId ? sourceRequest : null
   const outcome = highlight ? highlightOutcome : null
+  const current = documentId === paper.active_document_id
+  // Above page 1, scrolling with it: the paper header, then the PDF's heading. An earlier version keeps its banner
+  // above the viewer as its only label.
+  const header = <><PaperHeader paper={paper} />{current && <PdfHeading fileName={paper.file_name} className="px-4 pt-5" />}</>
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {documentId !== paper.active_document_id && (
+      {!current && (
         <div className="flex items-center gap-3 border-b bg-muted/50 px-4 py-2 text-sm">
           <History className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <p className="min-w-0 flex-1">Showing an earlier PDF version</p>
@@ -51,7 +55,7 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
       <div className="min-h-0 flex-1">
         <ReaderErrorBoundary key={documentId}>
           {/* Until pdf.js has loaded, the header already shows above page-shaped placeholders. */}
-          <Suspense fallback={<div className="h-full overflow-hidden bg-muted"><PaperHeader paper={paper} /><PagesSkeleton /></div>}>
+          <Suspense fallback={<div className="h-full overflow-hidden bg-muted">{header}<PagesSkeleton /></div>}>
             <PdfViewer
               key={documentId}
               documentId={documentId}
@@ -61,7 +65,7 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
               onDocumentLoad={controls.onDocumentLoad}
               onPageChange={controls.onPageChange}
               onHighlight={reportHighlight}
-              header={<PaperHeader paper={paper} />}
+              header={header}
             />
           </Suspense>
         </ReaderErrorBoundary>

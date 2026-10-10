@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { ClampedText } from '@/components/paper/ClampedText'
 import { PaperCitation } from '@/components/paper/PaperCitation'
 import { doiLink, paperName } from '@/features/research/paper-format'
+import { cn } from '@/lib/utils'
 import { EditDetailsDialog } from './BibliographyEditor'
 import { PaperSourcesDialog } from './PaperSourcesDialog'
 
@@ -30,6 +31,19 @@ function Links({ paper }: { paper: Paper }) {
         <li key={link.key}><a href={link.href} target="_blank" rel="noreferrer" className={linkClass}>{link.label}<ExternalLink aria-hidden="true" className="size-3.5 text-muted-foreground" />{newTab}</a></li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * The "PDF" section heading under the paper header, in the Abstract heading's style (ARA-101 follow-up). It follows
+ * the header above the PDF and above the ways to get one, so both read header, Abstract, PDF. The file's name trails
+ * in muted text.
+ */
+export function PdfHeading({ fileName, className }: { fileName?: string | null; className?: string }) {
+  return (
+    <h3 className={cn('flex min-w-0 items-baseline gap-2 text-sm font-medium', className)}>
+      PDF{fileName && <>{' '}<span className="min-w-0 truncate font-normal text-muted-foreground" title={fileName}>{fileName}</span></>}
+    </h3>
   )
 }
 
