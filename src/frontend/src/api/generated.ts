@@ -169,11 +169,95 @@ export interface paths {
         get: operations["detail_api_v1_papers__paper_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Paper
+         * @description Delete the paper and what hangs off it (services/deletion.py); a repeat answers 404.
+         */
+        delete: operations["delete_paper_api_v1_papers__paper_id__delete"];
         options?: never;
         head?: never;
         /** Edit */
         patch: operations["edit_api_v1_papers__paper_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/metadata-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Look Up Again
+         * @description Look the paper up again in the metadata source; edited fields stay (ARA-095).
+         */
+        post: operations["look_up_again_api_v1_papers__paper_id__metadata_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Deletion
+         * @description What deleting the paper removes; nothing changes (ARA-095).
+         */
+        get: operations["preview_deletion_api_v1_papers__paper_id__deletion_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Deletions
+         * @description The combined preview for several papers; unknown IDs are listed as missing.
+         */
+        post: operations["preview_deletions_api_v1_papers_deletion_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Several
+         * @description Delete several papers in one transaction; papers already gone are listed as missing.
+         */
+        post: operations["delete_several_api_v1_papers_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/papers/{paper_id}/fulltext": {
@@ -857,6 +941,16 @@ export interface components {
             /** Content */
             content: string;
         };
+        /** ChatLink */
+        ChatLink: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+        };
         /** ChatMemoryOut */
         ChatMemoryOut: {
             /** Version */
@@ -986,6 +1080,35 @@ export interface components {
              * @default low
              */
             reasoning_effort: string;
+        };
+        /** DeletedPapers */
+        DeletedPapers: {
+            /** Deleted */
+            deleted: string[];
+            /** Missing */
+            missing: string[];
+        };
+        /**
+         * DeletionPreview
+         * @description What deleting these papers removes; reading it changes nothing (ARA-095).
+         */
+        DeletionPreview: {
+            /** Papers */
+            papers: components["schemas"]["PaperLink"][];
+            /** Missing */
+            missing: string[];
+            /** Pdfs */
+            pdfs: number;
+            /** Summaries */
+            summaries: number;
+            /** Deleted Chats */
+            deleted_chats: components["schemas"]["ChatLink"][];
+            /** Updated Chats */
+            updated_chats: components["schemas"]["ChatLink"][];
+            /** Active Jobs */
+            active_jobs: number;
+            /** Answering */
+            answering: boolean;
         };
         /** EmbeddingProfileOut */
         EmbeddingProfileOut: {
@@ -1410,6 +1533,14 @@ export interface components {
             upload_match?: components["schemas"]["UploadMatch"] | null;
             pdf_doi_owner?: components["schemas"]["PaperLink"] | null;
         };
+        /**
+         * PaperIds
+         * @description Papers to preview or delete together (ARA-095).
+         */
+        PaperIds: {
+            /** Paper Ids */
+            paper_ids: string[];
+        };
         /** PaperLink */
         PaperLink: {
             /**
@@ -1437,6 +1568,8 @@ export interface components {
             abstract?: string | null;
             /** Doi */
             doi?: string | null;
+            /** Venue */
+            venue?: string | null;
         };
         /** PaperRetrieval */
         PaperRetrieval: {
@@ -2245,6 +2378,35 @@ export interface operations {
             };
         };
     };
+    delete_paper_api_v1_papers__paper_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     edit_api_v1_papers__paper_id__patch: {
         parameters: {
             query?: never;
@@ -2267,6 +2429,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    look_up_again_api_v1_papers__paper_id__metadata_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_deletion_api_v1_papers__paper_id__deletion_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_deletions_api_v1_papers_deletion_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperIds"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_several_api_v1_papers_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaperIds"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedPapers"];
                 };
             };
             /** @description Validation Error */
