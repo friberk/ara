@@ -1759,6 +1759,8 @@ Deviations: (1) the popover's accessible name is "Chat history for this paper", 
 - **Not verified:** the Playwright specs (updated: editor pills are groups, plus an @-button journey); real touch devices; IME; screen reader output.
 
 **Phase 2 (header, picker, deletion).** After ARA-097 merged, the workspace header got `PaperPdfStatus`: no icon when the PDF is ready, the state icon otherwise, and automatic retrieval shows as the preparing state (the old "Getting PDF" text is gone). Red: `Unable to find role="img" and name "Preparing PDF…"`. After ARA-096 merged, the @ picker rows use `PdfStateIcon` in place of `FileText` and the badge. A blocked row names its reason ("No PDF yet. Add one to ask about this paper.") in its option name and its icon is decorative; ready rows keep a labelled icon, because an existing test pins a row's text to the title alone. Red: `toHaveAccessibleName` failed and the badge was still present. `DocumentStatusBadge`, `document-state.ts`, `PaperStatusBadge` and their test case are deleted; a grep finds no remaining use. Visual round of the open picker against the real-data copy on :8011, read-only: light, dark and 390px, no overflow, state icons match the sidebar; blocked rows are dimmed as disabled options.
+
+
 **ARA-101 follow-up (2026-10-10): an Abstract heading and a quieter search index.**
 - **The request.** After ARA-101 merged (`58ae56b`), the user asked: "Can we have a heading/title for abstract?" While at it, the lead asked to tidy the ⓘ dialog's search index. It had a middle dot ("64 passages · 32 sections"), the model id shown twice, and a green "Ready" pill. The work went on `feat/ara-101b-abstract-heading` from `58ae56b`.
 - **What changed.**
@@ -1789,6 +1791,8 @@ Deviations: (1) the popover's accessible name is "Chat history for this paper", 
   - **Red, then green.** The two new tests for the heading above the PDF and above the gate failed with `Unable to find … heading … /^PDF/` and `… "PDF"`. The test that an earlier version gets no extra heading passed at its first run, since nothing had added one yet. The citation-jump test, extended to pass the heading with the header, also passed at once: `PdfViewer` renders whatever header it is given.
   - **Verification.** `npm run check` passed with 698 tests in 92 files, and `npm run build` passed.
   - **Visual round.** It was read-only against :8011 at desktop light and 390px. The reader's headings read title, "Abstract", "PDF sec18-han.pdf" above a PDF, and title, "Abstract", "PDF" above the no-PDF states. Nothing overflows. A citation jump to page 7 still marked the passage in view, and scrolling to the top showed page 1.
+
+
 - **Merge, the model name and a reload bug, the same day.**
   - **Merge.** `feat/ux-feedback-round` (`ba62a2a`) was merged in (`eb51d0b`); only the journal conflicted.
   - **Model name.** The index sentence now breaks before the model name, not inside it ("text-embedding-" / "3-large"). The name is a `whitespace-nowrap` span (`a75bdca`). The test failed first with `Unable to find … "OpenAI text-embedding-3-large"`, then passed.
