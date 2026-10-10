@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Paper } from '@/api/types'
-import { Composer } from '@/components/composer/Composer'
+import { Composer, type Mention } from '@/components/composer/Composer'
+import { mentionName } from '@/lib/paper-names'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
 import { PaperPicker } from '@/components/composer/PaperPicker'
@@ -31,8 +32,8 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
 }) {
   const { settings } = useGenerationSettings()
   const [picking, setPicking] = useState(false)
-  // Opened by typing @: the cursor returns to the question afterwards.
-  const [refocus, setRefocus] = useState<(() => void) | undefined>(undefined)
+  // Opened by typing @: a paper added then is mentioned in the question, and the cursor returns to it.
+  const [mention, setMention] = useState<Mention | undefined>(undefined)
   const several = (papers?.selected.length ?? 1) > 1
   return (
     <Composer
@@ -48,10 +49,20 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
       busy={busy}
       onStop={onStop}
       header={papers?.header}
-      onMention={papers ? (back) => { setRefocus(() => back); setPicking(true) } : undefined}
+      onMention={papers ? (handle) => { setMention(handle); setPicking(true) } : undefined}
       leading={
         <>
-          {papers && <PaperPicker label="Add or remove papers" selected={papers.selected} onSelect={papers.onSelect} open={picking} onOpenChange={setPicking} disabled={gate.locked} refocus={refocus && (() => { refocus(); setRefocus(undefined) })} />}
+          {papers && (
+            <PaperPicker
+              label="Add or remove papers"
+              selected={papers.selected}
+              onSelect={(paper) => { if (mention && !papers.selected.includes(paper.id)) mention.insert(`@${mentionName(paper)} `); papers.onSelect(paper) }}
+              open={picking}
+              onOpenChange={setPicking}
+              disabled={gate.locked}
+              refocus={mention && (() => { mention.refocus(); setMention(undefined) })}
+            />
+          )}
           {chatId && <ContextMeter chatId={chatId} settings={settings} />}
         </>
       }

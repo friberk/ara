@@ -5,7 +5,8 @@ import { toast } from 'sonner'
 import type { Paper, Provider } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Composer } from '@/components/composer/Composer'
+import { Composer, type Mention } from '@/components/composer/Composer'
+import { mentionName } from '@/lib/paper-names'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
 import { PaperChips, PaperPicker } from '@/components/composer/PaperPicker'
 import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
@@ -34,8 +35,8 @@ export default function HomePage() {
   const [papers, setPapers] = useState<Paper[]>([])
   const picker = useRef<HTMLInputElement>(null)
   const [picking, setPicking] = useState(false)
-  // Opened by typing @: the cursor returns to the composer afterwards.
-  const [refocus, setRefocus] = useState<(() => void) | undefined>(undefined)
+  // Opened by typing @: a paper chosen then is mentioned in the question, and the cursor returns to it.
+  const [mention, setMention] = useState<Mention | undefined>(undefined)
   // A PDF chosen or dropped here uploads at once and opens its paper, where the same steps continue.
   const uploads = useUploads({
     onAccepted: (accepted) => {
@@ -93,7 +94,7 @@ export default function HomePage() {
           maxLength={asking ? 8000 : 300}
           submitDisabled={asking ? createChat.isPending || !generation.usableFor('chat') : false}
           header={asking && <PaperChips papers={papers} onRemove={(item) => setPapers((current) => current.filter((chosen) => chosen.id !== item.id))} />}
-          onMention={(back) => { setRefocus(() => back); setPicking(true) }}
+          onMention={(handle) => { setMention(handle); setPicking(true) }}
           leading={
             <>
               <DropdownMenu>
@@ -104,7 +105,13 @@ export default function HomePage() {
                   <DropdownMenuItem onSelect={() => picker.current?.click()}><FileUp aria-hidden="true" />Upload a PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <PaperPicker selected={papers.map((item) => item.id)} onSelect={toggle} open={picking} onOpenChange={setPicking} refocus={refocus && (() => { refocus(); setRefocus(undefined) })} />
+              <PaperPicker
+                selected={papers.map((item) => item.id)}
+                onSelect={(paper) => { if (mention && asking && !papers.some((item) => item.id === paper.id)) mention.insert(`@${mentionName(paper)} `); toggle(paper) }}
+                open={picking}
+                onOpenChange={setPicking}
+                refocus={mention && (() => { mention.refocus(); setMention(undefined) })}
+              />
               {!asking && <ProviderSwitcher value={provider} onChange={setProvider} />}
             </>
           }

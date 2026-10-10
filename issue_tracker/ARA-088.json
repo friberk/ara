@@ -31,7 +31,7 @@
     "Given five papers, a long conversation and a comparative question, when every planner, sub-question and synthesis call is assembled, then none raises CONTEXT_LIMIT. Paper summaries and headers enter prompts only as bounded short headers, never as full summaries.",
     "Given the design in docs/plans/retrieval-orchestration.md, when multi-paper evidence is allocated, then each paper in scope gets its floor while floors fit, papers beyond what fits are routed by relevance, and each rule cites its source in code comments or the design doc.",
     "Given more papers than floors fit, when evidence is allocated, then the most relevant papers by their best reranked score answer, and the others add nothing to that turn, with no padding.",
-    "Given a question that names an included paper by its title or as its chip names it (\"Surname Year\"), when evidence is allocated, then that paper is always kept.",
+    "Given a question that names an included paper by its title, as its chip names it (\"Surname Year\"), or with an @ mention the composer inserts when the paper is added by typing @, when evidence is allocated, then that paper is always kept.",
     "Given a chat over thirty papers, when a question is admitted and answered, then admission and search run the same number of database statements as for three papers, the candidate pool has a fixed size, every model call stays within its budget, routing selects by relevance, and named papers are kept."
   ],
   "test_cases": [
@@ -96,7 +96,8 @@
     "docs/api-contract.md",
     "docs/plans/retrieval-orchestration.md",
     "README.md",
-    "src/backend/tests/test_multi_paper_scale_integration.py"
+    "src/backend/tests/test_multi_paper_scale_integration.py",
+    "src/backend/tests/test_named_papers.py"
   ],
   "commits": [
     "44a1bd8",
@@ -110,9 +111,11 @@
     "e8fe675",
     "e1d5f74",
     "7bba8f6",
-    "9f6a765"
+    "9f6a765",
+    "8fde34f",
+    "43aa0c7"
   ],
   "pull_requests": [],
-  "verification": "Implemented 2026-10-10 on feat/ara-088-multi-paper-chats in the isolated ara-multi-test project, then merged with ARA-093 (feat/ux-feedback-round 874db2a) and reworked for any number of papers. Final: python3 scripts/test-stack.py test --project-name ara-multi-test: Ruff clean, 1080 passed in 218.3 s. Frontend npm run check: 599 tests in 77 files; npm run build passed (existing chunk-size warning). Fixture unittests: 26 OK. Evidence per criterion: picker without a limit, collapsing chips, removal and rerouting, canonical URL and listing under every paper (multi-paper.test.tsx, App.test.tsx, PaperPicker.test.tsx, test_chat_papers_integration.py); floors while they fit, relevance routing, named papers kept (test_multi_paper_packing.py, test_multi_paper_budget_integration.py, test_multi_paper_scale_integration.py); 30 papers run the same statements as 3 for admission and retrieval, within budget (test_multi_paper_scale_integration.py); comparative sub-questions capped at five, bounded planner list (test_query_planner.py, test_multi_paper_answers_integration.py); foreign citations rejected; migration backfill and downgrade (test_chat_papers_migration.py); one embedding model with bounded filtered searches (test_retrievers_integration.py); local models refused with the flag on; paper-named citation chips and reader tabs (multi-paper.test.tsx, reader-tabs.test.tsx). Not run: the Playwright journey e2e/multi-paper.spec.ts, live OpenAI calls and a visual browser check. Not measured on the user's papers, as the design says.",
+  "verification": "Implemented 2026-10-10 on feat/ara-088-multi-paper-chats in the isolated ara-multi-test project, then merged with ARA-093 (feat/ux-feedback-round 874db2a) and reworked for any number of papers. Final: python3 scripts/test-stack.py test --project-name ara-multi-test: Ruff clean, 1083 passed in 220.1 s. Frontend npm run check: 599 tests in 77 files; npm run build passed (existing chunk-size warning). Fixture unittests: 26 OK. Evidence per criterion: picker without a limit, collapsing chips, removal and rerouting, canonical URL and listing under every paper (multi-paper.test.tsx, App.test.tsx, PaperPicker.test.tsx, test_chat_papers_integration.py); floors while they fit, relevance routing, named papers kept (test_multi_paper_packing.py, test_multi_paper_budget_integration.py, test_multi_paper_scale_integration.py); 30 papers run the same statements as 3 for admission and retrieval, within budget (test_multi_paper_scale_integration.py); comparative sub-questions capped at five, bounded planner list (test_query_planner.py, test_multi_paper_answers_integration.py); foreign citations rejected; migration backfill and downgrade (test_chat_papers_migration.py); one embedding model with bounded filtered searches (test_retrievers_integration.py); local models refused with the flag on; paper-named citation chips and reader tabs (multi-paper.test.tsx, reader-tabs.test.tsx). Not run: the Playwright journey e2e/multi-paper.spec.ts, live OpenAI calls and a visual browser check. Not measured on the user's papers, as the design says.",
   "updated_at": "2026-10-10"
 }
