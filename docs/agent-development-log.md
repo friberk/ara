@@ -1848,3 +1848,22 @@ Deviations: (1) the popover's accessible name is "Chat history for this paper", 
 - **Card design.** Both sections have the same small medium-weight heading. Context is a row with "12.4k of 272k tokens" muted on the left and the percentage as its own medium-weight value on the right, then a thin meter using the existing Progress component, red from 90% like the ring. Cost mirrors it: a Total row, then the breakdown rows. A local model reads "Local model, no charge". The reason for the row form is that it matches the breakdown rows, so the card has one rhythm. The ring's aria-label is unchanged.
 - **Error corrected on the way.** Removing `generation-meta.tsx` before its export line made the whole standalone test file fail to import; a first `sed -i` also failed on macOS (BSD sed needs `-i ''`). Two ConversationPane tests then failed because they asserted the old historical effort labels, and were updated to assert those labels are gone.
 - **Verification.** `npm run check`: 715 passed in 90 files. `npm run build` passed. Screenshots are listed in the ticket.
+
+### 2026-10-10 — Lead: UX feedback round merged into main (a58154a)
+
+The user asked: "Can we merge what we have to main? Record the branches for archival purposes as well." `feat/ux-feedback-round` (`bcb0f34`) was merged into `main` as `a58154a` (no-ff; `main` was the integration base `bef2ee6`, so there were no conflicts). It holds ARA-083 to ARA-104 and ARA-106. ARA-105 (the capped startup retry for failed section summaries) was still in progress and stays on its branch until it is verified.
+
+**Verification before the merge.**
+
+- Backend: 1216 passed and Ruff clean at `fe96720`. Every later commit changed only the frontend or docs.
+- Frontend: `npm run check` 719/719 and `npm run build` at the merged tip.
+- Contract: `generated.ts` matches the production, flag-on `create_app(Settings()).openapi()` exactly. A comparison against the test copy's development, flag-off API differed only by the dev-only `/jobs/canary` route and the hidden open-model routes, as expected.
+- Not run: the Playwright browser specs. Several agents updated them, but they ran nowhere; they are the next verification step.
+
+**Dev stack.**
+
+- Before the merge, a read-only `pg_dump -Fc` of the dev database (Alembic `0007_feature_merge`, 6 papers, 3 PDFs) went to the git-ignored `docs/evidence/generated/backups/`. `pg_restore -l` lists data for 26 tables.
+- After the merge: `docker compose stop ollama model-worker` (open models are now behind a Compose profile and the flag, ARA-090; the weights volume is untouched), `docker compose run --rm migrate` (now at `0011_section_summaries`), `docker compose exec frontend npm ci` (TipTap), `docker compose up -d`, then a frontend restart.
+- Readiness reports ready. A browser smoke test of the dev app found no console errors, no Activity link, and the paper header, PDF bar and History button present. The one-time metadata refresh started for the `paper.dvi` upload.
+
+The branches recorded for archival are listed in AGENTS.md. Their worktrees under `.superpowers/worktrees/` remain until the user asks to remove them.
