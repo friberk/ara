@@ -1,9 +1,8 @@
 import { screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/render'
 import { mockApi } from '@/test/fetch-routes'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { PaperChips, PaperContextChip, PaperPicker } from './PaperPicker'
+import { PaperPicker } from './PaperPicker'
 
 const paper = (id: string, title: string, document_status: string) => ({ id, title, authors: ['Ada Researcher'], year: 2024, abstract: null, doi: null, sources: [], document_status, active_document_id: document_status === 'ready' ? `d-${id}` : null, metadata_provenance: {} })
 afterEach(() => vi.unstubAllGlobals())
@@ -21,16 +20,7 @@ test('Given library papers, Then only papers with a processed PDF can be chosen 
   expect(screen.queryByRole('option', { name: /Ready paper/ })).not.toBeInTheDocument()
 })
 
-test('Given a chosen paper, Then its chip names it and can be removed', async () => {
-  const onRemove = vi.fn()
-  const user = userEvent.setup()
-  renderWithProviders(<PaperContextChip paper={{ title: 'Ready paper' }} onRemove={onRemove} />)
-  expect(screen.getByText('Ready paper')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Stop asking about this paper' }))
-  expect(onRemove).toHaveBeenCalledTimes(1)
-})
-
-test('Given papers already chosen, Then they show as added, choosing one again removes it, and there is no limit on how many', async () => {
+test('Given papers already mentioned, Then they show as checked, choosing one again hands it back to mention again, and there is no limit on how many', async () => {
   const items = [1, 2, 3, 4, 5, 6].map((n) => paper(`p${n}`, `Paper ${n}`, 'ready'))
   mockApi({ 'GET /papers': { items } })
   const onSelect = vi.fn()
@@ -50,19 +40,6 @@ test('Given papers already chosen, Then they show as added, choosing one again r
   expect(sixth).not.toHaveAttribute('aria-disabled', 'true')
   await user.click(sixth)
   expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p6' }))
-})
-
-test('Given many chosen papers, Then a few show as chips and the rest collapse into a list where any can be removed', async () => {
-  const chosen = [1, 2, 3, 4, 5].map((n) => ({ id: `p${n}`, title: `Paper ${n}` }))
-  const onRemove = vi.fn()
-  const user = userEvent.setup()
-  renderWithProviders(<TooltipProvider><PaperChips papers={chosen} onRemove={onRemove} /></TooltipProvider>)
-  for (const title of ['Paper 1', 'Paper 2', 'Paper 3']) expect(screen.getByText(title)).toBeVisible()
-  expect(screen.queryByText('Paper 5')).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '+2 more' }))
-  const list = await screen.findByRole('list', { name: 'Chosen papers' })
-  await user.click(within(list).getByRole('button', { name: 'Remove Paper 5' }))
-  expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ id: 'p5' }))
 })
 
 test('Given library papers, Then each row gives a short citation under its title, or its PDF status, and search matches authors, year and venue', async () => {
