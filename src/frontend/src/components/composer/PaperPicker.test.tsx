@@ -14,7 +14,10 @@ test('Given library papers, Then only papers with a processed PDF can be chosen 
   await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
   const blocked = await screen.findByRole('option', { name: /Paper without PDF/ })
   expect(blocked).toHaveAttribute('aria-disabled', 'true')
-  expect(blocked).toHaveTextContent('PDF needed')
+  expect(blocked).toHaveAccessibleName(/No PDF yet\. Add one to ask about this paper\./)
+  expect(blocked).not.toHaveTextContent('PDF needed')
+  expect(within(blocked).queryByText(/PDF needed/)).not.toBeInTheDocument()
+  expect(within(screen.getByRole('option', { name: /Ready paper/ })).getByRole('img', { name: 'PDF attached' })).toBeInTheDocument()
   await user.click(screen.getByRole('option', { name: /Ready paper/ }))
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
   expect(screen.queryByRole('option', { name: /Ready paper/ })).not.toBeInTheDocument()
@@ -54,10 +57,11 @@ test('Given library papers, Then each row gives a short citation under its title
   expect(screen.getByRole('option', { name: /Dense Passage Retrieval/ })).toHaveTextContent('Karpukhin & Oguz (2020), EMNLP')
   const untitled = screen.getByRole('option', { name: /Untitled notes/ })
   expect(untitled.textContent).toBe('Untitled notes')
-  // A row that cannot be chosen keeps its citation and shows its status in a badge.
+  // A row that cannot be chosen keeps its citation and shows its PDF state as an icon, not a badge.
   const waitingRow = screen.getByRole('option', { name: /Paper being read/ })
   expect(waitingRow).toHaveTextContent('Researcher (2024)')
-  expect(within(waitingRow).getByText('Preparing PDF').closest('[data-slot="badge"]')).not.toBeNull()
+  expect(waitingRow.querySelector('[data-slot="badge"]')).toBeNull()
+  expect(waitingRow).toHaveAccessibleName(/Preparing PDF…/)
   expect(screen.queryByText(/undefined|null|Ready to ask/)).not.toBeInTheDocument()
   expect(document.body.textContent).not.toContain('·')
 

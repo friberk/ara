@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { AtSign, FileText } from 'lucide-react'
+import { AtSign } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DocumentStatusBadge } from '@/components/feedback/DocumentStatusBadge'
 import { PaperCitation } from '@/components/paper/PaperCitation'
+import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
+import { pdfStateLabels } from '@/components/paper/pdf-state'
 import { usePapers } from '@/hooks/queries/papers'
 
 /**
  * Lists library papers; only papers with a processed PDF can be asked about. Each row gives the title and a short
- * citation (authors, year, venue), or the PDF's status while it is not ready. Papers in `selected` are checked the stock
+ * citation (authors, year, venue) beside an icon for the PDF's state. Papers in `selected` are checked the stock
  * cmdk way, and choosing one again hands it back to onSelect to remove. Search matches the title, author surnames, year
  * and venue. A conversation may include any number of papers (ARA-088).
  */
@@ -27,15 +28,17 @@ export function PaperPickerList({ onSelect, selected = [], placeholder = 'Find a
           {items.map((paper) => {
             const ready = paper.document_status === 'ready'
             const added = selected.includes(paper.id)
+            const blocked = !added && !ready
             const keywords = [...paper.authors, paper.year ? String(paper.year) : '', paper.venue ?? ''].filter(Boolean)
             return (
-              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} keywords={keywords} disabled={!added && !ready} data-checked={added} aria-checked={added} onSelect={() => onSelect(paper)} className="items-start">
-                <FileText aria-hidden="true" className="mt-0.5" />
+              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} keywords={keywords} disabled={blocked} data-checked={added} aria-checked={added} onSelect={() => onSelect(paper)} className="items-start">
+                {/* A blocked row names why in its option name; the icon is then decorative so the state is not read twice. */}
+                <PdfStateIcon state={paper.document_status} focusable={false} decorative={blocked} className="mt-0.5" />
                 <div className="grid min-w-0 flex-1 gap-0.5">
                   <span className="line-clamp-2 text-sm">{paper.title ?? 'Untitled paper'}</span>
                   <PaperCitation paper={paper} />
                 </div>
-                {!ready && <DocumentStatusBadge state={paper.document_status} className="ml-auto shrink-0" />}
+                {blocked && <span className="sr-only">{pdfStateLabels[paper.document_status]}. {paper.document_status === 'processing' ? 'You can ask once it is ready.' : 'Add one to ask about this paper.'}</span>}
               </CommandItem>
             )
           })}
