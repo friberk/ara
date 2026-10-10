@@ -10,20 +10,19 @@ async function saved(request: APIRequestContext, id: string) {
   return (await response.json()).id as string
 }
 const firstPage = (page: Page) => page.getByRole('group', { name: 'Page 1', exact: true }).locator('canvas')
-const reader = (page: Page) => page.getByRole('tabpanel', { name: 'PDF', exact: true })
+// The reader has no PDF/Details tabs any more (ARA-097); on desktop it is always beside the conversation.
+const reader = (page: Page) => page.getByRole('region', { name: 'PDF reader', exact: true })
 
 test('Given stored OpenAlex copies, When saved, Then real PDF pages open and a summary follows without a click', async ({ page, request }) => {
   for (const id of ['W19001', 's2-fulltext-doi']) {
     const paperId = await saved(request, id)
     await page.goto(`/papers/${paperId}`)
-    await page.getByRole('tab', { name: 'PDF', exact: true }).click()
     await expect(firstPage(page)).toBeVisible({ timeout: 45_000 })
     if (id === 'W19001') {
       const summary = page.getByRole('article', { name: 'Paper summary' })
       await expect(summary.getByRole('button', { name: 'Version 1 of 1', exact: true })).toBeVisible({ timeout: 45_000 })
     }
     await page.reload()
-    await page.getByRole('tab', { name: 'PDF', exact: true }).click()
     await expect(firstPage(page)).toBeVisible()
     const status = await (await request.get(`${api}/papers/${paperId}/fulltext`)).json()
     expect(status.acquisition).toMatchObject({ provider: 'openalex', source: 'content' })
@@ -33,7 +32,6 @@ test('Given stored OpenAlex copies, When saved, Then real PDF pages open and a s
 test('Given OpenAlex limits requests, When its wait has passed, Then a deliberate retry downloads the PDF', async ({ page, request }) => {
   const paperId = await saved(request, 'W19003')
   await page.goto(`/papers/${paperId}`)
-  await page.getByRole('tab', { name: 'PDF', exact: true }).click()
   await expect(reader(page).getByText('OpenAlex is limiting requests', { exact: true })).toBeVisible({ timeout: 45_000 })
   await expect(reader(page).getByRole('link', { name: 'Open the paper', exact: true })).toHaveAttribute('href', 'https://doi.org/10.5555/fulltext-limited')
   const grant = await request.post(`${api}/__fixtures/fulltext/fulltext-limited/grant`)
@@ -48,7 +46,6 @@ test('Given OpenAlex limits requests, When its wait has passed, Then a deliberat
 test('Given a spent OpenAlex allowance, Then the reset wait is shown in hours', async ({ page, request }) => {
   const paperId = await saved(request, 'W19005')
   await page.goto(`/papers/${paperId}`)
-  await page.getByRole('tab', { name: 'PDF', exact: true }).click()
   await expect(reader(page).getByText(/Today.s OpenAlex allowance is used up/)).toBeVisible({ timeout: 45_000 })
   await expect(reader(page).getByText('Try again in 1 hour.', { exact: true })).toBeVisible()
   await expect(reader(page).getByRole('button', { name: 'Try again', exact: true })).toBeDisabled()
@@ -58,7 +55,6 @@ test('Given an unusable or unsafe OpenAlex link, Then the DOI link and upload re
   for (const [id, message] of [['W19004', 'OpenAlex’s copy isn’t a usable PDF'], ['W19006', 'OpenAlex’s link couldn’t be followed safely']]) {
     const paperId = await saved(request, id)
     await page.goto(`/papers/${paperId}`)
-    await page.getByRole('tab', { name: 'PDF', exact: true }).click()
     await expect(reader(page).getByText(message, { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(reader(page).getByRole('link', { name: 'Open the paper', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Upload PDF', exact: true })).toBeVisible()
