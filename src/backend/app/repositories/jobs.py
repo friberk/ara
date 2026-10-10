@@ -276,14 +276,22 @@ async def revive_storage_cleanups(session) -> None:
         )
     ).all()
     for job in failed:
-        job.payload = {**job.payload, "revivals": int(job.payload.get("revivals") or 0) + 1}
-        job.state, job.stage, job.attempts = "queued", "retry_wait", 0
-        job.generation += 1
-        job.lease_token = job.lease_expires_at = None
-        job.available_at = job.updated_at = now()
-        session.add(
-            JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at)
-        )
+        requeue_failed_locked(session, job)
+
+
+def requeue_failed_locked(session, job: BackgroundJob, **payload) -> None:
+    """Queue a failed job again in place, counting the revival in its payload.
+
+    Fresh attempts, the next generation and a new outbox event, as a manual retry does. The
+    caller holds the row lock; `payload` replaces fields of the job's payload.
+    """
+    revivals = int(job.payload.get("revivals") or 0) + 1
+    job.payload = {**job.payload, **payload, "revivals": revivals}
+    job.state, job.stage, job.attempts = "queued", "retry_wait", 0
+    job.generation += 1
+    job.lease_token = job.lease_expires_at = None
+    job.available_at = job.updated_at = now()
+    session.add(JobOutbox(job_id=job.id, generation=job.generation, available_at=job.available_at))
 
 
 def payload_uuid(payload: dict, key: str) -> UUID | None:

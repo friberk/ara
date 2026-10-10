@@ -22,13 +22,15 @@
     "Integration: concurrent backfills revive once.",
     "Existing section summary tests stay green."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/backend/app/services/section_summaries.py",
     "src/backend/app/repositories/jobs.py"
   ],
-  "commits": [],
+  "commits": [
+    "feat(jobs): revive failed section summaries at startup, at most three times (ARA-105)"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's decision. Branch feat/ara-105-section-summary-retry.",
+  "verification": "2026-10-10. Red first: tests/test_section_summary_revival_integration.py (6 tests) against unchanged code: 3 failed (revival, concurrent, newest-row) and 3 passed vacuously (cap, blocked default, queued or finished: nothing was ever revived). Green after the change: 6 passed; with the section-summary and storage-cleanup recovery files, 34 passed. Full backend suite (scripts/test-stack.py, ara-activity-test): 1222 passed in 278 s, run before the final merge of feat/ux-feedback-round, which brought no backend change to these files. Ruff check clean. A test bug was fixed on the way: the older-history test first called backfill inside the open transaction that added the row, so it saw nothing.",
   "updated_at": "2026-10-10"
 }
