@@ -50,7 +50,7 @@ export type EmbeddingProfilePage = Schemas['EmbeddingProfilePage']
 export type RetrievalSettings = Schemas['RetrievalSettings']
 export type RetrievalIndex = Schemas['RetrievalIndexOut']
 export type PaperRetrieval = Schemas['PaperRetrieval']
-export type PaperRetrievalUpdate = Schemas['PaperRetrievalUpdate']
+export type ReindexEstimate = Schemas['ReindexEstimate']
 export type ChatMemory = Schemas['ChatMemoryOut']
 export type ChatMemoryState = Schemas['ChatMemoryState']
 // The composer's context and cost meter (ARA-085).

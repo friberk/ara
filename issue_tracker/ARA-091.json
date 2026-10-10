@@ -21,17 +21,38 @@
     "Migration: drop papers.retrieval_profile with overrides folded into the library setting; upgrade test from the current head.",
     "Frontend: settings choice with price, confirmation dialog with paper count and cost, no per-paper selector in Details."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
+    "README.md",
+    "docs/api-contract.md",
+    "src/backend/alembic/versions/0008_library_embeddings.py",
     "src/backend/app/integrations/embedding_catalog.py",
-    "src/backend/app/routes/retrieval.py",
-    "src/backend/app/services/reindex.py",
     "src/backend/app/models/research.py",
+    "src/backend/app/rag/hooks.py",
+    "src/backend/app/rag/indexing.py",
+    "src/backend/app/routes/retrieval.py",
+    "src/backend/app/schemas/retrieval.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/health.py",
+    "src/backend/app/services/memory.py",
+    "src/backend/app/services/reindex.py",
+    "src/backend/tests/test_indexing_integration.py",
+    "src/backend/tests/test_library_embedding_migration.py",
+    "src/backend/tests/test_retrieval_api_integration.py",
+    "src/backend/tests/test_schema_revision.py",
+    "src/frontend/src/api/generated.ts",
+    "src/frontend/src/components/retrieval/ProfileOptions.tsx",
     "src/frontend/src/features/settings/RetrievalSettingsSection.tsx",
-    "src/frontend/src/features/workspace/SearchIndexPanel.tsx"
+    "src/frontend/src/features/settings/retrieval-settings.test.tsx",
+    "src/frontend/src/features/workspace/SearchIndexPanel.tsx",
+    "src/frontend/src/features/workspace/search-index.test.tsx",
+    "src/frontend/src/hooks/queries/retrieval.ts"
   ],
-  "commits": [],
+  "commits": [
+    "34ab1e3",
+    "a9fc155"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-09 from the user's decisions. Branch feat/ara-091-library-embeddings.",
+  "verification": "2026-10-09. Red first: 13 failed, 54 passed in the focused retrieval files (KeyError 'openai-3-small', PUT /papers/{id}/retrieval still 200, estimate route 404). Full backend suite in ara-embed-test: 1005 passed in 190 s. Frontend: 5 tests red first, then npm run check passed (72 files, 532 tests) and npm run build succeeded. Migration 0008 upgrade test from 0007 passes. Not run: Playwright, live OpenAI calls. The $0.02 price and 8191-token limit come from third-party sources, not OpenAI's own page. Follow-up: readiness pinned SCHEMA_REVISION to 0007; red test (tests/test_schema_revision.py: ['0008_library_embeddings'] == ['0007_feature_merge']) then constant set to 0008. Full suite on a freshly reset ara-embed-test database: 1006 passed in 175 s; readiness database check passes on the migrated DB (2 passed).",
   "updated_at": "2026-10-09"
 }

@@ -25,13 +25,31 @@ def test_given_profile_keys_when_resolving_then_unknown_keys_are_rejected():
     assert (error.value.status_code, error.value.code) == (422, "INVALID_EMBEDDING_PROFILE")
 
 
+def test_given_catalog_when_listing_openai_models_then_small_costs_less_than_large():
+    from decimal import Decimal
+
+    from app.integrations.embedding_catalog import DEFAULT_PROFILE, PROFILES
+
+    small = PROFILES["openai-3-small"]
+    assert (small.provider, small.model_id) == ("openai", "text-embedding-3-small")
+    assert (small.dimensions, small.max_input_tokens) == (1536, 8191)
+    assert small.price_per_million == Decimal("0.02")
+    assert PROFILES["openai-3-large"].price_per_million == Decimal("0.13")
+    assert DEFAULT_PROFILE == "openai-3-large"
+
+
 def test_given_profiles_when_batching_then_local_admissions_stay_small():
     from app.integrations.embedding_catalog import PROFILES
 
     batches = {key: profile.batch_size for key, profile in PROFILES.items()}
     # OpenAI batching is unchanged. Locally, one admission is about 10 s of CPU work at the
     # Phase 0 rates (4B 51 tok/s, 8B 29 tok/s), well inside a search's wait for the slot.
-    assert batches == {"openai-3-large": 64, "qwen3-embed-4b": 2, "qwen3-embed-8b": 1}
+    assert batches == {
+        "openai-3-large": 64,
+        "openai-3-small": 64,
+        "qwen3-embed-4b": 2,
+        "qwen3-embed-8b": 1,
+    }
 
 
 def ollama_resources(**overrides):

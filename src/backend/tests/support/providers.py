@@ -10,6 +10,8 @@ import httpx
 
 from tests.support.vectors import STOP, WORD, fixture_vector
 
+EMBEDDING_DIMENSIONS = {"text-embedding-3-large": 3072, "text-embedding-3-small": 1536}
+
 
 def openai_fixture(requests, *, status=200):
     """Mirrors tests/fixtures/server.py /v1/embeddings, including base64 encoding."""
@@ -19,7 +21,7 @@ def openai_fixture(requests, *, status=200):
         requests.append(body)
         if status != 200:
             return httpx.Response(status, json={"error": {"message": "fixture failure"}})
-        dims = body.get("dimensions") or 3072
+        dims = body.get("dimensions") or EMBEDDING_DIMENSIONS[body["model"]]
         data = []
         for index, text in enumerate(body["input"]):
             vector = fixture_vector(text, dims)

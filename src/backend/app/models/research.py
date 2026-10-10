@@ -31,7 +31,6 @@ class Paper(Base):
     doi: Mapped[str | None] = mapped_column(String(300))
     normalized_doi: Mapped[str | None] = mapped_column(String(300), unique=True)
     active_document_id: Mapped[UUID | None]
-    retrieval_profile: Mapped[str | None] = mapped_column(String(40))
     metadata_provenance: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

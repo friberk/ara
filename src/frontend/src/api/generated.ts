@@ -550,6 +550,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/retrieval/reindex-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reindex Estimate
+         * @description Papers and tokens a switch to `profile` would embed, priced from stored chunk counts.
+         */
+        get: operations["reindex_estimate_api_v1_retrieval_reindex_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/papers/{paper_id}/retrieval": {
         parameters: {
             query?: never;
@@ -559,8 +579,7 @@ export interface paths {
         };
         /** Read Paper Retrieval */
         get: operations["read_paper_retrieval_api_v1_papers__paper_id__retrieval_get"];
-        /** Update Paper Retrieval */
-        put: operations["update_paper_retrieval_api_v1_papers__paper_id__retrieval_put"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -922,6 +941,11 @@ export interface components {
             unavailable_reason?: string | null;
             /** Local Model Key */
             local_model_key?: string | null;
+            /**
+             * Price Per Million
+             * @default 0
+             */
+            price_per_million: number;
         };
         /** EmbeddingProfilePage */
         EmbeddingProfilePage: {
@@ -1323,11 +1347,6 @@ export interface components {
             document_id: string | null;
             /** Effective Profile */
             effective_profile: string;
-            /**
-             * Source
-             * @enum {string}
-             */
-            source: "default" | "paper";
             /** Parser */
             parser: string | null;
             /** Chunk Count */
@@ -1344,16 +1363,6 @@ export interface components {
             /** Indexes */
             indexes: components["schemas"]["RetrievalIndexOut"][];
         };
-        /** PaperRetrievalUpdate */
-        PaperRetrievalUpdate: {
-            /** Profile */
-            profile: string | null;
-            /**
-             * Request Id
-             * Format: uuid
-             */
-            request_id: string;
-        };
         /** RebuildInput */
         RebuildInput: {
             /**
@@ -1361,6 +1370,22 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+        };
+        /**
+         * ReindexEstimate
+         * @description What switching the library embedding model would re-embed (ARA-091).
+         */
+        ReindexEstimate: {
+            /** Profile */
+            profile: string;
+            /** Papers */
+            papers: number;
+            /** Tokens */
+            tokens: number;
+            /** Price Per Million */
+            price_per_million: number;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number;
         };
         /**
          * RerankerOut
@@ -2994,13 +3019,13 @@ export interface operations {
             };
         };
     };
-    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
+    reindex_estimate_api_v1_retrieval_reindex_estimate_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                paper_id: string;
+            query: {
+                profile: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3011,7 +3036,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaperRetrieval"];
+                    "application/json": components["schemas"]["ReindexEstimate"];
                 };
             };
             /** @description Validation Error */
@@ -3025,7 +3050,7 @@ export interface operations {
             };
         };
     };
-    update_paper_retrieval_api_v1_papers__paper_id__retrieval_put: {
+    read_paper_retrieval_api_v1_papers__paper_id__retrieval_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3034,11 +3059,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PaperRetrievalUpdate"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
