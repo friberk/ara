@@ -26,6 +26,7 @@ NAMES = ["Sparse", "Dense", "Hybrid", "Late", "Learned"]
 SUMMARY = "FULL-SUMMARY-TEXT " * 400
 GROUP = re.compile(r"^Paper (\d+): ", re.M)
 HANDLE = re.compile(r"^\[(S\d+)\] ", re.M)
+NOTE_HANDLE = re.compile(r"\[(S\d+)\]")
 QUESTION = "Compare how all five papers measure retrieval recall and which reports the best."
 
 
@@ -123,9 +124,31 @@ def comparison_plan(body) -> str:
     )
 
 
+def both_modes(calls: list):
+    """Per-paper reads are plain responses citing two passages; the answer streams and cites
+    every passage group (or, from notes, every handle it was shown)."""
+    import httpx
+
+    from tests.support.answers import hosted_stream
+    from tests.test_ai import response_payload
+
+    stream = hosted_stream(calls, cite_every_group)
+
+    def handler(request):
+        body = json.loads(request.content)
+        if body.get("stream"):
+            return stream.handler(request)
+        calls.append(body)
+        handles = HANDLE.findall(body["input"][-1]["content"])[:2]
+        text = "Recall is reported at ten passages " + "".join(f"[{h}]" for h in handles)
+        return httpx.Response(200, json=response_payload(text))
+
+    return httpx.MockTransport(handler)
+
+
 def cite_every_group(body) -> str:
     prompt = body["input"][-1]["content"]
-    handles = HANDLE.findall(prompt)
+    handles = HANDLE.findall(prompt) or NOTE_HANDLE.findall(prompt)
     return "All five papers report recall at ten passages " + "".join(f"[{h}]" for h in handles)
 
 
@@ -133,6 +156,9 @@ def cite_every_group(body) -> str:
 async def test_given_five_papers_a_long_chat_and_a_comparison_then_every_call_fits_its_budget(
     resources, monkeypatch, embeddings, budget
 ):
+    import httpx
+
+    from app.integrations.llm import HostedLLM
     from app.services import chat, memory
 
     chat_id, pairs, profile, turns = await long_chat(resources)
@@ -145,26 +171,36 @@ async def test_given_five_papers_a_long_chat_and_a_comparison_then_every_call_fi
     planner = hosted_responses(monkeypatch, resources, comparison_plan)
     calls = []
     use_hosted(monkeypatch, resources, calls, cite_every_group)
+    monkeypatch.setattr(
+        chat,
+        "create_llm",
+        lambda resources, model, **kwargs: HostedLLM(
+            resources.settings, http_client=httpx.AsyncClient(transport=both_modes(calls))
+        ),
+    )
     prepared, events = await ask(resources, chat_id, QUESTION, model=MODEL, reasoning_effort=EFFORT)
     (completed,) = named(events, "message.completed")
 
     (plan,) = planner
-    (answer,) = calls
-    for body in (plan, answer):
+    *reads, answer = calls
+    for body in (plan, *reads, answer):
         assert sent(profile.counter, body) <= profile.input_budget
         assert "FULL-SUMMARY-TEXT" not in json.dumps(body)
     assert completed["context"]["input_tokens"] <= profile.input_budget
     # The verbatim history reached its share of the prompt.
     assert completed["context"]["recent_turns"] >= 1
-    evidence = groups(answer["input"][-1]["content"])
-    answering = sorted(evidence)
-    assert all(count >= 2 for count in evidence.values())
+    cited = {item["document_id"] for item in completed["citations"]}
     if budget is None:
-        assert answering == [1, 2, 3, 4, 5]
+        assert reads == [] and completed["retrieval"]["map_reduce"] is False
+        evidence = groups(answer["input"][-1]["content"])
+        assert sorted(evidence) == [1, 2, 3, 4, 5]
+        assert all(count >= 2 for count in evidence.values())
+        assert cited == {str(document) for _, document in pairs}
     else:
-        # Not every floor fits, so the most relevant papers answer and the note says so.
-        assert len(answering) < 5
-        assert "most relevant papers" in completed["retrieval"]["note"]
-    assert {item["document_id"] for item in completed["citations"]} == {
-        str(pairs[number - 1][1]) for number in answering
-    }
+        # The comparison wants more than E: each paper is read in its own call within the
+        # budget, with its floor, and the answer is written from their notes (ARA-094).
+        assert completed["retrieval"]["map_reduce"] is True
+        assert len(reads) == 5
+        assert all(len(HANDLE.findall(body["input"][-1]["content"])) >= 2 for body in reads)
+        assert not HANDLE.findall(answer["input"][-1]["content"])
+        assert cited == {str(document) for _, document in pairs}

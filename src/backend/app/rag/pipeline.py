@@ -106,12 +106,18 @@ class EvidenceResult:
         return list(self.passages)
 
     def widen(self) -> bool:
-        """Switch to the retry pass when it sends passages the first pass did not (step 10);
-        otherwise keep the first pass as it was."""
+        """Switch to the retry pass when it reads passages the first pass did not (step 10);
+        otherwise keep the first pass as it was. With several papers the retry may read beyond
+        E paper by paper, so its own target counts too."""
         first = self.passages
         kept = (self.summary.model_copy(), dict(self.trace), self.evidence_pass)
         self.evidence_pass = RETRY_PASS
         wider = {item.chunk_id for item in self.pack(self.ceiling)}
+        if len(self.target_papers()) > 1:
+            target = self.select(
+                self.pruned().kept, self.evidence_pass.target_tokens, headers=self.headers
+            )
+            wider |= {item.chunk_id for item in target}
         if wider <= {item.chunk_id for item in first}:
             self.passages = first
             self.summary, self.trace, self.evidence_pass = kept
@@ -128,23 +134,54 @@ class EvidenceResult:
         """How far chunks grow in their section: a broad question takes the whole section."""
         return None if self.question_type == "broad" else self.evidence_pass.reach
 
+    def pruned(self):
+        return prune(self.ranked, self.scores, ratio=self.evidence_pass.prune_ratio, kept=self.kept)
+
+    def select(self, candidates, budget: int, **options) -> list[Passage]:
+        return pack_evidence(
+            candidates,
+            budget=budget,
+            counter=self.counter,
+            neighbours=self.neighbours,
+            kept=self.kept,
+            reach=self.reach,
+            **{"max_passages": self.evidence_pass.max_passages, **options},
+        )
+
+    def wanted(self) -> int:
+        """Tokens the pass's selection takes at its own target, before E bounds it."""
+        chosen = self.select(
+            self.pruned().kept, self.evidence_pass.target_tokens, headers=self.headers
+        )
+        return self.counter.count(render_evidence(chosen, self.headers))
+
+    def answering(self) -> list[str]:
+        """The documents of the last packing, in evidence order."""
+        return list(dict.fromkeys(str(item.document_id) for item in self.passages))
+
+    def target_papers(self) -> list[str]:
+        """The papers the pass's selection reaches at its own target, in evidence order: those a
+        per-paper reading answers from when they do not all fit E."""
+        chosen = self.select(
+            self.pruned().kept, self.evidence_pass.target_tokens, headers=self.headers
+        )
+        return list(dict.fromkeys(str(item.document_id) for item in chosen))
+
+    def paper_passages(self, document: str, budget: int, first_handle: int) -> list[Passage]:
+        """One paper's share of the pass for a per-paper (map) call, handles from
+        `first_handle`."""
+        share = max(FLOOR, self.evidence_pass.max_passages // max(1, len(self.target_papers())))
+        own = [item for item in self.pruned().kept if item.node.metadata["document_id"] == document]
+        return self.select(own, budget, max_passages=share, first_handle=first_handle)
+
     def pack(self, budget: int) -> list[Passage]:
         """Prune, then pack within the pass's caps and `budget` (the evidence ceiling E)."""
         limits = self.evidence_pass
         self.ceiling = budget
-        pruned = prune(self.ranked, self.scores, ratio=limits.prune_ratio, kept=self.kept)
+        pruned = self.pruned()
         if limits.max_tokens is not None:
             budget = min(budget, limits.max_tokens)
-        self.passages = pack_evidence(
-            pruned.kept,
-            budget=budget,
-            counter=self.counter,
-            neighbours=self.neighbours,
-            max_passages=limits.max_passages,
-            headers=self.headers,
-            kept=self.kept,
-            reach=self.reach,
-        )
+        self.passages = self.select(pruned.kept, budget, headers=self.headers)
         chosen = {str(item.chunk_id) for item in self.passages}
         self.summary.passages_used = len(self.passages)
         self.summary.pruned = pruned.pruned

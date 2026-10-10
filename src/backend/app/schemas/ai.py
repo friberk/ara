@@ -44,6 +44,8 @@ class RetrievalSummary(BaseModel):
     question_type: Literal["lookup", "broad", "comparative"] | None = None
     # The first answer reported insufficient evidence and one wider retry replaced it (ARA-094).
     retried: bool = False
+    # A small window read each paper in its own call, then combined their notes (ARA-094).
+    map_reduce: bool = False
     limited_by_context: bool = False
     note: str | None = None
 

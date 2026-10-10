@@ -46,12 +46,13 @@ from app.rag.citations import (
 )
 from app.rag.indexing import default_profile
 from app.rag.pipeline import Scope, evidence_ceiling, retrieve_evidence
+from app.rag.selection import RETRY_PASS
 from app.repositories.chats import with_cited_papers
 from app.repositories.jobs import now
 from app.repositories.local_models import use_held
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
-from app.services import memory
+from app.services import map_reduce, memory
 from app.services.chat_papers import named_papers, pinned
 from app.services.context import (
     INSTRUCTIONS_VERSION,
@@ -506,13 +507,15 @@ async def stream_answer(
     queue = asyncio.Queue(maxsize=32)
     last_checkpoint = asyncio.get_running_loop().time()
 
-    async def generate(assembled, evidence) -> HandleTransducer:
+    def slots_for():
+        return nullcontext() if inference_slot else generation_slots(resources, assistant.model)
+
+    async def generate(assembled, citable) -> HandleTransducer:
         """Stream one attempt into the queue, its handles already mapped to source markers."""
-        transducer = HandleTransducer(HandleMap(evidence.citable))
+        transducer = HandleTransducer(HandleMap(citable))
         await queue.put(("attempt", None))
         await queue.put(("status", "generating"))
-        slots = nullcontext() if inference_slot else generation_slots(resources, assistant.model)
-        async with slots:
+        async with slots_for():
             async for delta in client.stream_messages(
                 assistant.model, assistant.reasoning_effort, assembled.messages
             ):
@@ -570,14 +573,66 @@ async def stream_answer(
                     retrieved_for=plan.standalone_question,
                 )
 
+            async def mapped(assembled, billed: dict):
+                """A comparison, or the retry, that wants more evidence than E reads each paper
+                in its own call and answers from their notes (step 7)."""
+                wide = (
+                    evidence.evidence_pass is RETRY_PASS
+                    or plan.question_type == "comparative"
+                    or bool(plan.sub_questions)
+                )
+                if not (
+                    wide
+                    and len(evidence.target_papers()) > 1
+                    and evidence.wanted() > assembled.allocation.evidence
+                ):
+                    return assembled, evidence.citable
+                await queue.put(("status", "mapping"))
+                positions = {document: n for n, document in enumerate(evidence.documents)}
+                asked = dict(plan.sub_questions)
+                found = await map_reduce.read_papers(
+                    resources,
+                    client,
+                    model=assistant.model,
+                    effort=assistant.reasoning_effort,
+                    limits=prepared.limits,
+                    evidence=evidence,
+                    papers={doc: prepared.papers[n] for doc, n in positions.items()},
+                    questions={
+                        doc: asked.get(n, plan.standalone_question) for doc, n in positions.items()
+                    },
+                    room=assembled.allocation.evidence,
+                    slots=lambda: slots_for(),
+                )
+                evidence.summary.map_reduce = True
+                billed.setdefault("map", []).extend(found.calls)
+                assembled = assemble_answer_prompt(
+                    profile=prepared.limits,
+                    papers=prepared.papers,
+                    history=remembered.history,
+                    memory_summary=remembered.summary,
+                    recalled=recalled,
+                    evidence_block=lambda room: found.block(
+                        prepared.limits.counter, evidence.headers, room
+                    ),
+                    question=prepared.question,
+                    retrieved_for=plan.standalone_question,
+                    evidence_label=map_reduce.NOTES_LABEL,
+                )
+                await record_evidence(
+                    resources, assistant.id, evidence, assembled.usage, plan.billed, billed
+                )
+                return assembled, found.citable
+
+            billed: dict = {}
             assembled = assemble()
             await record_evidence(resources, assistant.id, evidence, assembled.usage, plan.billed)
             selection = await validate_model_available(
                 resources, assistant.model, assistant.reasoning_effort
             )
             client = create_llm(resources, assistant.model, selection=selection)
-            citable = evidence.citable
-            transducer = await generate(assembled, evidence)
+            assembled, citable = await mapped(assembled, billed)
+            transducer = await generate(assembled, citable)
             # Step 10 (adapting Self-Route, Li et al., EMNLP 2024): at most one retry, only when
             # the model reports the evidence insufficient and wider retrieval adds passages.
             if transducer.insufficient and evidence.widen():
@@ -590,17 +645,13 @@ async def stream_answer(
                         raise
                 else:
                     evidence.summary.retried = True
+                    billed["first_answer"] = first
                     await queue.put(("status", "widening"))
                     await record_evidence(
-                        resources,
-                        assistant.id,
-                        evidence,
-                        assembled.usage,
-                        plan.billed,
-                        {"first_answer": first},
+                        resources, assistant.id, evidence, assembled.usage, plan.billed, billed
                     )
-                    citable = evidence.citable
-                    transducer = await generate(assembled, evidence)
+                    assembled, citable = await mapped(assembled, billed)
+                    transducer = await generate(assembled, citable)
             await queue.put(("done", (transducer, citable)))
         except Exception as exc:
             await queue.put(("error", exc))

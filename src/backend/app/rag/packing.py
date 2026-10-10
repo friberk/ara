@@ -88,6 +88,7 @@ def pack_evidence(
     headers: Mapping[str, str] | None = None,
     kept: Collection[str] = (),
     reach: int | None = 1,
+    first_handle: int = 1,
 ) -> list[Passage]:
     """Floors first, then the most relevant passages, then each chunk's section around it.
 
@@ -101,9 +102,10 @@ def pack_evidence(
     are ordered by their best candidate's rank with the strongest at both ends.
 
     `neighbours` maps a candidate to chunks of its section; they are added `reach` ordinals away
-    at most (1: the neighbours; None: the whole section), nearest first.
+    at most (1: the neighbours; None: the whole section), nearest first. Handles are numbered
+    from `first_handle`, so several packs can share one set of handles.
     """
-    widest = f"S{max_passages}"
+    widest = f"S{first_handle + max_passages - 1}"
     separator = counter.count(SEPARATOR)
     headers = headers or {}
     chosen: dict[str, Passage] = {}
@@ -185,4 +187,7 @@ def pack_evidence(
         chosen.values(),
         key=lambda item: (groups.get(str(item.document_id), 0), item.page, item.ordinal),
     )
-    return [replace(item, handle=f"S{number}") for number, item in enumerate(ordered, start=1)]
+    return [
+        replace(item, handle=f"S{number}")
+        for number, item in enumerate(ordered, start=first_handle)
+    ]

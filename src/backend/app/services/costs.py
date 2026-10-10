@@ -115,10 +115,12 @@ def message_spend(spend: Spend, state: str, model, usage, billed) -> None:
     planner = billed.get("planner")
     if isinstance(planner, dict):
         spend.chat_call("planning", str(planner.get("model", "")), planner)
-    # The first attempt of an answer that one wider retry replaced (ARA-094).
-    first = billed.get("first_answer")
-    if isinstance(first, dict):
-        spend.chat_call("answers", str(first.get("model", "")), first)
+    # The first attempt of an answer that one wider retry replaced, and the per-paper reading
+    # calls of a small window (ARA-094).
+    first, mapped = billed.get("first_answer"), billed.get("map")
+    for call in [first, *(mapped if isinstance(mapped, list) else [])]:
+        if isinstance(call, dict):
+            spend.chat_call("answers", str(call.get("model", "")), call)
     embedding, rerank = billed.get("embedding"), billed.get("rerank")
     if isinstance(embedding, dict):
         spend.retrieval_call(

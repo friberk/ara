@@ -231,6 +231,7 @@ def assemble_answer_prompt(
     evidence_block: Callable[[int], str],
     question: str,
     retrieved_for: str | None,
+    evidence_label: str = "Paper passages",
 ) -> AssembledPrompt:
     """Instructions, then the question, then the evidence floor, then summary, turns and recall.
 
@@ -238,9 +239,9 @@ def assemble_answer_prompt(
     """
     counter = profile.counter
     instructions = PromptMessage("system", answer_instructions(papers))
-    prefix = "Paper passages:\n\n"
+    prefix = f"{evidence_label}:\n\n"
     if retrieved_for and retrieved_for != question:
-        prefix = f'Paper passages (retrieved for: "{retrieved_for}"):\n\n'
+        prefix = f'{evidence_label} (retrieved for: "{retrieved_for}"):\n\n'
     suffix = "\n\n" + CITE_REMINDER + "\n\nQuestion: " + question
     fixed = (
         cost(counter, instructions)

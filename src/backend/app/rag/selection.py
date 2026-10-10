@@ -41,6 +41,12 @@ class EvidencePass:
     reach: int | None
 
     @property
+    def target_tokens(self) -> int:
+        """The evidence the pass wants before E bounds it; a retry wants twice the first pass.
+        When this exceeds E, a comparison is read paper by paper (step 7)."""
+        return self.max_tokens or RETRY_SCALE * FIRST_PASS_TOKENS
+
+    @property
     def answering_papers(self) -> int:
         """Each answering paper needs its floor within the passage cap (step 7)."""
         return self.max_passages // FLOOR
