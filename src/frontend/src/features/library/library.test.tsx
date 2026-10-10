@@ -22,12 +22,15 @@ test('Given saved papers, Then each row links to its workspace with a short cita
   mount('/library')
   expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
   const main = screen.getByRole('main')
-  const row = (await within(main).findByRole('link', { name: ready.title })).closest('article') as HTMLElement
-  expect(within(row).getByRole('link', { name: ready.title })).toHaveAttribute('href', '/papers/p1')
+  const row = (await within(main).findByRole('link', { name: /^Attention is all you need/ })).closest('article') as HTMLElement
+  expect(within(row).getByRole('link', { name: /^Attention is all you need/ })).toHaveAttribute('href', '/papers/p1')
   expect(row).toHaveTextContent('Vaswani et al. (2017)')
-  expect(within(row).getByRole('img', { name: 'PDF attached' })).toBeVisible()
+  expect(within(row).getByRole('link', { name: `${ready.title}, PDF attached` })).toBeVisible()
   expect(within(main).getByText('2 papers')).toBeVisible()
-  expect(within(main).getByRole('img', { name: 'No PDF yet' })).toBeVisible()
+  expect(within(main).getByRole('link', { name: `${saved.title}, No PDF yet` })).toBeVisible()
+  expect(within(row).queryByRole('img')).not.toBeInTheDocument()
+  expect(row.querySelector('[tabindex]:not(input)')).toBeNull()
+  expect(within(row).getByRole('heading', { level: 2 })).not.toHaveClass('text-balance')
   expect(within(main).queryByText(/Ready to read|PDF needed/)).not.toBeInTheDocument()
 })
 
@@ -113,7 +116,7 @@ test('Given a filter with no matches, Then the filter can be cleared', async () 
   expect(await screen.findByRole('heading', { name: 'No papers match “quantum”' })).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Clear filter' }))
   await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(/^\/library$/))
-  expect(await within(screen.getByRole('main')).findByRole('link', { name: ready.title })).toBeVisible()
+  expect(await within(screen.getByRole('main')).findByRole('link', { name: new RegExp(`^${ready.title}, `) })).toBeVisible()
 })
 
 test('Given an empty library, Then searching and uploading are offered', async () => {
@@ -131,7 +134,7 @@ test('Given an empty library, Then searching and uploading are offered', async (
 test('Given an upload still being read, Then its row is named by its file until a title is known', async () => {
   mockApi({ 'GET /papers': { items: [{ ...saved, id: 'p3', title: null, authors: [], year: null, document_status: 'processing', active_document_id: 'd3', file_name: 'sec18-han.pdf' }] } })
   mount('/library')
-  expect(await within(screen.getByRole('main')).findByRole('link', { name: 'sec18-han.pdf' })).toHaveAttribute('href', '/papers/p3')
+  expect(await within(screen.getByRole('main')).findByRole('link', { name: /^sec18-han.pdf, / })).toHaveAttribute('href', '/papers/p3')
 })
 
 test('Given an uploaded PDF that is readable while its details are looked up, Then its row says Ready and notes the lookup', async () => {
@@ -197,8 +200,8 @@ test('Given an upload in the list, When its processing settles, Then the library
   await screen.findByRole('heading', { level: 1, name: 'Library' })
   await user.upload(screen.getByLabelText('PDF files'), pdf('fresh.pdf'))
   const papers = await screen.findByRole('list', { name: 'Papers' })
-  expect(await within(papers).findByRole('img', { name: 'Preparing PDF…' })).toBeVisible()
+  expect(await within(papers).findByRole('link', { name: /Preparing PDF…/ })).toBeVisible()
   settled = true
-  expect(await within(papers).findByRole('link', { name: 'Fresh title' }, { timeout: 5000 })).toBeVisible()
-  expect(within(papers).getByRole('img', { name: 'PDF attached' })).toBeVisible()
+  expect(await within(papers).findByRole('link', { name: /^Fresh title, / }, { timeout: 5000 })).toBeVisible()
+  expect(within(papers).getByRole('link', { name: /PDF attached/ })).toBeVisible()
 })

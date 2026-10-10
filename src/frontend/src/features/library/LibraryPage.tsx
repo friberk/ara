@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { PaperCitation } from '@/components/paper/PaperCitation'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
+import { pdfStateLabels } from '@/components/paper/pdf-state'
 import { PendingMatches } from '@/components/upload/PendingMatches'
 import { UploadList } from '@/components/upload/UploadList'
 import { DropOverlay } from '@/components/upload/DropOverlay'
@@ -30,12 +31,12 @@ function PaperRow({ paper, selected, onSelect }: { paper: Paper; selected: boole
     <article className="group relative flex items-start gap-3 py-5">
       {/* The checkbox and the actions sit above the stretched title link. */}
       <Checkbox className="relative z-10 mt-1" checked={selected} onCheckedChange={(value) => onSelect(value === true)} aria-label={`Select “${name}”`} />
-      {/* The state icon is its own tab stop above the stretched title link, so its tooltip opens on focus. */}
-      <PdfStateIcon state={paper.document_status} className="relative z-10 mt-1" />
+      {/* The icon opens its tooltip on hover above the stretched link; keyboard and screen-reader users get the state from the link's name. */}
+      <PdfStateIcon state={paper.document_status} decorative className="relative z-10 mt-1" />
       <div className="min-w-0 flex-1">
-        <h2 className="text-base leading-snug font-semibold tracking-tight text-balance break-words">
+        <h2 className="text-base leading-snug font-semibold tracking-tight text-pretty break-words">
           {/* The title link stretches over the row so the whole row opens the paper. */}
-          <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{name}</Link>
+          <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{name}<span className="sr-only">, {pdfStateLabels[paper.document_status]}</span></Link>
         </h2>
         <PaperCitation paper={paper} className="mt-1.5 text-sm" />
         {displayText(paper.abstract) && <p className="mt-2 line-clamp-2 text-sm leading-6 text-pretty text-muted-foreground">{displayText(paper.abstract)}</p>}
