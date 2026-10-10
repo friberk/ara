@@ -25,11 +25,13 @@ from app.integrations.embeddings import cl100k, create_embedder
 from app.integrations.open_models import KEYWORD_NOTE, offered
 from app.integrations.tokens import TokenCounter
 from app.models.research import DocumentChunk
-from app.models.retrieval import RetrievalIndex
+from app.models.retrieval import RetrievalIndex, SectionSummary
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.packing import (
     SEPARATOR,
+    SOURCE_MARKER,
     SUMMARY,
+    WIDEST_SOURCE,
     Passage,
     citable,
     node_passage,
@@ -44,6 +46,7 @@ from app.rag.retrievers import (
     PgSummaryVectorRetriever,
     PgVectorRetriever,
     chunk_node,
+    summary_node,
 )
 from app.rag.selection import FIRST_PASS, FLOOR, RETRY_PASS, EvidencePass, prune
 from app.schemas.ai import RetrievalSummary
@@ -295,19 +298,37 @@ def header_bound(counter, scopes: Sequence[Scope]) -> int:
 
 
 async def evidence_ceiling(session, scopes: Sequence[Scope], counter) -> int:
-    """The most evidence the first pass can choose: the costliest passages, at most its passage
-    cap, and the papers' headers, within its token cap. A retry reserves for itself."""
+    """The most evidence the first pass can choose: its costliest passages and section summaries,
+    at most its passage cap, and the papers' headers, within its token cap. A retry reserves for
+    itself."""
     limit = FIRST_PASS.max_passages
     chunks = await session.scalars(
         scoped(scopes)
         .order_by(DocumentChunk.token_count.desc(), DocumentChunk.ordinal)
         .limit(limit)
     )
-    widest = f"S{limit}"
-    total = header_bound(counter, scopes) + sum(
-        counter.count(node_passage(chunk_node(chunk), widest).render()) + counter.count(SEPARATOR)
-        for chunk in chunks
+    summaries = await session.scalars(
+        select(SectionSummary)
+        .where(
+            tuple_(SectionSummary.document_id, SectionSummary.chunk_set).in_(
+                [scope.key for scope in scopes]
+            )
+        )
+        .order_by(SectionSummary.token_count.desc())
+        .limit(limit)
     )
+    widest, separator = f"S{limit}", counter.count(SEPARATOR)
+    costs = [
+        counter.count(node_passage(chunk_node(chunk), widest).render()) + separator
+        for chunk in chunks
+    ]
+    for summary in summaries:
+        # Each source marker shows as a handle of the widest form.
+        shown = SOURCE_MARKER.sub(f"[{WIDEST_SOURCE}]", summary.content)
+        node = summary_node(summary)
+        node.metadata["content"] = shown
+        costs.append(counter.count(node_passage(node, widest).render()) + separator)
+    total = header_bound(counter, scopes) + sum(sorted(costs, reverse=True)[:limit])
     return min(total, FIRST_PASS.max_tokens)
 
 

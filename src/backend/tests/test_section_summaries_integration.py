@@ -598,3 +598,60 @@ async def test_given_summary_vectors_when_retrieving_then_meaning_search_finds_s
     lists = {item["retriever"]: item["results"] for item in result.trace["lists"]}
     assert str(summary_id) in {node for node, _, _ in lists["summary-vector"]}
     assert str(summary_id) in {node for node, _, _ in lists["summary-keyword"]}
+
+
+async def test_given_a_summary_naming_another_papers_chunk_when_retrieving_then_it_is_not_citable(
+    resources,
+):
+    """A summary's sources are read only from its own paper's current chunks, so a corrupted
+    source can never make another paper's passage citable."""
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.pipeline import Scope, retrieve_evidence
+    from tests.support.sections import CHUNK_SET
+
+    _, document_id, chunks = await seed_sections(resources)
+    _, _, foreign = await seed_sections(resources, title="Foreign paper")
+    stray = foreign[("3 Limitations",)][0]
+    await write_summary(
+        resources, document_id, ["3 Limitations"], LIMITS, [chunks[("3 Limitations",)][0], stray]
+    )
+    result = await retrieve_evidence(
+        resources,
+        scopes=[Scope(document_id, CHUNK_SET)],
+        preferred_profile="openai-3-large",
+        queries=["limitations paraphrases benchmark"],
+        question="What limitations does the paper admit?",
+        budget=8000,
+        counter=TiktokenCounter(),
+    )
+    assert result.summary.summaries_used == 1
+    assert stray not in {item.chunk_id for item in result.citable}
+    assert str(stray) not in result.trace["selected"].values()
+
+
+async def test_given_summaries_when_reserving_then_the_ceiling_covers_every_item_sent(resources):
+    from app.integrations.tokens import TiktokenCounter
+    from app.rag.packing import render_evidence
+    from app.rag.pipeline import Scope, evidence_ceiling, retrieve_evidence
+    from tests.support.sections import CHUNK_SET
+
+    _, document_id, chunks = await seed_sections(resources)
+    for path in (["2 Method"], ["3 Limitations"]):
+        cited = chunks[tuple(path)]
+        await write_summary(resources, document_id, path, LIMITS + " " * 3 + LIMITS, cited)
+    counter = TiktokenCounter()
+    scopes = [Scope(document_id, CHUNK_SET)]
+    result = await retrieve_evidence(
+        resources,
+        scopes=scopes,
+        preferred_profile="openai-3-large",
+        queries=["limitations method passages benchmark Okapi"],
+        question="Summarize the paper.",
+        budget=50_000,
+        counter=counter,
+        question_type="broad",
+    )
+    async with resources.sessions() as session:
+        ceiling = await evidence_ceiling(session, scopes, counter)
+    assert result.summary.summaries_used == 2
+    assert counter.count(render_evidence(result.passages, result.headers)) <= ceiling
