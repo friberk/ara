@@ -1120,3 +1120,19 @@ After the first round, the lead fast-forwarded the branch to the integration bra
 - A live flag-off test stack started healthy without Ollama. `/health/ready` checked only the database, storage and Redis; `/features` said `false`; the catalogs were hosted only; and a model download returned 404.
 
 **Not run:** the Playwright suite, left to the lead on its fixed ports, and a live flag-on stack with real Ollama weights.
+
+**ARA-090 merged with the UX feedback round (2026-10-09).** The lead asked this agent to merge `feat/ux-feedback-round` (`7fb04ee`: ARA-086, ARA-087, ARA-089, ARA-091) into the flag branch, as a one-time exception to the no-merge rule. The merge commit is `aea2946`.
+- **Conflicts.** There were nine conflicted files:
+  - `routes/retrieval.py`: the per-paper PUT and its open-model refusal were dropped; ARA-091's prices were kept beside the hidden local install key; a rebuild is still refused while the library model is local.
+  - `SearchIndexPanel.tsx`: ARA-091's version, without this branch's Build/Rebuild guard.
+  - `ProfileOptions.tsx`: no "Use default" row; local rows stay hidden or frozen, and their price copy is hidden while the flag is off.
+  - `README.md`: ARA-087's OpenAlex-only text, with open models still in one Experimental section.
+  - The journal: both entries kept.
+  - Four tests renamed by ARA-091: the merge kept the new names and the `open_models` markers.
+- **Rewritten test.** The test for a paper on a local profile became "the library default is a local profile". ARA-091 removed `papers.retrieval_profile`.
+- **New gate, red first.** `GET /retrieval/reindex-estimate` priced a local model while the flag was off, failing with `assert (200 == 409)`. It now returns 409 `OPEN_MODELS_DISABLED` (`0155947`), and stays free with the flag on.
+- **Re-embed dialog.** The Settings re-embed dialog never asks for a local model while the flag is off, because local rows cannot be chosen there. Its new test passed at once, so it is a characterization test.
+- **Catalog growth.** Two flag tests first failed only because the hosted catalog now includes `openai-3-small`, and their expectations were updated.
+- **One mixed test.** In the full run, ARA-091's mixed estimate test failed on its local line, because local estimates are now refused while off. It now runs with the flag on.
+- **Verification.** Backend: 1013 passed in 192.73 s, with Ruff clean. Frontend: `npm run check` passed with 583 tests, and `npm run build` passed. Infrastructure: 19 passed. A live flag-off test stack served hosted-only catalogs, refused the local estimate and returned 404 for a model download.
+- **Warnings.** Both come from the merged branch: an alembic `DeprecationWarning` in `test_schema_revision.py` and a react-refresh lint warning on `priceLabel`.
