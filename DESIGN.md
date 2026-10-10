@@ -241,6 +241,14 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 **The Sentence Case Rule.** All interface copy (buttons, headings, badges, menu items, toasts) is in sentence case. There are no uppercase eyebrows or tracked-out labels.
 
+## Brand
+
+The product's mark is the wordmark "ara." (the dot is part of the name), set in Instrument Serif Italic.
+- **The Only Serif Rule.** The wordmark is the only serif in the system. It is an SVG outline (`branding/ara-wordmark.svg`, inlined by `AraWordmark`), not a UI font: no webfont is loaded and it never appears as text styling.
+- **Monochrome.** It uses `fill="currentColor"` and follows the foreground token in light and dark. Never recolour it.
+- **Sizes.** Minimum height is 16px. Keep clear space of at least the width of the dot on every side. The sidebar header uses 26px; collapsed to icons it shows the "a." mark (`AraMark`).
+- **Never** stretch it, recolour it or retype it in Geist. The favicon (`branding/favicon.svg`) is the "a." on an ink tile and inverts under a dark browser theme. Regeneration steps are in `branding/README.md`.
+
 ## Layout
 
 The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), Library and Activity, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher.

@@ -1,10 +1,11 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Activity, BookOpenText, Library, Search, Settings, SquarePen } from 'lucide-react'
+import { Activity, Library, Search, Settings, SquarePen } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
   SidebarMenuItem, SidebarMenuSkeleton, SidebarRail, useSidebar,
 } from '@/components/ui/sidebar'
+import { AraMark, AraWordmark } from '@/components/brand/AraBrand'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { usePapers } from '@/hooks/queries/papers'
@@ -37,7 +38,8 @@ function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
 
 export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const location = useLocation()
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile, setOpenMobile, state } = useSidebar()
+  const iconOnly = state === 'collapsed' && !isMobile
   const close = () => { if (isMobile) setOpenMobile(false) }
   const links = [
     { to: '/library', label: 'Library', icon: Library },
@@ -48,10 +50,11 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Research Assistant">
-              <Link to="/" onClick={close}>
-                <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground dark:bg-foreground dark:text-background"><BookOpenText className="size-4" aria-hidden="true" /></span>
-                <span className="truncate font-semibold tracking-tight">Research Assistant</span>
+            <SidebarMenuButton size="lg" asChild tooltip="ara.">
+              <Link to="/" onClick={close} aria-label="ara.">
+                {iconOnly
+                  ? <AraMark decorative className="mx-auto h-6 w-auto" />
+                  : <AraWordmark decorative className="ml-1 h-[26px] w-auto" />}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
