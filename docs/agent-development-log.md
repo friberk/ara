@@ -1534,3 +1534,9 @@ An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` f
 - **Decision.** In the sidebar and palette the icon is not a tab stop, because the row is already the stop, so its tooltip opens on hover only there. Its label becomes part of the link name, so two sidebar tests now match by regex.
 - **Visual round.** Chromium from the project's Playwright, a seeded stub API and Vite on port 5198. Light, dark, 1100px and 390px: no horizontal overflow, the venue truncates first, the red failed icon and muted question icon read clearly, and the tooltip shows on hover. Screenshots stayed outside the repo.
 - **Pending.** Phase 2 after ARA-096 and ARA-097 merge: picker, workspace header, deleting the old badge components, and the e2e text.
+
+**Follow-up fixes (lead's check on real data).** Four forward commits-worth of changes, each red first.
+- *Early title wrap.* The cause was `text-balance` on the Library title, which evens out line lengths, so a two-line title wraps near half the row. It is now `text-pretty`. Red: the row test asserted the heading lacks `text-balance` and failed. Checked in Chromium: the long title now uses the full row.
+- *Clipped italic.* The truncating venue gets `pr-[0.15em]`. Red: `PaperCitation.test.tsx` expected the class and failed. The closing parenthesis in "arXiv (Cornell University)" is visible in light and dark.
+- *Tab stops.* Library icons are decorative and not focusable; the link's name carries the state ("Title, PDF attached"). Red: the row test failed with `Unable to find an accessible element with the role "link" and name "Attention is all you need, PDF attached"`. About 15 other Library test queries that matched a link by exact title now match by `^Title, `.
+- *Double announcement.* The tooltip content is `aria-hidden`. Red: a new test found no hidden tooltip. Full run afterwards: 647 of 647, tsc and eslint clean. An earlier full run in this round had flaky timeouts that passed on rerun.

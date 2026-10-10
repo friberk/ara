@@ -73,8 +73,8 @@ test('Given a library row, When Delete is chosen, Then the dialog lists what goe
   await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual(['/papers/p1']))
   expect(await screen.findByText(`Deleted “${attention.title}”`)).toBeVisible()
   // The row and the sidebar's paper list both drop it.
-  await waitFor(() => expect(screen.queryAllByRole('link', { name: attention.title })).toHaveLength(0))
-  expect(within(screen.getByRole('main')).getByRole('link', { name: sanitization.title })).toBeVisible()
+  await waitFor(() => expect(screen.queryAllByRole('link', { name: new RegExp(`^${attention.title}, `) })).toHaveLength(0))
+  expect(within(screen.getByRole('main')).getByRole('link', { name: new RegExp(`^${sanitization.title}, `) })).toBeVisible()
 })
 
 test('Given several selected papers, When they are deleted, Then one dialog previews them all and its button names the count', async () => {

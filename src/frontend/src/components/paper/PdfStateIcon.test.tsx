@@ -22,17 +22,23 @@ test.each(cases)('Given the %s state, Then one icon is named "%s" for screen rea
 test.each(cases)('Given the %s state, When the icon is hovered, Then the tooltip says "%s"', async (state, label) => {
   mount(state)
   await userEvent.setup().hover(screen.getByRole('img', { name: label }))
-  expect(await screen.findByRole('tooltip')).toHaveTextContent(label)
+  expect(await screen.findByRole('tooltip', { hidden: true })).toHaveTextContent(label)
 })
 
 test('Given keyboard focus on the icon, Then the tooltip opens', async () => {
   mount('metadata_only')
   await userEvent.setup().tab()
   expect(screen.getByRole('img', { name: 'No PDF yet' })).toHaveFocus()
-  expect(await screen.findByRole('tooltip')).toHaveTextContent('No PDF yet')
+  expect(await screen.findByRole('tooltip', { hidden: true })).toHaveTextContent('No PDF yet')
 })
 
 test('Given the icon sits inside a link, Then it is not a tab stop', async () => {
   mount('ready', { focusable: false })
   expect(screen.getByRole('img', { name: 'PDF attached' })).not.toHaveAttribute('tabindex')
+})
+
+test('Given a hovered icon, Then its tooltip is hidden from screen readers because the icon already carries the text', async () => {
+  mount('ready')
+  await userEvent.setup().hover(screen.getByRole('img', { name: 'PDF attached' }))
+  expect((await screen.findAllByText('PDF attached')).some((node) => node.closest('[data-slot="tooltip-content"]')?.getAttribute('aria-hidden') === 'true')).toBe(true)
 })
