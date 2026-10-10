@@ -134,7 +134,9 @@ async def metadata_source(session) -> str:
     return source if source in SOURCES else "openalex"
 
 
-async def queue_lookup(session, paper: Paper, document_id: UUID, metadata: dict) -> None:
+async def queue_lookup(
+    session, paper: Paper, document_id: UUID, metadata: dict, *, new_paper: bool = False
+) -> None:
     """Inside the ingest commit: one lookup per new document of a paper without a provider record.
 
     Saved search results already carry provider metadata, and a re-ingest reuses the earlier
@@ -162,6 +164,8 @@ async def queue_lookup(session, paper: Paper, document_id: UUID, metadata: dict)
         payload={
             "paper_id": str(paper.id),
             "document_id": str(document_id),
+            # A new upload whose record belongs to a library paper asks to join it (ARA-086).
+            "new_paper": new_paper,
             "clues": {
                 "title": clues.title,
                 "authors": clues.authors[:20],
@@ -240,7 +244,9 @@ def unavailable(failures: list[AppError]) -> tuple[str, str]:
     )
 
 
-async def apply(resources, job_id, generation, token, paper_id, found: SearchResult, by: str):
+async def apply(
+    resources, job_id, generation, token, paper_id, found: SearchResult, by: str, *, new_paper=False
+):
     doi = normalized_doi(found.doi)
     async with resources.sessions() as session, session.begin():
         await identity_locks(
@@ -260,7 +266,7 @@ async def apply(resources, job_id, generation, token, paper_id, found: SearchRes
         )
         result = {"outcome": "matched", "provider": found.provider, "matched_by": by}
         if paper is not None:
-            result |= await merge(session, paper, found, doi)
+            result |= await merge(session, paper, found, doi, by=by, new_paper=new_paper)
         else:
             result["outcome"] = "paper_missing"
         job.state, job.stage, job.progress, job.result = "completed", "completed", 100, result
@@ -269,8 +275,14 @@ async def apply(resources, job_id, generation, token, paper_id, found: SearchRes
         job.updated_at = now()
 
 
-async def merge(session, paper: Paper, found: SearchResult, doi: str | None) -> dict:
-    """Write provider values over local ones; link the record unless another paper owns it."""
+async def merge(
+    session, paper: Paper, found: SearchResult, doi: str | None, *, by="title", new_paper=False
+) -> dict:
+    """Write provider values over local ones; link the record unless another paper owns it.
+
+    A new upload whose record another library paper owns asks to join that paper instead of
+    staying a duplicate (ARA-086); nothing is written to it meanwhile.
+    """
     source = await session.scalar(
         select(PaperSource).where(
             PaperSource.provider == found.provider, PaperSource.external_id == found.external_id
@@ -280,9 +292,26 @@ async def merge(session, paper: Paper, found: SearchResult, doi: str | None) -> 
     if source is not None and source.paper_id != paper.id:
         owner = source.paper_id
     elif doi:
+        from app.services.upload_match import library_papers
+
         owner = await session.scalar(
-            select(Paper.id).where(Paper.normalized_doi == doi, Paper.id != paper.id)
+            select(Paper.id).where(
+                Paper.normalized_doi == doi, Paper.id != paper.id, library_papers()
+            )
         )
+    if owner is not None and new_paper and paper.active_document_id is not None:
+        from app.services.upload_match import LibraryMatch, has_pdf, hold
+
+        library = await session.get(Paper, owner)
+        match = LibraryMatch(owner, await has_pdf(session, library), by)
+        pending = await hold(
+            session,
+            placeholder_id=paper.id,
+            document_id=paper.active_document_id,
+            match=match,
+            found_by="lookup",
+        )
+        return {"outcome": "library_match", "external_id": found.external_id, "match": pending}
     provenance = dict(paper.metadata_provenance)
     origin = {"source": found.provider, "external_id": found.external_id}
 
@@ -378,7 +407,15 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
     except TimeoutError:
         failures.append(AppError(503, "PROVIDER_UNAVAILABLE", "The lookup timed out."))
     if found:
-        await apply(resources, job_id, generation, token, paper_id, *found)
+        await apply(
+            resources,
+            job_id,
+            generation,
+            token,
+            paper_id,
+            *found,
+            new_paper=bool(payload.get("new_paper")),
+        )
     elif failures and not answered:
         await settle(
             resources,

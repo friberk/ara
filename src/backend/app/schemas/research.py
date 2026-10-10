@@ -52,6 +52,19 @@ class SavePaper(BaseModel):
     external_id: str = Field(min_length=1, max_length=200)
 
 
+class PaperLink(BaseModel):
+    paper_id: UUID
+    title: str | None
+
+
+class UploadMatch(PaperLink):
+    """A new upload that is this library paper; it waits for Replace/Attach or Cancel (ARA-086)."""
+
+    has_pdf: bool
+    matched_by: Literal["doi", "arxiv", "title"]
+    found_by: Literal["ingest", "lookup"]
+
+
 class PaperDetail(BaseModel):
     id: UUID
     title: str | None
@@ -67,6 +80,9 @@ class PaperDetail(BaseModel):
     metadata_provenance: dict
     # The active PDF's file name, so an untitled paper can be named while it is read (ARA-086).
     file_name: str | None = None
+    upload_match: UploadMatch | None = None
+    # The active PDF's DOI belongs to this other library paper.
+    pdf_doi_owner: PaperLink | None = None
 
 
 class PaperPage(BaseModel):
@@ -80,6 +96,12 @@ class PaperPatch(BaseModel):
     year: int | None = Field(default=None, ge=1500, le=2100)
     abstract: str | None = Field(default=None, max_length=20000)
     doi: str | None = Field(default=None, max_length=300)
+
+
+class MatchDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # attach also replaces the library paper's PDF; discard removes the upload.
+    decision: Literal["attach", "discard"]
 
 
 class UploadAccepted(BaseModel):

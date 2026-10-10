@@ -44,10 +44,13 @@ async def lookup_job(resources, paper_id):
 
     async with resources.sessions() as session:
         return await session.scalar(
-            select(BackgroundJob).where(
+            select(BackgroundJob)
+            .where(
                 BackgroundJob.kind == "metadata",
                 BackgroundJob.payload["paper_id"].astext == str(paper_id),
             )
+            .order_by(BackgroundJob.created_at.desc())
+            .limit(1)
         )
 
 
@@ -322,6 +325,8 @@ async def test_user_edited_fields_survive_enrichment(resources):
 
 
 async def test_a_record_saved_on_another_paper_keeps_doi_deduplication(resources):
+    """A new version uploaded into an existing paper keeps its target (ARA-086); a new upload
+    of a library paper joins it instead (test_upload_match_integration)."""
     from app.integrations.academic import normalize
     from app.repositories.papers import save_canonical
 
@@ -337,17 +342,27 @@ async def test_a_record_saved_on_another_paper_keeps_doi_deduplication(resources
     async with resources.sessions() as session, session.begin():
         saved, _ = await save_canonical(session, normalize("openalex", openalex_work()))
         saved_id = saved.id
+    first = await ingested(resources, toolchain_pdf(stamp=None, second_page=NO_DOI_PAGE))
+    async with resources.sessions() as session, session.begin():
+        from app.models.jobs import BackgroundJob
+
+        await session.execute(
+            update(BackgroundJob)
+            .where(BackgroundJob.kind == "metadata")
+            .values(state="completed", stage="completed", result={"outcome": "no_match"})
+        )
     accepted = await ingested(
         resources,
         toolchain_pdf(subject=f"doi:{DOI}", title_lines=DOI_LINES, stamp=None, second_page=None),
+        paper_id=first.paper_id,
     )
-    assert accepted.paper_id != saved_id
+    assert accepted.paper_id == first.paper_id != saved_id
     job = await run_lookup(resources, accepted.paper_id, due=False)
     assert job.result["outcome"] == "matched"
     assert job.result["duplicate_paper_id"] == str(saved_id)
     paper = await detail(resources, accepted.paper_id)
-    assert paper.doi is None and paper.sources == []
-    assert paper.title == "Exploiting Input Sanitization for Regex Denial of Service"
+    assert paper.doi is None and paper.sources == [] and paper.upload_match is None
+    assert paper.pdf_doi_owner.paper_id == saved_id
     assert paper.year == 2022
     assert [s.external_id for s in (await detail(resources, saved_id)).sources] == ["W4224987405"]
 

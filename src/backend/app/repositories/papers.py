@@ -125,9 +125,15 @@ async def mark_saved(session, hits: list[SearchHit]) -> None:
         )
 
 
-async def paper_detail(session, paper_id: UUID) -> PaperDetail:
+async def paper_detail(session, paper_id: UUID, *, follow: bool = True) -> PaperDetail:
+    from app.services.upload_match import match_view, redirect_target
+
     paper = await session.get(Paper, paper_id)
     if paper is None:
+        # An upload that joined a library paper answers as that paper (ARA-086).
+        target = await redirect_target(session, paper_id) if follow else None
+        if target is not None:
+            return await paper_detail(session, target, follow=False)
         raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
     authors = (
         await session.scalars(
@@ -142,6 +148,7 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
     document = (
         await session.get(Document, paper.active_document_id) if paper.active_document_id else None
     )
+    upload_match, pdf_doi_owner = await match_view(session, paper)
     status = document.status if document else "metadata_only"
     if status == "uploading":
         status = "processing"
@@ -165,6 +172,8 @@ async def paper_detail(session, paper_id: UUID) -> PaperDetail:
         active_document_id=paper.active_document_id,
         metadata_provenance=paper.metadata_provenance,
         file_name=document.original_filename if document else None,
+        upload_match=upload_match,
+        pdf_doi_owner=pdf_doi_owner,
     )
 
 
