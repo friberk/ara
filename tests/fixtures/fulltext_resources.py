@@ -1,11 +1,12 @@
-"""Explicit test transport: public fixture URLs map only to the isolated HTTP fixture."""
+"""Explicit test transport: OpenAlex's content and storage hosts map only to the HTTP fixture."""
 
 import httpx
-from fulltext_fixture import FullTextFixture
 
 from app.core.resources import Resources
-from app.integrations.pdf_download import PDFDownloader
+from app.integrations.openalex_content import CONTENT_HOST, STORAGE_HOSTS, ContentDownloader
 from app.integrations.public_http import DownloadPolicyError
+
+FIXTURE = "http://external-fixtures:8080"
 
 
 class FixtureResolver:
@@ -18,15 +19,16 @@ class FixtureRelay(httpx.AsyncBaseTransport):
         self.transport = httpx.AsyncHTTPTransport(retries=0)
 
     async def handle_async_request(self, request):
-        case = request.url.path.removeprefix("/pdf/")
-        if request.headers.get("Host") != "arxiv.org" or case not in FullTextFixture.cases:
+        host, path = request.headers.get("Host"), request.url.path
+        if host == CONTENT_HOST and path.startswith("/works/"):
+            target = f"{FIXTURE}/content{path}?{request.url.query.decode()}"
+        elif host in STORAGE_HOSTS and path.startswith("/openalex-pdfs/"):
+            target = f"{FIXTURE}/storage{path}"
+        else:
             raise DownloadPolicyError("unsafe_url", "The request is not a configured fixture case.")
-        target = httpx.Request(
-            "GET",
-            f"http://external-fixtures:8080/fulltext/pdf/{case}",
-            extensions=request.extensions,
+        return await self.transport.handle_async_request(
+            httpx.Request("GET", target, extensions=request.extensions)
         )
-        return await self.transport.handle_async_request(target)
 
     async def aclose(self):
         await self.transport.aclose()
@@ -35,7 +37,5 @@ class FixtureRelay(httpx.AsyncBaseTransport):
 def fixture_resources(settings):
     if settings.app_env != "test":
         raise RuntimeError("Full-text fixtures require APP_ENV=test")
-    downloader = PDFDownloader(
-        settings.fulltext_allowed_hosts, resolver=FixtureResolver(), transport_factory=FixtureRelay
-    )
+    downloader = ContentDownloader(resolver=FixtureResolver(), transport_factory=FixtureRelay)
     return Resources(settings, pdf_downloader=downloader)

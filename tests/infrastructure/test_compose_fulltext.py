@@ -1,4 +1,4 @@
-"""The operator's PDF-host policy reaches every process that owns a downloader."""
+"""The OpenAlex key reaches every process that owns a downloader; no host policy remains."""
 
 import json
 import os
@@ -39,6 +39,11 @@ class FullTextComposeTests(unittest.TestCase):
         for name in ("api", "worker"):
             self.assertIn("/fixtures/fulltext_runtime.py", services[name]["command"])
             self.assertIn("/fixtures", services[name]["environment"].get("PYTHONPATH", ""))
+            # The browser stack downloads from the fixture's content endpoint (ARA-087).
+            self.assertTrue(
+                bool(services[name]["environment"].get("OPENALEX_API_KEY")),
+                f"{name} has no OpenAlex key",
+            )
         self.assertTrue(
             any(
                 volume["target"] == "/fulltext-fixtures/research.pdf"
@@ -46,11 +51,10 @@ class FullTextComposeTests(unittest.TestCase):
             )
         )
 
-    def test_host_policy_reaches_api_and_workers(self):
-        policy = '["arxiv.org","aclanthology.org"]'
+    def test_openalex_key_reaches_api_and_workers_without_a_host_policy(self):
         env = {
             **os.environ,
-            "FULLTEXT_ALLOWED_HOSTS": policy,
+            "OPENALEX_API_KEY": "fixture-only-key",
             "POSTGRES_PASSWORD": "fixture-only",
             "REDIS_PASSWORD": "fixture-only",
             "MINIO_ROOT_PASSWORD": "fixture-only",
@@ -65,4 +69,9 @@ class FullTextComposeTests(unittest.TestCase):
         )
         services = json.loads(result.stdout)["services"]
         for name in ("api", "worker", "model-worker"):
-            self.assertEqual(services[name]["environment"].get("FULLTEXT_ALLOWED_HOSTS"), policy)
+            environment = services[name]["environment"]
+            self.assertEqual(environment.get("OPENALEX_API_KEY"), "fixture-only-key")
+            # Compare names only, so a failure never prints configured secrets.
+            self.assertFalse(
+                "FULLTEXT_ALLOWED_HOSTS" in environment, f"{name} still gets a host policy"
+            )

@@ -20,7 +20,6 @@ x-backend: &backend
     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}
     SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
-    FULLTEXT_ALLOWED_HOSTS: ${FULLTEXT_ALLOWED_HOSTS:-["arxiv.org","export.arxiv.org","aclanthology.org","pmc.ncbi.nlm.nih.gov","europepmc.org","proceedings.neurips.cc","openaccess.thecvf.com","pdfs.semanticscholar.org","link.springer.com","www.nature.com","nature.com","static-content.springer-cdn.com","ieeexplore.ieee.org","dl.acm.org"]}
     DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-5.6-luna}
     DEFAULT_REASONING_EFFORT: ${DEFAULT_REASONING_EFFORT:-low}
     LLM_DAILY_BUDGET_USD: ${LLM_DAILY_BUDGET_USD:-5}
