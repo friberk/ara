@@ -36,7 +36,7 @@ export function PaperCitation({ paper, className, wrap = false }: { paper: Pick<
           {venue && ',\u00a0'}
         </span>
       )}
-      {venue && <cite className="min-w-0 truncate italic" title={venue}>{venue}</cite>}
+      {venue && <cite className="min-w-0 truncate pr-[0.15em] italic" title={venue}>{venue}</cite>}
     </span>
   )
 }

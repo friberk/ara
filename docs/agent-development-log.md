@@ -1568,6 +1568,25 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
 
 **Not verified:** the Playwright specs (`e2e/mention-pills.spec.ts` and the updated `multi-paper.spec.ts`; not run, by instruction); a visual check in a browser (the MCP browser needs a Chrome install, and Playwright was not to be run); real IME input; mobile virtual keyboards; and actual screen reader output.
 
+**Follow-up fixes (lead's check on real data).** Four forward commits-worth of changes, each red first.
+- *Early title wrap.* The cause was `text-balance` on the Library title, which evens out line lengths, so a two-line title wraps near half the row. It is now `text-pretty`. Red: the row test asserted the heading lacks `text-balance` and failed. Checked in Chromium: the long title now uses the full row.
+- *Clipped italic.* The truncating venue gets `pr-[0.15em]`. Red: `PaperCitation.test.tsx` expected the class and failed. The closing parenthesis in "arXiv (Cornell University)" is visible in light and dark.
+- *Tab stops.* Library icons are decorative and not focusable; the link's name carries the state ("Title, PDF attached"). Red: the row test failed with `Unable to find an accessible element with the role "link" and name "Attention is all you need, PDF attached"`. About 15 other Library test queries that matched a link by exact title now match by `^Title, `.
+- *Double announcement.* The tooltip content is `aria-hidden`. Red: a new test found no hidden tooltip. Full run afterwards: 647 of 647, tsc and eslint clean. An earlier full run in this round had flaky timeouts that passed on rerun.
+
+**Mention pills only, with titles, hover × and citation card (ARA-096 follow-up).**
+- **Trigger.** The home composer showed each @-mentioned paper twice: as a chip above the editor and as an inline pill.
+- **The user's decision.** Pills only; the pill shows the paper title rather than "Surname Year"; hovering highlights it and shows a remove × at the top-right corner; hovering also shows the short citation.
+- **The lead's design** (impeccable skill, Operate mode):
+  - no composer chips, and the @ button inserts a pill;
+  - a title truncated near 28ch;
+  - highlight plus a corner × on hover or node selection;
+  - a HoverCard with PaperCitation and the full title;
+  - tap-to-select on touch;
+  - history pills without the ×;
+  - the chat-scope paper row in existing chats unchanged.
+- **Handover.** The ARA-096 agent was resumed for it.
+
 ## 2026-10-10 - ARA-097 workspace without tabs, the ⓘ details sheet and Remove PDF
 
 An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 merge, `1e30b1b`), and later merged `feat/ux-feedback-round` (`7fbcf96`) into it at the lead's request. Backend tests ran only in its own `ara-workspace-test` Compose project, and the browser check in a separate `ara-wsvisual-test` project, removed afterwards. The user's `ara` and `ara-live` stacks were not touched. Before any edit it ran the impeccable design context for `PaperWorkspacePage.tsx` and read the craft floor; after the UI work, the mechanical detector found nothing in the changed files. No migration and no new dependency.

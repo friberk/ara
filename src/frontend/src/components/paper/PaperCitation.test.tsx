@@ -31,7 +31,7 @@ test('Given a long venue, Then only the italic venue truncates and keeps its ful
   const container = line(han, 2018, venue)
   const venueText = container.querySelector('cite')!
   expect(venueText).toHaveTextContent(venue)
-  expect(venueText).toHaveClass('italic', 'truncate', 'min-w-0')
+  expect(venueText).toHaveClass('italic', 'truncate', 'min-w-0', 'pr-[0.15em]')
   expect(venueText).toHaveAttribute('title', venue)
   const lead = venueText.previousElementSibling!
   expect(lead).toHaveTextContent('Han et al. (2018),')

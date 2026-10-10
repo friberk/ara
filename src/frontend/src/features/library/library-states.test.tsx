@@ -52,7 +52,7 @@ test('Given a full first page, When Load more is pressed, Then it is disabled an
   await waitFor(() => expect(more).toBeDisabled())
   expect(more).toHaveAttribute('aria-busy', 'true')
   next.resolve(json({ items: [paper(20)] }))
-  expect(await within(main).findByRole('link', { name: 'Paper 20' })).toBeVisible()
+  expect(await within(main).findByRole('link', { name: /^Paper 20, / })).toBeVisible()
   expect(within(main).getByText('21 papers')).toBeVisible()
   expect(within(main).queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
 })
@@ -82,7 +82,7 @@ test('Given the library cannot load, Then the error is shown inline and Try agai
   expect(alert).toHaveTextContent('The library is unavailable right now.')
   failing = false
   await user.click(within(alert).getByRole('button', { name: 'Try again' }))
-  expect(await within(main).findByRole('link', { name: 'Paper 1' })).toBeVisible()
+  expect(await within(main).findByRole('link', { name: /^Paper 1, / })).toBeVisible()
   expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
 })
 
@@ -90,7 +90,7 @@ test('Given saved titles with hidden characters, Then rows render them clean', a
   mockApi({ 'GET /papers': { items: [{ ...paper(1), title: 'Exploiting input\u0007 sanitization', abstract: 'Web services\u0000 sanitize input.' }] } })
   mount(['/library'])
   const main = screen.getByRole('main')
-  expect(await within(main).findByRole('link', { name: 'Exploiting input sanitization' })).toHaveAttribute('href', '/papers/p1')
+  expect(await within(main).findByRole('link', { name: /^Exploiting input sanitization, / })).toHaveAttribute('href', '/papers/p1')
   expect(within(main).getByText('Web services sanitize input.')).toBeVisible()
 })
 
@@ -107,10 +107,10 @@ test('Given Load more fails, Then the loaded papers stay and Try again fetches t
   await user.click(await within(main).findByRole('button', { name: 'Load more' }))
   const alert = await within(main).findByRole('alert')
   expect(alert).toHaveTextContent('More papers are unavailable right now.')
-  expect(within(main).getByRole('link', { name: 'Paper 0' })).toBeVisible()
+  expect(within(main).getByRole('link', { name: /^Paper 0, / })).toBeVisible()
   expect(within(main).queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
   failing = false
   await user.click(within(alert).getByRole('button', { name: 'Try again' }))
-  expect(await within(main).findByRole('link', { name: 'Paper 20' })).toBeVisible()
+  expect(await within(main).findByRole('link', { name: /^Paper 20, / })).toBeVisible()
   expect(within(main).queryByRole('alert')).not.toBeInTheDocument()
 })
