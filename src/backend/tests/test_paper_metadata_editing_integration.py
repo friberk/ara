@@ -7,8 +7,16 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from support.academic import DOI, DOI_TITLE, openalex_work, providers
-from test_metadata_enrichment_integration import detail, run_lookup, use
+from support.academic import DOI, DOI_TITLE, openalex_work, providers, semantic_paper
+from support.front_matter import TITLE, toolchain_pdf
+from test_metadata_enrichment_integration import (
+    NO_DOI_PAGE,
+    detail,
+    ingested,
+    lookup_job,
+    run_lookup,
+    use,
+)
 from test_paper_deletion_integration import client_for
 from test_upload_match_integration import library_paper
 
@@ -33,17 +41,57 @@ async def test_venue_is_editable_and_an_edit_wins_over_the_provider_record(resou
         assert too_long.status_code == 422
 
 
-async def test_look_up_again_needs_a_doi_or_a_provider_record(resources):
+async def test_look_up_again_needs_something_to_look_up(resources):
+    """A paper with a title, DOI or provider record can be looked up; an untitled paper
+    without identifiers cannot."""
     async with resources.sessions() as session, session.begin():
-        paper = Paper(title="Notes without identifiers", metadata_provenance={})
-        session.add(paper)
+        untitled = Paper(title=None, metadata_provenance={})
+        titled = Paper(title="Notes on sleep states", metadata_provenance={})
+        session.add_all([untitled, titled])
     async with client_for(resources) as client:
-        refused = await client.post(f"/api/v1/papers/{paper.id}/metadata-lookup")
+        refused = await client.post(f"/api/v1/papers/{untitled.id}/metadata-lookup")
+        accepted = await client.post(f"/api/v1/papers/{titled.id}/metadata-lookup")
         unknown = await client.post(
             "/api/v1/papers/00000000-0000-0000-0000-000000000000/metadata-lookup"
         )
     assert refused.status_code == 409 and refused.json()["code"] == "LOOKUP_UNAVAILABLE"
+    assert accepted.status_code == 202, accepted.text
     assert unknown.status_code == 404
+
+
+async def test_an_upload_whose_lookup_gave_up_is_looked_up_again_with_its_pdf_clues(resources):
+    """Given an upload whose first lookup ran out of attempts, Look up again keeps the clues
+    only the PDF had, such as its arXiv ID, and finds the record."""
+    from sqlalchemy import update
+
+    from app.models.jobs import BackgroundJob
+
+    accepted = await ingested(resources, toolchain_pdf(second_page=NO_DOI_PAGE))
+    first = await lookup_job(resources, accepted.paper_id)
+    async with resources.sessions() as session, session.begin():
+        await session.execute(
+            update(BackgroundJob)
+            .where(BackgroundJob.id == first.id)
+            .values(state="failed", stage="failed", error_code="PROVIDER_RATE_LIMITED")
+        )
+    requests = []
+    await resources.http.aclose()
+    use(
+        resources,
+        providers(
+            requests,
+            semantic_scholar=lambda request: httpx.Response(
+                200, json=semantic_paper(title=TITLE, doi=None, arxiv="1706.03762")
+            ),
+        ),
+    )
+    async with client_for(resources) as client:
+        queued = await client.post(f"/api/v1/papers/{accepted.paper_id}/metadata-lookup")
+    assert queued.status_code == 202 and queued.json()["id"] != str(first.id)
+    job = await run_lookup(resources, accepted.paper_id, due=False)
+    assert job.result["matched_by"] == "arxiv" and job.result["provider"] == "semantic_scholar"
+    paper = await detail(resources, accepted.paper_id)
+    assert paper.authors[0] == "Efe Barlas"
 
 
 async def test_look_up_again_refreshes_provider_fields_and_keeps_edited_ones(resources):

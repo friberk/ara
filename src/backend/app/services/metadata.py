@@ -182,9 +182,10 @@ async def queue_lookup(
 async def queue_refresh(session, paper_id: UUID) -> BackgroundJob:
     """Look a paper up again at the user's request, at any time (ARA-095).
 
-    It needs a DOI or a provider record. A lookup already queued or running is returned rather
-    than repeated, so repeated clicks ask no provider twice. Clues are read when the job runs,
-    so edits made meanwhile count.
+    It needs a title, DOI or provider record. A lookup already queued or running is returned
+    rather than repeated, so repeated clicks ask no provider twice. The paper's details are read
+    when the job runs, so edits made meanwhile count; clues only the PDF had, such as an arXiv
+    ID, are carried over from the paper's earlier lookup.
     """
     paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
     if paper is None:
@@ -204,8 +205,20 @@ async def queue_refresh(session, paper_id: UUID) -> BackgroundJob:
     linked = await session.scalar(
         select(PaperSource.id).where(PaperSource.paper_id == paper.id).limit(1)
     )
-    if not paper.normalized_doi and linked is None:
-        raise AppError(409, "LOOKUP_UNAVAILABLE", "Add the paper's DOI to look up its details.")
+    if not (paper.title or paper.normalized_doi or linked):
+        raise AppError(
+            409, "LOOKUP_UNAVAILABLE", "Add the paper's title or DOI to look up its details."
+        )
+    earlier = await session.scalar(
+        select(BackgroundJob.payload["clues"])
+        .where(
+            BackgroundJob.kind == "metadata",
+            BackgroundJob.payload["paper_id"].astext == str(paper.id),
+            BackgroundJob.payload.has_key("clues"),
+        )
+        .order_by(BackgroundJob.created_at.desc())
+        .limit(1)
+    )
     return await enqueue(
         session,
         kind="metadata",
@@ -213,12 +226,17 @@ async def queue_refresh(session, paper_id: UUID) -> BackgroundJob:
             "paper_id": str(paper.id),
             "document_id": str(paper.active_document_id) if paper.active_document_id else None,
             "refresh": True,
+            "clues": earlier or {},
         },
     )
 
 
-async def refresh_clues(session, paper: Paper) -> tuple[Clues, dict[str, str], bool]:
-    """The paper's current details as clues, its saved records, and whether its DOI is manual."""
+async def refresh_clues(
+    session, paper: Paper, earlier: Clues
+) -> tuple[Clues, dict[str, str], bool]:
+    """The paper's current details as clues, its saved records, and whether its DOI is manual.
+
+    The arXiv ID and venue only the PDF had come from the earlier lookup's clues."""
     from app.models.research import PaperAuthor
 
     authors = (
@@ -240,7 +258,12 @@ async def refresh_clues(session, paper: Paper) -> tuple[Clues, dict[str, str], b
     )
     manual_doi = (paper.metadata_provenance.get("doi") or {}).get("source") == "manual"
     clues = Clues(
-        title=paper.title, authors=list(authors), year=paper.year, doi=paper.normalized_doi
+        title=paper.title,
+        authors=list(authors),
+        year=paper.year,
+        doi=paper.normalized_doi,
+        arxiv_id=earlier.arxiv_id,
+        venue=earlier.venue,
     )
     return clues, records, manual_doi
 
@@ -491,7 +514,7 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
             return
         records, trust_doi = {}, False
         if refresh and paper is not None:
-            clues, records, trust_doi = await refresh_clues(session, paper)
+            clues, records, trust_doi = await refresh_clues(session, paper, clues)
         attempts = started
         selected = await metadata_source(session)
         pages = (
