@@ -48,6 +48,7 @@ export function ChatPapers({ papers, onRemove, removing }: ChatPapersProps) {
         paper={detail}
         onActivate={() => open(paper.paper_id)}
         onRemove={() => remove(paper)}
+        cardSide="bottom"
         removeLabel={`Remove ${paper.title?.trim() || 'Untitled paper'} from this chat`}
         removeDisabled={removing === paper.paper_id}
       />

@@ -30,9 +30,9 @@ function Wrapper({ title, description, onActivate, children }: { title: string; 
  *
  * A pill with onActivate (the row above a multi-paper chat, ARA-110) is one button named by the title; keyboard focus
  * darkens it and shows the remove button like hover does, and Tab reaches that button next. A pill whose × does more
- * than drop a mention names it in removeLabel ("Remove <title> from this chat").
+ * than drop a mention names it in removeLabel; a pill near the top of its pane opens its card below (cardSide) ("Remove <title> from this chat").
  */
-export function PaperPill({ title, paper, selected = false, onRemove, onActivate, removeDisabled = false, removeLabel, surface = 'muted' }: { title: string; paper?: PillPaper | null; selected?: boolean; onRemove?: () => void; onActivate?: () => void; removeDisabled?: boolean; removeLabel?: string; surface?: 'muted' | 'paper' }) {
+export function PaperPill({ title, paper, selected = false, onRemove, onActivate, removeDisabled = false, removeLabel, cardSide = 'top', surface = 'muted' }: { title: string; paper?: PillPaper | null; selected?: boolean; onRemove?: () => void; onActivate?: () => void; removeDisabled?: boolean; removeLabel?: string; cardSide?: 'top' | 'bottom'; surface?: 'muted' | 'paper' }) {
   const description = useId()
   const label = useRef<HTMLSpanElement>(null)
   const [hovered, setHovered] = useState(false)
@@ -89,7 +89,7 @@ export function PaperPill({ title, paper, selected = false, onRemove, onActivate
           )}
         </span>
       </HoverCardTrigger>
-      <HoverCardContent side="top" align="start" sideOffset={6} collisionPadding={12} onEscapeKeyDown={() => setDismissed(true)} className="grid w-auto max-w-[min(20rem,calc(100vw-1.5rem))] gap-1 px-3 py-2">
+      <HoverCardContent side={cardSide} align="start" sideOffset={6} collisionPadding={12} onEscapeKeyDown={() => setDismissed(true)} className="grid w-auto max-w-[min(20rem,calc(100vw-1.5rem))] gap-1 px-3 py-2">
         {truncated && <p className="text-sm leading-snug font-medium text-pretty">{title}</p>}
         {paper && <PaperCitation paper={paper} />}
       </HoverCardContent>
