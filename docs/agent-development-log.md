@@ -958,3 +958,7 @@ After the first round, the lead fast-forwarded the branch to the integration bra
 - The USENIX paper was saved from OpenAlex, then the PDF was uploaded from home. It matched by the strict title rule (OpenAlex's lowercase title against the printed one, plus the surname Han) and was attached. The browser landed on the saved paper with the note.
 - A byte-different copy uploaded in the library showed "Matches “A bad dream…”, which already has a PDF" with Replace PDF and Cancel, while the API listing held one paper.
 - Replace re-read the copy on the saved paper, and the library still held one paper.
+
+**Crossed messages.** The lead's resume message ("library matching not yet implemented") was sent before the report above. The branch had not been reset, and matching, the retrieval wording and the saved-default LLM test were already on it (`9b53e7b`, `5ed5c8b`, `e7567a7`, `238104f`, `0df528e`).
+- **One further change.** The composer for a paper whose PDF is being read used to say "Questions open when the PDF finishes processing." It now uses the same words as during retrieval: "You can ask questions once the PDF is ready." (`2c7dde4`).
+- **Red, then green.** The updated expectation in `ConversationPane.states.test.tsx` failed first with `Unable to find … You can ask questions once the PDF is ready.`
