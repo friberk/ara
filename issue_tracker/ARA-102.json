@@ -1,0 +1,26 @@
+{
+  "id": "ARA-102",
+  "title": "Summary card shows only the summary: no model line, no version menu",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"I like the summary box we are having currently. But it is having some problems. 1) When we don't have the summary delete the text part where it says \"Uses GPT-5.6 Luna with low reasoning\" 2) When we have the summary, don't show the \"Version 1 of 1\" \"GPT-5.6 Luna\" \"Low reasoning\" \"Oct 9 ...\" stuff. It should be just the summary for now.\" The summaries API keeps its versions; the card shows the latest one.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given a ready paper without a summary, when the card shows Generate summary, then no 'Uses <model> with <effort>' text appears.",
+    "Given a paper with one or more summaries, when the card shows, then it shows the heading, the latest summary and its sources with Show full summary. There is no version menu, model name, reasoning effort or timestamp.",
+    "Given the codebase, when this lands, then the version menu, the selected-version state and any helpers only they used are deleted, with their tests. Helpers used elsewhere stay.",
+    "Given the existing card states (progress, failure, needs PDF, retrieving, blocked, earlier PDF), when they occur, then they behave as before."
+  ],
+  "test_cases": [
+    "No-summary card has no 'Uses' line.",
+    "Summary card has no 'Version', model, effort or time text, and shows the latest summary when there are several."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/summary/SummaryCard.tsx"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 from the user's feedback. Branch feat/ara-102-summary-card.",
+  "updated_at": "2026-10-10"
+}
