@@ -1,23 +1,14 @@
 import { useId } from 'react'
-import { CircleAlert, CircleCheck, CircleDashed, CircleSlash, LoaderCircle, type LucideIcon } from 'lucide-react'
+import { LoaderCircle } from 'lucide-react'
 import type { PaperRetrieval, RetrievalIndex } from '@/api/types'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { UnavailableReason } from '@/components/retrieval/ProfileOptions'
 import { isBuilding, useEmbeddingProfiles, usePaperRetrieval, useRebuildPaperRetrieval } from '@/hooks/queries/retrieval'
-import { cn } from '@/lib/utils'
 
 type IndexView = 'ready' | 'building' | 'failed' | 'unavailable' | 'missing'
-const badges: Record<IndexView, { label: string; tone: string; icon: LucideIcon }> = {
-  ready: { label: 'Ready', tone: 'bg-success-muted text-success', icon: CircleCheck },
-  building: { label: 'Building', tone: 'bg-warning-muted text-warning', icon: LoaderCircle },
-  failed: { label: 'Failed', tone: 'bg-destructive/10 text-destructive', icon: CircleAlert },
-  unavailable: { label: 'Unavailable', tone: 'bg-muted text-muted-foreground', icon: CircleSlash },
-  missing: { label: 'Not built yet', tone: 'bg-muted text-muted-foreground', icon: CircleDashed },
-}
 
 /** The index for the library model: one still building wins, else the most recently updated. */
 function currentIndex(data: PaperRetrieval): RetrievalIndex | undefined {
@@ -42,19 +33,14 @@ function IndexDetails({ paperId }: { paperId: string }) {
   const profile = items.find((item) => item.key === data.effective_profile)
   const index = currentIndex(data)
   const view = viewOf(index)
-  const badge = badges[view]
   const percent = index && view === 'building' && index.total > 0 ? Math.min(99, Math.round(100 * index.embedded / index.total)) : null
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="grid min-w-0 gap-1">
-          <p className="text-sm">Searching with <span className="font-medium">{profile?.display_name ?? data.effective_profile}</span></p>
-          {profile && <p className="font-mono text-xs break-all text-muted-foreground">{profile.model_id}</p>}
-        </div>
-        <Badge variant="secondary" className={cn('font-normal', badge.tone)}><badge.icon data-icon="inline-start" aria-hidden="true" className={view === 'building' ? 'motion-safe:animate-spin' : undefined} />{badge.label}</Badge>
-      </div>
+      {/* One plain sentence, the model named once (ARA-101 follow-up). A ready index says nothing more. */}
+      <p className="text-sm text-pretty tabular">{`Searching ${count(data.chunk_count, 'passage')} in ${count(data.section_count, 'section')} with ${profile?.display_name ?? data.effective_profile}.`}</p>
       {view === 'building' && (
         <div className="grid gap-2">
+          <p className="flex items-center gap-2 text-sm"><LoaderCircle aria-hidden="true" className="size-3.5 text-muted-foreground motion-safe:animate-spin" />Building the index</p>
           <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted-foreground">
             <span className="tabular">{index && index.total > 0 ? `${index.embedded.toLocaleString()} of ${count(index.total, 'passage')}` : 'Waiting to start'}</span>
             {percent !== null && <span className="tabular">{percent}%</span>}
@@ -62,7 +48,6 @@ function IndexDetails({ paperId }: { paperId: string }) {
           <Progress value={percent} aria-label="Search index progress" />
         </div>
       )}
-      <p className="text-sm text-muted-foreground tabular">{count(data.chunk_count, 'passage')} · {count(data.section_count, 'section')}</p>
       {view === 'building' && <p className="text-sm text-muted-foreground">{data.mode === 'hybrid' ? 'Answers keep using the previous index until the new one is ready.' : 'Answers use keyword search until the index is ready.'}</p>}
       {view === 'missing' && <p className="text-sm text-muted-foreground">{data.mode_note ?? 'Answers use keyword search until the index is built.'}</p>}
       {view === 'unavailable' && <div className="text-sm text-muted-foreground">{index?.error?.message ?? (profile?.status === 'unavailable' ? <UnavailableReason profile={profile} /> : data.mode_note ?? 'This search model is not available right now.')}</div>}

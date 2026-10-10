@@ -1759,3 +1759,34 @@ Deviations: (1) the popover's accessible name is "Chat history for this paper", 
 - **Not verified:** the Playwright specs (updated: editor pills are groups, plus an @-button journey); real touch devices; IME; screen reader output.
 
 **Phase 2 (header, picker, deletion).** After ARA-097 merged, the workspace header got `PaperPdfStatus`: no icon when the PDF is ready, the state icon otherwise, and automatic retrieval shows as the preparing state (the old "Getting PDF" text is gone). Red: `Unable to find role="img" and name "Preparing PDF…"`. After ARA-096 merged, the @ picker rows use `PdfStateIcon` in place of `FileText` and the badge. A blocked row names its reason ("No PDF yet. Add one to ask about this paper.") in its option name and its icon is decorative; ready rows keep a labelled icon, because an existing test pins a row's text to the title alone. Red: `toHaveAccessibleName` failed and the badge was still present. `DocumentStatusBadge`, `document-state.ts`, `PaperStatusBadge` and their test case are deleted; a grep finds no remaining use. Visual round of the open picker against the real-data copy on :8011, read-only: light, dark and 390px, no overflow, state icons match the sidebar; blocked rows are dimmed as disabled options.
+
+**ARA-101 follow-up (2026-10-10): an Abstract heading and a quieter search index.**
+- **The request.** After ARA-101 merged (`58ae56b`), the user asked: "Can we have a heading/title for abstract?" While at it, the lead asked to tidy the ⓘ dialog's search index. It had a middle dot ("64 passages · 32 sections"), the model id shown twice, and a green "Ready" pill. The work went on `feat/ara-101b-abstract-heading` from `58ae56b`.
+- **What changed.**
+  - `PaperHeader` puts a small `h3` "Abstract" (`text-sm font-medium`) in a tight group with the abstract. When there is no abstract, the heading stays above "No abstract is available for this paper yet.", which reads better than a gap.
+  - `SearchIndexPanel` says it in one sentence: "Searching 64 passages in 32 sections with OpenAI text-embedding-3-large." A ready index adds nothing.
+  - Building shows a spinner line, "Building the index", with the progress bar.
+  - Failure keeps its alert, and unavailable or missing keep their notes. Rebuild index stays.
+  - The `Badge` and its tone table are gone.
+- **Red, then green.** 9 tests failed first:
+  - `Unable to find … heading "Abstract"` ×2;
+  - `Unable to find … "Searching 212 passages in 14 sections with OpenAI text-embedding-3-large."` ×2;
+  - `"Building the index"` ×2;
+  - the `Failed` and `Unavailable` pills still present ×2;
+  - the open-models flag sentence ×1.
+
+  Then 29 passed.
+- **Visual check, read-only against :8011 through Vite on 5198.** No non-GET request was made.
+  - Desktop light: the heading sits under the links, grouped with the abstract.
+  - At 390px: no overflow, and the dialog is 358 × 633 within 390 × 844.
+  - The index sentence wraps cleanly.
+- **Verification.** `npm run check` passed with 695 tests in 92 files, and `npm run build` passed with the existing chunk-size warning.
+  - Run alone, `library-manage.test.tsx`'s Delete test fails on this base with `Found multiple elements with the role "button" and name "Actions for “Attention is all you need”"`. ARA-103's sidebar row menu also matches that name. `feat/ux-feedback-round` has since changed that test, so the merge brings the fix. This branch does not touch it.
+- **The PDF heading, the same day.** The user also asked: "Also for the PDF part, can we have a heading / title as well?"
+  - `PdfHeading` is an `h3` "PDF" in the Abstract heading's style. The file name (`paper.file_name`) follows it in muted text, with no separator glyph.
+  - `PdfReader` passes it to `PdfViewer` with the paper header, so it sits above page 1 and scrolls with the document. The controls bar stays the only pinned element.
+  - With no ready PDF, `ReaderGate` puts the same heading first in its column. Its "Preparing the PDF" and "This PDF couldn't be processed" headings became `h4`, so the outline reads title, Abstract, PDF.
+  - An earlier PDF version keeps its "Showing an earlier PDF version" banner and gets no second label.
+  - **Red, then green.** The two new tests for the heading above the PDF and above the gate failed with `Unable to find … heading … /^PDF/` and `… "PDF"`. The test that an earlier version gets no extra heading passed at its first run, since nothing had added one yet. The citation-jump test, extended to pass the heading with the header, also passed at once: `PdfViewer` renders whatever header it is given.
+  - **Verification.** `npm run check` passed with 698 tests in 92 files, and `npm run build` passed.
+  - **Visual round.** It was read-only against :8011 at desktop light and 390px. The reader's headings read title, "Abstract", "PDF sec18-han.pdf" above a PDF, and title, "Abstract", "PDF" above the no-PDF states. Nothing overflows. A citation jump to page 7 still marked the passage in view, and scrolling to the top showed page 1.

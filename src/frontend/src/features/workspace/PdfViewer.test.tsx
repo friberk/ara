@@ -451,7 +451,7 @@ describe('PdfViewer highlight lifetime (ARA-089, test-first, fake timers)', () =
 })
 
 describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
-  test('Given a header, When a citation on page 2 is shown, Then the header scrolls with the pages, the jump lands below it and the passage is marked', async () => {
+  test('Given a header and the PDF heading, When a citation on page 2 is shown, Then both scroll with the pages, the jump lands below them and the passage is marked', async () => {
     const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
     const scrolls: number[] = []
     vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(function (this: Element, options?: ScrollToOptions | number) {
@@ -465,12 +465,17 @@ describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
       return new DOMRect(0, 0, 800, 600)
     })
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
-    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={{ citation: onMethod, nonce: 1 }} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    // The header as PdfReader passes it: the paper header, then the "PDF" section heading (ARA-101 follow-up).
+    const header = <><header><h2>Traceable Research Systems</h2></header><h3>PDF <span>research.pdf</span></h3></>
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={{ citation: onMethod, nonce: 1 }} header={header} {...handlers} />)
     await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('highlighted'))
     const document = screen.getByRole('region', { name: 'PDF document' })
-    const header = screen.getByRole('heading', { name: 'Traceable Research Systems' })
-    expect(document).toContainElement(header)
-    expect(header.compareDocumentPosition(screen.getByRole('group', { name: 'Page 1' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const title = screen.getByRole('heading', { name: 'Traceable Research Systems' })
+    const section = screen.getByRole('heading', { level: 3, name: 'PDF research.pdf' })
+    expect(document).toContainElement(title)
+    expect(document).toContainElement(section)
+    expect(title.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(section.compareDocumentPosition(screen.getByRole('group', { name: 'Page 1' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(scrolls).toContain(1352 - 8)
     expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
     vi.restoreAllMocks()
