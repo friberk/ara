@@ -1655,3 +1655,7 @@ An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 me
 - No live OpenAlex download was made.
 - No real concurrent races were run.
 - The final Remove PDF semantics and focus after removal were not seen in a browser.
+
+### 2026-10-10 — Lead: the user rejected ARA-097's details sheet (ARA-101)
+
+I approved ARA-097's design, which put every paper detail behind ⓘ in a side sheet, bibliography included, and I merged it at `bbf480a` after a browser check that judged only whether it worked. The user rejected it: "ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." My error was reading the earlier request ("This kind of detailed info should go to modal") as covering the bibliography too. The user meant only the behind-the-scenes details. ARA-101 moves the bibliography back above the PDF and makes ⓘ a small modal for provenance, identifiers and the search index. The user also asked why "Ready to read" was still on the paper page. ARA-098 phase 2a had held that header until ARA-097 merged, and it went in at `2b368e1`. A browser check on the test copy then found no "Ready to read" text, and only the "No PDF yet" icon on a paper without a PDF.
