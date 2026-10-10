@@ -11,7 +11,7 @@ export function useFollowBottom(signal: string) {
   const ref = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const [away, setAway] = useState(false)
-  // Scrolled away from the top: the viewport fades its top edge so content never looks sliced under the header.
+  // Scrolled away from the top: a hairline divides the thread from the header and the paper chips (ARA-097).
   const [scrolled, setScrolled] = useState(false)
   useLayoutEffect(() => {
     const element = ref.current

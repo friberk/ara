@@ -72,7 +72,9 @@ export function AssistantMessage({ message, sources, progress }: { message: Mess
   const showSource = workspace ? (citation: Citation, claim?: string) => workspace.showSource(withPaper(citation), claim) : undefined
   const writing = message.state === 'processing'
   return (
-    <article aria-label="Assistant message" aria-busy={writing} className="grid gap-2.5">
+    // One minmax(0, 1fr) column: an implicit grid track would grow to the widest link, identifier, table or code block
+    // and push the whole answer past a narrow screen (ARA-097); now they wrap or scroll inside the answer.
+    <article aria-label="Assistant message" aria-busy={writing} className="grid grid-cols-1 gap-2.5">
       {writing && progress && <p className="text-sm leading-7 text-muted-foreground motion-safe:animate-pulse">{progress}</p>}
       {writing && !message.content ? !progress && <Preparing /> : message.content ? (
         <div className="text-[15.5px] leading-7">
