@@ -12,3 +12,7 @@ uv run --no-project --with fonttools==4.55.3 --with uharfbuzz==0.43.0 python -I 
 ```
 
 Do not commit the font file. After regenerating, update the inlined paths in `AraBrand.tsx` and copy `favicon.svg` to `src/frontend/public/favicon.svg` (a test checks the favicon copy).
+
+## PNG fallbacks
+
+`src/frontend/public/favicon-32.png` (32x32, light tile with rounded corners) and `apple-touch-icon.png` (180x180, opaque, square corners because iOS and Android apply their own mask) are rendered from `favicon.svg` with the frontend's Playwright Chromium. After `npm ci` in `src/frontend`, run `node branding/render_icons.mjs`. Commit the PNGs; no new dependencies.
