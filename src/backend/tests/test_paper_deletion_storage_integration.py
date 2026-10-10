@@ -1,12 +1,13 @@
 """Stored PDFs of deleted papers are removed by a durable job, never inline (ARA-095)."""
 
+import io
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from minio.error import S3Error
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from support.front_matter import toolchain_pdf
 from test_metadata_enrichment_integration import ingested
 from test_paper_deletion_integration import client_for
@@ -182,3 +183,37 @@ async def test_a_pdf_still_uploading_is_removed_after_the_upload_grace(resources
         assert (await client.delete(f"/api/v1/papers/{paper.id}")).status_code == 204
     job = await cleanup_job(resources)
     assert job.available_at >= before + timedelta(seconds=290)
+
+
+async def test_one_documents_object_can_be_cleaned_up_on_its_own(resources):
+    """The cleanup is callable for a single document, as removing one PDF of a paper will need
+    (ARA-097): after the document row goes, its object is removed and the paper's others stay."""
+    from app.services.deletion import queue_storage_cleanup
+
+    paper, current_key = await uploaded(resources, "Live")
+    older = Document(
+        paper_id=paper,
+        status="ready",
+        object_key=f"originals/{uuid4()}.pdf",
+        sha256=uuid4().hex + uuid4().hex,
+        original_filename="older.pdf",
+        byte_size=10,
+        request_id=uuid4(),
+    )
+    await resources.storage_call(
+        resources.storage.put_object,
+        resources.settings.minio_bucket,
+        older.object_key,
+        io.BytesIO(b"%PDF-1.4 older"),
+        14,
+    )
+    async with resources.sessions() as session, session.begin():
+        session.add(older)
+    async with resources.sessions() as session, session.begin():
+        await session.execute(delete(Document).where(Document.id == older.id))
+        job = await queue_storage_cleanup(session, [older])
+    assert job.payload["object_keys"] == [older.object_key]
+    done = await run_cleanup(resources)
+    assert done.state == "completed" and done.result == {"removed": 1, "kept": 0}
+    assert not await stored(resources, older.object_key)
+    assert await stored(resources, current_key)
