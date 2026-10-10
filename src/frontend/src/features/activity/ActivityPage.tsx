@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { isActiveJob, jobKindLabels, jobStageLabel } from '@/components/jobs/job-labels'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
+import { useOpenModels } from '@/hooks/queries/features'
 import { useModels } from '@/hooks/queries/models'
 import { useRetrieveFullText } from '@/hooks/queries/fulltext'
 import { cn } from '@/lib/utils'
@@ -25,10 +26,10 @@ const filters: { value: Filter; label: string; matches: (job: JobView) => boolea
   { value: 'active', label: 'Active', matches: isActiveJob },
   { value: 'failed', label: 'Failed', matches: (job) => job.state === 'failed' },
 ]
-const emptyFilter: Record<Exclude<Filter, 'all'>, { title: string; text: string }> = {
-  active: { title: 'Nothing is running', text: 'Uploads, summaries and model downloads show their progress here.' },
+const emptyFilter = (openModels: boolean): Record<Exclude<Filter, 'all'>, { title: string; text: string }> => ({
+  active: { title: 'Nothing is running', text: openModels ? 'Uploads, summaries and model downloads show their progress here.' : 'Uploads and summaries show their progress here.' },
   failed: { title: 'No failed jobs', text: 'Every job so far finished without an error.' },
-}
+})
 const states: Record<JobView['state'], { label: string; tone: string }> = {
   queued: { label: 'Queued', tone: 'bg-muted text-muted-foreground' },
   processing: { label: 'Running', tone: 'bg-warning-muted text-warning' },
@@ -39,6 +40,8 @@ const states: Record<JobView['state'], { label: string; tone: string }> = {
 
 // Only work the reader started is shown; maintenance jobs such as the deployment canary stay internal.
 const isReaderJob = (job: JobView) => job.kind in jobKindLabels
+// Local model downloads and deletions exist only while open models are on (ARA-090).
+const isModelJob = (job: JobView) => job.kind === 'model_download' || job.kind === 'model_delete'
 const kindLabel = (kind: string) => jobKindLabels[kind] ?? kind
 
 function JobTime({ job, now }: { job: JobView; now: number }) {
@@ -124,15 +127,16 @@ export default function ActivityPage() {
   const jobs = useJobs()
   const models = useModels()
   const now = useNow(1000)
+  const openModels = useOpenModels()
   const [filter, setFilter] = useState<Filter>('all')
-  const items = (jobs.data?.items ?? []).filter(isReaderJob)
+  const items = (jobs.data?.items ?? []).filter((job) => isReaderJob(job) && (openModels || !isModelJob(job)))
   const matches = filters.find((item) => item.value === filter)?.matches ?? (() => true)
   const visible = items.filter(matches)
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
       <header className="grid gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-        <p className="text-sm text-pretty text-muted-foreground">PDF processing, summaries and model downloads run in the background. Progress updates here, and you can leave this page while they work.</p>
+        <p className="text-sm text-pretty text-muted-foreground">{openModels ? 'PDF processing, summaries and model downloads run' : 'PDF processing and summaries run'} in the background. Progress updates here, and you can leave this page while they work.</p>
       </header>
       <ToggleGroup type="single" role="radiogroup" size="sm" spacing={0.5} aria-label="Filter activity" value={filter} onValueChange={(value) => { if (value) setFilter(value as Filter) }} className={cn(segmentedGroup, 'mt-8')}>
         {filters.map((item) => <ToggleGroupItem key={item.value} value={item.value} className={segmentedItem}>{item.label}</ToggleGroupItem>)}
@@ -142,10 +146,10 @@ export default function ActivityPage() {
         <ErrorNotice error={jobs.error} retry={() => void jobs.refetch()} className="mt-4" />
         {jobs.data && !items.length && (
           <EmptyState icon={Activity} title="No activity yet" className="mt-10" action={<Button asChild variant="outline"><Link to="/library#upload">Upload a PDF</Link></Button>}>
-            Uploading a PDF, generating a summary or downloading model weights starts a job. Its progress appears here.
+            {openModels ? 'Uploading a PDF, generating a summary or downloading model weights starts a job.' : 'Uploading a PDF or generating a summary starts a job.'} Its progress appears here.
           </EmptyState>
         )}
-        {items.length > 0 && !visible.length && filter !== 'all' && <EmptyState title={emptyFilter[filter].title} className="mt-10">{emptyFilter[filter].text}</EmptyState>}
+        {items.length > 0 && !visible.length && filter !== 'all' && <EmptyState title={emptyFilter(openModels)[filter].title} className="mt-10">{emptyFilter(openModels)[filter].text}</EmptyState>}
         {visible.length > 0 && <ul aria-label="Jobs" className="divide-y">{visible.map((job) => <JobRow key={job.id} job={job} now={now} modelName={models.data?.items.find((model) => model.key === job.model_key)?.display_name} />)}</ul>}
       </div>
     </div>

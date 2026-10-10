@@ -106,6 +106,7 @@ async def test_given_completed_turn_when_embedding_then_q_and_a_use_the_paper_pr
     assert len(embedders["openai"]) == 1 and len(await turn_embeddings(resources, chat_id)) == 1
 
 
+@pytest.mark.open_models
 async def test_given_library_profile_when_embedding_turn_then_local_profile_is_used(
     resources, embedders
 ):
@@ -136,6 +137,7 @@ async def test_given_turn_already_queued_when_enqueueing_again_then_one_job(reso
     assert count == 1
 
 
+@pytest.mark.open_models
 async def test_given_uninstalled_local_profile_when_embedding_turn_then_settles_unavailable(
     resources,
 ):

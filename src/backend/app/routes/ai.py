@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
+from app.integrations import open_models
 from app.integrations.llm import (
     HOSTED_REASONING_EFFORTS,
     PRICES,
@@ -19,6 +20,7 @@ from app.models.research import Document, ModelConfiguration, Paper, PaperSummar
 from app.repositories.jobs import enqueue
 from app.schemas.ai import (
     Defaults,
+    Features,
     GenerationInput,
     ModelPage,
     Summary,
@@ -31,13 +33,29 @@ from app.services.summarization import summary_block
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
 
 
+@router.get("/features", response_model=Features)
+async def features(request: Request):
+    """Server features the browser adapts to; open models are experimental (ARA-090)."""
+    return Features(open_models=open_models.enabled(request.app.state.resources.settings))
+
+
 @router.get("/models", response_model=ModelPage)
 async def models(request: Request):
-    settings = request.app.state.resources.settings
+    resources = request.app.state.resources
+    settings = resources.settings
     items = [validate_selection(key, HOSTED_REASONING_EFFORTS[key][0]) for key in PRICES]
     for item in items:
         item.status = "configured" if configured(settings) else "unavailable"
-    items.extend(await list_local_models(request.app.state.resources))
+    if open_models.enabled(settings):
+        items.extend(await list_local_models(resources))
+        return ModelPage(items=items)
+    # A saved local default is reported, unavailable, so nothing switches to a paid model.
+    saved = (await saved_defaults(resources)).default_model
+    if open_models.open_chat_model(settings, saved):
+        item = validate_selection(saved, "default")
+        item.unavailable_code = open_models.DISABLED
+        item.unavailable_reason = open_models.CHOOSE_MODEL
+        items.append(item)
     return ModelPage(items=items)
 
 
@@ -49,6 +67,8 @@ async def settings(request: Request):
 @router.put("/settings", response_model=Defaults)
 async def update_settings(body: Defaults, request: Request):
     resources = request.app.state.resources
+    if open_models.open_chat_model(resources.settings, body.default_model):
+        raise open_models.disabled()
     try:
         validate_selection(body.default_model, body.reasoning_effort)
         from app.integrations.model_catalog import local_spec

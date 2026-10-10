@@ -10,6 +10,23 @@ import sys
 
 # Only test projects may be targeted; development projects (ara, ara-feature, ...) never match.
 PROJECT_NAME = re.compile(r"ara-test|ara-[a-z0-9]+(?:-[a-z0-9]+)*-test")
+# Experimental open models run only under this Compose profile (ARA-090).
+OPEN_MODEL_SERVICES = {"ollama", "model-worker"}
+
+
+def check_open_model_profile(compose: list[str]) -> None:
+    """The default stack leaves the open-model services out; the profile brings them back."""
+    for profile, expected in (([], set()), (["--profile", "open-models"], OPEN_MODEL_SERVICES)):
+        listed = subprocess.run(
+            [*compose, *profile, "config", "--services"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        found = OPEN_MODEL_SERVICES & set(listed)
+        if found != expected:
+            sys.exit(f"open-models profile {profile or 'off'}: expected {expected}, got {found}")
+    print("open-models profile: off by default, on with --profile open-models")
 
 
 def main() -> None:
@@ -103,6 +120,8 @@ def main() -> None:
         result = subprocess.run(command, cwd=root, check=False)
         if result.returncode:
             sys.exit(result.returncode)
+    if args.action == "config" and not args.dry_run:
+        check_open_model_profile(compose)
 
 
 if __name__ == "__main__":

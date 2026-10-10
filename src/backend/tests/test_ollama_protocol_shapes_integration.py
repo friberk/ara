@@ -11,7 +11,8 @@ from app.repositories.jobs import recover
 from app.repositories.local_models import claim_model_job, pending_owner
 from app.services import local_models
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 @pytest.mark.parametrize(

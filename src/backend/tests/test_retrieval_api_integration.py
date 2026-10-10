@@ -43,6 +43,7 @@ async def embed_jobs(resources):
         ).all()
 
 
+@pytest.mark.open_models
 async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(resources, client):
     resources.settings.openai_api_key = None
     response = await client.get("/api/v1/retrieval/profiles")
@@ -72,6 +73,7 @@ async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(r
     assert items[0]["status"] == "available" and items[0]["unavailable_reason"] is None
 
 
+@pytest.mark.open_models
 async def test_given_settings_when_saving_then_profile_is_validated_and_stored(resources, client):
     response = await client.get("/api/v1/retrieval/settings")
     assert response.json() == {"embedding_profile": OPENAI, "reranker": "openai-gpt-6-luna"}
@@ -221,6 +223,7 @@ async def test_given_index_state_when_reading_paper_then_mode_explains_search(
         assert entry["error"] == expected
 
 
+@pytest.mark.open_models
 async def test_given_other_profile_ready_when_switching_then_it_serves_until_new_is_ready(
     resources, client
 ):
@@ -278,6 +281,7 @@ async def test_given_ready_index_when_rebuilding_then_it_keeps_serving(resources
         assert await session.scalar(select(func.count()).select_from(BackgroundJob)) == 1
 
 
+@pytest.mark.open_models
 async def test_given_embed_job_when_listing_jobs_then_it_links_to_its_paper(resources, client):
     paper_id, _ = await seed_paper(resources)
     other_paper, _ = await seed_paper(resources)
@@ -297,6 +301,7 @@ async def test_given_embed_job_when_listing_jobs_then_it_links_to_its_paper(reso
     assert {item["paper_id"] for item in listed} == {str(paper_id), str(other_paper)}
 
 
+@pytest.mark.open_models
 async def test_given_a_library_when_estimating_a_switch_then_papers_tokens_and_cost_are_returned(
     resources, client
 ):

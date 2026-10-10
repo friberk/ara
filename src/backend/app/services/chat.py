@@ -28,6 +28,7 @@ from app.integrations.llm import (
     validate_model_available,
 )
 from app.integrations.model_catalog import local_spec
+from app.integrations.open_models import offered_reranker
 from app.models.research import (
     ChatMessage,
     ChatSession,
@@ -204,6 +205,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
         profile = await default_profile(session)
         stored = await session.get(ModelConfiguration, "retrieval")
         reranker = RetrievalSettings.from_stored(stored.value if stored else None).reranker
+        reranker = offered_reranker(resources.settings, reranker)
         # Sizing without evidence raises CONTEXT_LIMIT (413) before anything is stored.
         sizing = assemble_answer_prompt(
             profile=limits,

@@ -37,6 +37,8 @@ x-backend: &backend
     HOSTED_WORKING_CONTEXT_TOKENS: ${HOSTED_WORKING_CONTEXT_TOKENS:-64000}
     # Start summarizing older turns once they fill this share of the recent-turn budget (ARA-077).
     MEMORY_COMPACTION_RATIO: ${MEMORY_COMPACTION_RATIO:-0.6}
+    # Open (local) models are experimental and frozen; enabling also needs COMPOSE_PROFILES=open-models.
+    EXPERIMENTAL_OPEN_MODELS: ${EXPERIMENTAL_OPEN_MODELS:-false}
     UV_PROJECT_ENVIRONMENT: /opt/venv
     WATCHFILES_FORCE_POLLING: "true"
   volumes:
@@ -159,8 +161,10 @@ services:
     restart: unless-stopped
     mem_limit: 2g
 
-  # Independent of core readiness: no weights are fetched or loaded on startup.
+  # Experimental open models (ARA-090): only with the open-models profile. Independent of core
+  # readiness; no weights are fetched or loaded on startup, and the volume keeps them when off.
   ollama:
+    profiles: ["open-models"]
     image: ara-ollama:0.40.1-ara.2
     build:
       context: .
@@ -198,6 +202,7 @@ services:
 
   model-worker:
     <<: *backend
+    profiles: ["open-models"]
     command: ["uv", "run", "--frozen", "python", "-m", "app.jobs.development_worker", "app.jobs.model_actors", "--queues", "local-models", "local-generation", "--processes", "1", "--threads", "2"]
     depends_on:
       migrate:

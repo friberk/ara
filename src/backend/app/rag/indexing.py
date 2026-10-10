@@ -39,6 +39,7 @@ UNAVAILABLE = {
     "LOCAL_MODEL_REVALIDATION_REQUIRED",
     "MODEL_WEIGHTS_MISSING",
     "MODEL_DIGEST_MISMATCH",
+    "OPEN_MODELS_DISABLED",
 }
 
 
@@ -57,10 +58,13 @@ async def default_profile(session) -> str:
 
 async def profile_status(session, settings, profile) -> tuple[str, str | None]:
     """Embedding and reranker profiles: a hosted key, or a ready, verified local install."""
+    from app.integrations import open_models
     from app.integrations.llm import configured
     from app.integrations.model_catalog import local_spec
     from app.services.local_models import model_dto
 
+    if open_models.open_profile(settings, profile):
+        return "unavailable", open_models.CHOOSE_SEARCH
     if profile.provider == "openai":
         if configured(settings):
             return "available", None
@@ -232,17 +236,24 @@ async def reconcile_indexes(resources) -> int:
     return queued
 
 
-async def ready_index(session, document_id: UUID, preferred: str) -> RetrievalIndex | None:
-    """The preferred ready index for the current chunk set, else the latest other ready one."""
+async def ready_index(
+    session, document_id: UUID, preferred: str, *, profiles=None
+) -> RetrievalIndex | None:
+    """The preferred ready index for the current chunk set, else the latest other ready one.
+
+    `profiles` limits the choice to the profiles that can embed queries now.
+    """
     chunk_set = await session.scalar(select(Document.chunk_set).where(Document.id == document_id))
     if chunk_set is None:
         return None
+    usable = [] if profiles is None else [RetrievalIndex.profile.in_(list(profiles))]
     return await session.scalar(
         select(RetrievalIndex)
         .where(
             RetrievalIndex.document_id == document_id,
             RetrievalIndex.chunk_set == chunk_set,
             RetrievalIndex.state == "ready",
+            *usable,
         )
         .order_by((RetrievalIndex.profile == preferred).desc(), RetrievalIndex.updated_at.desc())
         .limit(1)

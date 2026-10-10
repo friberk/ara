@@ -6,7 +6,8 @@ import pytest
 from app.integrations.model_catalog import local_spec
 from app.models.local_models import ModelInstallation
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 @pytest.fixture

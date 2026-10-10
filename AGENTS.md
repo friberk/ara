@@ -7,7 +7,7 @@ Single-user CS 59300 homework application. `hw1.md` is the assignment authority;
 - **Open (local) models are experimental and frozen (2026-10-09, ARA-090).** Everything open-model sits behind `EXPERIMENTAL_OPEN_MODELS` (default off) and the `open-models` Compose profile. Don't develop them further, or plan features around them, unless the user lifts the freeze. Keep their tests passing with the flag on. The open-model rules below apply only when the flag is on.
 - `src/backend`: Python 3.13, FastAPI/Pydantic v2, async SQLAlchemy/psycopg 3, Alembic, httpx, Dramatiq/Redis, PyMuPDF. Separate routes/schemas/models/repositories/services/integrations/jobs.
 - `src/frontend`: React/Vite, strict TypeScript, Tailwind v4/shadcn, React Router, TanStack Query; React Hook Form/Zod for forms. No initial Zustand.
-- Compose runs frontend, api, worker, model-worker, Ollama, PostgreSQL, Redis and MinIO plus migration/bucket-init gates. Default local inference uses CPU; NVIDIA/AMD overrides are optional and require compatible Linux hosts.
+- Compose runs frontend, api, worker, PostgreSQL, Redis and MinIO plus migration/bucket-init gates; model-worker and Ollama run only under the `open-models` profile. Default local inference uses CPU; NVIDIA/AMD overrides are optional and require compatible Linux hosts.
 - PostgreSQL 17 includes pgvector; `0007_feature_merge` joins full-text and retrieval migrations without rewriting their existing revisions. Old chunk sets rebuild through startup jobs while stored citation snapshots remain readable. RAG uses structured PyMuPDF extraction, profile-specific indexes, retrieval provenance and model-specific context/memory budgets. ARA-080/081 remain open resource/quality limitations.
 - PDFs belong in MinIO; metadata, pages/chunks, jobs, summaries and chats belong in PostgreSQL. Complete and partial model weights belong in the `ollama-models` named volume. Startup never downloads weights; existing stale installations prepare through background checks. Core readiness is independent of Ollama.
 - Every request/actor/parallel task owns its AsyncSession. Engines/clients belong to one process/event loop. PyMuPDF runs in child processes, never concurrent threads or the API event loop.
@@ -35,7 +35,7 @@ ARA-022 implementation uses `feat/managed-ollama` and the approved specification
 
 ## Commands
 
-Bootstrap: `python3 scripts/bootstrap.py`. Start: `docker compose up --build`. Logs: `docker compose logs --tail 100 api worker model-worker ollama`. Migrate: `docker compose run --rm migrate`. Backend tests: `python3 scripts/test-stack.py test` against isolated real services; never run destructive integration fixtures on development data. Frontend: `docker compose exec frontend npm run check` and `npm run build`. Browser fixtures, GPU overrides and the opt-in isolated 7B runner are in README. Stop: `docker compose down` without `--volumes` to preserve data and weights.
+Bootstrap: `python3 scripts/bootstrap.py`. Start: `docker compose up --build`. Logs: `docker compose logs --tail 100 api worker` (add `model-worker ollama` with open models on). Migrate: `docker compose run --rm migrate`. Backend tests: `python3 scripts/test-stack.py test` against isolated real services; never run destructive integration fixtures on development data. Frontend: `docker compose exec frontend npm run check` and `npm run build`. Browser fixtures, GPU overrides and the opt-in isolated 7B runner are in README. Stop: `docker compose down` without `--volumes` to preserve data and weights.
 
 ## Definition of Done
 

@@ -12,6 +12,8 @@ x-test-env: &test-env
   OPENAI_API_KEY: ""
   OPENALEX_API_KEY: ""
   SEMANTIC_SCHOLAR_API_KEY: ""
+  # The suite starts from the shipped default; open-model tests turn the flag on (ARA-090).
+  EXPERIMENTAL_OPEN_MODELS: "false"
 
 services:
   postgres:

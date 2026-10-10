@@ -29,6 +29,8 @@ services:
       SEMANTIC_SCHOLAR_BASE_URL: http://external-fixtures:8080/graph/v1
       CORS_ORIGINS: '["http://localhost:5180","http://127.0.0.1:5180"]'
       LLM_DAILY_BUDGET_USD: "100"
+      # Model browser specs need open models; model-worker runs here without the profile.
+      EXPERIMENTAL_OPEN_MODELS: "true"
     ports: !override
       - "127.0.0.1:8001:8000"
     depends_on:

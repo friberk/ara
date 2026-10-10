@@ -34,8 +34,13 @@ class Embedder(Protocol):
 
 
 def create_embedder(resources, profile: EmbeddingProfile, *, transport=None) -> Embedder:
+    from app.integrations import open_models
+
     if profile.provider == "openai":
         return OpenAIEmbedder(resources, profile, transport=transport)
+    if open_models.open_profile(resources.settings, profile):
+        # Index and turn embedding settle as unavailable; the flag's return re-queues them.
+        raise open_models.disabled(open_models.CHOOSE_SEARCH)
     return OllamaEmbedder(resources, profile, transport=transport)
 
 

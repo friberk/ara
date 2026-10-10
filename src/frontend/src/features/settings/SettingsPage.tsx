@@ -12,6 +12,7 @@ import { normaliseSettings, reasoningControls } from '@/components/composer/reas
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { useTheme } from '@/components/theme/theme-context'
+import { useOpenModels, withoutOpenModels } from '@/hooks/queries/features'
 import { isChatModel, unavailableReason, useModels, useSaveDefaults, useSavedSettings } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { segmentedGroup, segmentedItem } from './segmented'
@@ -118,7 +119,9 @@ export default function SettingsPage() {
   const models = useModels()
   const saved = useSavedSettings()
   const headingId = useId()
-  const chatModels = models.data?.items.filter(isChatModel)
+  const openModels = useOpenModels()
+  // A saved local default is listed, reported unavailable by the server; other local models stay hidden while off.
+  const chatModels = models.data && withoutOpenModels(models.data.items.filter(isChatModel), openModels, saved.data?.default_model)
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
@@ -142,7 +145,7 @@ export default function SettingsPage() {
         <RetrievalSettingsSection />
         <Separator />
         <MetadataSettingsSection /><Separator />
-        {models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
+        {openModels && models.data?.items.some((model) => model.installation) && <><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /><Separator /></>}
         <Appearance />
         <Separator />
         <p className="text-sm text-pretty text-muted-foreground">API keys are managed on the server and never reach this browser. A model shows as unavailable until the server has access to it.</p>

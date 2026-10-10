@@ -7,6 +7,8 @@ const failed = { ...base, id: 'j1', kind: 'ingest', state: 'failed', stage: 'fai
 const summary = { ...base, id: 'j2', kind: 'summary', state: 'completed', stage: 'completed', progress: 100, paper_id: 'p2', paper_title: 'Attention is all you need' }
 const running = { ...base, id: 'j3', kind: 'ingest', state: 'processing', stage: 'extracting_metadata', progress: 55, paper_id: null, paper_title: null }
 afterEach(() => vi.unstubAllGlobals())
+// Local model tests run with open models on, as the server reports them (ARA-090).
+const openModels = { 'GET /features': { open_models: true } }
 
 test('Given a failed retrieval, When Retry download is pressed, Then a fresh full-text request targets its paper', async () => {
   const job = { ...failed, kind: 'fulltext', error: { code: 'FULLTEXT_BLOCKED', message: 'This site blocked the download.' } }
@@ -29,7 +31,7 @@ test('Given a rate-limited retrieval in Activity, Then its retry respects the re
 
 test.each(['queued', 'verifying'])('Given a %s verification-only job, Then Activity names preparation and shows background status without transfer percentages', async (stage) => {
   const model = { key: 'ifm-k2-horizon-7b', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'] }
-  mockApi({ 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: model.key, state: stage === 'queued' ? 'queued' : 'processing', stage, progress: 80, completed_bytes: 5592218900, total_bytes: 5592218900 }] } })
+  mockApi({ ...openModels, 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: model.key, state: stage === 'queued' ? 'queued' : 'processing', stage, progress: 80, completed_bytes: 5592218900, total_bytes: 5592218900 }] } })
   renderApp('/activity')
   const row = (await screen.findByRole('heading', { name: 'Model preparation' })).closest('li') as HTMLElement
   expect(within(row).getByRole('link', { name: 'K2 Horizon 7B' })).toHaveAttribute('href', '/settings#local-models')
@@ -40,7 +42,7 @@ test.each(['queued', 'verifying'])('Given a %s verification-only job, Then Activ
 })
 
 test.each(['failed', 'completed'])('Given a %s verification-only job, Then Activity retains its preparation identity', async (state) => {
-  mockApi({ 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: 'ifm-k2-horizon-7b', state, stage: state, progress: state === 'completed' ? 100 : 80, error: state === 'failed' ? { code: 'LOCAL_MODEL_VERIFICATION_FAILED', message: 'Model preparation failed. Retry in Settings.' } : null }] } })
+  mockApi({ ...openModels, 'GET /jobs': { items: [{ ...base, id: 'prepare-job', kind: 'model_download', model_operation: 'verify', model_key: 'ifm-k2-horizon-7b', state, stage: state, progress: state === 'completed' ? 100 : 80, error: state === 'failed' ? { code: 'LOCAL_MODEL_VERIFICATION_FAILED', message: 'Model preparation failed. Retry in Settings.' } : null }] } })
   renderApp('/activity')
   const row = (await screen.findByRole('heading', { name: 'Model preparation' })).closest('li') as HTMLElement
   expect(within(row).getByText(state === 'failed' ? 'Failed' : 'Completed')).toBeVisible()
@@ -50,7 +52,7 @@ test.each(['failed', 'completed'])('Given a %s verification-only job, Then Activ
 
 test('Given a paused model download, Then Activity names the model and links to its management controls', async () => {
   const model = { key: 'ifm-k2-horizon-7b', display_name: 'K2 Horizon 7B', status: 'unavailable', reasoning_efforts: ['default'] }
-  mockApi({ 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'model-job', kind: 'model_download', model_key: model.key, state: 'paused', stage: 'paused', progress: 25, completed_bytes: 1398054725, total_bytes: 5592218900 }] } })
+  mockApi({ ...openModels, 'GET /models': { items: [model] }, 'GET /jobs': { items: [{ ...base, id: 'model-job', kind: 'model_download', model_key: model.key, state: 'paused', stage: 'paused', progress: 25, completed_bytes: 1398054725, total_bytes: 5592218900 }] } })
   const { user } = renderApp('/activity')
   const row = (await screen.findByRole('heading', { name: 'Model download' })).closest('li') as HTMLElement
   expect(within(row).getByRole('link', { name: 'K2 Horizon 7B' })).toHaveAttribute('href', '/settings#local-models')

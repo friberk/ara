@@ -18,7 +18,8 @@ from app.repositories.jobs import enqueue, now, recover
 from app.repositories.local_models import acquire_use, claim_model_job, release_use
 from app.services import local_models
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 KEY = "ifm-k2-horizon-7b"
 
 

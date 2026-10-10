@@ -101,9 +101,12 @@ def model_limits(
 
 async def validate_model_available(resources, model: str, effort: str) -> Model:
     from app.core.errors import AppError
+    from app.integrations import open_models
     from app.integrations.model_catalog import local_spec
 
     selected = validate_selection(model, effort)
+    if open_models.open_chat_model(resources.settings, model):
+        raise LLMError(open_models.DISABLED, open_models.CHOOSE_MODEL, 409)
     if local_spec(model):
         from app.services.local_models import ensure_local_available
 

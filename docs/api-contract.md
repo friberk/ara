@@ -27,7 +27,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - POST /papers/{id}/chats `{title?}` → Chat; GET same → `{items:Chat[]}`.
 - GET /chats/{id}/messages → `{items:Message[]}`.
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
-- GET /models → `{items:Model[]}`; GET/PUT /settings → Settings.
+- GET /features → `Features {open_models}`; GET /models → `{items:Model[]}`; GET/PUT /settings → Settings. Open models are experimental and off by default (ARA-090, below).
   - The defaults are `{default_model, reasoning_effort}`. A stored row or PUT body that still carries `memory_model` (ARA-077) is accepted and the field ignored; it is never returned. Follow-up planning and conversation summaries use the chat's own model and the effort active in that turn (ARA-083).
 - GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
@@ -93,7 +93,19 @@ All additions are backward compatible. They support the chat-centred sidebar, th
   - `GET /jobs` gains optional filters: `paper_id`, `kind` (`ingest`, `summary`, `model_download` or `model_delete`) and `active` (true = queued, processing or paused; `retry_wait` is a queued stage). Paused jobs are unfinished even while no transfer is running.
 - **CORS** allows `DELETE`. The existing Origin guard applies to every unsafe method, including DELETE.
 
+## Experimental open models flag (ARA-090)
+
+`EXPERIMENTAL_OPEN_MODELS` (default `false`) gates the Ollama chat models, the Qwen3 embedding profiles and the Qwen3 reranker. `GET /features` returns `Features {open_models: bool}`; the browser hides open-model UI unless it is `true`. With the flag on, every section below behaves as documented. With it off:
+
+- Catalogs. `GET /models` lists only hosted models, plus the saved default when it is a local chat model, reported with `status="unavailable"`, `unavailable_code="OPEN_MODELS_DISABLED"` and `installation=null`. `GET /retrieval/profiles` lists only the hosted embedding models (`openai-3-large`, `openai-3-small`) and `openai-gpt-6-luna`, plus a saved local library model or reranker, reported unavailable with `local_model_key=null`.
+- Routes. `POST /models/{key}/download`, `DELETE /models/{key}/installation`, `POST /jobs/{id}/pause` and `POST /jobs/{id}/resume` are not mounted (404). `GET /jobs` omits `model_download` and `model_delete` jobs; `GET /jobs/{id}` and `POST /jobs/{id}/retry` return 404 for them. The generated TypeScript contract comes from the flag-on schema, so it still describes these routes.
+- Refusals. A local chat model, embedding profile or reranker in a request returns 409 `OPEN_MODELS_DISABLED` with a plain message asking for a hosted choice: `PUT /settings`, summary requests, chat answers (a replay of a stored answer still returns it), `GET /chats/{id}/usage`, `GET /retrieval/reindex-estimate` for a local model, and a paper rebuild while the library model is local. `PUT /retrieval/settings` keeps an unchanged saved local choice and refuses a new one. The summary page reports `blocked.code="OPEN_MODELS_DISABLED"` for a saved local default, and no automatic summary starts.
+- Retrieval. While the library model is local, every paper is searched by keywords; `PaperRetrieval.mode="keyword"` and `mode_note` says why, its local indexes report `state="unavailable"` with error `OPEN_MODELS_DISABLED`, and answers note keyword search. A hosted preference never uses a local index. A saved local reranker means no reranking. Embed jobs for a local profile settle as unavailable, and the startup reconcile queues them again once the flag returns; turn embeddings settle unavailable and recall skips those turns.
+- Jobs. The dispatcher publishes nothing to the `local-models` and `local-generation` lanes and lease recovery skips their jobs, so unsettled model operations and local summaries keep their state until the flag is on. Startup model preparation does not run. Readiness never depended on Ollama.
+
 ## Managed local models (ARA-022, ARA-044–049)
+
+Requires `EXPERIMENTAL_OPEN_MODELS=true` and the `open-models` Compose profile (ARA-090).
 
 Alembic revision `0005_local_models` follows `0004_workspace_history`. It extends durable jobs and adds `model_installations`, globally unique `model_requests` UUIDs and `model_uses` leases. PostgreSQL owns installation intent, job generations and global maintenance/inference admission; Redis carries delivery. Complete and partial weights stay in the Ollama volume.
 
@@ -152,6 +164,7 @@ Contract for the retrieval and context overhaul, implemented on `feat/rag-contex
   - Keys: `openai-3-large` (default, $0.13), `openai-3-small` ($0.02, 1536 dimensions), `qwen3-embed-4b`, `qwen3-embed-8b`. One model serves the whole library (ARA-091): vectors from different models are not comparable, so a library never mixes them.
 - `EmbeddingProfilePage.rerankers: RerankerOut[]` lists the reranker profiles (ARA-074). The default `openai-gpt-6-luna` uses the OpenAI Decisions API and scores the top 40 fused passages (about 2–3 s and $0.004 per answer); `qwen3-rerank-0.6b` runs locally through Ollama (about 9 s). `RerankerOut` has `key`, `provider` (`openai|ollama`), `model_id`, `display_name`, `status` (`available|unavailable`), a plain-language `unavailable_reason`, `local_model_key` for the install link, and `candidates` (fused passages scored per question). Models are catalog data, not hardcoded. The local reranker's `model_id` is `fanyx/Qwen3-Reranker-0.6B-Q8_0:latest`, because Ollama lists an untagged pull as `:latest` and inventory matching is exact.
 - Reranking never fails an answer. When it cannot run, the passages keep their fused order, `retrieval.reranked` is `false`, and `retrieval.note` says reranking was unavailable. The server-side retrieval trace keeps the skip code: `MODEL_NOT_CONFIGURED` (no OpenAI key; no note, because Settings already says so), `DAILY_BUDGET_EXCEEDED`, `LOCAL_MODEL_NOT_READY`, `INVALID_RERANKER` (a stored key no longer in the catalog), `LOCAL_MODEL_BUSY` (the local retrieval slot stayed busy past its 20 s wait), `RERANKER_TIMEOUT` (the local pass exceeded its 45 s deadline) or `RERANKER_FAILED`. The trace also records `rerank.query`, the standalone question the reranker judged against. Turning reranking off (`null`) is a choice, not a skip.
+- With open models off, only the hosted profiles are listed and a saved local choice is reported unavailable (ARA-090, above).
 - `GET`/`PUT /api/v1/retrieval/settings` reads and writes `RetrievalSettings {embedding_profile="openai-3-large", reranker="openai-gpt-6-luna"}`. `reranker` is a reranker profile key from `app/integrations/reranker_catalog.py`, or `null` to turn reranking off. An unknown key returns 422 `INVALID_RERANKER`.
   - These settings are separate from the model defaults in `/settings`.
   - `PUT` validates the key but does not require the profile to be available. Changing `embedding_profile` re-embeds the whole library: every ready document is queued for the new model (idempotent per document and chunk set). A document keeps answering from its ready index until the new one is ready, falls back to keyword search if it has none, and loses the old model's vectors and index rows only after the new index is ready.

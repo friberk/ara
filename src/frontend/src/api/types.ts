@@ -25,6 +25,8 @@ export type Message = Schemas['Message']
 export type Model = Schemas['Model']
 export type ModelInstallation = Schemas['Installation']
 export type Settings = Schemas['Defaults']
+/** Server features, such as experimental open models (ARA-090). */
+export type Features = Schemas['Features']
 export type SettingsUpdate = Settings
 export type GenerationInput = Schemas['GenerationInput']
 export type ChatInput = Schemas['ChatInput']

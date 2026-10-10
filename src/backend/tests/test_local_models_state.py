@@ -5,7 +5,8 @@ import pytest
 from app.core.errors import AppError
 from app.integrations.model_catalog import local_spec
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 async def test_request_identity_and_queued_pause_resume_survive_new_service(resources):

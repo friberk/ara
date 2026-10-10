@@ -15,6 +15,8 @@ const retrieval = (overrides: Partial<PaperRetrieval> = {}): PaperRetrieval => (
 const building = retrieval({ mode: 'keyword', indexes: [index({ state: 'embedding', embedded: 89, total: 212 })] })
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+// Local model tests run with open models on, as the server reports them (ARA-090).
+const openModels = { 'GET /features': { open_models: true } }
 
 function mount(value: Paper = paper) { return renderWithProviders(<DetailsPanel paper={value} onOpenPdf={() => {}} />) }
 async function expand(user: ReturnType<typeof mount>['user']) {
@@ -56,7 +58,7 @@ test('Given a ready index on the default model, When expanded, Then it names the
 test('Given Rebuild index, When pressed, Then the panel polls Building until Ready', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   let current = retrieval()
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...openModels,
     'GET /retrieval/profiles': profiles,
     'GET /papers/p1/retrieval': () => json(current),
     'POST /papers/p1/retrieval/rebuild': () => { current = building; return json(current, 202) },

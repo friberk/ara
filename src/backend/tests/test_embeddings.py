@@ -84,6 +84,7 @@ def admitted(monkeypatch):
     return entered
 
 
+@pytest.mark.open_models
 async def test_given_qwen_profile_when_embedding_then_only_queries_carry_the_instruction(admitted):
     from app.integrations.embedding_catalog import QWEN_QUERY, embedding_profile
     from app.integrations.embeddings import create_embedder
@@ -111,6 +112,7 @@ async def test_given_qwen_profile_when_embedding_then_only_queries_carry_the_ins
     assert embedder.sent_text(" Method \n") == "Method"
 
 
+@pytest.mark.open_models
 async def test_given_wrong_dimensions_when_embedding_then_embedding_is_invalid(admitted):
     from app.integrations.embedding_catalog import embedding_profile
     from app.integrations.embeddings import create_embedder
@@ -128,6 +130,7 @@ async def test_given_wrong_dimensions_when_embedding_then_embedding_is_invalid(a
     assert (error.value.status_code, error.value.code) == (502, "EMBEDDING_INVALID")
 
 
+@pytest.mark.open_models
 async def test_given_unnormalized_vectors_when_embedding_then_results_have_unit_length(admitted):
     from app.integrations.embedding_catalog import embedding_profile
     from app.integrations.embeddings import create_embedder
@@ -162,6 +165,7 @@ def busy_slot(monkeypatch, *, busy_attempts):
     return attempts
 
 
+@pytest.mark.open_models
 async def test_given_busy_retrieval_slot_when_embedding_then_only_the_admission_waits(monkeypatch):
     """The admission already waited its bounded time; a second wait would double it."""
     from app.integrations.embedding_catalog import embedding_profile
@@ -181,6 +185,7 @@ async def test_given_busy_retrieval_slot_when_embedding_then_only_the_admission_
     assert len(attempts) == 1 and requests == []
 
 
+@pytest.mark.open_models
 async def test_given_unreachable_runtime_when_embedding_then_runtime_is_unavailable(admitted):
     from app.integrations.embedding_catalog import embedding_profile
     from app.integrations.embeddings import create_embedder

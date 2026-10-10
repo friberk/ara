@@ -143,12 +143,15 @@ def create_app(
             status_code=200 if healthy else 503,
         )
 
-    app.include_router(router(settings.app_env == "development"))
+    open_models = settings.experimental_open_models
+    app.include_router(router(settings.app_env == "development", open_models=open_models))
     app.include_router(research_router)
     app.include_router(fulltext_router)
     app.include_router(documents_router)
     app.include_router(ai_router)
-    app.include_router(local_models_router)
+    if open_models:
+        # Model downloads and deletions exist only while open models are on (ARA-090).
+        app.include_router(local_models_router)
     app.include_router(chat_router)
     app.include_router(history_router)
     app.include_router(retrieval_router)

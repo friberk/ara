@@ -47,7 +47,8 @@ test('Given only finished jobs, When Active or Failed is chosen, Then a filter-s
   await waitFor(() => expect(within(jobsList()).getAllByRole('listitem')).toHaveLength(1))
   await user.click(screen.getByRole('radio', { name: 'Active' }))
   expect(await screen.findByRole('heading', { name: 'Nothing is running' })).toBeVisible()
-  expect(screen.getByText('Uploads, summaries and model downloads show their progress here.')).toBeVisible()
+  // Open models are off by default, so the copy leaves out model downloads (ARA-090).
+  expect(screen.getByText('Uploads and summaries show their progress here.')).toBeVisible()
   expect(screen.queryByRole('list', { name: 'Jobs' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('radio', { name: 'Failed' }))
   expect(await screen.findByRole('heading', { name: 'No failed jobs' })).toBeVisible()

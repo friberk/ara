@@ -24,6 +24,7 @@ export const queryKeys = {
     detail: (id: string) => ['jobs', 'detail', id] as const,
   },
   citation: (documentId: string, chunkId: string) => ['citation', documentId, chunkId] as const,
+  features: ['features'] as const,
   models: ['models'] as const,
   settings: ['settings'] as const,
   retrieval: {

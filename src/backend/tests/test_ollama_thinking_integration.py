@@ -16,7 +16,8 @@ from app.schemas.ai import ChatInput
 from app.services import chat, summarization
 from tests.test_ai_integration import local_fixture, paper_fixture, summary_job_fixture
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 async def install_controls(resources):

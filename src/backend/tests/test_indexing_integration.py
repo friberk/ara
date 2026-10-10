@@ -197,6 +197,7 @@ async def test_given_time_budget_spent_when_embedding_then_job_continues_without
     assert len(providers["openai"]) == 3
 
 
+@pytest.mark.open_models
 async def test_given_profile_switch_while_answering_then_old_index_serves_until_new_is_ready(
     resources, providers, monkeypatch
 ):
@@ -264,6 +265,7 @@ async def test_given_missing_openai_key_when_embedding_then_index_is_unavailable
     assert providers["openai"] == []
 
 
+@pytest.mark.open_models
 async def test_given_uninstalled_local_model_when_embedding_then_index_is_unavailable(
     resources,
 ):
@@ -280,6 +282,7 @@ async def test_given_uninstalled_local_model_when_embedding_then_index_is_unavai
     assert (await load(resources, BackgroundJob, job_id)).state == "completed"
 
 
+@pytest.mark.open_models
 async def test_given_busy_local_runtime_when_embedding_then_job_waits_without_attempts(
     resources, providers, monkeypatch
 ):
@@ -312,6 +315,7 @@ async def test_given_busy_local_runtime_when_embedding_then_job_waits_without_at
     assert (await load(resources, RetrievalIndex, index_id)).state == "queued"
 
 
+@pytest.mark.open_models
 async def test_given_local_profile_when_indexing_then_each_admission_embeds_few_passages(
     resources, providers, monkeypatch
 ):

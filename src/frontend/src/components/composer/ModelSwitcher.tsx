@@ -8,6 +8,7 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
   DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useOpenModels } from '@/hooks/queries/features'
 import { unavailableReason, useSaveDefaults, type Purpose } from '@/hooks/queries/models'
 import { cn } from '@/lib/utils'
 import { effortLabel } from './effort'
@@ -19,6 +20,9 @@ import { reasoningControls } from './reasoning'
 export function ModelSwitcher({ purpose, disabled, align = 'start', className }: { purpose?: Purpose; disabled?: boolean; align?: 'start' | 'end'; className?: string }) {
   const { settings, setSettings, models, selectedModel, savedDefaults, loading } = useGenerationSettings()
   const save = useSaveDefaults()
+  const openModels = useOpenModels()
+  // Only models that can be chosen are offered; an unavailable saved local default still names the selection.
+  const options = openModels ? models : models.filter((model) => model.provider !== 'ollama')
   const [open, setOpen] = useState(false)
   const isDefault = savedDefaults?.model === settings.model && savedDefaults.reasoning_effort === settings.reasoning_effort
   const name = selectedModel?.display_name ?? (loading ? 'Loading models' : 'Choose a model')
@@ -36,7 +40,7 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
       <DropdownMenuContent align={align} className="w-72">
         <DropdownMenuLabel>Model</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={settings.model} onValueChange={(model) => { const option = models.find((item) => item.key === model); if (option && !unavailableReason(option, purpose)) setSettings({ model, reasoning_effort: settings.reasoning_effort }) }}>
-          {models.map((model) => {
+          {options.map((model) => {
             const reason = unavailableReason(model, purpose)
             const item = (
               <DropdownMenuRadioItem key={model.key} value={model.key} aria-disabled={!!reason} onSelect={(event) => { if (reason) event.preventDefault() }} className={cn('items-start py-2', reason && 'text-muted-foreground')}>
@@ -78,7 +82,7 @@ export function ModelSwitcher({ purpose, disabled, align = 'start', className }:
             <Check aria-hidden="true" className={cn(!isDefault && 'opacity-0')} />
             {isDefault ? 'Default model' : 'Set as default'}
           </DropdownMenuItem>
-          <DropdownMenuItem asChild><Link to="/settings#local-models"><Settings2 aria-hidden="true" />Model settings</Link></DropdownMenuItem>
+          <DropdownMenuItem asChild><Link to={openModels ? '/settings#local-models' : '/settings'}><Settings2 aria-hidden="true" />Model settings</Link></DropdownMenuItem>
         </DropdownMenuGroup>
         {save.error && <p role="alert" className="px-2 pt-1 pb-1.5 text-xs text-destructive">{save.error.message}</p>}
       </DropdownMenuContent>

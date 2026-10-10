@@ -1101,3 +1101,52 @@ After the first round, the lead fast-forwarded the branch to the integration bra
 - **Contract.** `generated.ts` regenerated from `app.openapi()` is identical to the committed file. `docs/api-contract.md` now names the tables and the new head.
 - **Process notes.** Running `ruff format` on the whole tree also reformatted two unrelated files (`development_worker.py`, `test_pdf_parser_structured.py`); I reverted them. The test count differs from the 1006 logged for ARA-091 by an amount I did not trace (997 plus my 8 new tests is 1005).
 - **Not verified.** The migration ran only on isolated test databases, not on the user's development data. There is no Playwright run.
+
+**2026-10-09: open models behind `EXPERIMENTAL_OPEN_MODELS` (ARA-090).** An Opus agent built it on `feat/ara-090-open-models-flag`, testing in its own `ara-flag-test` project. The user's running `ara` stack and its volumes were not touched.
+
+**Decisions:**
+- **Where the flag lives.** `experimental_open_models` in `core/config.py`, default false. The browser learns it from a new `GET /api/v1/features` (`{open_models}`). `/settings` was ruled out because its body is also the PUT schema, and `/health/ready` reports readiness, not features.
+- **Gate at the boundaries.** One small module, `app/integrations/open_models.py`, holds the checks. They sit in the catalog routes, route mounting, job dispatch and lease recovery, the embedding factory and the chat, summary and model-availability entry points. The frozen open-model code is unchanged.
+- **Stored state is reported, not hidden.** A saved local default model, search model or reranker comes back from the catalogs as an unavailable entry with `OPEN_MODELS_DISABLED`. The composer and Settings can then name it and ask for a hosted model, instead of silently picking a paid one. `PUT /retrieval/settings` keeps an unchanged saved local value, so changing the other field still saves.
+- **Keyword search for a local paper.** A paper on a local search model searches by keywords even when a hosted index exists, so no paid query embedding happens without the user's choice.
+- **Held, not settled.** The dispatcher publishes nothing to the `local-models` and `local-generation` lanes, and lease recovery skips those jobs, so unsettled downloads, deletions and local summaries keep their state. Startup model preparation does not run. Embed jobs for a local profile, which ingestion still queues, settle as unavailable through the existing mechanism; the startup reconcile queues them again when the flag returns.
+- **Tests.** An autouse fixture sets `EXPERIMENTAL_OPEN_MODELS` from a new `open_models` marker, and the test stack pins the flag off. Existing open-model tests keep their assertions and run with the flag on. Frontend tests turn it on with a mocked `GET /features`.
+- **Compose.** `ollama` and `model-worker` sit under the `open-models` profile; nothing depends on them and the `ollama-models` volume stays declared. The browser stack sets the flag on, and its model worker already ignores profiles. `generated.ts` comes from the flag-on schema, so it still describes the four model routes.
+
+**Red → green, with the actual failures:**
+- **Backend.** Baseline 998 passed. The 14 new tests first ran 13 failed and 1 passed (the readiness check, which already held). The failures included `AttributeError: 'Settings' object has no attribute 'experimental_open_models'`, `assert 202 == 404` for a model download, `assert 'hybrid' == 'keyword'` for a paper on Qwen3, `assert 'qwen3-rerank-0.6b' is None` for the saved reranker and `TypeError: dispatch_once() got an unexpected keyword argument 'open_models'`. After the gate they passed.
+- **Existing open-model tests.** With the flag off by default, 99 of them failed, with `OPEN_MODELS_DISABLED` or missing local catalog rows. They were marked, 20 whole modules and 45 tests in 12 mixed modules, and passed unchanged.
+- **Three test adaptations.** The hosted `/models` unit test failed with `AttributeError: 'types.SimpleNamespace' object has no attribute 'sessions'`, because the route now reads the saved default; the test now supplies it. A local validation test passed `SimpleNamespace()` without settings, so it gained settings, and the gate now reads the flag only for local keys. The two dispatcher readiness tests needed the flag in their fake settings and `**options` on their fake recovery.
+- **Frontend.** The 8 new tests first ran 7 failed and 1 passed (the flag-on case). Examples: `expected document not to contain element, found <input` for the local radio in Settings, and `expected [ 'GPT-5.6 Lunagpt-5.6-luna', …(1) ] to deeply equal [ 'GPT-5.6 Lunagpt-5.6-luna' ]` in the composer menu. Then 37 existing local-model tests needed the feature reported on, and one Activity empty-state test now expects the flag-off copy.
+- **Two wrong frontend assertions.** `Found multiple elements with the text: Open models are turned off…` came from the reason showing in both the row and the reasoning note, so the test now checks the row's description. `Unable to find … role "status" and name "Selection"` came from the open menu hiding the page, so the test closes it first.
+- **Compose.** The new infrastructure tests failed 3 of 4 against the pre-change compose files, for example `{'ollama', 'model-worker'} is not false`. After profiling, four existing checks failed with `KeyError: 'model-worker'`, `KeyError: 'ollama'` and `[] != ['ollama']`, and now ask for the profile. One of them, in `test_compose_fulltext.py`, belongs to ARA-087's area; it gained one environment line. `scripts/test-stack.py config` now checks both profile states, and failed against the old compose with `expected set(), got {'ollama'}`.
+
+**Agent process errors:**
+- The session scratchpad is shared with other agents. A log named `full2.log` collected another agent's `ara-embed-test` build output beside this run's result. Evidence moved to its own folder.
+- One focused run used `-p no:logging`, which removed `caplog` and produced a false `fixture 'caplog' not found` error. Later runs kept logging on.
+- Ruff caught two over-long lines in the new code; they were rewritten.
+
+**Verification:**
+- Backend: 1012 passed in 166.13 s with Ruff clean (`scripts/test-stack.py test`).
+- Frontend: `npm run check` passed with 538 tests in 73 files, and `npm run build` passed with the existing chunk-size warning.
+- Infrastructure: 19 tests passed.
+- `docker compose config` lists neither service by default and both with the profile; the test stack pins the flag off and the browser stack turns it on.
+- A live flag-off test stack started healthy without Ollama. `/health/ready` checked only the database, storage and Redis; `/features` said `false`; the catalogs were hosted only; and a model download returned 404.
+
+**Not run:** the Playwright suite, left to the lead on its fixed ports, and a live flag-on stack with real Ollama weights.
+
+**ARA-090 merged with the UX feedback round (2026-10-09).** The lead asked this agent to merge `feat/ux-feedback-round` (`7fb04ee`: ARA-086, ARA-087, ARA-089, ARA-091) into the flag branch, as a one-time exception to the no-merge rule. The merge commit is `aea2946`.
+- **Conflicts.** There were nine conflicted files:
+  - `routes/retrieval.py`: the per-paper PUT and its open-model refusal were dropped; ARA-091's prices were kept beside the hidden local install key; a rebuild is still refused while the library model is local.
+  - `SearchIndexPanel.tsx`: ARA-091's version, without this branch's Build/Rebuild guard.
+  - `ProfileOptions.tsx`: no "Use default" row; local rows stay hidden or frozen, and their price copy is hidden while the flag is off.
+  - `README.md`: ARA-087's OpenAlex-only text, with open models still in one Experimental section.
+  - The journal: both entries kept.
+  - Four tests renamed by ARA-091: the merge kept the new names and the `open_models` markers.
+- **Rewritten test.** The test for a paper on a local profile became "the library default is a local profile". ARA-091 removed `papers.retrieval_profile`.
+- **New gate, red first.** `GET /retrieval/reindex-estimate` priced a local model while the flag was off, failing with `assert (200 == 409)`. It now returns 409 `OPEN_MODELS_DISABLED` (`0155947`), and stays free with the flag on.
+- **Re-embed dialog.** The Settings re-embed dialog never asks for a local model while the flag is off, because local rows cannot be chosen there. Its new test passed at once, so it is a characterization test.
+- **Catalog growth.** Two flag tests first failed only because the hosted catalog now includes `openai-3-small`, and their expectations were updated.
+- **One mixed test.** In the full run, ARA-091's mixed estimate test failed on its local line, because local estimates are now refused while off. It now runs with the flag on.
+- **Verification.** Backend: 1013 passed in 192.73 s, with Ruff clean. Frontend: `npm run check` passed with 583 tests, and `npm run build` passed. Infrastructure: 19 passed. A live flag-off test stack served hosted-only catalogs, refused the local estimate and returned 404 for a model download.
+- **Warnings.** Both come from the merged branch: an alembic `DeprecationWarning` in `test_schema_revision.py` and a react-refresh lint warning on `priceLabel`.

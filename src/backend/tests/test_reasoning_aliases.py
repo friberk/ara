@@ -11,6 +11,9 @@ from app.main import create_app
 from app.schemas.ai import Model
 from app.services.local_models import model_dto
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 KEY = "ifm-k2-horizon-7b"
 
 
