@@ -74,7 +74,7 @@ function SearchIndex({ profiles, saved, placeholder }: { profiles?: EmbeddingPro
       headingId={id}
       title="Search index"
       status={save.isSuccess ? 'Rebuilding in the background' : ''}
-      description={<p>For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question, even when they use different words. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready.</p>}
+      description={<p>For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready.</p>}
     >
       {placeholder}
       {profiles && saved && <ChoiceList label="Search index model">
@@ -106,7 +106,6 @@ function Reordering({ rerankers, saved }: { rerankers: Reranker[]; saved: Retrie
   const usable = listed.find((reranker) => reranker.status === 'available')
   const current = save.isPending && save.variables ? save.variables.reranker : saved.reranker
   const active = listed.find((reranker) => reranker.key === current)
-  const reads = (active ?? usable)?.candidates
   const choose = (reranker: string | null) => save.mutate({ embedding_profile: saved.embedding_profile, reranker })
   // What a reranker adds to each question comes from the catalog; a frozen local one says nothing while open models are off.
   const note = (reranker?: Reranker) => (reranker && (openModels || reranker.provider !== 'ollama') ? reranker.description : null)
@@ -117,10 +116,11 @@ function Reordering({ rerankers, saved }: { rerankers: Reranker[]; saved: Retrie
       status={save.isSuccess ? 'Saved' : ''}
       description={(
         <>
+          {/* Reordering decides which passages the answer receives; packing then sends them in page order. */}
           <p>{[
-            `After search, a second model reads the ${reads ? `${reads} ` : ''}best matches and moves the passages that best answer your question to the top, so the answer cites stronger evidence.`,
+            'After search, a second model reads the passages most likely to answer your question and reorders them by how well they answer it. The model that writes the answer then works from the top of that order, so it cites stronger evidence.',
             note(active ?? usable),
-            'When off, the answer uses the passages in the order search found them, with no extra time or cost.',
+            'When off, the answer works from the top of search’s own order.',
           ].filter(Boolean).join(' ')}</p>
           {!listed.length && <p>This server offers no model for reordering.</p>}
         </>

@@ -30,7 +30,7 @@ test('Given four search index models with OpenAI large saved, Then Library and s
   expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toHaveAccessibleDescription('OpenAI’s most capable search model, in English and other languages. Indexing costs $0.13 per million tokens, about 750,000 words.')
   expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toHaveAccessibleDescription('A smaller model: cheaper to index, less capable than the large one. Indexing costs $0.02 per million tokens, about 750,000 words.')
   expect(within(section).queryByText(/Higher quality|Lower cost/)).not.toBeInTheDocument()
-  expect(section).toHaveAccessibleDescription('For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question, even when they use different words. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready.')
+  expect(section).toHaveAccessibleDescription('For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready.')
 })
 
 test('Given Qwen 4B is not downloaded, Then its reason links to Open models and choosing it still asks first', async () => {
@@ -107,7 +107,7 @@ test('Given one hosted reranker turned on, Then Reordering by relevance is a swi
   const section = await screen.findByRole('region', { name: 'Reordering by relevance' })
   const toggle = await within(section).findByRole('switch', { name: 'Reordering by relevance' })
   expect(toggle).toBeChecked()
-  expect(section).toHaveAccessibleDescription('After search, a second model reads the 40 best matches and moves the passages that best answer your question to the top, so the answer cites stronger evidence. Adds about 2 to 3 seconds and $0.004 to each question. When off, the answer uses the passages in the order search found them, with no extra time or cost.')
+  expect(section).toHaveAccessibleDescription('After search, a second model reads the passages most likely to answer your question and reorders them by how well they answer it. The model that writes the answer then works from the top of that order, so it cites stronger evidence. Adds about 2 to 3 seconds and $0.004 to each question. When off, the answer works from the top of search’s own order.')
   expect(within(section).getByText('Runs on OpenAI GPT-6 Luna, separate from the model that answers.')).toHaveClass('text-xs')
   expect(within(section).queryByRole('radiogroup')).not.toBeInTheDocument()
   expect(within(section).queryByText('gpt-6-luna')).not.toBeInTheDocument()
@@ -176,7 +176,7 @@ test('Given Library and search, Then a plain explainer leads, each setting is ti
   mockApi({ ...hostedOnly, 'GET /retrieval/settings': saved, 'GET /metadata/settings': { source: 'openalex' } })
   renderApp('/?settings=library')
   const panel = await screen.findByRole('tabpanel', { name: 'Library and search' })
-  expect(within(panel).getByText('When you ask about your papers, search finds the passages that match your question’s words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from.')).toBeVisible()
+  expect(within(panel).getByText('When you ask about your papers, search looks for the passages that match your question, by its meaning and by its words. Reordering can then sort those passages by how well they answer it. The model that writes the answer reads the top passages in the order they appear in each paper, and cites the page each one comes from.')).toBeVisible()
   await within(panel).findByRole('switch', { name: 'Reordering by relevance' })
   const regions = within(panel).getAllByRole('region')
   expect(regions.map((region) => region.getAttribute('aria-label') ?? document.getElementById(region.getAttribute('aria-labelledby') ?? '')?.textContent)).toEqual(['Search index', 'Reordering by relevance', 'Paper details'])
