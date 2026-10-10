@@ -14,13 +14,18 @@
     "Sidebar: no element named Theme; Settings link present.",
     "Settings Appearance and palette theme command still switch the theme."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/components/shell/AppSidebar.tsx",
-    "src/frontend/src/components/theme/ThemeToggle.tsx"
+    "src/frontend/src/components/shell/shell.test.tsx",
+    "src/frontend/src/App.test.tsx",
+    "README.md",
+    "DESIGN.md"
   ],
-  "commits": [],
+  "commits": [
+    "794daed"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-108-sidebar-theme.",
+  "verification": "Red first: src/components/shell/shell.test.tsx, before AppSidebar.tsx changed: 2 failed | 17 passed (19); both new sidebar tests failed on the Theme span (expanded and collapsed). Green: npx vitest run src/components/shell src/components/theme src/features/settings: Test Files 9 passed (9), Tests 80 passed (80). App.test.tsx retargeted to Settings > Appearance: 8 passed (8). npm run check (typecheck, eslint, vitest) on the final tree: Test Files 90 passed (90), Tests 722 passed (722), exit 0. An earlier check run failed one test (App.test.tsx theme-menu) because it opened the removed sidebar menu; retargeted to Settings and rerun green. npm run build: exit 0 on the final tree.",
   "updated_at": "2026-10-10"
 }
