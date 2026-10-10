@@ -1726,3 +1726,26 @@ The user rejected ARA-097's details sheet: "You should have the title author lis
 **Not verified:**
 - The updated `e2e/workspace.spec.ts` was type-checked but not run.
 - The other-paper reader tab was not seen in a browser: the test copy has no chat that cites a second paper from another paper's workspace. It is covered by the unit test.
+
+**ARA-101 follow-up (2026-10-10): an Abstract heading and a quieter search index.**
+- **The request.** After ARA-101 merged (`58ae56b`), the user asked: "Can we have a heading/title for abstract?" While at it, the lead asked to tidy the ⓘ dialog's search index. It had a middle dot ("64 passages · 32 sections"), the model id shown twice, and a green "Ready" pill. The work went on `feat/ara-101b-abstract-heading` from `58ae56b`.
+- **What changed.**
+  - `PaperHeader` puts a small `h3` "Abstract" (`text-sm font-medium`) in a tight group with the abstract. When there is no abstract, the heading stays above "No abstract is available for this paper yet.", which reads better than a gap.
+  - `SearchIndexPanel` says it in one sentence: "Searching 64 passages in 32 sections with OpenAI text-embedding-3-large." A ready index adds nothing.
+  - Building shows a spinner line, "Building the index", with the progress bar.
+  - Failure keeps its alert, and unavailable or missing keep their notes. Rebuild index stays.
+  - The `Badge` and its tone table are gone.
+- **Red, then green.** 9 tests failed first:
+  - `Unable to find … heading "Abstract"` ×2;
+  - `Unable to find … "Searching 212 passages in 14 sections with OpenAI text-embedding-3-large."` ×2;
+  - `"Building the index"` ×2;
+  - the `Failed` and `Unavailable` pills still present ×2;
+  - the open-models flag sentence ×1.
+
+  Then 29 passed.
+- **Visual check, read-only against :8011 through Vite on 5198.** No non-GET request was made.
+  - Desktop light: the heading sits under the links, grouped with the abstract.
+  - At 390px: no overflow, and the dialog is 358 × 633 within 390 × 844.
+  - The index sentence wraps cleanly.
+- **Verification.** `npm run check` passed with 695 tests in 92 files, and `npm run build` passed with the existing chunk-size warning.
+  - Run alone, `library-manage.test.tsx`'s Delete test fails on this base with `Found multiple elements with the role "button" and name "Actions for “Attention is all you need”"`. ARA-103's sidebar row menu also matches that name. `feat/ux-feedback-round` has since changed that test, so the merge brings the fix. This branch does not touch it.
