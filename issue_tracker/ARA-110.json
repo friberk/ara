@@ -1,0 +1,36 @@
+{
+  "id": "ARA-110",
+  "title": "Chat paper row uses the composer's pills; citations read Han et al., 2018, p. 2",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"On chat screen we have papers on top. But this is the previous design and not consistent with our editor pills. Also hovering them shows a show summary modal, which we should remove. Then the Citation pills in chat \\\"Han 2018 -middle dot- p. 2\\\" contains middle dot, which is an obvious AI-ism.\" Decisions taken with the user: (1) the row appears only when a chat covers more than one paper and uses the same PaperPill as the composer; (2) citation chips to a paper in a multi-paper chat read in APA 7 parenthetical form without brackets, \"Han et al., 2018, p. 2\", and single-paper chats keep \"p. 2\"; (3) clicking a pill in the row opens that paper's PDF in a reader tab, as a citation to it does. The summary popup is removed.",
+  "dependencies": [
+    "ARA-096",
+    "ARA-088"
+  ],
+  "acceptance_criteria": [
+    "Given a chat with one paper, when it shows, then there is no paper row above the thread.",
+    "Given a chat with two or more papers, when it shows, then a row above the thread shows each paper with the composer's PaperPill: file icon and title, darker on hover or focus with a corner × when the paper can be removed, and a hover card with the short citation. Beyond three pills a '+N' pill opens a list of the rest as the same pills. Server rules on removal are unchanged (the last paper can't be removed).",
+    "Given a pill in that row, when it is clicked or activated with Enter, then that paper's PDF opens in a reader tab, as a citation to it does. Without a workspace reader it opens the paper's page. There is no summary dialog and no 'Show summary' tooltip.",
+    "Given a citation to a paper in a multi-paper chat, when its chip shows, then it reads APA-style 'Han et al., 2018, p. 2' (one author 'Han, 2018'; two authors 'Han & Shin, 2018'; no year 'n.d.'; no authors falls back to a short title), with no middle dot, and its accessible name matches. In a single-paper chat the chip stays 'p. 2'.",
+    "Given the codebase, when this lands, then PaperSummaryDialog and anything only it used are deleted, and README's citation example is updated."
+  ],
+  "test_cases": [
+    "Row hidden for one paper; shown with PaperPill for several; +N overflow list.",
+    "Pill click opens the paper's reader tab (workspace) or navigates (no workspace); no summary dialog.",
+    "Citation label formats for one, two and three+ authors, missing year, missing authors; no '·'.",
+    "Remove via × respects server rules."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/chat/ChatPapers.tsx",
+    "src/frontend/src/features/chat/chat-sources.ts",
+    "src/frontend/src/features/content/pages.ts",
+    "src/frontend/src/components/paper/PaperPill.tsx",
+    "src/frontend/src/lib/paper-names.ts"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 with the user's choices. Branch feat/ara-110-chat-paper-pills.",
+  "updated_at": "2026-10-10"
+}
