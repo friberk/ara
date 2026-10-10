@@ -146,7 +146,20 @@ def test_given_the_retrieval_catalogs_when_read_then_hosted_models_say_what_they
     assert {key: profile.description for key, profile in RERANKERS.items()} == RERANKER_NOTES
 
 
+def test_given_the_embedding_catalog_when_read_then_hosted_models_have_a_plain_label():
+    """Settings names each choice by its trade-off; the model keeps its display name (ARA-109)."""
+    from app.integrations.embedding_catalog import PROFILES
+
+    assert {key: profile.label for key, profile in PROFILES.items()} == {
+        "openai-3-large": "Higher quality",
+        "openai-3-small": "Lower cost",
+        "qwen3-embed-4b": None,
+        "qwen3-embed-8b": None,
+    }
+    assert PROFILES["openai-3-large"].display_name == "OpenAI text-embedding-3-large"
+
+
 def test_given_the_profiles_page_when_published_then_descriptions_and_reranker_price_are_fields():
     schemas = openapi()["components"]["schemas"]
-    assert "description" in schemas["EmbeddingProfileOut"]["properties"]
+    assert {"description", "label"} <= set(schemas["EmbeddingProfileOut"]["properties"])
     assert {"description", "price_per_million"} <= set(schemas["RerankerOut"]["properties"])
