@@ -23,6 +23,8 @@ function formatActivity(iso: string) {
   return (date.getFullYear() === now.getFullYear() ? sameYear : otherYear).format(date)
 }
 
+const pdfNotes = { earlier: { badge: 'Earlier PDF', spoken: 'earlier PDF' }, removed: { badge: 'PDF removed', spoken: 'PDF removed' } }
+
 // Questions compare without case or trailing punctuation: auto-titles drop the question mark and may end in "…".
 const comparable = (text: string) => text.replace(/[\s.,;:!?…\-–—]+$/u, '').toLowerCase()
 /** The second line of a row: the latest question when it is not already the name, or why there is none. */
@@ -37,15 +39,20 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const startNew = () => navigate(`/papers/${paper.id}`)
   const title = chat ? chatDisplayTitle(chat) : chatId ? 'Conversation' : 'New conversation'
-  // The PDF this chat pinned for this paper, which a newer upload does not replace.
-  const earlier = (item: ChatSummary) => item.papers.some((included) => included.paper_id === paper.id && included.document_id !== paper.active_document_id)
+  // The PDF this chat pinned for this paper, which a newer upload does not replace, or which was removed (ARA-097).
+  const pinned = (item: ChatSummary) => item.papers.find((included) => included.paper_id === paper.id)
+  const pdfNote = (item: ChatSummary) => {
+    const link = pinned(item)
+    return link?.pdf_removed ? pdfNotes.removed : link && link.document_id !== paper.active_document_id ? pdfNotes.earlier : null
+  }
+  const note = chat ? pdfNote(chat) : null
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" aria-label={chat && earlier(chat) ? `${title}, earlier PDF` : undefined} className="h-8 min-w-0 max-w-full gap-1.5 px-2.5 text-sm font-medium">
+          <Button type="button" variant="ghost" size="sm" aria-label={note ? `${title}, ${note.spoken}` : undefined} className="h-8 min-w-0 max-w-full gap-1.5 px-2.5 text-sm font-medium">
             <span className="truncate">{title}</span>
-            {chat && earlier(chat) && <Badge variant="outline" className="font-normal text-muted-foreground">Earlier PDF</Badge>}
+            {note && <Badge variant="outline" className="font-normal text-muted-foreground">{note.badge}</Badge>}
             <ChevronDown aria-hidden="true" className="text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
@@ -63,7 +70,7 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
                     <time dateTime={item.last_activity_at} className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{formatActivity(item.last_activity_at)}</time>
                   </span>
                   {secondLine(item) && <span className="truncate text-xs text-muted-foreground">{secondLine(item)}</span>}
-                  {earlier(item) && <Badge variant="outline" className="mt-0.5 font-normal text-muted-foreground">Earlier PDF</Badge>}
+                  {pdfNote(item) && <Badge variant="outline" className="mt-0.5 font-normal text-muted-foreground">{pdfNote(item)?.badge}</Badge>}
                 </div>
               </DropdownMenuRadioItem>
             ))}

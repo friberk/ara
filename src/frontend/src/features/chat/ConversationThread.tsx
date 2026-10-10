@@ -41,7 +41,8 @@ export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat
   const memory = useChatMemory(chat.id).data?.memory
   const [text, setText] = useState('')
   const local = generation.models.find((model) => model.key === generation.settings.model)?.provider === 'ollama'
-  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && chat.papers.length > 1 })
+  const removed = chat.papers.some((item) => item.pdf_removed) ? (chat.papers.length > 1 ? 'one of several' : 'only') : undefined
+  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && chat.papers.length > 1, pdfRemoved: removed })
   const loaded = stream.history.isSuccess
   const ready = canAsk(gate) && loaded && !stream.busy
 

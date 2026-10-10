@@ -4,11 +4,12 @@ import { X } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { isRemovedPdf, useDocument } from '@/hooks/queries/documents'
 import { usePaper } from '@/hooks/queries/papers'
 import { namedPaper, shortPaperName } from '@/lib/paper-names'
 import { usePdfControls } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
-import { PdfReader } from './PdfReader'
+import { PdfReader, RemovedPdf } from './PdfReader'
 import { PdfToolbar } from './PdfToolbar'
 
 /**
@@ -50,11 +51,15 @@ function ReaderDocument({ workspace, tab, active, toolbarSlot, onShowCurrent }: 
   const paper = useTabPaper(workspace, tab.paperId)
   const documentId = tab.documentId ?? (paper?.document_status === 'ready' ? paper.active_document_id : null)
   const controls = usePdfControls(documentId)
+  // A version a citation asked for may have been removed since (ARA-097); learn that before opening it.
+  const cited = useDocument(tab.documentId)
+  const removed = isRemovedPdf(cited.error)
+  const known = !tab.documentId || !cited.isPending
   return (
     <div hidden={!active} className="h-full min-h-0">
-      {paper ? <PdfReader paper={paper} documentId={documentId} controls={controls} onShowCurrent={onShowCurrent} /> : <PagesSkeleton />}
+      {!paper || !known ? <PagesSkeleton /> : removed ? <RemovedPdf current={!!paper.active_document_id} onShowCurrent={onShowCurrent} /> : <PdfReader paper={paper} documentId={documentId} controls={controls} onShowCurrent={onShowCurrent} />}
       {/* Only the workspace paper's current PDF can be replaced or removed here; other PDFs open or download. */}
-      {active && documentId && toolbarSlot && createPortal(<PdfToolbar controls={controls} documentId={documentId} managed={paper?.id === workspace.id && documentId === paper.active_document_id ? paper : undefined} />, toolbarSlot)}
+      {active && documentId && !removed && toolbarSlot && createPortal(<PdfToolbar controls={controls} documentId={documentId} managed={paper?.id === workspace.id && documentId === paper.active_document_id ? paper : undefined} />, toolbarSlot)}
     </div>
   )
 }

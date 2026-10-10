@@ -6,7 +6,10 @@ import type { Paper } from '@/api/types'
  */
 export type QuestionGate = { locked: boolean; reason: string | null; waiting: boolean }
 
-export function questionGate(paper: Paper, model: { usable: boolean; loading: boolean; pdfComing?: boolean; localForSeveral?: boolean }): QuestionGate {
+export function questionGate(paper: Paper, model: { usable: boolean; loading: boolean; pdfComing?: boolean; localForSeveral?: boolean; pdfRemoved?: 'only' | 'one of several' }): QuestionGate {
+  // A PDF the chat is pinned to was removed (ARA-097): its answers still read, but it cannot be searched again.
+  if (model.pdfRemoved === 'only') return { locked: true, reason: 'The PDF this conversation used was removed. Start a new conversation to ask more.', waiting: false }
+  if (model.pdfRemoved) return { locked: true, reason: 'A PDF this conversation used was removed. Remove that paper from the conversation to ask more.', waiting: false }
   // The PDF is on its way: automatic retrieval is bringing it, or it is being read (ARA-086).
   if (paper.document_status === 'processing' || (paper.document_status === 'metadata_only' && model.pdfComing)) return { locked: true, reason: 'You can ask questions once the PDF is ready.', waiting: false }
   if (paper.document_status === 'failed') return { locked: true, reason: 'PDF processing failed. Attach a text-based PDF to ask questions.', waiting: false }

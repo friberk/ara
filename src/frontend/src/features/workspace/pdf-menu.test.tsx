@@ -164,3 +164,17 @@ test('Given an earlier PDF version a citation opened, Then its menu only opens o
   expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Open original', 'Download'])
   expect(within(menu).getByRole('menuitem', { name: 'Open original' })).toHaveAttribute('href', '/api/v1/documents/doc-0/download')
 })
+
+test('Given a citation to a PDF that was removed, When it is shown, Then the reader says so instead of failing, and offers the current PDF', async () => {
+  mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-1': document, 'GET /documents/doc-0': () => json({ code: 'PDF_REMOVED', message: 'This PDF was removed. Saved answers keep their quoted passages.' }, 404) })
+  const { user } = renderApp('/papers/p1')
+  await screen.findByText('Showing doc-1')
+  await user.click(screen.getByRole('button', { name: 'Page 1 of an earlier PDF' }))
+  const reader = screen.getByRole('region', { name: 'PDF reader' })
+  expect(await within(reader).findByRole('heading', { name: 'This PDF was removed' })).toBeVisible()
+  expect(within(reader).getByText('The answer keeps its quoted passage, but its page can’t open.')).toBeVisible()
+  expect(within(reader).queryByText('Showing doc-0')).not.toBeInTheDocument()
+  expect(within(reader).queryByRole('button', { name: 'PDF options' })).not.toBeInTheDocument()
+  await user.click(within(reader).getByRole('button', { name: 'Back to current PDF' }))
+  expect(await within(reader).findByText('Showing doc-1')).toBeVisible()
+})

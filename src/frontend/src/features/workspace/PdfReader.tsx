@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense } from 'react'
-import { History } from 'lucide-react'
+import { FileX2, History } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -18,6 +18,20 @@ class ReaderErrorBoundary extends Component<{ children: React.ReactNode }, { err
     if (!this.state.error) return this.props.children
     return <div className="p-4"><ErrorNotice error={new Error('The PDF reader couldn’t load. Reload the page, or open the original PDF.')} retry={() => this.setState({ error: null })} /></div>
   }
+}
+
+/** A cited PDF that was removed from its paper (ARA-097): the answer's quoted passage still reads, its page does not. */
+export function RemovedPdf({ current, onShowCurrent }: { current: boolean; onShowCurrent: () => void }) {
+  return (
+    <div className="grid h-full content-center justify-items-center gap-3 px-6 py-10 text-center">
+      <FileX2 className="size-5 text-muted-foreground" aria-hidden="true" />
+      <div className="grid gap-1">
+        <h2 className="text-sm font-medium">This PDF was removed</h2>
+        <p className="max-w-xs text-sm text-pretty text-muted-foreground">The answer keeps its quoted passage, but its page can’t open.</p>
+      </div>
+      <Button size="sm" variant="outline" onClick={onShowCurrent}>{current ? 'Back to current PDF' : 'Add a PDF'}</Button>
+    </div>
+  )
 }
 
 /**

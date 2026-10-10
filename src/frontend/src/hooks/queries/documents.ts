@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, apiVoid, remove } from '@/api/client'
+import { api, ApiError, apiVoid, remove } from '@/api/client'
 import type { Citation, DocumentDetail, PdfRemovalPreview } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
 
@@ -24,7 +24,14 @@ export function useDocument(documentId: string | null | undefined) {
     queryFn: ({ signal }) => api<DocumentDetail>(`/documents/${encodeURIComponent(documentId ?? '')}`, { signal }),
     enabled: !!documentId,
     staleTime: Infinity,
+    // A removed or deleted PDF stays gone, so asking again only delays saying so.
+    retry: (failures, error) => !(error instanceof ApiError && error.status === 404) && failures < 1,
   })
+}
+
+/** Whether a PDF that a citation opens was removed from its paper (ARA-097): its saved passages read, its pages do not. */
+export function isRemovedPdf(error: unknown) {
+  return error instanceof ApiError && error.code === 'PDF_REMOVED'
 }
 
 /** What removing the paper's PDF changes, read afresh each time the dialog opens (ARA-097). */
