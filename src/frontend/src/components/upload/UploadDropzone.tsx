@@ -53,7 +53,7 @@ function Accepted({ item, paperId, onSettled, onReplace }: { item: UploadItem & 
  * The file input stays in the DOM (visually hidden), so keyboard, screen-reader and automation users get the native
  * picker. A failed upload keeps the zone ready and offers a retry of the same request.
  */
-export function UploadDropzone({ paperId, onAccepted, onSettled, title, description, className, chooseLabel }: { paperId?: string; onAccepted?: (accepted: UploadAccepted) => void; onSettled?: () => void; title?: string; description?: string; className?: string; chooseLabel?: string }) {
+export function UploadDropzone({ paperId, onAccepted, onSettled, title, description, className, chooseLabel, variant = 'zone' }: { paperId?: string; onAccepted?: (accepted: UploadAccepted) => void; onSettled?: () => void; title?: string; description?: string; className?: string; chooseLabel?: string; variant?: 'zone' | 'secondary' }) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -74,6 +74,16 @@ export function UploadDropzone({ paperId, onAccepted, onSettled, title, descript
       <div className={cn('grid gap-4 rounded-xl border bg-card p-4', className)}>
         <FileRow file={item.file} action={<Button size="icon-sm" variant="ghost" aria-label="Cancel upload" onClick={reset}><X /></Button>} />
         <PreparationSteps steps={preparationSteps({ upload: { progress: item.progress }, documentStatus: 'metadata_only' })} />
+      </div>
+    )
+  }
+  if (variant === 'secondary') {
+    // A quiet alternative while the PDF is on its way: the picker without the drop area.
+    return (
+      <div className={cn('grid justify-items-start gap-3', className)}>
+        <input ref={input} aria-label="PDF file" type="file" accept="application/pdf,.pdf" tabIndex={-1} className="sr-only" onChange={(event) => choose(event.target.files)} />
+        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={() => input.current?.click()}>{chooseLabel ?? 'Upload your own copy instead'}</Button>
+        {item?.state === 'failed' && <UploadFailure item={item} onRetry={() => uploads.retry(item)} />}
       </div>
     )
   }

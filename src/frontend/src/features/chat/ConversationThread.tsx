@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { SummaryCard } from '@/features/summary'
 import { useChatMemory } from '@/hooks/queries/retrieval'
 import { peekQuestion, takeQuestion, type PendingQuestion } from '@/lib/pending-questions'
+import { usePdfComing } from '@/hooks/queries/uploads'
 import { ConversationComposer } from './ConversationComposer'
 import { MemoryNote } from './MemoryNote'
 import { AssistantMessage, PendingAnswer, UserMessage } from './Messages'
@@ -34,7 +35,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
   const stream = useChatStream(chat)
   const memory = useChatMemory(chat.id).data?.memory
   const [text, setText] = useState('')
-  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading })
+  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper) })
   const loaded = stream.history.isSuccess
   const ready = canAsk(gate) && loaded && !stream.busy
 

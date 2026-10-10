@@ -7,6 +7,7 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { SummaryCard } from '@/features/summary'
 import { useCreateChat } from '@/hooks/queries/chats'
 import { queueQuestion } from '@/lib/pending-questions'
+import { usePdfComing } from '@/hooks/queries/uploads'
 import { ConversationComposer } from './ConversationComposer'
 import { canAsk, questionGate } from './question-gate'
 import { SuggestedQuestions } from './SuggestedQuestions'
@@ -25,7 +26,7 @@ export function NewConversation({ paper }: { paper: Paper }) {
   const create = useCreateChat(paper.id)
   const [text, setText] = useState('')
   const { scrollRef, onScroll, away, scrolled, toLatest } = useFollowBottom('start')
-  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading })
+  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper) })
   const ready = canAsk(gate) && !create.isPending
 
   function ask(content: string) {
