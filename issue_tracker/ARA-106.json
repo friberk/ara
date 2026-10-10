@@ -17,15 +17,17 @@
     "Context card: headings 'Context' and 'Cost'; no 'Model window'; no '·' anywhere in the card; percent rendered as its own element.",
     "Model picker: no 'Set as default' or 'Model settings' items."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/chat/Messages.tsx",
     "src/frontend/src/features/chat/AnswerDetails.tsx",
     "src/frontend/src/features/chat/ContextMeter.tsx",
     "src/frontend/src/components/composer/ModelSwitcher.tsx"
   ],
-  "commits": [],
+  "commits": [
+    "173552f"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-106-chat-polish.",
+  "verification": "Red first (4 files, before implementation): 6 failed, 28 passed: ContextMeter (no 'Context' heading; no 'Local model, no charge'), ModelSwitcher and open-models-flag (the Set as default and Model settings items were still present), ConversationPane.standalone (model text still in the footer; copy not last). Green after: npm run check passed, 715 tests in 90 files (two ConversationPane.test.tsx tests that expected the old historical effort labels were updated, and one ContextMeter test for a 404% share was updated); npm run build passed. Browser: Vite on port 5217 proxying the read-only copy at 8011, Chromium screenshots in light, dark and 390px of the footer, the open context card and the open picker, in /private/tmp/claude-505/-Users-bcakar-Documents-friBot-cs593-hw1/bcece1ee-7349-41a8-8a9f-76be1d8b081c/scratchpad/ara106/ (footer-*.png, context-*.png, picker-*.png). The picker menu was not screenshotted on the item list below Reasoning because it no longer has one. Deleted: AnswerDetails and its test, GenerationMeta, effortText (format.ts and its test), the picker's default-saving code. savedDefaults in the generation-settings context now has no consumer in the UI and was left, as it is outside the listed files.",
   "updated_at": "2026-10-10"
 }
