@@ -18,13 +18,15 @@
     "Deleting the open paper navigates home; deleting another doesn't.",
     "Library PaperActions tests still pass."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/components/shell/AppSidebar.tsx",
     "src/frontend/src/features/library/PaperActions.tsx"
   ],
-  "commits": [],
+  "commits": [
+    "e00e01b"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-103-sidebar-paper-actions.",
+  "verification": "Red first: sidebar-paper-actions.test.tsx (4 tests) failed 4/4 with 'Unable to find an accessible element with the role \"button\" and name \"Actions for “Attention is all you need”\"' before PaperActions had a sidebar trigger. Green after: the 4 tests pass (trigger in the row, menu has Edit details and Delete…, Edit opens its dialog, deleting the open paper goes to /, deleting another leaves /papers/p1). npm run check: tsc and ESLint clean, 693-694 of 695 Vitest tests passed per run; the only failures were load-flaky timeouts (5 s) in library-manage 'When Delete is chosen' and the Ctrl+K palette test, and library-manage passed 7/7 and 'When Delete is chosen' alone passed in 2 s, src/components/shell passed 22/22. npm run build passed (existing chunk-size warning). Not seen in a browser: hover reveal and long-title truncation rely on the shadcn SidebarMenuAction classes (row button gets pr-8 via group-has-data-menu-action, hidden under group-data-[collapsible=icon]).",
   "updated_at": "2026-10-10"
 }

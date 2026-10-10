@@ -1671,3 +1671,13 @@ The user asked for a way to regenerate the summary now that the version menu is 
 ### 2026-10-10 — ARA-102: e2e regenerates through the heading icon
 
 E2E-04 (conversation) and E2E-12 (local models) no longer reuse a stored summary on later runs. They regenerate through the "Regenerate summary" button and wait for the stored summary count to rise before checking content. Not run: the spec needs the live stack. Commit 94a33f21ca59d6383b91662ec1ea9b8c966cadff.
+
+### 2026-10-10 — ARA-103: paper actions behind a hover "…" in the sidebar
+
+**Request.** "In the sidebar, for papers, can we show the "..." thing to show controls for papers? They should appear on hover."
+
+**Design.** `PaperActions` gained an optional `trigger?: 'button' | 'sidebar'` (default `button`, so Library and workspace call sites are unchanged). `'sidebar'` renders a `SidebarMenuAction showOnHover` and opens the menu to the right, as `SidebarRecent` does. `SidebarPapers` renders it after each row's link and passes `onDeleted`, which navigates to `/` only when the route starts with `/papers/<that id>`. The row link already gets right padding from the primitive when a menu action exists, and the action is hidden in the icon-collapsed sidebar.
+
+**Red.** The four new tests in `components/shell/sidebar-paper-actions.test.tsx` failed 4 of 4 with `Unable to find an accessible element with the role "button" and name "Actions for “Attention is all you need”"`. After the change they passed 4 of 4.
+
+**Verification and errors.** My first `tsc` run failed on an unused `json` import in the new test; removed it. `sed -i` with a BSD flag failed, so I used the editor. Full `npm run check` showed one or two 5 s timeouts per run (library-manage "When Delete is chosen", the Ctrl+K palette test); each passed alone or with its folder (library-manage 7/7, shell 22/22). I did not run a pre-change baseline to prove those were already load-flaky. `npm run build` passed. Hover reveal and truncation were not seen in a browser.
