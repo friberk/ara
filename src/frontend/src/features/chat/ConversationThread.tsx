@@ -20,7 +20,7 @@ import { useChatStream } from './use-chat-stream'
 import { useFollowBottom } from './use-follow-bottom'
 
 const announcements = { completed: 'Response complete.', stopped: 'Generation stopped. The partial answer was kept.', failed: '' }
-const stageLabels: Record<RetrievalStage, string> = { waiting: 'Waiting for the local model…', planning: 'Searching the paper…', retrieving: 'Searching the paper…', reranking: 'Searching the paper…', generating: 'Writing the answer…' }
+const stageLabels: Record<RetrievalStage, string> = { waiting: 'Waiting for the local model…', planning: 'Searching the paper…', retrieving: 'Searching the paper…', reranking: 'Searching the paper…', generating: 'Writing the answer…', widening: 'Searching more widely…', mapping: 'Reading each paper…' }
 
 function HistorySkeleton() {
   return (

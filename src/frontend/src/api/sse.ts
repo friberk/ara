@@ -8,6 +8,9 @@ const citation = z.object({
 const retrieval = z.object({
   mode: z.enum(['hybrid', 'keyword']), profile: z.string().nullish(), reranked: z.boolean().default(false), standalone_query: z.string().nullish(), search_queries: z.array(z.string()).optional(),
   passages_found: z.number().int().default(0), passages_used: z.number().int().default(0), limited_by_context: z.boolean().default(false), note: z.string().nullish(),
+  // Relevance-driven evidence (ARA-094); absent on answers saved before it.
+  pruned: z.number().int().default(0), evidence_tokens: z.number().int().default(0), summaries_used: z.number().int().default(0), retried: z.boolean().default(false), map_reduce: z.boolean().default(false),
+  question_type: z.enum(['lookup', 'broad', 'comparative']).nullish(), sub_questions: z.array(z.string()).optional(),
 })
 const context = z.object({
   window: z.number().int(), input_tokens: z.number().int(), output_reserved: z.number().int(), summary_version: z.number().int().nullish(),

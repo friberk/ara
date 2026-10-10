@@ -11,7 +11,7 @@ export type StreamOutcome = 'completed' | 'stopped' | 'failed'
 type PendingQuestion = { text: string; baseline: number }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
-const stages: ReadonlySet<string> = new Set<RetrievalStage>(['waiting', 'planning', 'retrieving', 'reranking', 'generating'])
+const stages: ReadonlySet<string> = new Set<RetrievalStage>(['waiting', 'planning', 'retrieving', 'reranking', 'generating', 'widening', 'mapping'])
 
 /**
  * One chat's saved history plus the answer being streamed into it (ported from the legacy ChatPanel send()).
@@ -66,6 +66,8 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'papers'>) {
           refreshChats()
         }
         if (event.event === 'message.status' && stages.has(event.data.stage)) setStage(event.data.stage as RetrievalStage)
+        // The first answer found too little: the wider retry replaces it, so its text goes (ARA-094).
+        if (event.event === 'message.status' && event.data.stage === 'widening') setDraft((previous) => previous ? { ...previous, content: '' } : previous)
         if (event.event === 'message.delta') setDraft((previous) => previous ? { ...previous, content: previous.content + event.data.text } : answer('stream', event.data.text))
         if (event.event === 'message.completed') {
           const documents = new Set(chat.papers.map((paper) => paper.document_id))
