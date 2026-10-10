@@ -185,3 +185,20 @@ test('Given uploads still waiting for a choice from an earlier visit, Then the l
   await user.click(within(section).getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(calls.find((call) => call.method === 'POST')?.body).toEqual({ decision: 'discard' }))
 })
+
+test('Given an upload in the list, When its processing settles, Then the library list refreshes without a reload', async () => {
+  let settled = false
+  mockApi({
+    'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p7', document_id: 'd7', job_id: 'j7', duplicate: false }), { status: 202 }),
+    'GET /jobs/j7': () => new Response(JSON.stringify({ ...ingest, id: 'j7', ...(settled ? { state: 'completed', stage: 'completed', progress: 100 } : {}) })),
+    'GET /papers': () => new Response(JSON.stringify({ items: [{ ...ready, id: 'p7', title: settled ? 'Fresh title' : null, file_name: 'fresh.pdf', document_status: settled ? 'ready' : 'processing' }] })),
+  })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  await user.upload(screen.getByLabelText('PDF files'), pdf('fresh.pdf'))
+  const papers = await screen.findByRole('list', { name: 'Papers' })
+  expect(await within(papers).findByText('Preparing PDF')).toBeVisible()
+  settled = true
+  expect(await within(papers).findByRole('link', { name: 'Fresh title' }, { timeout: 5000 })).toBeVisible()
+  expect(within(papers).getByText('Ready to read')).toBeVisible()
+})

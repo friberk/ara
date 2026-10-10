@@ -33,7 +33,7 @@ test('Given loading and empty states, Then loading is announced and the empty st
 test('Given each document state, Then the badge uses the reader-facing label', () => {
   const { rerender } = render(<DocumentStatusBadge state="metadata_only" />)
   expect(screen.getByText('PDF needed')).toBeVisible()
-  for (const [state, label] of [['processing', 'Processing PDF'], ['ready', 'Ready to read'], ['failed', 'Processing failed']] as const) {
+  for (const [state, label] of [['processing', 'Preparing PDF'], ['ready', 'Ready to read'], ['failed', 'Processing failed']] as const) {
     rerender(<DocumentStatusBadge state={state} />)
     expect(screen.getByText(label)).toBeVisible()
   }
