@@ -75,6 +75,19 @@ class DeployComposeTests(unittest.TestCase):
             self.assertNotEqual(command[:2], ["uv", "run"], name)
             self.assertNotIn("app.jobs.development_worker", command, name)
 
+    def test_only_the_api_builds_the_shared_backend_image(self):
+        # Compose 5.0 builds services in parallel; two builds of one tag fail with "already exists".
+        image = self.services["api"]["image"]
+        builders = sorted(
+            name
+            for name, service in self.services.items()
+            if service.get("image") == image and "build" in service
+        )
+        self.assertEqual(builders, ["api"])
+        for name in BACKEND - {"api"}:
+            self.assertEqual(self.services[name]["image"], image, name)
+            self.assertEqual(self.services[name].get("pull_policy"), "never", name)
+
     def test_the_vite_dev_server_does_not_start(self):
         self.assertNotIn("frontend", self.services)
 

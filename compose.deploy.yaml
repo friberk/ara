@@ -1,12 +1,18 @@
 # Demo deployment (ARA-107): image code without reload, and Caddy in front.
 # The server's .env sets COMPOSE_FILE=compose.yaml:compose.deploy.yaml and SITE_ADDRESS.
 # Commands call /opt/venv tools directly: `uv run` would install the project at runtime.
+# Only the api builds the shared backend image: Compose 5.0 builds services in parallel, and two
+# builds of one tag fail with "already exists". The others use the image the api just built.
 services:
   migrate:
+    build: !reset null
+    pull_policy: never
     volumes: !reset []
     command: ["alembic", "upgrade", "head"]
 
   storage-init:
+    build: !reset null
+    pull_policy: never
     volumes: !reset []
     command: ["python", "-m", "app.core.storage_init"]
 
@@ -15,6 +21,8 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   worker:
+    build: !reset null
+    pull_policy: never
     volumes: !reset []
     command: ["dramatiq", "app.jobs.actors", "--queues", "default", "--processes", "1", "--threads", "2"]
 
