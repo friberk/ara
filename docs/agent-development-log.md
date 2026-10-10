@@ -1606,6 +1606,7 @@ An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 me
   - The dialog's new copy and items failed.
   - The banner failed: `Unable to find … "Add a new PDF"`.
   - The new-conversation test passed at its first run, since that gate already existed.
+  - Activity showed work stopped by Remove PDF as Failed; `isCancelledJob` now counts `PDF_REMOVED` as well, so it shows as Cancelled. Its test failed first with `Unable to find … Cancelled`.
   - My first gate skipped the PDF checks for every existing chat; an existing test caught it ("queued question … processing"). The gate now skips them only when the chat's PDF is not the paper's current one.
 
 **Merge.** Conflicts came in DESIGN.md (both sections kept), README (integration text plus the details sheet), the contract, the journal (this section kept last) and `ConversationThread.tsx`. For `ConversationThread.tsx`, ARA-096's mention-aware gate was kept, with my option until it was replaced. Section summaries cascade from documents; `queue_storage_cleanup` replaced my own enqueue.
@@ -1616,7 +1617,7 @@ An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 me
 
 **Verification:**
 - **Backend:** `test-stack.py test --project-name ara-workspace-test`: Ruff "All checks passed!", 1209 passed in 266.34 s after the merge (baseline before the branch: 1112 passed in 252.32 s).
-- **Frontend:** `npm run check` was clean with 683 tests in 89 files after the merge (the integration branch adds ARA-094/096/098 tests). `npm run build` passed with the existing chunk-size warning.
+- **Frontend:** `npm run check` was clean with 684 tests in 89 files after the merge (the integration branch adds ARA-094/096/098 tests). `npm run build` passed with the existing chunk-size warning.
 - **Contract:** `generated.ts` was regenerated from the flag-on `app.openapi()`.
 
 **Not verified:**

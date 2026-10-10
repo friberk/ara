@@ -45,9 +45,11 @@
     "src/frontend/e2e/workspace.spec.ts",
     "src/frontend/src/api/generated.ts",
     "src/frontend/src/api/types.ts",
+    "src/frontend/src/components/jobs/job-labels.ts",
     "src/frontend/src/components/paper/ClampedText.tsx",
     "src/frontend/src/components/paper/PaperCitation.tsx",
     "src/frontend/src/components/ui/sheet.tsx",
+    "src/frontend/src/features/activity/deleted-papers.test.tsx",
     "src/frontend/src/features/chat/ChatPapers.tsx",
     "src/frontend/src/features/chat/ConversationThread.tsx",
     "src/frontend/src/features/chat/Messages.tsx",
@@ -96,9 +98,11 @@
     "5eafbfa",
     "7079a91",
     "99a7b29",
-    "b6edcf6"
+    "b6edcf6",
+    "61e766b",
+    "c520ca8"
   ],
   "pull_requests": [],
-  "verification": "Implemented 2026-10-10 on feat/ara-097-workspace-redesign (from 1e30b1b), with feat/ux-feedback-round (7fbcf96) merged in at the lead's request (5eafbfa), in isolated Compose project ara-workspace-test. Remove PDF follows the user's correction: it detaches the paper's current PDF; PDFs a chat pins stay whole and those chats keep asking; delete_detached removes PDFs no paper reads and no chat pins after Remove PDF, chat deletion and dropping a paper from a chat; uploading the same bytes again re-activates a kept PDF. The first tombstone design was replaced with forward commits (7079a91, 99a7b29). Backend: python3 scripts/test-stack.py test --project-name ara-workspace-test -> Ruff 'All checks passed!', 1209 passed in 266.34 s after the merge (baseline before the branch: 1112 passed in 252.32 s). tests/test_pdf_removal_integration.py has 17 tests (detach and keep, older chats keep reading and asking, unused PDF deleted with section summaries, re-upload re-activates from the paper and from home, full removal re-uploads as new, preview, CHAT_BUSY, job settlement, repeat and 404, chat deletion keeps a shared PDF then deletes it, chat deletion keeps the current PDF, chat deletion deletes an earlier version, dropping a paper deletes its kept PDF, dropping a paper keeps a current PDF, document facts, later paper deletion). Frontend: npm run check -> typecheck and lint clean, 683 tests in 89 files after the merge; npm run build passed with the existing chunk-size warning. generated.ts regenerated from the open-models-on app.openapi(). Visual check (two rounds, desktop light and dark, 390 px light and dark) against a seeded isolated stack: round 1 found the PDF-options tooltip over the open menu and a truncated venue; round 2 confirmed both and found focus falling to the body after removal (fixed, jsdom only); 390 px document and thread scrollWidth 390 (1257 before the overflow fix). Not run: the updated Playwright specs (type-checked only); live OpenAlex downloads; real concurrent races. The final Remove PDF semantics were not seen in a browser. This record and the journal entry are committed after the commits listed.",
+  "verification": "Implemented 2026-10-10 on feat/ara-097-workspace-redesign (from 1e30b1b), with feat/ux-feedback-round (7fbcf96) merged in at the lead's request (5eafbfa), in isolated Compose project ara-workspace-test. Remove PDF follows the user's correction: it detaches the paper's current PDF; PDFs a chat pins stay whole and those chats keep asking; delete_detached removes PDFs no paper reads and no chat pins after Remove PDF, chat deletion and dropping a paper from a chat; uploading the same bytes again re-activates a kept PDF. The first tombstone design was replaced with forward commits (7079a91, 99a7b29). Backend: python3 scripts/test-stack.py test --project-name ara-workspace-test -> Ruff 'All checks passed!', 1209 passed in 266.34 s after the merge (baseline before the branch: 1112 passed in 252.32 s). tests/test_pdf_removal_integration.py has 17 tests (detach and keep, older chats keep reading and asking, unused PDF deleted with section summaries, re-upload re-activates from the paper and from home, full removal re-uploads as new, preview, CHAT_BUSY, job settlement, repeat and 404, chat deletion keeps a shared PDF then deletes it, chat deletion keeps the current PDF, chat deletion deletes an earlier version, dropping a paper deletes its kept PDF, dropping a paper keeps a current PDF, document facts, later paper deletion). Frontend: npm run check -> typecheck and lint clean, 684 tests in 89 files after the merge (Activity shows PDF_REMOVED work as Cancelled); npm run build passed with the existing chunk-size warning. generated.ts regenerated from the open-models-on app.openapi(). Visual check (two rounds, desktop light and dark, 390 px light and dark) against a seeded isolated stack: round 1 found the PDF-options tooltip over the open menu and a truncated venue; round 2 confirmed both and found focus falling to the body after removal (fixed, jsdom only); 390 px document and thread scrollWidth 390 (1257 before the overflow fix). Not run: the updated Playwright specs (type-checked only); live OpenAlex downloads; real concurrent races. The final Remove PDF semantics were not seen in a browser. This record and the journal entry are committed after the commits listed.",
   "updated_at": "2026-10-10"
 }
