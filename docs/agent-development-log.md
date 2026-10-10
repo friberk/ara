@@ -2010,3 +2010,17 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
   - the reordering line under its help;
   - the rebuild dialog in words.
 - **Verification.** `npm run check` passed 765 tests in 94 files, and `npm run build` passed. `generated.ts` was regenerated from the production, flag-on schema, adding only `label`. The full backend suite at `15d7090` passed 1228 in 269 s, with Ruff clean. `feat/ux-feedback-round` (`6de5f6a`, which has ARA-108 and ARA-110) was already merged in `35ce8c2`, with nothing newer to merge.
+
+### 2026-10-10 - ARA-109 Ticket closed before the verdict; final detail
+
+- **Error, corrected.** I first marked the ticket completed in `9a77f3e`, while the finish reviewer's verdict was still out. The verdict was **fix**, and it reached the lead instead of me.
+  - Its open items were the raw "OpenAI text-embedding-3-…" titles and the unexplained "tokens". They were fixed later in `914906d` (the catalog `label`, red first) and `027b867` (labels with the model name as secondary text, "A token is about three-quarters of a word." in the Models note, and words in the rebuild dialog).
+  - The lead's follow-up asked for the same items. I checked it against those commits.
+- **One remaining detail.** The words in the rebuild dialog are now three-quarters of the rounded token figure shown beside them.
+  - Red first: for 13,449 tokens, the dialog read "about 13,000 tokens, roughly 10,000 words" instead of "roughly 9,800 words".
+  - The fix is in `68a06e1`.
+- **Verification.**
+  - `npm run check`: 766 passed in 94 files. `npm run build` passed.
+  - Backend catalog and route tests: 73 passed.
+  - A confirming screenshot round (`r4-*`) covers Library and search at desktop light and at 390px, and the rebuild confirmation.
+

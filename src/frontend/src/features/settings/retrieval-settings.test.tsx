@@ -78,6 +78,15 @@ test('Given the rebuild dialog, When Cancel is pressed, Then nothing is saved an
   expect(screen.getByRole('dialog', { name: 'Settings' })).toBeVisible()
 })
 
+test('Given an estimate, When the rebuild dialog opens, Then the words come from the same rounded token count', async () => {
+  // 13,449 tokens reads "about 13,000"; three-quarters of that is 9,750, so "roughly 9,800 words", never 10,000 from the raw count.
+  mockApi({ ...base, 'GET /retrieval/reindex-estimate': { ...estimate, papers: 2, tokens: 13_449 }, 'GET /retrieval/settings': saved })
+  const { user } = renderApp('/?settings=library')
+  await user.click(await screen.findByRole('radio', { name: 'Lower cost' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Rebuild the search index?' })
+  expect(await within(dialog).findByText(/about 13,000 tokens, roughly 9,800 words\.$/)).toBeVisible()
+})
+
 test('Given an empty library, When a new model is chosen, Then the dialog says there is nothing to rebuild yet', async () => {
   mockApi({ ...base, 'GET /retrieval/reindex-estimate': { ...estimate, papers: 0, tokens: 0, estimated_cost_usd: 0 }, 'GET /retrieval/settings': saved })
   const { user } = renderApp('/?settings=library')
