@@ -40,7 +40,8 @@ export function retryWait(job: Pick<Job, 'result' | 'updated_at'> | null | undef
 
 export function waitText(seconds: number): string {
   if (seconds < 90) return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`
-  if (seconds < 3600) return `${Math.ceil(seconds / 60)} minutes`
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `${minutes} minutes`
   const hours = Math.ceil(seconds / 3600)
   return `${hours} ${hours === 1 ? 'hour' : 'hours'}`
 }
