@@ -856,6 +856,8 @@ export interface components {
             request_id: string;
             /** Content */
             content: string;
+            /** Mentions */
+            mentions?: components["schemas"]["PaperMention"][];
         };
         /** ChatMemoryOut */
         ChatMemoryOut: {
@@ -1293,6 +1295,8 @@ export interface components {
             context?: components["schemas"]["ContextUsage"] | null;
             /** Grounding */
             grounding?: ("supported" | "insufficient") | null;
+            /** Mentions */
+            mentions?: components["schemas"]["PaperMention"][];
         };
         /** MessagePage */
         MessagePage: {
@@ -1419,6 +1423,25 @@ export interface components {
             paper_id: string;
             /** Title */
             title: string | null;
+        };
+        /**
+         * PaperMention
+         * @description A library paper a question mentions with a composer pill (ARA-096). `label` is the pill's
+         *     text, which the question holds at [start, end): Unicode code points of the trimmed content,
+         *     as Python indexes strings.
+         */
+        PaperMention: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Label */
+            label: string;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
         };
         /** PaperPage */
         PaperPage: {
