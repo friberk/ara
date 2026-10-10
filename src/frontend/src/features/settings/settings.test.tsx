@@ -1,6 +1,9 @@
 // The Models and General categories of the Settings dialog (ARA-109). Choices save as they are made.
-import { screen, waitFor, within } from '@testing-library/react'
-import { renderApp } from '@/test/render'
+import { useEffect, useRef } from 'react'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
+import { useGenerationSettings } from '@/components/composer/generation-settings-context'
+import { renderApp, renderWithProviders } from '@/test/render'
 import type { Model } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { queryKeys } from '@/lib/query-keys'
@@ -26,8 +29,8 @@ test('Given the hosted catalog, Then each model says what it is for, what it cos
   const luneRow = within(models).getByRole('radio', { name: 'GPT-5.6 Luna' }).closest('label') as HTMLElement
   expect(within(luneRow).getByText('Default')).toBeVisible()
   expect(within(models).getAllByText('Default')).toHaveLength(1)
-  expect(within(section).getByText('Prices are in US dollars per million tokens. Context is how much text a model can read at once.')).toBeVisible()
-  expect(within(section).getByText(/Any chat can switch to another model from the menu next to the send button\./)).toBeVisible()
+  expect(within(section).getByText('Prices are in US dollars per million tokens. A token is about three-quarters of a word. Context is how much text a model can read at once.')).toBeVisible()
+  expect(within(section).getByText(/A chat that already has answers keeps the model it last used, and any chat can switch from the menu next to the send button\./)).toBeVisible()
   expect(within(models).queryByText('gpt-5.6-luna')).not.toBeInTheDocument()
   expect(within(models).queryByText(/Configured|Available/)).not.toBeInTheDocument()
 })
@@ -197,4 +200,21 @@ test('Given hosted and local chat models, Then there is no separate summaries or
   await screen.findByRole('radiogroup', { name: 'Default model' })
   expect(screen.queryByRole('radiogroup', { name: /summaries and follow-up/i })).toBeNull()
   expect(screen.queryByText(/summaries and follow-up/i)).toBeNull()
+})
+
+// Test-after (ARA-109): Settings says a chat that already has answers keeps its model. Opening such a chat adopts
+// its latest answer's model as the composer's choice (ConversationThread), and a new saved default must not move it.
+function OpenChat({ model }: { model: string }) {
+  const { settings, setSettings } = useGenerationSettings()
+  const adopted = useRef(false)
+  useEffect(() => { if (!adopted.current) { adopted.current = true; setSettings({ model, reasoning_effort: 'low' }) } })
+  return <output aria-label="Selection">{settings.model}</output>
+}
+
+test('Given an open chat that adopted its own model, When the saved default changes, Then the chat keeps its model', async () => {
+  mockApi({ 'GET /models': { items: [luna, terra] }, 'GET /settings': lunaLow })
+  const { client } = renderWithProviders(<GenerationSettingsProvider><OpenChat model={terra.key} /></GenerationSettingsProvider>)
+  await waitFor(() => expect(screen.getByRole('status', { name: 'Selection' })).toHaveTextContent(terra.key))
+  act(() => { client.setQueryData(queryKeys.settings, { default_model: luna.key, reasoning_effort: 'high' }) })
+  expect(screen.getByRole('status', { name: 'Selection' })).toHaveTextContent(terra.key)
 })

@@ -6,8 +6,8 @@ import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
 const luna: Model = { kind: 'chat', key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low'], supports_streaming: true, supports_structured_output: true, context_window: 1_050_000 }
-const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13, description: 'OpenAI’s most capable search model, in English and other languages.' }
-const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02, description: 'A smaller model: cheaper to index, less capable than the large one.' }
+const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13, description: 'OpenAI’s most capable search model, in English and other languages.', label: 'Higher quality' }
+const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02, description: 'A smaller model: cheaper to index, less capable than the large one.', label: 'Lower cost' }
 const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'unavailable', unavailable_reason: 'Download Qwen3 Embedding 4B in Settings', local_model_key: 'qwen3-embedding-4b', price_per_million: 0 }
 const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: 'qwen3-embedding:8b', display_name: 'Qwen3 Embedding 8B', dimensions: 4096, unavailable_reason: 'Download Qwen3 Embedding 8B in Settings', local_model_key: 'qwen3-embedding-8b' }
 const profiles = { items: [openai, small, qwen4b, qwen8b], default_profile: openai.key }
@@ -25,10 +25,12 @@ test('Given four search index models with OpenAI large saved, Then Library and s
   const section = await screen.findByRole('region', { name: 'Search index' })
   const choices = await within(section).findByRole('radiogroup', { name: 'Search index model' })
   expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-3-large', 'openai-3-small', 'qwen3-embed-4b', 'qwen3-embed-8b'])
-  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toBeChecked()
-  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toHaveAccessibleDescription('OpenAI’s most capable search model, in English and other languages. Indexing costs $0.13 per million tokens.')
-  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toHaveAccessibleDescription('A smaller model: cheaper to index, less capable than the large one. Indexing costs $0.02 per million tokens.')
-  expect(within(section).getByText(/switching rebuilds the index for every paper in the background/)).toBeVisible()
+  // Each choice leads with its trade-off; the model's own name follows as secondary text.
+  expect(within(choices).getByRole('radio', { name: 'Higher quality' })).toBeChecked()
+  expect(within(choices).getByRole('radio', { name: 'Higher quality' })).toHaveAccessibleDescription('OpenAI text-embedding-3-large OpenAI’s most capable search model, in English and other languages. Indexing costs $0.13 per million tokens, about 750,000 words.')
+  expect(within(choices).getByRole('radio', { name: 'Lower cost' })).toHaveAccessibleDescription('OpenAI text-embedding-3-small A smaller model: cheaper to index, less capable than the large one. Indexing costs $0.02 per million tokens, about 750,000 words.')
+  expect(within(choices).getByText('OpenAI text-embedding-3-small')).toHaveClass('text-xs')
+  expect(within(section).getByText(/Switching models reads every paper again in the background, and each paper keeps its current index until its new one is ready\./)).toBeVisible()
   expect(within(section).queryByText(/embed/i, { selector: 'p' })).not.toBeInTheDocument()
 })
 
@@ -50,9 +52,10 @@ test('Given a new search index model, When it is chosen, Then a dialog says what
   const { calls } = mockApi({ ...openModels, ...base, 'GET /retrieval/settings': stored, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/?settings=library')
   const section = await screen.findByRole('region', { name: 'Search index' })
-  await user.click(await within(section).findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
+  await user.click(await within(section).findByRole('radio', { name: 'Lower cost' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Rebuild the search index?' })
-  expect(await within(dialog).findByText('Switching to OpenAI text-embedding-3-small rebuilds the index for all 12 papers in your library, about 480,000 tokens, in the background.')).toBeVisible()
+  expect(await within(dialog).findByText('Switching the search index to “Lower cost” reads all 12 papers in your library again in the background: about 480,000 tokens, roughly 360,000 words.')).toBeVisible()
+  expect(within(dialog).getByText('Model: OpenAI text-embedding-3-small')).toBeVisible()
   expect(within(dialog).getByText('Estimated cost: less than $0.01.')).toBeVisible()
   expect(within(dialog).getByText('Questions keep working while it runs: each paper keeps its current index until its new one is ready.')).toBeVisible()
   expect(puts(calls)).toEqual([])
@@ -60,27 +63,27 @@ test('Given a new search index model, When it is chosen, Then a dialog says what
   await waitFor(() => expect(puts(calls)).toEqual([{ embedding_profile: 'openai-3-small', reranker: 'qwen3-rerank-0.6b' }]))
   expect(calls.find((call) => call.path === '/retrieval/reindex-estimate')?.url.searchParams.get('profile')).toBe('openai-3-small')
   expect(await within(section).findByText('Rebuilding in the background')).toBeVisible()
-  expect(within(section).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toBeChecked()
+  expect(within(section).getByRole('radio', { name: 'Lower cost' })).toBeChecked()
 })
 
 test('Given the rebuild dialog, When Cancel is pressed, Then nothing is saved and the saved model stays chosen', async () => {
   const { calls } = mockApi({ ...base, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/?settings=library')
-  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
+  await user.click(await screen.findByRole('radio', { name: 'Lower cost' }))
   await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   expect(puts(calls)).toEqual([])
-  expect(screen.getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toBeChecked()
-  expect(screen.getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).not.toBeChecked()
+  expect(screen.getByRole('radio', { name: 'Higher quality' })).toBeChecked()
+  expect(screen.getByRole('radio', { name: 'Lower cost' })).not.toBeChecked()
   expect(screen.getByRole('dialog', { name: 'Settings' })).toBeVisible()
 })
 
 test('Given an empty library, When a new model is chosen, Then the dialog says there is nothing to rebuild yet', async () => {
   mockApi({ ...base, 'GET /retrieval/reindex-estimate': { ...estimate, papers: 0, tokens: 0, estimated_cost_usd: 0 }, 'GET /retrieval/settings': saved })
   const { user } = renderApp('/?settings=library')
-  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
+  await user.click(await screen.findByRole('radio', { name: 'Lower cost' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Switch the search index model?' })
-  expect(await within(dialog).findByText('Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with OpenAI text-embedding-3-small.')).toBeVisible()
+  expect(await within(dialog).findByText('Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with “Lower cost”.')).toBeVisible()
   expect(within(dialog).getByRole('button', { name: 'Switch model' })).toBeEnabled()
 })
 
@@ -90,14 +93,14 @@ const localRerank: Reranker = { key: 'qwen3-rerank-0.6b', provider: 'ollama', mo
 const withRerankers = { ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank, localRerank] } }
 const hostedOnly = { ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank] } }
 
-test('Given one hosted reranker turned on, Then Reranking is a switch that says what it does, what it costs and which model does it', async () => {
+test('Given one hosted reranker turned on, Then Reordering by relevance is a switch that says what it improves, what it costs, what off means and, secondarily, which model does it', async () => {
   mockApi({ ...hostedOnly, 'GET /retrieval/settings': saved })
   renderApp('/?settings=library')
-  const section = await screen.findByRole('region', { name: 'Reranking' })
-  const toggle = await within(section).findByRole('switch', { name: 'Reranking' })
+  const section = await screen.findByRole('region', { name: 'Reordering by relevance' })
+  const toggle = await within(section).findByRole('switch', { name: 'Reordering by relevance' })
   expect(toggle).toBeChecked()
-  expect(within(section).getByText('After search, a second model reads the 40 best matches and puts the passages that answer your question first, so answers cite better evidence.')).toBeVisible()
-  expect(within(section).getByText('Runs on OpenAI GPT-6 Luna, separate from the model that answers. Adds about 2 to 3 seconds and $0.004 to each question.')).toBeVisible()
+  expect(section).toHaveAccessibleDescription('After search, a second model reads the 40 best matches and moves the passages that best answer your question to the top, so the answer cites stronger evidence. Adds about 2 to 3 seconds and $0.004 to each question. When off, the answer uses the passages in the order search found them, with no extra time or cost.')
+  expect(within(section).getByText('Runs on OpenAI GPT-6 Luna, separate from the model that answers.')).toHaveClass('text-xs')
   expect(within(section).queryByRole('radiogroup')).not.toBeInTheDocument()
   expect(within(section).queryByText('gpt-6-luna')).not.toBeInTheDocument()
 })
@@ -105,18 +108,18 @@ test('Given one hosted reranker turned on, Then Reranking is a switch that says 
 test('Given reranking is on, When it is switched off, Then it saves at once with reranker null and no rebuild dialog', async () => {
   const { calls } = mockApi({ ...hostedOnly, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/?settings=library')
-  const section = await screen.findByRole('region', { name: 'Reranking' })
-  await user.click(await within(section).findByRole('switch', { name: 'Reranking' }))
+  const section = await screen.findByRole('region', { name: 'Reordering by relevance' })
+  await user.click(await within(section).findByRole('switch', { name: 'Reordering by relevance' }))
   await waitFor(() => expect(puts(calls)).toEqual([{ embedding_profile: 'openai-3-large', reranker: null }]))
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   expect(await within(section).findByText('Saved')).toBeVisible()
-  expect(within(section).getByRole('switch', { name: 'Reranking' })).not.toBeChecked()
+  expect(within(section).getByRole('switch', { name: 'Reordering by relevance' })).not.toBeChecked()
 })
 
 test('Given reranking saved off, When it is switched on, Then the first available reranker is saved', async () => {
   const { calls } = mockApi({ ...hostedOnly, 'GET /retrieval/settings': { ...saved, reranker: null }, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/?settings=library')
-  const toggle = await screen.findByRole('switch', { name: 'Reranking' })
+  const toggle = await screen.findByRole('switch', { name: 'Reordering by relevance' })
   expect(toggle).not.toBeChecked()
   await user.click(toggle)
   await waitFor(() => expect(puts(calls)).toEqual([{ embedding_profile: 'openai-3-large', reranker: 'openai-gpt-6-luna' }]))
@@ -125,7 +128,7 @@ test('Given reranking saved off, When it is switched on, Then the first availabl
 test('Given open models with a local reranker that is not installed, Then a list offers each reranker and the local one links to Open models', async () => {
   mockApi({ ...openModels, ...withRerankers, 'GET /retrieval/settings': saved })
   renderApp('/?settings=library')
-  const choices = await screen.findByRole('radiogroup', { name: 'Reranking model' })
+  const choices = await screen.findByRole('radiogroup', { name: 'Reordering model' })
   expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-gpt-6-luna', 'qwen3-rerank-0.6b'])
   expect(within(choices).getByRole('radio', { name: 'OpenAI GPT-6 Luna' })).toBeChecked()
   const local = within(choices).getByRole('radio', { name: 'Qwen3 Reranker 0.6B' })
@@ -146,9 +149,9 @@ test('Given an installed local reranker, When it is chosen, Then PUT sends its k
 test('Given a server that lists no rerankers, Then reranking cannot be turned on and says why', async () => {
   mockApi({ ...base, 'GET /retrieval/settings': { ...saved, reranker: null } })
   renderApp('/?settings=library')
-  const section = await screen.findByRole('region', { name: 'Reranking' })
-  expect(await within(section).findByRole('switch', { name: 'Reranking' })).toBeDisabled()
-  expect(within(section).getByText('This server offers no reranking model.')).toBeVisible()
+  const section = await screen.findByRole('region', { name: 'Reordering by relevance' })
+  expect(await within(section).findByRole('switch', { name: 'Reordering by relevance' })).toBeDisabled()
+  expect(within(section).getByText('This server offers no model for reordering.')).toBeVisible()
 })
 
 test('Given search settings fail to load, Then Library and search explains it in place and the other categories still work', async () => {
@@ -159,4 +162,17 @@ test('Given search settings fail to load, Then Library and search explains it in
   expect(within(section).getByRole('button', { name: 'Try again' })).toBeEnabled()
   await user.click(screen.getByRole('tab', { name: 'Models' }))
   expect(await within(await screen.findByRole('radiogroup', { name: 'Default model' })).findByRole('radio', { name: 'GPT-5.6 Luna' })).toBeChecked()
+})
+
+test('Given Library and search, Then a plain explainer leads, each setting is tied to it with help text, and answering comes before paper details', async () => {
+  mockApi({ ...hostedOnly, 'GET /retrieval/settings': saved, 'GET /metadata/settings': { source: 'openalex' } })
+  renderApp('/?settings=library')
+  const panel = await screen.findByRole('tabpanel', { name: 'Library and search' })
+  expect(within(panel).getByText('When you ask about your papers, search finds the passages that match your question’s words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from.')).toBeVisible()
+  await within(panel).findByRole('switch', { name: 'Reordering by relevance' })
+  const regions = within(panel).getAllByRole('region')
+  expect(regions.map((region) => region.getAttribute('aria-label') ?? document.getElementById(region.getAttribute('aria-labelledby') ?? '')?.textContent)).toEqual(['Search index', 'Reordering by relevance', 'Paper details'])
+  for (const region of regions) expect(region).toHaveAccessibleDescription(/\w{3,}.*\./)
+  expect(regions[0]).toHaveAccessibleDescription(/^Meaning search: /)
+  expect(regions[2]).toHaveAccessibleDescription(/^Separate from answering: /)
 })

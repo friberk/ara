@@ -71,7 +71,7 @@ function ModelDefaults({ models, saved }: { models: Model[]; saved: Settings }) 
         headingId={modelHeading}
         title="Default model"
         status={status('model')}
-        description={<p>New chats start with this model, and paper summaries use it. Any chat can switch to another model from the menu next to the send button.</p>}
+        description={<p>New chats start with this model, and paper summaries use it. A chat that already has answers keeps the model it last used, and any chat can switch from the menu next to the send button.</p>}
       >
         <ChoiceList labelledBy={modelHeading}>
           {models.map((model) => (
@@ -80,7 +80,7 @@ function ModelDefaults({ models, saved }: { models: Model[]; saved: Settings }) 
             </ChoiceRow>
           ))}
         </ChoiceList>
-        <p className="text-xs text-muted-foreground">Prices are in US dollars per million tokens. Context is how much text a model can read at once.</p>
+        <p className="text-xs text-muted-foreground">Prices are in US dollars per million tokens. A token is about three-quarters of a word. Context is how much text a model can read at once.</p>
         {changed === 'model' && <ErrorNotice error={save.error} />}
       </SettingsSection>
       <SettingsSection

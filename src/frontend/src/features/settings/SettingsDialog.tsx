@@ -30,10 +30,15 @@ function OpenModelSettings() {
   return <div className="pt-1"><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /></div>
 }
 
+/** How answers find their passages, in plain words; each setting below names its step. Checked against docs/plans/retrieval-orchestration.md. */
+function LibraryExplainer() {
+  return <p className="max-w-prose pt-1 pb-6 text-sm text-pretty">When you ask about your papers, search finds the passages that match your question’s words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from.</p>
+}
+
 function Panel({ category }: { category: SettingsCategory }) {
   if (category === 'general') return <GeneralSettings />
   if (category === 'models') return <ModelSettings />
-  if (category === 'library') return <><PaperDetailsSettings /><SearchSettings /></>
+  if (category === 'library') return <><LibraryExplainer /><SearchSettings /><PaperDetailsSettings /></>
   return <OpenModelSettings />
 }
 

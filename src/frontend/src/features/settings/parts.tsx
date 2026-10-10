@@ -6,15 +6,16 @@ import { cn } from '@/lib/utils'
  * control at the right, and what follows. `status` confirms a save beside the heading, where the change was made.
  */
 export function SettingsSection({ headingId, title, description, control, status, children }: { headingId: string; title: string; description?: React.ReactNode; control?: React.ReactNode; status?: React.ReactNode; children?: React.ReactNode }) {
+  const descriptionId = useId()
   return (
-    <section aria-labelledby={headingId} className="grid gap-4 py-6 first:pt-1">
+    <section aria-labelledby={headingId} aria-describedby={description ? descriptionId : undefined} className="grid gap-4 py-6 first:pt-1">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="grid min-w-[min(100%,15rem)] flex-1 gap-1">
           <div className="flex items-baseline gap-2">
             <h4 id={headingId} className="text-sm font-medium">{title}</h4>
             <span role="status" className="text-xs text-muted-foreground">{status}</span>
           </div>
-          {description && <div className="grid max-w-prose gap-2 text-sm text-pretty text-muted-foreground">{description}</div>}
+          {description && <div id={descriptionId} className="grid max-w-prose gap-2 text-sm text-pretty text-muted-foreground">{description}</div>}
         </div>
         {control}
       </div>

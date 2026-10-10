@@ -22,7 +22,7 @@ export function PaperDetailsSettings() {
       headingId={id}
       title="Paper details"
       status={save.isSuccess ? 'Saved' : ''}
-      description={<p>When you upload a PDF, its title, authors, year, venue and abstract are looked up in this catalog. If the paper isn’t found there, or the catalog doesn’t answer, the other one is tried. Details you edited are never replaced. If a paper’s details come back wrong, try the other catalog.</p>}
+      description={<p>Separate from answering: when you upload a PDF, its title, authors, year, venue and abstract are looked up in this catalog. If the paper isn’t found there, or the catalog doesn’t answer, the other one is tried. Details you edited are never replaced. If a paper’s details come back wrong, try the other catalog.</p>}
     >
       {saved.isPending && !saved.error && <div role="status"><span className="sr-only">Loading where paper details come from…</span><Skeleton className="h-28 w-full rounded-xl" /></div>}
       <ErrorNotice error={saved.error} retry={() => void saved.refetch()} />
