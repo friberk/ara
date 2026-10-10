@@ -21,6 +21,12 @@ DOCUMENTED = {
     "gpt-5.6-terra": ("2", "0.2", "12"),
     "gpt-5.6-luna": ("0.2", "0.02", "1.2"),
 }
+# What each model is for, in one sentence from its model page's tagline (read 2026-10-10, ARA-109).
+PURPOSES = {
+    "gpt-5.6-sol": "Flagship model for complex professional work.",
+    "gpt-5.6-terra": "Balances intelligence and cost.",
+    "gpt-5.6-luna": "Built for cost-sensitive, high-volume work.",
+}
 
 
 def catalog():
@@ -59,6 +65,45 @@ def test_given_the_catalog_when_read_then_each_model_has_one_complete_entry():
         # OpenAI bills prompt-cache writes at 1.25x the uncached input rate.
         assert entry.cache_write_price == base * Decimal("1.25")
         assert entry.source.startswith("https://developers.openai.com/api/docs/models/")
+
+
+def test_given_the_catalog_when_read_then_each_model_says_what_it_is_for():
+    for key, entry in catalog().HOSTED_MODELS.items():
+        assert entry.description == PURPOSES[key]
+
+
+async def test_given_the_models_route_when_listing_then_hosted_models_carry_purpose_and_prices(
+    monkeypatch,
+):
+    from app.routes import ai
+
+    async def nothing(resources):
+        return []
+
+    async def hosted_default(resources):
+        return ai.Defaults()
+
+    monkeypatch.setattr(ai, "list_local_models", nothing)
+    monkeypatch.setattr(ai, "saved_defaults", hosted_default)
+    resources = SimpleNamespace(settings=Settings(_env_file=None))
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(resources=resources)))
+    page = await ai.models(request)
+    listed = {item.key: item for item in page.items}
+    for key, entry in catalog().HOSTED_MODELS.items():
+        item = listed[key]
+        assert item.description == PURPOSES[key]
+        assert item.input_price_per_million == float(entry.input_price)
+        assert item.output_price_per_million == float(entry.output_price)
+
+
+def test_given_a_local_model_when_selected_then_it_has_no_purpose_or_price():
+    item = llm.validate_selection("ifm-k2-horizon-7b", "default")
+    assert item.provider == "ollama"
+    assert (item.description, item.input_price_per_million, item.output_price_per_million) == (
+        None,
+        None,
+        None,
+    )
 
 
 def test_given_the_catalog_when_selecting_then_unknown_models_raise_as_before():

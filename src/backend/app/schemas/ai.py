@@ -189,6 +189,10 @@ class Model(DTO):
     supports_streaming: bool = True
     supports_structured_output: bool = True
     context_window: int
+    # Hosted models only (ARA-109): what the model is for, and USD per million tokens.
+    description: str | None = None
+    input_price_per_million: float | None = None
+    output_price_per_million: float | None = None
 
 
 class Features(BaseModel):

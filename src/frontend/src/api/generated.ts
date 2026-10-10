@@ -1587,6 +1587,12 @@ export interface components {
             supports_structured_output: boolean;
             /** Context Window */
             context_window: number;
+            /** Description */
+            description?: string | null;
+            /** Input Price Per Million */
+            input_price_per_million?: number | null;
+            /** Output Price Per Million */
+            output_price_per_million?: number | null;
         };
         /** ModelOperationInput */
         ModelOperationInput: {

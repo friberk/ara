@@ -39,12 +39,17 @@ class HostedModel:
     reasoning_efforts: tuple[str, ...]
     encoding: str
     source: str
+    # What the model is for, in one plain sentence from its model page's tagline.
+    description: str
 
 
-def entry(name: str, input_price: str, cached_price: str, output_price: str) -> HostedModel:
+def entry(
+    name: str, description: str, input_price: str, cached_price: str, output_price: str
+) -> HostedModel:
     return HostedModel(
         key=f"gpt-5.6-{name}",
         display_name=f"GPT-5.6 {name.capitalize()}",
+        description=description,
         window=1_050_000,
         max_output=128_000,
         answer_reserve=4000,
@@ -62,9 +67,11 @@ def entry(name: str, input_price: str, cached_price: str, output_price: str) -> 
 HOSTED_MODELS: dict[str, HostedModel] = {
     model.key: model
     for model in (
-        entry("sol", "4", "0.4", "20"),
-        entry("terra", "2", "0.2", "12"),
-        entry("luna", "0.2", "0.02", "1.2"),
+        # Taglines read 2026-10-10 (ARA-109): "flagship model for complex professional work",
+        # "balances intelligence and cost", "optimized for cost-sensitive workloads".
+        entry("sol", "Flagship model for complex professional work.", "4", "0.4", "20"),
+        entry("terra", "Balances intelligence and cost.", "2", "0.2", "12"),
+        entry("luna", "Built for cost-sensitive, high-volume work.", "0.2", "0.02", "1.2"),
     )
 }
 
