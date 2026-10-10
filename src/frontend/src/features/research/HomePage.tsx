@@ -11,7 +11,7 @@ import { PaperContextChip, PaperPicker } from '@/components/composer/PaperPicker
 import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
-import { searchHref } from '@/components/shell/recent-items'
+import { chatHref, searchHref } from '@/components/shell/recent-items'
 import { Progress } from '@/components/ui/progress'
 import { UploadFailure } from '@/components/upload/UploadDropzone'
 import { DropOverlay } from '@/components/upload/DropOverlay'
@@ -30,8 +30,10 @@ export default function HomePage() {
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [provider, setProvider] = useState<Provider>('openalex')
-  const [paper, setPaper] = useState<Paper | null>(null)
+  // Library papers to ask about, in the order chosen; the first one's page is the chat's address (ARA-088).
+  const [papers, setPapers] = useState<Paper[]>([])
   const picker = useRef<HTMLInputElement>(null)
+  const [picking, setPicking] = useState(false)
   // A PDF chosen or dropped here uploads at once and opens its paper, where the same steps continue.
   const uploads = useUploads({
     onAccepted: (accepted) => {
@@ -52,8 +54,10 @@ export default function HomePage() {
   const recent = (history.data?.items ?? []).slice(0, SUGGESTION_COUNT)
   const examples = exampleTopics.filter((topic) => !recent.some((item) => item.query.toLowerCase() === topic.toLowerCase())).slice(0, Math.max(0, SUGGESTION_COUNT - recent.length))
   const generation = useGenerationSettings()
-  const createChat = useCreateChat(paper?.id ?? '')
-  const asking = !!paper
+  const createChat = useCreateChat()
+  const asking = papers.length > 0
+  const several = papers.length > 1
+  const toggle = (choice: Paper) => setPapers((current) => current.some((item) => item.id === choice.id) ? current.filter((item) => item.id !== choice.id) : [...current, choice])
 
   function search(q: string) {
     const params = { q: q.trim(), provider }
@@ -61,12 +65,12 @@ export default function HomePage() {
     navigate(`/search?${new URLSearchParams(params)}`)
   }
   function ask() {
-    if (!paper) return
+    if (!asking) return
     const content = text.trim()
-    createChat.mutate(undefined, {
+    createChat.mutate({ paperIds: papers.map((item) => item.id) }, {
       onSuccess: (chat) => {
         queueQuestion(chat.id, { content, settings: generation.settings })
-        navigate(`/papers/${paper.id}/chats/${chat.id}`)
+        navigate(chatHref(chat))
       },
     })
   }
@@ -81,12 +85,13 @@ export default function HomePage() {
           value={text}
           onValueChange={setText}
           onSubmit={() => (asking ? ask() : search(text))}
-          label={asking ? 'Question about this paper' : 'Research topic'}
-          placeholder={asking ? 'Ask a question about this paper' : 'Search papers by topic, title or research question'}
+          label={several ? 'Question about these papers' : asking ? 'Question about this paper' : 'Research topic'}
+          placeholder={several ? 'Ask a question about these papers' : asking ? 'Ask a question about this paper' : 'Search papers by topic, title or research question'}
           submitLabel={asking ? 'Ask question' : 'Search papers'}
           maxLength={asking ? 8000 : 300}
           submitDisabled={asking ? createChat.isPending || !generation.usableFor('chat') : false}
-          header={paper && <PaperContextChip paper={paper} onRemove={() => setPaper(null)} />}
+          header={asking && papers.map((item) => <PaperContextChip key={item.id} paper={item} removeLabel={several ? `Remove ${item.title ?? 'Untitled paper'}` : undefined} onRemove={() => toggle(item)} />)}
+          onMention={() => setPicking(true)}
           leading={
             <>
               <DropdownMenu>
@@ -97,12 +102,12 @@ export default function HomePage() {
                   <DropdownMenuItem onSelect={() => picker.current?.click()}><FileUp aria-hidden="true" />Upload a PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <PaperPicker onSelect={setPaper} />
+              <PaperPicker selected={papers.map((item) => item.id)} onSelect={toggle} open={picking} onOpenChange={setPicking} />
               {!asking && <ProviderSwitcher value={provider} onChange={setProvider} />}
             </>
           }
           trailing={asking ? <ModelSwitcher purpose="chat" align="end" /> : undefined}
-          footnote={asking ? 'Answers come from this paper’s PDF and cite their pages. Check important claims against the source.' : undefined}
+          footnote={several ? 'Answers come from these papers’ PDFs and cite their pages. Check important claims against the source.' : asking ? 'Answers come from this paper’s PDF and cite their pages. Check important claims against the source.' : undefined}
         />
         <ErrorNotice error={createChat.error} className="w-full" />
         <input ref={picker} type="file" accept="application/pdf,.pdf" aria-label="PDF file" tabIndex={-1} className="sr-only" onChange={(event) => { startUpload(Array.from(event.target.files ?? [])); event.target.value = '' }} />

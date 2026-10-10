@@ -8,13 +8,15 @@ import { Markdown, pageLabel, SourceList } from '@/features/content'
 import { GenerationMeta } from '@/features/summary'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
 import { AnswerDetails } from './AnswerDetails'
+import type { ChatSources } from './chat-sources'
 
 const sourceMarker = /\s?\[source:([0-9a-fA-F-]{36})\]/g
 /** Copied answers keep their evidence as readable page references instead of transport markers. */
-function plainAnswer(content: string, citations: Citation[]) {
+function plainAnswer(content: string, citations: Citation[], paperName?: (citation: Citation) => string | undefined) {
   return content.replace(sourceMarker, (_marker, chunkId: string) => {
     const citation = citations.find((item) => item.chunk_id === chunkId)
-    return citation ? ` (${pageLabel(citation)})` : ''
+    const paper = citation && paperName?.(citation)
+    return citation ? ` (${paper ? `${paper}, ` : ''}${pageLabel(citation)})` : ''
   })
 }
 
@@ -35,11 +37,11 @@ export function PendingAnswer() {
   return <article aria-label="Assistant message" aria-busy="true"><Preparing /></article>
 }
 
-function CopyAnswer({ message }: { message: Message }) {
+function CopyAnswer({ message, paperName }: { message: Message; paperName?: (citation: Citation) => string | undefined }) {
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   async function copy() {
     try {
-      await navigator.clipboard.writeText(plainAnswer(message.content, message.citations))
+      await navigator.clipboard.writeText(plainAnswer(message.content, message.citations, paperName))
       setCopied('copied')
     } catch {
       setCopied('failed')
@@ -64,25 +66,27 @@ function CopyAnswer({ message }: { message: Message }) {
  * elsewhere the content module's source dialog applies. The footer names the model the answer was
  * generated with, as stored, never the current selection.
  */
-export function AssistantMessage({ message, documentId, progress }: { message: Message; documentId: string; progress?: string | null }) {
+export function AssistantMessage({ message, sources, progress }: { message: Message; sources: ChatSources; progress?: string | null }) {
   const workspace = useOptionalWorkspace()
+  const { documents, paperName, withPaper } = sources
+  const showSource = workspace ? (citation: Citation, claim?: string) => workspace.showSource(withPaper(citation), claim) : undefined
   const writing = message.state === 'processing'
   return (
     <article aria-label="Assistant message" aria-busy={writing} className="grid gap-2.5">
       {writing && progress && <p className="text-sm leading-7 text-muted-foreground motion-safe:animate-pulse">{progress}</p>}
       {writing && !message.content ? !progress && <Preparing /> : message.content ? (
         <div className="text-[15.5px] leading-7">
-          <Markdown content={message.content} citations={message.citations} documentId={documentId} onCitation={workspace?.showSource} />
+          <Markdown content={message.content} citations={message.citations} documents={documents} paperName={paperName} onCitation={showSource} />
           {writing && <span aria-hidden="true" className="mt-2 block size-2.5 rounded-full bg-foreground motion-safe:animate-pulse" />}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">No answer was saved.</p>
       )}
       {!writing && message.grounding === 'insufficient' && <p className="text-sm text-muted-foreground">The paper doesn’t contain enough evidence for this.</p>}
-      {message.citations.length > 0 && <SourceList citations={message.citations} documentId={documentId} context={message.content} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />}
+      {message.citations.length > 0 && <SourceList citations={message.citations} documents={documents} paperName={paperName} context={message.content} onSelect={showSource} className="flex flex-wrap gap-1.5" />}
       {!writing && (
         <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {message.content && <CopyAnswer message={message} />}
+          {message.content && <CopyAnswer message={message} paperName={paperName} />}
           <GenerationMeta model={message.model} effort={message.reasoning_effort} />
           {message.retrieval && <AnswerDetails retrieval={message.retrieval} context={message.context} model={message.model} />}
           {message.state === 'interrupted' && <Badge variant="secondary" className="bg-warning-muted font-normal text-warning">Interrupted</Badge>}

@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DeleteChatDialog, RenameChatDialog } from '@/components/shell/chat-dialogs'
-import { chatDisplayTitle } from '@/components/shell/recent-items'
+import { chatDisplayTitle, chatHref } from '@/components/shell/recent-items'
 import type { PaperChats } from './use-paper-chats'
 
 const sameDay = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -37,7 +37,8 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const startNew = () => navigate(`/papers/${paper.id}`)
   const title = chat ? chatDisplayTitle(chat) : chatId ? 'Conversation' : 'New conversation'
-  const earlier = (item: ChatSummary) => item.document_id !== paper.active_document_id
+  // The PDF this chat pinned for this paper, which a newer upload does not replace.
+  const earlier = (item: ChatSummary) => item.papers.some((included) => included.paper_id === paper.id && included.document_id !== paper.active_document_id)
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
       <DropdownMenu>
@@ -53,7 +54,7 @@ export function ChatSwitcher({ paper, chats, chat, chatId }: { paper: Paper; cha
           {chats.isPending && <DropdownMenuItem disabled>Loading conversations…</DropdownMenuItem>}
           {!!chats.error && !chats.items.length && <DropdownMenuItem onSelect={chats.refetch}>Conversations could not load. Try again</DropdownMenuItem>}
           {!chats.isPending && !chats.error && !chats.items.length && <DropdownMenuItem disabled>No conversations yet</DropdownMenuItem>}
-          <DropdownMenuRadioGroup value={chatId ?? ''} onValueChange={(id) => navigate(`/papers/${paper.id}/chats/${id}`)}>
+          <DropdownMenuRadioGroup value={chatId ?? ''} onValueChange={(id) => { const item = chats.items.find((entry) => entry.id === id); navigate(item ? chatHref(item) : `/papers/${paper.id}/chats/${id}`) }}>
             {chats.items.map((item) => (
               <DropdownMenuRadioItem key={item.id} value={item.id} className="items-start py-1.5">
                 <div className="grid min-w-0 flex-1 gap-0.5">

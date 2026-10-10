@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, FileUp } from 'lucide-react'
-import type { Job, Paper, Summary } from '@/api/types'
+import type { Citation, Job, Paper, Summary } from '@/api/types'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { JobProgress } from '@/components/jobs/JobProgress'
@@ -56,6 +56,10 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
 
   const versions = [...(summaries.data?.items ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))
   const current = versions.find((summary) => summary.id === selectedId) ?? versions.at(-1)
+  const summarized = current?.document_id
+  const documents = useMemo(() => new Set(summarized ? [summarized] : []), [summarized])
+  // Another paper's summary (shown from a chat's paper chip) names its paper, so the reader opens that paper's tab.
+  const showSource = !workspace ? undefined : !workspace.paper || workspace.paper.id === paper.id ? workspace.showSource : (citation: Citation, claim?: string) => workspace.showSource({ ...citation, paper_id: paper.id }, claim)
   // The job this card started, else one still running from before a reload. The list is filtered again here
   // because a server without the job filters answers with every job.
   const running = (jobs.data?.items ?? []).filter((job) => job.kind === 'summary' && job.paper_id === paper.id && unsettled(job)).map((job) => job.id)
@@ -125,8 +129,8 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
             inert={!open}
             className={cn('mt-3 grid gap-3 text-[15.5px] leading-7', !open && 'max-h-44 overflow-hidden mask-b-from-50%')}
           >
-            <Markdown content={current.content} citations={current.citations} documentId={current.document_id} onCitation={workspace?.showSource} />
-            <SourceList citations={current.citations} documentId={current.document_id} context={current.content} onSelect={workspace?.showSource} className="flex flex-wrap gap-1.5" />
+            <Markdown content={current.content} citations={current.citations} documents={documents} onCitation={showSource} />
+            <SourceList citations={current.citations} documents={documents} context={current.content} onSelect={showSource} className="flex flex-wrap gap-1.5" />
           </div>
           <Button type="button" variant="ghost" size="sm" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen(!open)} className="mt-1 -ml-2 text-muted-foreground hover:text-foreground">
             {open ? 'Collapse summary' : 'Show full summary'}

@@ -389,24 +389,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/papers/{paper_id}/chats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chats */
-        get: operations["list_chats_api_v1_papers__paper_id__chats_get"];
-        put?: never;
-        /** Create Chat */
-        post: operations["create_chat_api_v1_papers__paper_id__chats_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/chats": {
         parameters: {
             query?: never;
@@ -416,6 +398,64 @@ export interface paths {
         };
         /** Recent Chats */
         get: operations["recent_chats_api_v1_chats_get"];
+        put?: never;
+        /**
+         * New Chat
+         * @description A chat over one or more ready library papers, each pinned to its active PDF.
+         */
+        post: operations["new_chat_api_v1_chats_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}/papers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Include Paper */
+        post: operations["include_paper_api_v1_chats__chat_id__papers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chats/{chat_id}/papers/{paper_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Exclude Paper
+         * @description The response's `paper_id` is the chat's first paper after the removal.
+         */
+        delete: operations["exclude_paper_api_v1_chats__chat_id__papers__paper_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/papers/{paper_id}/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chats */
+        get: operations["list_chats_api_v1_papers__paper_id__chats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -431,7 +471,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read Chat
+         * @description One chat with its papers; its URL is /papers/{paper_id}/chats/{id}.
+         */
+        get: operations["read_chat_api_v1_chats__chat_id__get"];
         put?: never;
         post?: never;
         /** Delete Chat */
@@ -731,11 +775,8 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Document Id
-             * Format: uuid
-             */
-            document_id: string;
+            /** Papers */
+            papers: components["schemas"]["IncludedPaper"][];
             /** Title */
             title: string;
             /**
@@ -782,8 +823,13 @@ export interface components {
             /** Unrecorded Turns */
             unrecorded_turns: number;
         };
-        /** ChatCreate */
+        /**
+         * ChatCreate
+         * @description The papers a new chat covers, in order; the first one's page is the chat's URL.
+         */
         ChatCreate: {
+            /** Paper Ids */
+            paper_ids: string[];
             /**
              * Title
              * @default Paper discussion
@@ -837,6 +883,14 @@ export interface components {
             /** Items */
             items: components["schemas"]["Chat"][];
         };
+        /** ChatPaperAdd */
+        ChatPaperAdd: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+        };
         /** ChatRename */
         ChatRename: {
             /** Title */
@@ -854,11 +908,8 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Document Id
-             * Format: uuid
-             */
-            document_id: string;
+            /** Papers */
+            papers: components["schemas"]["IncludedPaper"][];
             /** Title */
             title: string;
             /**
@@ -871,8 +922,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Paper Title */
-            paper_title: string | null;
             /**
              * Last Activity At
              * Format: date-time
@@ -1067,6 +1116,33 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * IncludedPaper
+         * @description A library paper in a chat, with the PDF pinned for it when it joined (ARA-088).
+         */
+        IncludedPaper: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Title */
+            title: string | null;
+            /** First Author */
+            first_author: string | null;
+            /** Year */
+            year: number | null;
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
         };
         /** Installation */
         Installation: {
@@ -1494,6 +1570,8 @@ export interface components {
             standalone_query?: string | null;
             /** Search Queries */
             search_queries?: string[];
+            /** Sub Questions */
+            sub_questions?: string[];
             /**
              * Passages Found
              * @default 0
@@ -1779,6 +1857,8 @@ export interface components {
              * Format: uuid
              */
             document_id: string;
+            /** Paper Id */
+            paper_id?: string | null;
             /** Page */
             page: number;
             /** Page End */
@@ -2622,6 +2702,139 @@ export interface operations {
             };
         };
     };
+    recent_chats_api_v1_chats_get: {
+        parameters: {
+            query?: {
+                paper_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummaryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_chat_api_v1_chats_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    include_paper_api_v1_chats__chat_id__papers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatPaperAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exclude_paper_api_v1_chats__chat_id__papers__paper_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_chats_api_v1_papers__paper_id__chats_get: {
         parameters: {
             query?: never;
@@ -2653,50 +2866,13 @@ export interface operations {
             };
         };
     };
-    create_chat_api_v1_papers__paper_id__chats_post: {
+    read_chat_api_v1_chats__chat_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                paper_id: string;
+                chat_id: string;
             };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Chat"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    recent_chats_api_v1_chats_get: {
-        parameters: {
-            query?: {
-                paper_id?: string | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -2707,7 +2883,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatSummaryPage"];
+                    "application/json": components["schemas"]["ChatSummary"];
                 };
             };
             /** @description Validation Error */

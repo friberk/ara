@@ -26,6 +26,8 @@ export type ComposerProps = {
   trailing?: React.ReactNode
   /** One line under the composer: why it is disabled, or a quiet reminder. */
   footnote?: React.ReactNode
+  /** Typing @ at the start of a word calls this (to open the paper picker) instead of typing it. */
+  onMention?: () => void
   maxLength?: number
   autoFocus?: boolean
   size?: 'default' | 'large'
@@ -33,7 +35,7 @@ export type ComposerProps = {
 }
 
 /** The one input surface of the app: Enter sends, Shift+Enter adds a line. */
-export function Composer({ value, onValueChange, onSubmit, label, placeholder, submitLabel, disabled, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
+export function Composer({ value, onValueChange, onSubmit, label, placeholder, submitLabel, disabled, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, onMention, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
   const id = useId()
   const textarea = useRef<HTMLTextAreaElement>(null)
   const canSubmit = !disabled && !submitDisabled && !busy && value.trim().length > 0
@@ -61,6 +63,13 @@ export function Composer({ value, onValueChange, onSubmit, label, placeholder, s
           placeholder={placeholder}
           onChange={(event) => onValueChange(event.target.value)}
           onKeyDown={(event) => {
+            const field = event.currentTarget
+            const before = field.value.slice(0, field.selectionStart ?? field.value.length)
+            if (onMention && event.key === '@' && !event.nativeEvent.isComposing && (!before || /\s$/.test(before))) {
+              event.preventDefault()
+              onMention()
+              return
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
               if (canSubmit) onSubmit()

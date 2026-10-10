@@ -5,7 +5,7 @@ import { testClient } from '@/test/render'
 import { json, mockApi } from '@/test/fetch-routes'
 import { queryKeys } from '@/lib/query-keys'
 import { queueQuestion } from '@/lib/pending-questions'
-import { ask, assistantMessage, chatRow, mount, paper, settings, userMessage } from './pane-test-kit'
+import { ask, assistantMessage, chatRow, included, mount, paper, settings, userMessage } from './pane-test-kit'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
@@ -181,10 +181,10 @@ test('Given a paper whose PDF failed, Then the composer explains how to enable q
 })
 
 test('Given the server refuses a new chat, Then the reason is shown inline', async () => {
-  mockApi({ ...settings, 'POST /papers/p1/chats': () => json({ code: 'DOCUMENT_NOT_READY', message: 'Upload and process a paper PDF before starting a chat' }, 409) })
+  mockApi({ ...settings, 'POST /chats': () => json({ code: 'PAPER_NOT_READY', message: '“Evidence based research” needs a processed PDF before you can ask about it.' }, 409) })
   const { user } = mount('/papers/p1')
   await ask(user, 'Can I start?')
-  expect(await screen.findByRole('alert')).toHaveTextContent('Upload and process a paper PDF before starting a chat')
+  expect(await screen.findByRole('alert')).toHaveTextContent('“Evidence based research” needs a processed PDF before you can ask about it.')
 })
 
 test('Given a new chat, Then its thread opens and asks at once, without waiting for the chat list to refetch', async () => {
@@ -192,7 +192,7 @@ test('Given a new chat, Then its thread opens and asks at once, without waiting 
   const { calls } = mockApi({
     ...settings,
     'GET /chats': () => (listCalls++ === 0 ? json({ items: [] }) : never()),
-    'POST /papers/p1/chats': () => json({ id: 'c9', paper_id: 'p1', document_id: 'd1', title: 'Paper discussion', created_at: '2026-10-08T12:00:00Z' }, 201),
+    'POST /chats': () => json({ id: 'c9', paper_id: 'p1', papers: [included(paper)], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T12:00:00Z' }, 201),
     'POST /chats/c9/messages/stream': controlledStream().handler,
   })
   const { user } = mount('/papers/p1')

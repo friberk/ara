@@ -18,7 +18,7 @@ const answer = [
 
 test('Given the Sources chip for page 7, When the reader selects its evidence, Then the unrelated convolution sentence is not chosen', async () => {
   const onSelect = vi.fn()
-  const { user } = renderWithProviders(<SourceList documentId="d1" citations={[onPage1, onPage7]} context={answer} onSelect={onSelect} />)
+  const { user } = renderWithProviders(<SourceList documents={new Set(['d1'])} citations={[onPage1, onPage7]} context={answer} onSelect={onSelect} />)
   await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
   const [citation, claim] = onSelect.mock.lastCall as [Citation, string]
   expect(citation).toBe(onPage7)

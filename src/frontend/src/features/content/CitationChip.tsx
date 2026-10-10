@@ -10,12 +10,14 @@ import { useCitationSource } from '@/hooks/queries/documents'
 import { markdownToText } from '@/lib/markdown-text'
 import { cn } from '@/lib/utils'
 import { Markdown } from './Markdown'
-import { pageLabel, pageSpan, sourceName, spansPages } from './pages'
+import { pageSpan, sourceLabel, sourceName, spansPages } from './pages'
 
 export type CitationChipProps = {
   citation: Citation
   /** The text this chip supports, handed to onSelect so the reader can mark just the sentences behind it. */
   claim?: string
+  /** The cited paper's short name ("Smith 2023") in a chat over several papers. */
+  paper?: string
   onSelect?: (citation: Citation, claim?: string) => void
   className?: string
 }
@@ -37,7 +39,7 @@ const useTouchOnly = () => useSyncExternalStore(subscribeTouchOnly, () => window
  * citation and its claim to onSelect (the workspace jumps the PDF there) or, without onSelect, opens the passage in
  * a dialog.
  */
-export function CitationChip({ citation, claim, onSelect, className }: CitationChipProps) {
+export function CitationChip({ citation, claim, paper, onSelect, className }: CitationChipProps) {
   const [preview, setPreview] = useState(false)
   const [reading, setReading] = useState(false)
   const touchOnly = useTouchOnly()
@@ -50,7 +52,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
   let chip: ReactElement = (
     <button
       type="button"
-      aria-label={sourceName(citation)}
+      aria-label={sourceName(citation, paper)}
       className={cn(
         'inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.5 text-xs leading-none font-medium whitespace-nowrap text-foreground/70 tabular transition-colors outline-none select-none',
         'hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] hover:text-foreground data-[state=open]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] data-[state=open]:text-foreground',
@@ -63,7 +65,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
         onSelect?.(citation, claim)
       }}
     >
-      {pageLabel(citation)}
+      {sourceLabel(citation, paper)}
     </button>
   )
   if (!touchOnly) chip = <HoverCardTrigger asChild>{chip}</HoverCardTrigger>
@@ -74,6 +76,7 @@ export function CitationChip({ citation, claim, onSelect, className }: CitationC
         {chip}
         <HoverCardContent side="top" collisionPadding={12} className="grid w-80 max-w-[calc(100vw-1.5rem)] gap-1.5 p-3">
           <p className="flex gap-1.5 text-xs font-medium text-muted-foreground tabular">
+            {paper && <><span>{paper}</span><span aria-hidden="true">·</span></>}
             <span>{spansPages(citation) ? 'Pages' : 'Page'} {pageSpan(citation)}</span>
             {citation.kind === 'table' && <><span aria-hidden="true">·</span><span>Table</span></>}
           </p>
