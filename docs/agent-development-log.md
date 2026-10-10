@@ -1573,3 +1573,10 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
 - *Clipped italic.* The truncating venue gets `pr-[0.15em]`. Red: `PaperCitation.test.tsx` expected the class and failed. The closing parenthesis in "arXiv (Cornell University)" is visible in light and dark.
 - *Tab stops.* Library icons are decorative and not focusable; the link's name carries the state ("Title, PDF attached"). Red: the row test failed with `Unable to find an accessible element with the role "link" and name "Attention is all you need, PDF attached"`. About 15 other Library test queries that matched a link by exact title now match by `^Title, `.
 - *Double announcement.* The tooltip content is `aria-hidden`. Red: a new test found no hidden tooltip. Full run afterwards: 647 of 647, tsc and eslint clean. An earlier full run in this round had flaky timeouts that passed on rerun.
+
+## 2026-10-10 - ARA-099 ara. wordmark
+
+- Prompt: wire the lead's outlined wordmark into the sidebar, favicon, title and docs.
+- Red first: two new shell tests (link named `ara.`, mark when collapsed) and `index-html.test.ts` failed with `Unable to find an accessible element with the role "link" and name "ara."` and a title mismatch. Green after `AraBrand.tsx`, the sidebar header, `public/favicon.svg` and `index.html`.
+- Visual error: the first screenshots showed the wordmark about 16px wide, because the shadcn menu button forces `size-4` on child svgs. Fixed with `h-[26px]! w-auto!`; a second round showed it crisp in light, dark, collapsed and at 390px. The first stub-API attempt rendered a blank page; running without stubs (502s) worked for the sidebar check.
+- Playwright MCP could not find Chrome, so screenshots used the project's own Playwright Chromium.

@@ -53,8 +53,8 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
             <SidebarMenuButton size="lg" asChild tooltip="ara.">
               <Link to="/" onClick={close} aria-label="ara.">
                 {iconOnly
-                  ? <AraMark decorative className="mx-auto h-6 w-auto" />
-                  : <AraWordmark decorative className="ml-1 h-[26px] w-auto" />}
+                  ? <AraMark decorative className="mx-auto h-6! w-auto! shrink-0" />
+                  : <AraWordmark decorative className="h-[26px]! w-auto! shrink-0" />}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
