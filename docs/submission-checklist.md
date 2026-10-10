@@ -10,17 +10,34 @@ Assignment deadline: October10,11:59PM; plan targets10PM. Application60%, reflec
 
 ## Demonstration video
 
-An actual continuous browser walkthrough is retained at ignored `docs/evidence/generated/live-demo/live-demo.webm`, with screenshots and a result record alongside it. It uses live OpenAlex, the public arXiv *Attention Is All You Need* PDF and configured OpenAI Luna/low. Watch it before submission and add narration or rerecord if desired. It shows:
+The submitted video is `docs/evidence/generated/demo/final/ara-demo.mp4` (ARA-113). Like all generated evidence it is ignored by Git and is not uploaded anywhere else; it goes to Brightspace only.
 
-1. Search a topic with OpenAlex or Semantic Scholar; show source selector and bibliographic data.
-2. Save a result, open Library and refresh to show persistence.
-3. Attach or upload a PDF; show processing and extracted fields.
-4. Generate a summary grounded in actual PDF content; inspect a supporting page.
-5. Start a conversation, ask a dataset question, inspect a citation and refresh history.
+- **Format:** 4:40, 1920x1080, H.264, silent. Each clip is also kept on its own in `final/clips/`.
+- **How it was made:** recorded with testreel on an empty, isolated `ara-demo` stack (no papers, chats or search history), using live OpenAlex and OpenAI Luna/low. Black title cards in the ara. brand separate the clips. The scripts are in [scripts/demo](../scripts/demo/README.md), and `node record.mjs --reset --run <name>`, then `node assemble.mjs --run <name>`, records a new take.
+- **Papers:** three ReDoS papers.
+  - *The impact of ReDoS in practice* (ESEC/FSE 2018). OpenAlex stores its PDF.
+  - The SoK, arXiv 2406.11618. OpenAlex has no copy, so the arXiv PDF is uploaded.
+  - *Regular Expression Denial of Service Induced by Backreferences*, the USENIX Security '26 PDF.
 
-The recording predates two final display corrections: per-answer model/effort labels and complete source excerpts. Later verified screenshots show those corrections; no additional paid call was needed.
+It covers hw1's five required items, plus the main extras:
 
-Deterministic fixture runs are rehearsals and automated verification, not live-provider demonstrations. Keep video/screenshots free of credentials. Browser test traces and UI captures are available under ignored artifact directories.
+1. Search: OpenAlex results with authors, year, abstract and links (required 1).
+2. Save: the FSE paper joins the library and its PDF arrives automatically (required 2).
+3. No stored copy: the SoK is saved and its arXiv PDF is uploaded (required 3).
+4. Upload: the USENIX PDF's title, authors, year and abstract are extracted (required 3).
+5. Summary: a summary is generated and a page citation highlights its passage (required 4).
+6. Question: "What are the major limitations?" with cited pages, the model menu and the context meter (required 5).
+7. Across papers: one question over two papers mentioned with @.
+8. Library after a full restart: filter, reload, edit details, reopen a chat with ⌘K.
+9. Settings.
+
+Watch it once before submitting. Things a viewer may notice:
+
+- Long waits are sped up, and a "Sped up N×" badge shows while they are.
+- Clip 5 uses "Regenerate summary", because summaries start by themselves when a PDF is ready.
+- The USENIX paper's details are completed from OpenAlex's arXiv record after extraction, so its sources dialog credits OpenAlex; the clip's card says so.
+
+The older walkthrough at ignored `docs/evidence/generated/live-demo/live-demo.webm` is superseded. Deterministic fixture runs are rehearsals and automated verification, not live-provider demonstrations. Keep video/screenshots free of credentials. Browser test traces and UI captures are available under ignored artifact directories.
 
 ## Authentic reflection
 
