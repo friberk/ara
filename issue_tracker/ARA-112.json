@@ -28,7 +28,9 @@
     "branding/README.md",
     "AGENTS.md"
   ],
-  "commits": [],
+  "commits": [
+    "b9d8e3f"
+  ],
   "pull_requests": [],
   "verification": "mermaid-cli 11.4.2 rendered all three diagrams. The first architecture diagram had five crossing edges to the external services and the PDF flow had a redundant upload node; both were simplified and re-rendered cleanly. A link checker resolved every relative path and anchor in README.md and docs/reference.md. Claims were checked against the code and the report (Regenerate summary button, suggested questions, npm run check, sidebar rename covers chats only, budget is .env-only).",
   "updated_at": "2026-10-10"
