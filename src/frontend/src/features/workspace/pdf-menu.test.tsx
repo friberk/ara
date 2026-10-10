@@ -86,7 +86,7 @@ test('Given Remove PDF…, When confirmed, Then the dialog says what happens, th
   const effects = await within(dialog).findByRole('list', { name: 'What happens' })
   expect(within(effects).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
     'The reader goes back to uploading a PDF.',
-    'Existing conversations keep using this PDF; new questions need a new PDF.',
+    'Conversations that use this PDF keep using it. New questions need a new PDF.',
   ])
   expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
   await user.click(within(dialog).getByRole('button', { name: 'Remove PDF' }))

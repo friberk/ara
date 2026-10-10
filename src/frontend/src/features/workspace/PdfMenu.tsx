@@ -74,7 +74,7 @@ function effects(preview: PdfRemovalPreview): string[] {
     : `${count(deleted, 'PDF version', 'PDF versions')} no conversation uses ${deleted === 1 ? 'is' : 'are'} deleted.`
   return [
     'The reader goes back to uploading a PDF.',
-    ...(preview.kept_pdfs ? ['Existing conversations keep using this PDF; new questions need a new PDF.'] : []),
+    ...(preview.kept_pdfs ? ['Conversations that use this PDF keep using it. New questions need a new PDF.'] : []),
     ...(deleted ? [gone] : []),
     ...(preview.summaries ? [`${count(preview.summaries, 'summary', 'summaries')} ${preview.summaries === 1 ? 'is' : 'are'} deleted.`] : []),
     ...(preview.active_jobs ? [`${count(preview.active_jobs, 'background task', 'background tasks')} ${preview.active_jobs === 1 ? 'stops' : 'stop'}.`] : []),
