@@ -29,8 +29,11 @@
     "tests/infrastructure/test_ci_workflow.py",
     "README.md"
   ],
-  "commits": [],
+  "commits": [
+    "dd328f6",
+    "9624765"
+  ],
   "pull_requests": [],
-  "verification": "",
+  "verification": "Red first: test_compose_deploy, test_ci_workflow and test_deploy_script failed (missing compose.deploy.yaml, caddy.Dockerfile and deploy.sh; CI on every push; no second.pdf). The first live deploy failed on Compose 5.0.2 parallel builds of one tag; a new single-builder test failed first, then passed. 40 infrastructure tests pass. Live: health ready through Caddy; Let's Encrypt certificate; off-campus IPv4 and the server's public IPv4/IPv6 get 403; the five demo workflows passed in Chromium through the deployed Caddy (summary and a cited 28.4 BLEU answer); data survived restart and reboot; data volumes were reset for delivery. Pending: first GitHub Actions run.",
   "updated_at": "2026-10-10"
 }
