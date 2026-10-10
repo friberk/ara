@@ -107,6 +107,8 @@ function insertPill(editor: Editor, at: Range, pill: PaperPill) {
   const before = range.from > 1 ? doc.textBetween(range.from - 1, range.from, '\n', '\n') : ''
   const pad = before && !/\s/.test(before) ? [{ type: 'text', text: ' ' }] : []
   editor.chain().focus().insertContentAt(range, [...pad, { type: 'mention', attrs: { id: pill.id, label: pill.label, paper: pill.paper } }, { type: 'text', text: ' ' }]).run()
+  // TipTap focuses on the next frame; typing straight after a pick must already reach the question.
+  if (!editor.isDestroyed) editor.view.focus()
 }
 
 /** A pill where @ was typed, or at the caret if the document changed since. */

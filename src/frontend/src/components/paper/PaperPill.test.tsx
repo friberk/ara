@@ -77,3 +77,10 @@ test('Given a sent question, Then its pill is an image named by the title with n
   expect(screen.queryByRole('button', { name: `Remove ${title}` })).not.toBeInTheDocument()
   expect(await screen.findByText('EMNLP')).toBeVisible()
 })
+
+test('Given a pill inside a question bubble, Then it sits on the paper tone so it stands apart from the bubble', () => {
+  render(<TooltipProvider><PaperPill title={title} paper={dense} surface="paper" /></TooltipProvider>)
+  const image = screen.getByRole('img', { name: title })
+  expect(image).toHaveClass('bg-background')
+  expect(image).not.toHaveClass('bg-muted')
+})
