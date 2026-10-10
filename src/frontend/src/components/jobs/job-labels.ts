@@ -1,6 +1,6 @@
 import type { Job } from '@/api/types'
 
-export const jobKindLabels: Record<string, string> = { fulltext: 'PDF retrieval', ingest: 'PDF processing', metadata: 'Paper details lookup', summary: 'Paper summary', model_download: 'Model download', model_delete: 'Model weights deletion' }
+export const jobKindLabels: Record<string, string> = { fulltext: 'PDF retrieval', ingest: 'PDF processing', metadata: 'Paper details lookup', summary: 'Paper summary', storage_cleanup: 'Deleted PDF cleanup', model_download: 'Model download', model_delete: 'Model weights deletion' }
 const stageLabels: Record<string, string> = {
   queued: 'Waiting to start',
   processing: 'Reading the PDF',
@@ -32,3 +32,5 @@ export function jobStageLabel(job: Pick<Job, 'state' | 'stage'>) {
   return stageLabels[job.stage] ?? (job.stage ? job.stage.replaceAll('_', ' ') : stageLabels[job.state] ?? job.state)
 }
 export const isActiveJob = (job: Pick<Job, 'state'>) => job.state === 'queued' || job.state === 'processing' || job.state === 'paused'
+/** Work its paper's deletion stopped (ARA-095): settled, but not a failure to fix. */
+export const isCancelledJob = (job: Pick<Job, 'state' | 'error'>) => job.state === 'failed' && job.error?.code === 'PAPER_DELETED'

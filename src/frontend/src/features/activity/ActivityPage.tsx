@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
-import { isActiveJob, jobKindLabels, jobStageLabel } from '@/components/jobs/job-labels'
+import { isActiveJob, isCancelledJob, jobKindLabels, jobStageLabel } from '@/components/jobs/job-labels'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
 import { useOpenModels } from '@/hooks/queries/features'
 import { useModels } from '@/hooks/queries/models'
@@ -24,7 +24,7 @@ type Filter = 'all' | 'active' | 'failed'
 const filters: { value: Filter; label: string; matches: (job: JobView) => boolean }[] = [
   { value: 'all', label: 'All', matches: () => true },
   { value: 'active', label: 'Active', matches: isActiveJob },
-  { value: 'failed', label: 'Failed', matches: (job) => job.state === 'failed' },
+  { value: 'failed', label: 'Failed', matches: (job) => job.state === 'failed' && !isCancelledJob(job) },
 ]
 const emptyFilter = (openModels: boolean): Record<Exclude<Filter, 'all'>, { title: string; text: string }> => ({
   active: { title: 'Nothing is running', text: openModels ? 'Uploads, summaries and model downloads show their progress here.' : 'Uploads and summaries show their progress here.' },
@@ -36,6 +36,12 @@ const states: Record<JobView['state'], { label: string; tone: string }> = {
   paused: { label: 'Paused', tone: 'bg-muted text-muted-foreground' },
   completed: { label: 'Completed', tone: 'bg-success-muted text-success' },
   failed: { label: 'Failed', tone: 'bg-destructive/10 text-destructive' },
+}
+const cancelled = { label: 'Cancelled', tone: 'bg-muted text-muted-foreground' }
+// Failed work the reader can queue again, and what its button says.
+const retries: Record<string, { action: string; queued: string }> = {
+  ingest: { action: 'Retry processing', queued: 'Processing queued again' },
+  storage_cleanup: { action: 'Retry cleanup', queued: 'Cleanup queued again' },
 }
 
 // Only work the reader started is shown; maintenance jobs such as the deployment canary stay internal.
@@ -49,7 +55,7 @@ function JobTime({ job, now }: { job: JobView; now: number }) {
   const at = settled ? job.updated_at : job.created_at
   const relative = relativeTime(at, now)
   if (!relative) return null
-  const verb = job.state === 'completed' ? 'Finished' : job.state === 'failed' ? 'Failed' : 'Started'
+  const verb = job.state === 'completed' ? 'Finished' : isCancelledJob(job) ? 'Stopped' : job.state === 'failed' ? 'Failed' : 'Started'
   return <time dateTime={at} title={absoluteTime.format(new Date(at))}>{verb} {relative}</time>
 }
 
@@ -60,8 +66,9 @@ function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?
   const preparation = job.model_operation === 'verify'
   const label = preparation ? 'Model preparation' : kindLabel(job.kind)
   const active = isActiveJob(job)
-  const state = states[job.state]
-  const canRetry = job.state === 'failed' && job.kind === 'ingest'
+  const stopped = isCancelledJob(job)
+  const state = stopped ? cancelled : states[job.state]
+  const retryable = job.state === 'failed' && !stopped ? retries[job.kind] : undefined
   const progress = job.model_key ? (job.total_bytes ? Math.min(99, Math.floor(100 * (job.completed_bytes ?? 0) / job.total_bytes)) : null) : job.progress
   return (
     <li className="grid gap-2 py-5">
@@ -69,11 +76,17 @@ function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?
         <div className="grid min-w-0 gap-1">
           <h2 className="text-sm font-semibold">{label}</h2>
           {job.model_key && <Link to="/settings#local-models" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{modelName ?? 'Manage local model'}</Link>}
-          {job.paper_id && (
+          {job.paper_id ? (
             <Link to={`/papers/${job.paper_id}`} className="inline-flex min-w-0 items-center gap-1.5 rounded-sm text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
               <FileText className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{job.paper_title?.trim() || 'Untitled paper'}</span>
             </Link>
+          ) : job.paper_title && (
+            // A deleted paper is named without a link that would lead nowhere (ARA-095).
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+              <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{`${job.paper_title.trim() || 'Untitled paper'} (deleted)`}</span>
+            </span>
           )}
         </div>
         <Badge variant="secondary" className={cn('shrink-0 font-normal', state.tone)}>{state.label}</Badge>
@@ -93,15 +106,15 @@ function JobRow({ job, now, modelName }: { job: JobView; now: number; modelName?
           <Progress value={progress} aria-label={`${label} progress`} />
         </div>
       )}
-      {job.state === 'failed' && <p className="text-sm text-destructive">{job.error?.message ?? 'This job stopped before it finished.'}</p>}
+      {job.state === 'failed' && <p className={cn('text-sm', stopped ? 'text-muted-foreground' : 'text-destructive')}>{job.error?.message ?? 'This job stopped before it finished.'}</p>}
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-x-3">
           <JobTime job={job} now={now} />
           {job.attempts > 1 && <span>Attempt {job.attempts}</span>}
         </div>
-        {canRetry && (
-          <Button variant="outline" size="sm" disabled={retry.isPending} onClick={() => retry.mutate(job.id, { onSuccess: () => toast.success('Processing queued again') })}>
-            <RotateCcw aria-hidden="true" />{retry.isPending ? 'Retrying…' : 'Retry processing'}
+        {retryable && (
+          <Button variant="outline" size="sm" disabled={retry.isPending} onClick={() => retry.mutate(job.id, { onSuccess: () => toast.success(retryable.queued) })}>
+            <RotateCcw aria-hidden="true" />{retry.isPending ? 'Retrying…' : retryable.action}
           </Button>
         )}
         {job.state === 'failed' && job.kind === 'fulltext' && job.paper_id && <div className="flex flex-wrap items-center gap-2">{wait > 0 && <span>Try again in {wait} seconds.</span>}<Button variant="outline" size="sm" disabled={download.isPending || wait > 0} onClick={() => download.mutate({ request_id: crypto.randomUUID() }, { onSuccess: () => toast.success('PDF retrieval queued again') })}><RotateCcw aria-hidden="true" />{download.isPending ? 'Retrying…' : 'Retry download'}</Button></div>}
