@@ -198,7 +198,7 @@ export function composerExtensions(initial: ComposerSettings) {
       suggestion: {
         pluginKey: mentionKey,
         allowedPrefixes: [' ', ' '],
-        allow: ({ editor, state }) => settingsOf(state).mentionable && editor.view.hasFocus(),
+        allow: ({ editor, state }) => settingsOf(state).mentionable && editor.isFocused,
         render: () => ({
           onStart: ({ editor, range }) => editor.emit('composerMention', {
             insert: (pill) => insertPill(editor, range, pill),

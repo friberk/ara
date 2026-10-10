@@ -78,9 +78,14 @@ export function Composer({ value, mentions = noMentions, onValueChange, onSubmit
     configure(editor, { label, placeholder, disabled, size, limit: maxLength, mentionable })
     if (editor.isEditable !== !disabled) editor.setEditable(!disabled, false)
   }, [editor, label, placeholder, disabled, size, maxLength, mentionable])
-  // Focus on mount as a textarea's autoFocus does; TipTap's own autofocus waits for an animation frame.
+  // Focus on mount as a textarea's autoFocus does; TipTap's own autofocus waits for a timer. An editor useEditor has
+  // not mounted yet has no view to focus, so it focuses when it mounts.
   useEffect(() => {
-    if (focusOnMount.current) editor.view.focus()
+    if (!focusOnMount.current) return
+    const focus = () => editor.view.focus()
+    if (!editor.isDestroyed) return focus()
+    editor.on('mount', focus)
+    return () => { editor.off('mount', focus) }
   }, [editor])
   // A draft set by the owner (cleared after sending, a queued question restored) replaces the editor's content.
   useEffect(() => {
