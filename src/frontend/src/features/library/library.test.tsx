@@ -17,18 +17,18 @@ function mount(path: string) {
   return { user }
 }
 
-test('Given saved papers, Then each row links to its workspace with authors, year and document status', async () => {
+test('Given saved papers, Then each row links to its workspace with a short citation and a PDF state icon', async () => {
   mockApi({ 'GET /papers': { items: [ready, saved] } })
   mount('/library')
   expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
   const main = screen.getByRole('main')
   const row = (await within(main).findByRole('link', { name: ready.title })).closest('article') as HTMLElement
   expect(within(row).getByRole('link', { name: ready.title })).toHaveAttribute('href', '/papers/p1')
-  expect(within(row).getByText('Ashish Vaswani, Noam Shazeer, Niki Parmar et al.')).toBeVisible()
-  expect(within(row).getByText('2017')).toBeVisible()
-  expect(within(row).getByText('Ready to read')).toBeVisible()
+  expect(row).toHaveTextContent('Vaswani et al. (2017)')
+  expect(within(row).getByRole('img', { name: 'PDF attached' })).toBeVisible()
   expect(within(main).getByText('2 papers')).toBeVisible()
-  expect(within(main).getByText('PDF needed')).toBeVisible()
+  expect(within(main).getByRole('img', { name: 'No PDF yet' })).toBeVisible()
+  expect(within(main).queryByText(/Ready to read|PDF needed/)).not.toBeInTheDocument()
 })
 
 const ingest = { kind: 'ingest', state: 'processing', stage: 'processing', progress: 20, attempts: 1, error: null, result: null }
@@ -197,8 +197,8 @@ test('Given an upload in the list, When its processing settles, Then the library
   await screen.findByRole('heading', { level: 1, name: 'Library' })
   await user.upload(screen.getByLabelText('PDF files'), pdf('fresh.pdf'))
   const papers = await screen.findByRole('list', { name: 'Papers' })
-  expect(await within(papers).findByText('Preparing PDF')).toBeVisible()
+  expect(await within(papers).findByRole('img', { name: 'Preparing PDF…' })).toBeVisible()
   settled = true
   expect(await within(papers).findByRole('link', { name: 'Fresh title' }, { timeout: 5000 })).toBeVisible()
-  expect(within(papers).getByText('Ready to read')).toBeVisible()
+  expect(within(papers).getByRole('img', { name: 'PDF attached' })).toBeVisible()
 })

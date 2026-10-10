@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { Activity, FileText, Library, MessageSquare, Moon, Settings, SquarePen, Sun, Upload } from 'lucide-react'
+import { Activity, Library, MessageSquare, Moon, Settings, SquarePen, Sun, Upload } from 'lucide-react'
 import { useTheme } from '@/components/theme/theme-context'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command'
-import { documentStateLabels } from '@/components/feedback/document-state'
+import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { useChats } from '@/hooks/queries/chats'
 import { usePapers } from '@/hooks/queries/papers'
 import { chatPapersLabel } from '@/lib/paper-names'
@@ -38,9 +38,8 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
             <CommandGroup heading="Papers">
               {paperItems.map((paper) => (
                 <CommandItem key={paper.id} value={`paper ${paper.title ?? ''} ${paper.authors.join(' ')} ${paper.id}`} onSelect={() => go(`/papers/${paper.id}`)}>
-                  <FileText aria-hidden="true" />
+                  <PdfStateIcon state={paper.document_status} focusable={false} />
                   <span className="truncate">{paper.title ?? 'Untitled paper'}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">{documentStateLabels[paper.document_status]}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

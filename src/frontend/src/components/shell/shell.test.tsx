@@ -12,9 +12,9 @@ afterEach(() => vi.unstubAllGlobals())
 test('Given library papers, Then the sidebar lists recent papers linking to their workspaces', async () => {
   mockApi({ 'GET /papers': { items: [paper('p1', 'Attention Is All You Need'), paper('p2', 'Exploiting input sanitization')] } })
   renderApp('/')
-  const link = await screen.findByRole('link', { name: 'Attention Is All You Need' })
+  const link = await screen.findByRole('link', { name: /Attention Is All You Need/ })
   expect(link).toHaveAttribute('href', '/papers/p1')
-  expect(screen.getByRole('link', { name: 'Exploiting input sanitization' })).toHaveAttribute('href', '/papers/p2')
+  expect(screen.getByRole('link', { name: /Exploiting input sanitization/ })).toHaveAttribute('href', '/papers/p2')
 })
 
 test('Given the current route, Then its navigation item is marked active', async () => {
@@ -104,4 +104,27 @@ test('Given the desktop sidebar collapsed to icons, When an item is focused, The
   await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
   within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name: 'Library' }).focus()
   expect(await screen.findByRole('tooltip', { name: 'Library' })).toBeInTheDocument()
+})
+
+const states = [{ ...paper('p1', 'Has a PDF') }, { ...paper('p2', 'Needs a PDF'), document_status: 'metadata_only', active_document_id: null }, { ...paper('p3', 'Broken PDF'), document_status: 'failed' }]
+
+test('Given papers in each PDF state, Then the sidebar shows a state icon on each and no status text', async () => {
+  mockApi({ 'GET /papers': { items: states } })
+  renderApp('/')
+  const link = await screen.findByRole('link', { name: /Needs a PDF/ })
+  expect(within(link).getByRole('img', { name: 'No PDF yet' })).toBeInTheDocument()
+  expect(within(screen.getByRole('link', { name: /Has a PDF/ })).getByRole('img', { name: 'PDF attached' })).toBeInTheDocument()
+  expect(within(screen.getByRole('link', { name: /Broken PDF/ })).getByRole('img', { name: 'PDF couldn’t be read' })).toBeInTheDocument()
+  expect(screen.queryByText(/Ready to read|PDF needed|Processing failed/)).not.toBeInTheDocument()
+})
+
+test('Given papers in each PDF state, Then the palette rows show a state icon instead of status text', async () => {
+  mockApi({ 'GET /papers': { items: states } })
+  renderApp('/')
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+  const dialog = await screen.findByRole('dialog', { name: 'Find papers and chats' })
+  const option = await within(dialog).findByRole('option', { name: /Needs a PDF/ })
+  expect(within(option).getByRole('img', { name: 'No PDF yet' })).toBeInTheDocument()
+  expect(within(dialog).getByRole('option', { name: /Has a PDF/ })).toBeInTheDocument()
+  expect(within(dialog).queryByText(/Ready to read|PDF needed|Processing failed/)).not.toBeInTheDocument()
 })

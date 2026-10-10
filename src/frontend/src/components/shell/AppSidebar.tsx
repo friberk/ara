@@ -1,10 +1,11 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Activity, BookOpenText, FileText, Library, Search, Settings, SquarePen } from 'lucide-react'
+import { Activity, BookOpenText, Library, Search, Settings, SquarePen } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
   SidebarMenuItem, SidebarMenuSkeleton, SidebarRail, useSidebar,
 } from '@/components/ui/sidebar'
+import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { usePapers } from '@/hooks/queries/papers'
 import { SidebarRecent } from './SidebarRecent'
@@ -23,7 +24,7 @@ function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
           <SidebarMenuItem key={paper.id}>
             <SidebarMenuButton asChild isActive={location.pathname.startsWith(`/papers/${paper.id}`)} tooltip={paper.title ?? 'Untitled paper'}>
               <Link to={`/papers/${paper.id}`} onClick={onNavigate} title={paper.title ?? undefined}>
-                <FileText aria-hidden="true" className="text-sidebar-foreground/60" />
+                <PdfStateIcon state={paper.document_status} focusable={false} />
                 <span>{paper.title ?? 'Untitled paper'}</span>
               </Link>
             </SidebarMenuButton>
