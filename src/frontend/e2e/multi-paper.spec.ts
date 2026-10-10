@@ -40,7 +40,8 @@ test('ARA-088 Given two ready papers, when one chat compares them, then each is 
   // The chat is listed under the second paper too, and opens at its first paper's address.
   await page.goto(`/papers/${second.id}`)
   await page.getByRole('button', { name: 'Chat history' }).click()
-  await page.getByRole('option', { name: /How do the two papers compare/ }).click()
+  // Pills put both titles at the start of the question, so the chat title starts with them (ARA-096, ARA-104).
+  await page.getByRole('option', { name: new RegExp(`^${firstTitle} ${secondTitle}`) }).first().click()
   await expect(page).toHaveURL(chatUrl)
 
   // Removing the second paper keeps the answer's citation to it.

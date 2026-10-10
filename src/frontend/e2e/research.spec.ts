@@ -34,16 +34,17 @@ test('E2E-02 Given a search result, when saved and refreshed, then it stays in t
   await page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: 'Library', exact: true }).click()
   const main = page.getByRole('main')
   await expect(main.getByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
-  await expect(main.getByRole('link', { name: title, exact: true })).toBeVisible()
+  // The row link ends with the PDF state for screen readers (ARA-098), so match the title as a prefix.
+  await expect(main.getByRole('link', { name: new RegExp(`^${title}`) })).toBeVisible()
   await page.reload()
-  await expect(main.getByRole('link', { name: title, exact: true })).toBeVisible()
+  await expect(main.getByRole('link', { name: new RegExp(`^${title}`) })).toBeVisible()
 
   // The same DOI from the other provider is already saved: no second save, no duplicate row.
   await page.goto('/search?q=research&provider=semantic_scholar')
   await expect(result(page).getByText('In library')).toBeVisible()
   await expect(result(page).getByRole('button', { name: 'Save to library' })).toHaveCount(0)
   await page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: 'Library', exact: true }).click()
-  await expect(main.getByRole('link', { name: title, exact: true })).toHaveCount(1)
+  await expect(main.getByRole('link', { name: new RegExp(`^${title}`) })).toHaveCount(1)
 })
 
 test('Mobile shell stays usable at 390px with the sidebar, skip link and no horizontal scroll', async ({ page }) => {
@@ -65,8 +66,8 @@ test('Mobile shell stays usable at 390px with the sidebar, skip link and no hori
   // Settings is a full-screen dialog on a phone (ARA-109): the category list, then a panel with a way back.
   await page.goto('/settings')
   const settings = page.getByRole('dialog', { name: 'Settings' })
-  await settings.getByRole('tab', { name: 'Models' }).click()
-  await expect(settings.getByRole('heading', { name: 'Models' })).toBeVisible()
+  await settings.getByRole('tab', { name: 'Models', exact: true }).click()
+  await expect(settings.getByRole('heading', { name: 'Models', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no horizontal scroll in Settings').toBeTruthy()
   await settings.getByRole('button', { name: 'All settings' }).click()
   await expect(settings.getByRole('tablist', { name: 'Settings categories' })).toBeVisible()

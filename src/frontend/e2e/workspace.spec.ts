@@ -76,6 +76,8 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
   } else {
     // The fixture paper is the only one and earlier browser tests may already have attached research.pdf; identical
     // bytes are deduplicated, so a byte-distinct copy replaces it from the reader's PDF menu instead (ARA-097).
+    // The reader re-renders its toolbar once the PDF loads, which closes a menu opened before that.
+    await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible({ timeout: 45_000 })
     await (await pdfMenu(page)).getByRole('menuitem', { name: 'Replace PDF…' }).click()
     const replace = page.getByRole('dialog', { name: 'Replace the PDF' })
     const copy = Buffer.concat([await readFile(pdfPath), Buffer.from(`\n% e2e ${crypto.randomUUID()}\n`)])
@@ -104,7 +106,11 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
   const details = page.getByRole('dialog', { name: 'Sources and search index' })
   await expect(details.getByRole('heading', { name: 'Where this information came from' })).toBeVisible()
   await expect(details.getByText('Ada Researcher')).toHaveCount(0)
-  await page.keyboard.press('Escape')
+  // Radix starts listening for Escape one render after the dialog opens; a press before that is lost.
+  await expect(async () => {
+    await page.keyboard.press('Escape')
+    await expect(details).toBeHidden({ timeout: 1_000 })
+  }).toPass()
   await expect(info).toBeFocused()
   // Reading on scrolls the header away while the controls bar stays.
   await page.getByRole('region', { name: 'PDF document' }).evaluate((viewer) => { viewer.scrollTop = viewer.scrollHeight })

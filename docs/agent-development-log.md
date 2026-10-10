@@ -2107,3 +2107,24 @@ Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean,
   - Full backend suite at `d801c7c`: 1228 passed in 274 s, Ruff clean.
   - `npm run check`: 766 passed in 94 files.
   - `npm run build`: passed.
+
+## 2026-10-10 - ARA-111 Browser specs pass again after the UX round
+
+- **Prompts.**
+  - After the first GitHub runs (ARA-107), the user chose "Fix all first", so the deploy stays gated on the whole browser suite.
+  - Later they asked: "Yes, can you investigate the deployment failure?"
+- **What failed.** The `deploy` job never failed. It was skipped, because `verify` failed at "Chromium browser checks" in runs 38035168270 (`a33bda7`) and 38073230139 (`e55a3fc`). The specs had not run since the UX round. A full local run on `a33bda7` failed 5 specs; on `70d13ee`, after the other session's ARA-109 and ARA-110, it failed 10.
+- **Error corrected.** The second local run reused the e2e database from the first, so two OpenAlex wait specs failed for that reason alone, and one stale line passed. My zsh script kept the compose command in `$C`, which zsh does not word-split, so `down --volumes` and `up` printed "command not found". A read-only investigator found it in the trace timestamps. Later runs spell the command out and check that 0 `ara-e2e_` volumes remain.
+- **Diagnosis.** Three read-only investigators split the failures by feature, and none found an app regression.
+  - **Stale specs:**
+    - The library link name now ends with the PDF state (ARA-098).
+    - ARA-109's save-on-select shows the radio as checked a tick after the click, so `check()` throws. This hit both local-models tests and the Settings paper-details test.
+    - Choosing the already-saved effort saves nothing.
+    - A summary that just finished opens in full, so its toggle reads "Collapse" (ARA-102).
+    - With open models on, `tab 'Models'` also matched "Open models".
+    - Pills put both titles at the start of the chat title (ARA-096, ARA-104).
+  - **Races in the specs:**
+    - Escape was pressed before Radix listens.
+    - A menu opened before the PDF loaded was closed when the toolbar re-rendered; the trace shows "element was detached from the DOM".
+    - Arrow keys outran Chrome's asynchronous `selectionchange`. A temporary debug spec with paced keys showed the second ArrowLeft selecting the pill (`ProseMirror-selectednode`) and Delete removing it. A 50 ms key delay was not enough, so the spec now steps until the pill is selected.
+- **Result.** On a fresh stack, 27 passed and 0 failed (3.6 min). No app code changed.

@@ -63,13 +63,17 @@ test('Given two new copies picked in the library, Then each row carries its own 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
-test('Given Settings, When Semantic Scholar is chosen for paper details, Then it stays chosen after a reload', async ({ page }) => {
+test('Given Settings, When Semantic Scholar is chosen for paper details, Then it stays chosen after a reload', async ({ page, request }) => {
+  // Choosing the option that is already saved saves nothing, so start from the default.
+  expect((await request.put('/api/v1/metadata/settings', { data: { source: 'openalex' } })).ok()).toBeTruthy()
   await page.goto('/?settings=library')
   const section = page.getByRole('region', { name: 'Paper details' })
-  await section.getByRole('radio', { name: 'Semantic Scholar' }).check()
+  // Choices save as they are made (ARA-109); the radio shows the pending choice a tick after the click.
+  await section.getByRole('radio', { name: 'Semantic Scholar' }).click()
+  await expect(section.getByRole('radio', { name: 'Semantic Scholar' })).toBeChecked()
   await expect(section.getByText('Saved', { exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('region', { name: 'Paper details' }).getByRole('radio', { name: 'Semantic Scholar' })).toBeChecked()
-  await page.getByRole('region', { name: 'Paper details' }).getByRole('radio', { name: 'OpenAlex' }).check()
+  await page.getByRole('region', { name: 'Paper details' }).getByRole('radio', { name: 'OpenAlex' }).click()
   await expect(page.getByRole('region', { name: 'Paper details' }).getByText('Saved', { exact: true })).toBeVisible()
 })

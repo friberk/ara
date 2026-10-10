@@ -19,8 +19,11 @@ test('ARA-096 Given the home composer, when a paper is mentioned with @ and its 
   await pill.hover()
   await expect(pill.getByRole('button', { name: `Remove ${firstTitle}` })).toBeVisible()
   // The arrow keys step over the space and then select the whole pill; Delete removes it as one unit.
-  await page.keyboard.press('ArrowLeft')
-  await page.keyboard.press('ArrowLeft')
+  // Chrome reports caret moves asynchronously and a press that outruns it is lost, so step until the pill is selected.
+  await expect(async () => {
+    await page.keyboard.press('ArrowLeft')
+    await expect(question.locator('.ProseMirror-selectednode').getByRole('group', { name: firstTitle })).toBeVisible({ timeout: 500 })
+  }).toPass({ intervals: [250] })
   await page.keyboard.press('Delete')
   await expect(question.getByRole('group')).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Research topic' })).toBeVisible()
