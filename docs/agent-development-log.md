@@ -1288,3 +1288,9 @@ The design doc is updated.
   - The summary dialog's byline uses the same `citationLine`, so the old `paperByline` is removed. Chips and @ mentions keep "Surname Year", built on the same `surname` helper.
   - **Red, then green.** `authorShort is not a function` and `citationLine is not a function`. The picker failed with `toHaveAttribute("data-checked", "true")` and a missing citation line. The chat composer test failed with `aria-checked` missing. Then 19 passed.
   - **Counts.** `npm run check`: 603 tests in 78 files. `npm run build` passed with the existing chunk-size warning.
+- **@ mention bugs from the lead's browser check (2026-10-10).**
+  - **Home.** Home inserted no mention while no paper was chosen yet: my guard required asking mode, so the value stayed `Compare `.
+  - **Silent removal.** In the chat and new-chat composers, choosing an already-included paper after typing @ skipped the mention and toggled the paper off.
+  - **Fix.** Both now go through one hook, `components/composer/use-paper-mention.ts`. Typed @ opens the picker with the placeholder "Mention a paper". Choosing a paper adds it if it is new and always inserts `@Surname Year `; choosing a checked one only mentions it, and nothing is ever removed. The @ button opens "Find a paper in your library", which still toggles. Removal stays with the chip ×, the "+N more" list and that button.
+  - **Red, then green.** The home test failed with value `Compare ` instead of `Compare @Karpukhin 2020 `. The new-chat test failed with `@Karpukhin 2020 or ` instead of `… or @Author 2024 `, because the paper was removed instead of mentioned. The chat test failed with `Unable to find … placeholder text of: Mention a paper`. Then 166 passed across the affected files.
+  - **Counts.** `npm run check`: 605 tests in 78 files. `npm run build` passed with the existing chunk-size warning.
