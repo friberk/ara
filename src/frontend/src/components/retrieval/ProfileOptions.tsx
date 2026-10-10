@@ -42,19 +42,21 @@ export function UnavailableReason({ profile }: { profile: Pick<EmbeddingProfile,
   )
 }
 
-/**
- * Radio list of search models in the style of the default-model list. With defaultChoice, a first "Use default"
- * row stands for following the Settings default (value null).
- */
-export function ProfileOptions({ profiles, value, onChange, label, defaultChoice }: { profiles: EmbeddingProfile[]; value: string | null; onChange: (key: string | null) => void; label: string; defaultChoice?: string }) {
+/** What a search model costs: hosted models by the million tokens, local models nothing. */
+export function priceLabel(profile: Pick<EmbeddingProfile, 'provider' | 'price_per_million'>) {
+  return profile.price_per_million > 0 ? `$${profile.price_per_million} per million tokens` : profile.provider === 'ollama' ? 'Runs locally. No per-token cost.' : null
+}
+
+/** Radio list of the search models the whole library can use, in the style of the default-model list. */
+export function ProfileOptions({ profiles, value, onChange, label }: { profiles: EmbeddingProfile[]; value: string; onChange: (key: string) => void; label: string }) {
   const name = useId()
   return (
     <div role="radiogroup" aria-label={label} className="divide-y overflow-hidden rounded-xl border">
-      {defaultChoice !== undefined && <OptionRow name={name} value="" checked={value === null} onSelect={() => onChange(null)} title="Use default">{defaultChoice}</OptionRow>}
       {profiles.map((profile) => (
         <OptionRow key={profile.key} name={name} value={profile.key} checked={value === profile.key} onSelect={() => onChange(profile.key)} title={profile.display_name} badge={<StatusBadge status={profile.status} />}>
           <span className="font-mono break-all">{profile.model_id}</span>
-          {/* Still selectable: the server accepts it and the paper searches by keyword until the model is ready. */}
+          {priceLabel(profile) && <span>{priceLabel(profile)}</span>}
+          {/* Still selectable: the server accepts it and papers keep their current index until the model is ready. */}
           {profile.status === 'unavailable' && <UnavailableReason profile={profile} />}
         </OptionRow>
       ))}
