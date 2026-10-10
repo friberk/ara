@@ -19,13 +19,17 @@
     "Title menu has only Rename and Delete; a new conversation has no title menu.",
     "Filter appears only above the threshold and filters by title."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/chat/ChatSwitcher.tsx",
-    "src/frontend/src/lib/relative-time.ts"
+    "src/frontend/src/lib/relative-time.ts",
+    "src/frontend/src/features/chat/ChatHistory.tsx",
+    "src/frontend/src/features/chat/chat-pdf.ts",
+    "src/frontend/src/features/chat/ChatSwitcher.test.tsx",
+    "src/frontend/src/lib/relative-time.test.ts"
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-104-chat-history.",
+  "verification": "Red first: src/lib/relative-time.test.ts failed to load (module missing, 'Test Files 1 failed, no tests'); ChatSwitcher.test.tsx 'Tests 11 failed (11)' on the old dropdown. Green: relative-time 25 passed; ChatSwitcher 11 passed; src/features/chat 109 passed in 16 files; npm run check ESLint clean, tsc clean, 726 passed in 93 files (before moving usesEarlierPdf to chat-pdf.ts to clear a react-refresh warning; chat tests rerun green); npm run build passed. Browser: Vite on 5204 proxied to the read-only API at 8011; popover light, dark and 390px had no horizontal overflow (popover 352px wide, 16px gutters) after adding collisionPadding. Screenshots in /private/tmp/claude-505/-Users-bcakar-Documents-friBot-cs593-hw1/bcece1ee-7349-41a8-8a9f-76be1d8b081c/scratchpad/ara104/ (history-light.png, history-dark.png, history-mobile.png). e2e/multi-paper.spec.ts updated, not run.",
   "updated_at": "2026-10-10"
 }
