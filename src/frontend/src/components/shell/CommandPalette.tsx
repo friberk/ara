@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom'
-import { Library, MessageSquare, Moon, Settings, SquarePen, Sun, Upload } from 'lucide-react'
+import { Cpu, Library, MessageSquare, Moon, Settings, SquarePen, Sun, Upload } from 'lucide-react'
 import { useTheme } from '@/components/theme/theme-context'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { useChats } from '@/hooks/queries/chats'
 import { usePapers } from '@/hooks/queries/papers'
 import { chatPapersLabel } from '@/lib/paper-names'
+import { type SettingsCategory, useSettingsDialog } from '@/features/settings/settings-url'
 import { chatDisplayTitle, chatHref } from './recent-items'
 
 /** Jump to a paper or conversation, or run a common action. Loaded on first open (⌘K / Ctrl+K). */
@@ -14,7 +15,9 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
   const { resolvedTheme, setTheme } = useTheme()
   const papers = usePapers('', { pageSize: 50, enabled: open })
   const chats = useChats({ limit: 30 })
+  const settings = useSettingsDialog()
   const go = (to: string) => { onOpenChange(false); navigate(to) }
+  const openSettings = (category: SettingsCategory | '') => { onOpenChange(false); settings.open(category) }
   const paperItems = papers.data?.pages.flatMap((page) => page.items) ?? []
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="Find papers and chats" description="Search your library and conversations, or run an action.">
@@ -26,7 +29,8 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
             <CommandItem onSelect={() => go('/')}><SquarePen aria-hidden="true" />New research</CommandItem>
             <CommandItem onSelect={() => go('/library#upload')}><Upload aria-hidden="true" />Upload a PDF</CommandItem>
             <CommandItem onSelect={() => go('/library')}><Library aria-hidden="true" />Open library</CommandItem>
-            <CommandItem onSelect={() => go('/settings')}><Settings aria-hidden="true" />Model settings</CommandItem>
+            <CommandItem onSelect={() => openSettings('')}><Settings aria-hidden="true" />Settings</CommandItem>
+            <CommandItem onSelect={() => openSettings('models')}><Cpu aria-hidden="true" />Model settings</CommandItem>
             <CommandItem onSelect={() => { setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'); onOpenChange(false) }}>
               {resolvedTheme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
               {resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}

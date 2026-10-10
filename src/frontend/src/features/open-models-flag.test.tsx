@@ -31,17 +31,19 @@ function mountSwitcher() {
   return renderWithProviders(<TooltipProvider><GenerationSettingsProvider><ModelSwitcher purpose="chat" /><Selection /></GenerationSettingsProvider></TooltipProvider>)
 }
 
-test('Given open models off, When Settings opens, Then no local model, Local models section or local search option appears', async () => {
+test('Given open models off, When Settings opens, Then no local model, Open models category or local search option appears', async () => {
   mockApi({
     ...off, 'GET /models': { items: [luna, local] }, 'GET /settings': hostedDefaults,
     'GET /retrieval/profiles': { items: [openai, qwen], default_profile: openai.key, rerankers: [hostedReranker, localReranker] },
     'GET /retrieval/settings': { embedding_profile: openai.key, reranker: hostedReranker.key },
   })
-  renderApp('/settings')
+  const { user } = renderApp('/?settings=models')
   expect(await screen.findByRole('radio', { name: luna.display_name })).toBeVisible()
-  const search = await screen.findByRole('radiogroup', { name: 'Search model' })
-  expect(within(search).getByRole('radio', { name: openai.display_name })).toBeChecked()
   expect(screen.queryByRole('radio', { name: local.display_name })).not.toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: 'Open models' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: 'Library and search' }))
+  const search = await screen.findByRole('radiogroup', { name: 'Search index model' })
+  expect(within(search).getByRole('radio', { name: openai.display_name })).toBeChecked()
   expect(screen.queryByRole('radio', { name: qwen.display_name })).not.toBeInTheDocument()
   expect(screen.queryByRole('radio', { name: localReranker.display_name })).not.toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: 'Local models' })).not.toBeInTheDocument()
@@ -50,14 +52,15 @@ test('Given open models off, When Settings opens, Then no local model, Local mod
 
 test('Given open models on, When Settings opens, Then the local controls return unchanged', async () => {
   mockApi({ ...on, 'GET /models': { items: [luna, local] }, 'GET /settings': hostedDefaults })
-  renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   expect(await screen.findByRole('heading', { name: 'Local models' })).toBeVisible()
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeEnabled()
+  await user.click(screen.getByRole('tab', { name: 'Models' }))
+  expect(await screen.findByRole('radio', { name: local.display_name })).toBeEnabled()
 })
 
 test('Given a saved local default with open models off, Then Settings reports it unavailable and offers hosted models', async () => {
   mockApi({ ...off, 'GET /models': { items: [luna, savedLocal] }, 'GET /settings': { default_model: savedLocal.key, reasoning_effort: 'default' } })
-  renderApp('/settings')
+  renderApp('/?settings=models')
   const saved = await screen.findByRole('radio', { name: savedLocal.display_name })
   expect(saved).toBeChecked()
   expect(saved).toBeDisabled()
@@ -76,7 +79,7 @@ test('Given a saved local reranker and search model with open models off, Then S
     },
     'GET /retrieval/settings': { embedding_profile: qwen.key, reranker: localReranker.key },
   })
-  renderApp('/settings')
+  renderApp('/?settings=library')
   const reranker = await screen.findByRole('radio', { name: localReranker.display_name })
   expect(reranker).toBeChecked()
   expect(reranker).toBeDisabled()
@@ -84,7 +87,7 @@ test('Given a saved local reranker and search model with open models off, Then S
   expect(embedder).toBeChecked()
   expect(embedder).toBeDisabled()
   expect(screen.getAllByText(reason)).toHaveLength(2)
-  expect(screen.queryByRole('link', { name: 'Go to Local models' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Go to Open models' })).not.toBeInTheDocument()
   expect(screen.queryByText(/Private\./)).not.toBeInTheDocument()
 })
 
@@ -127,13 +130,12 @@ test('Given a saved local library model with open models off, When switching, Th
     'GET /retrieval/settings': { embedding_profile: qwen.key, reranker: hostedReranker.key },
     'GET /retrieval/reindex-estimate': { profile: small.key, papers: 6, tokens: 120000, price_per_million: 0.02, estimated_cost_usd: 0.0024 },
   })
-  const { user } = renderApp('/settings')
-  const choices = await screen.findByRole('radiogroup', { name: 'Search model' })
+  const { user } = renderApp('/?settings=library')
+  const choices = await screen.findByRole('radiogroup', { name: 'Search index model' })
   expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([openai.key, small.key, qwen.key])
   expect(within(choices).getByRole('radio', { name: qwen.display_name })).toBeDisabled()
   await user.click(within(choices).getByRole('radio', { name: small.display_name }))
-  await user.click(screen.getByRole('button', { name: 'Save search settings' }))
-  expect(await screen.findByRole('alertdialog', { name: 'Re-embed the whole library?' })).toBeVisible()
+  expect(await screen.findByRole('alertdialog', { name: 'Rebuild the search index?' })).toBeVisible()
   expect(await screen.findByText(/6 papers/)).toBeVisible()
   const estimated = calls.filter((call) => call.path === '/retrieval/reindex-estimate').map((call) => call.url.searchParams.get('profile'))
   expect(estimated).toEqual([small.key])

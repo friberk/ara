@@ -19,10 +19,11 @@ test('Given library papers, Then the sidebar lists recent papers linking to thei
 
 test('Given the current route, Then its navigation item is marked active', async () => {
   mockApi({})
-  renderApp('/settings')
+  renderApp('/library')
   const nav = screen.getByRole('navigation', { name: 'Workspace' })
   expect(within(nav).getByRole('link', { name: 'New research' })).not.toHaveAttribute('data-active', 'true')
-  expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('data-active', 'true')
+  expect(within(nav).getByRole('link', { name: 'Library' })).toHaveAttribute('data-active', 'true')
+  expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('data-active', 'true')
 })
 
 test.each(['/jobs', '/activity'])('Given %s from an old link, Then it redirects home and no Activity entry exists', async (path) => {
@@ -140,7 +141,7 @@ test('Given papers in each PDF state, Then the palette rows show a state icon in
 
 test('Given the sidebar header, Then the ara. wordmark links home and no Research Assistant text remains', async () => {
   mockApi({})
-  renderApp('/settings')
+  renderApp('/library')
   const home = screen.getByRole('link', { name: 'ara.' })
   expect(home).toHaveAttribute('href', '/')
   expect(home.querySelector('svg[data-brand="wordmark"]')).not.toBeNull()
@@ -149,7 +150,7 @@ test('Given the sidebar header, Then the ara. wordmark links home and no Researc
 
 test('Given the sidebar collapsed to icons, Then the header shows the a. mark under the name ara.', async () => {
   mockApi({})
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/')
   await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Toggle Sidebar' }))
   await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
   const home = screen.getByRole('link', { name: 'ara.' })

@@ -18,7 +18,7 @@ test('Given the home route, Then the workspace navigation and the research compo
   const nav = screen.getByRole('navigation', { name: 'Workspace' })
   for (const name of ['New research', 'Library']) expect(within(nav).getByRole('link', { name })).toBeVisible()
   expect(within(nav).queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Settings' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Settings' })).toBeVisible()
   expect(screen.getByRole('heading', { name: 'What are you researching?' })).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Research topic' })).toBeVisible()
   // The composer autofocuses; from a fresh document focus the skip link is the first tab stop.
