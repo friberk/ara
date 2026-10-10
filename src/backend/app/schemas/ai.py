@@ -2,7 +2,16 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator
+from pydantic import (
+    AliasPath,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.schemas.jobs import JobError
 
@@ -72,8 +81,21 @@ class GenerationInput(BaseModel):
     request_id: UUID
 
 
+class PaperMention(BaseModel):
+    """A library paper a question mentions with a composer pill (ARA-096). `label` is the pill's
+    text, which the question holds at [start, end): Unicode code points of the trimmed content,
+    as Python indexes strings."""
+
+    paper_id: UUID
+    label: str = Field(min_length=1, max_length=500)
+    start: int = Field(ge=0)
+    end: int = Field(ge=1)
+
+
 class ChatInput(GenerationInput):
     content: str = Field(min_length=1, max_length=8000)
+    # Mentioned papers not yet in the chat join it with this question (ARA-096).
+    mentions: list[PaperMention] = Field(default_factory=list)
 
     @field_validator("content")
     @classmethod
@@ -81,6 +103,20 @@ class ChatInput(GenerationInput):
         if not value.strip():
             raise ValueError("Question must contain text")
         return value.strip()
+
+    @model_validator(mode="after")
+    def mentions_in_text(self):
+        """Each pill's label sits at its span, in order and without overlaps."""
+        previous = 0
+        for mention in self.mentions:
+            if not mention.label.strip():
+                raise ValueError("A mention needs a label")
+            if mention.start < previous or self.content[mention.start : mention.end] != (
+                mention.label
+            ):
+                raise ValueError("Mentions must match the question text, in order")
+            previous = mention.end
+        return self
 
 
 class ChatCreate(BaseModel):
@@ -243,6 +279,10 @@ class Message(DTO):
     retrieval: RetrievalSummary | None = None
     context: ContextUsage | None = None
     grounding: Literal["supported", "insufficient"] | None = None
+    # A question's pills, stored in its configuration (ARA-096); older questions have none.
+    mentions: list[PaperMention] = Field(
+        default_factory=list, validation_alias=AliasPath("configuration", "mentions")
+    )
 
     @field_validator("retrieval", "context", mode="before")
     @classmethod

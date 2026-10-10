@@ -4,21 +4,25 @@ import { useGenerationSettings } from '@/components/composer/generation-settings
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
 import { PaperPicker } from '@/components/composer/PaperPicker'
 import { usePaperMention } from '@/components/composer/use-paper-mention'
+import type { Draft, DraftMention } from '@/lib/mentions'
 import { ContextMeter } from './ContextMeter'
 import type { QuestionGate } from './question-gate'
 
 const defaultNote = 'Answers come from this paper’s PDF and cite their pages. Check important claims against the source.'
 const severalNote = 'Answers come from these papers’ PDFs and cite their pages. Check important claims against the source.'
 
-/** The papers a conversation asks about, edited with the @ picker (ARA-088). */
-export type PaperSelection = { selected: string[]; onSelect: (paper: Paper) => void; header?: React.ReactNode }
+/**
+ * The papers a conversation asks about, edited with the @ button (ARA-088). Typing @ mentions a paper with a pill
+ * (ARA-096); `onMentioned` hears of it where pills choose papers.
+ */
+export type PaperSelection = { selected: string[]; onSelect: (paper: Paper) => void; onMentioned?: (paper: Paper) => void; header?: React.ReactNode }
 
 /** The docked question composer. Its footnote explains whatever is keeping a question from being sent. */
-export function ConversationComposer({ chatId, value, onValueChange, onSubmit, gate, sendable, busy, onStop, note, papers }: {
+export function ConversationComposer({ chatId, draft, onDraftChange, onSubmit, gate, sendable, busy, onStop, note, papers }: {
   /** The chat whose context and cost the ring reports for the model selected here; a conversation not yet created has none. */
   chatId?: string
-  value: string
-  onValueChange: (value: string) => void
+  draft: Draft
+  onDraftChange: (text: string, mentions: DraftMention[]) => void
   onSubmit: () => void
   gate: QuestionGate
   /** False while something other than the gate blocks sending, such as history loading or a chat being created. */
@@ -30,12 +34,13 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
   papers?: PaperSelection
 }) {
   const { settings } = useGenerationSettings()
-  const mention = usePaperMention({ selected: papers?.selected ?? [], onSelect: (paper) => papers?.onSelect(paper) })
+  const mention = usePaperMention({ selected: papers?.selected ?? [], onToggle: (paper) => papers?.onSelect(paper), onMentioned: papers?.onMentioned })
   const several = (papers?.selected.length ?? 1) > 1
   return (
     <Composer
-      value={value}
-      onValueChange={onValueChange}
+      value={draft.text}
+      mentions={draft.mentions}
+      onValueChange={onDraftChange}
       onSubmit={onSubmit}
       label={several ? 'Question about these papers' : 'Question about this paper'}
       placeholder={several ? 'Ask a question about these papers' : 'Ask a question about this paper'}

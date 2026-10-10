@@ -1,5 +1,6 @@
 // Characterization tests written AFTER the implementation (ARA-036), for behaviour that shipped without a test
 // of its own. Each one was checked by temporarily breaking the behaviour it covers and watching it fail.
+import { textIn } from '@/test/editor'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { queueQuestion } from '@/lib/pending-questions'
 import { json, mockApi, noContent } from '@/test/fetch-routes'
@@ -120,7 +121,7 @@ test('Given a queued question for a paper whose PDF is processing, Then it waits
   const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] } })
   queueQuestion('c1', { content: 'Queued while processing', settings: { model: luna.key, reasoning_effort: 'low' } })
   mount('/papers/p1/chats/c1', { value: { ...paper, document_status: 'processing' } })
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toHaveValue('Queued while processing'))
+  await waitFor(() => expect(textIn(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe('Queued while processing'))
   // The same words as while retrieval brings the PDF: it is on its way (ARA-086).
   expect(screen.getByText('You can ask questions once the PDF is ready.')).toBeVisible()
   expect(calls.some((call) => call.path.endsWith('/messages/stream'))).toBe(false)

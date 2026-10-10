@@ -4,11 +4,12 @@ import { checkedResponse, json } from '@/api/client'
 import { readEvents } from '@/api/sse'
 import type { Chat, ChatInput, GenerationSettings, Message, RetrievalStage } from '@/api/types'
 import { useMessages } from '@/hooks/queries/chats'
+import { trimDraft, type Draft, type DraftMention } from '@/lib/mentions'
 import { queryKeys } from '@/lib/query-keys'
 
 export type StreamOutcome = 'completed' | 'stopped' | 'failed'
 /** The question shown before the server saves it; baseline is how many questions were saved when it was sent. */
-type PendingQuestion = { text: string; baseline: number }
+type PendingQuestion = { text: string; mentions: DraftMention[]; baseline: number }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
 const stages: ReadonlySet<string> = new Set<RetrievalStage>(['waiting', 'planning', 'retrieving', 'reranking', 'generating', 'widening', 'mapping'])
@@ -44,19 +45,22 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'papers'>) {
   // A completed answer may have moved earlier messages into the chat's summary.
   const refreshMemory = () => void client.invalidateQueries({ queryKey: queryKeys.retrieval.memory(chat.id) })
 
-  async function send(content: string, settings: GenerationSettings, requestId: string = crypto.randomUUID()) {
-    const text = content.trim()
+  async function send(question: Draft, settings: GenerationSettings, requestId: string = crypto.randomUUID()) {
+    const { text, mentions } = trimDraft(question)
     if (!text || busy || inFlight.current) return
     inFlight.current = true
     const abort = new AbortController()
     controller.current = abort
     const baseline = saved.filter((message) => message.role === 'user').length
-    setStreaming(true); setError(null); setDraft(null); setOutcome(null); setStage(null); setPending({ text, baseline })
+    setStreaming(true); setError(null); setDraft(null); setOutcome(null); setStage(null); setPending({ text, mentions, baseline })
+    // Papers the question mentions join the chat with it (ARA-096), so its answer may cite them.
+    const joining = new Set(mentions.map((mention) => mention.paper_id).filter((id) => !chat.papers.some((paper) => paper.paper_id === id)))
     const answer = (id: string, partial = ''): Message => ({ id, role: 'assistant', content: partial, state: 'processing', model: settings.model, reasoning_effort: settings.reasoning_effort, citations: [], created_at: new Date().toISOString() })
     let terminal = false
     let completed = false
     try {
-      const response = await checkedResponse(`/chats/${chat.id}/messages/stream`, { ...json('POST', { content: text, ...settings, request_id: requestId } satisfies ChatInput), signal: abort.signal })
+      const sent = mentions.map(({ paper_id, label, start, end }) => ({ paper_id, label, start, end }))
+      const response = await checkedResponse(`/chats/${chat.id}/messages/stream`, { ...json('POST', { content: text, mentions: sent, ...settings, request_id: requestId } satisfies ChatInput), signal: abort.signal })
       await readEvents(response, (event) => {
         if (!mounted.current) return
         if (terminal) throw new Error('The server sent events after the response completed. Reload the conversation.')
@@ -71,7 +75,7 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'papers'>) {
         if (event.event === 'message.delta') setDraft((previous) => previous ? { ...previous, content: previous.content + event.data.text } : answer('stream', event.data.text))
         if (event.event === 'message.completed') {
           const documents = new Set(chat.papers.map((paper) => paper.document_id))
-          if (event.data.citations.some((citation) => !documents.has(citation.document_id))) throw new Error(`The response included a source outside ${chat.papers.length > 1 ? 'these papers' : 'this document'}.`)
+          if (event.data.citations.some((citation) => !documents.has(citation.document_id) && !(citation.paper_id && joining.has(citation.paper_id)))) throw new Error(`The response included a source outside ${chat.papers.length > 1 ? 'these papers' : 'this document'}.`)
           terminal = true
           completed = true
           setDraft(event.data)

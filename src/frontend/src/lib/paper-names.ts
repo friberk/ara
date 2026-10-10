@@ -33,8 +33,8 @@ export function chatPapersLabel(papers: Pick<IncludedPaper, 'title'>[]) {
 }
 
 /**
- * How @ mentions a paper in a question: "Karpukhin 2020" as its chips name it, else its full title. The server keeps
- * a paper the question names this way (ARA-088).
+ * The label of a paper's mention pill: "Karpukhin 2020" as its chips name it, else its full title. The question
+ * carries the label as text, and the pill's paper id with it (ARA-096).
  */
 export function mentionName(paper: Pick<Paper, 'title' | 'authors' | 'year'>) {
   const author = paper.authors[0] ? surname(paper.authors[0]) : ''
@@ -56,4 +56,14 @@ export type CitationParts = { authors: string; year: string; venue: string }
  */
 export function citationLine(paper: Pick<Paper, 'authors' | 'year'> & { venue?: string | null }): CitationParts {
   return { authors: authorShort(paper.authors), year: paper.year ? String(paper.year) : '', venue: paper.venue?.trim() ?? '' }
+}
+
+/**
+ * A paper's citation as one line, which names its mention pill for screen readers (ARA-096): "Vaswani et al. (2017).
+ * Attention Is All You Need. NeurIPS." Missing parts are left out.
+ */
+export function citationText(paper: Pick<Paper, 'title' | 'authors' | 'year'> & { venue?: string | null }) {
+  const { authors, year, venue } = citationLine(paper)
+  const lead = authors && year ? `${authors} (${year})` : authors || year
+  return `${[lead, paper.title?.trim() || 'Untitled paper', venue].filter(Boolean).map((part) => part.replace(/\.$/, '')).join('. ')}.`
 }

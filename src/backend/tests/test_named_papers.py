@@ -1,4 +1,6 @@
-"""Papers a question names are always kept in a multi-paper answer (ARA-088)."""
+"""Papers a question names as typed text are always kept in a multi-paper answer (ARA-088).
+
+Composer pills name papers by id instead (ARA-096, test_chat_mentions.py)."""
 
 from app.services.context import PaperHeader
 
@@ -21,11 +23,6 @@ def named(question: str) -> list[int]:
 def test_given_a_title_or_a_chip_name_when_asking_then_that_paper_is_named():
     assert named("How does dense passage retrieval for open-domain QA train?") == [0]
     assert named("Compare Karpukhin 2020 with Vaswani 2017.") == [0, 3]
-
-
-def test_given_an_at_mention_from_the_composer_when_asking_then_that_paper_is_named():
-    assert named("How does @Khattab 2020 differ from @Karpukhin 2020?") == [0, 1]
-    assert named("@ColBERT: what is late interaction?") == [1]
 
 
 def test_given_words_that_only_resemble_a_name_then_no_paper_is_named():
