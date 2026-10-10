@@ -125,7 +125,9 @@ export default function PdfViewer(props: PdfViewerProps) {
   const latest = useRef(props)
   const request = useRef<ActiveHighlight | null>(null)
   const pendingPage = useRef<number | null>(null)
-  const anchor = useRef({ page: 1, offset: 0 })
+  // Where the reader is, kept across zoom and width changes: a page and the fraction into it, or page 0 for the header
+  // above page 1, with the distance from the top in pixels. It starts at the very top (ARA-101).
+  const anchor = useRef({ page: 0, offset: 0 })
   const reportedPage = useRef(1)
   const frame = useRef(0)
   const life = useRef({ timer: 0, deadline: 0, remaining: HOLD_MS, phase: 'idle' as 'idle' | 'hold' | 'fade' | 'gone', overText: false, overRegion: false })
@@ -320,8 +322,14 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!root || previousWidth.current === pageWidth) return
     const hadLayout = previousWidth.current > 0
     previousWidth.current = pageWidth
-    const element = root.querySelector<HTMLElement>(`[data-pdf-page="${anchor.current.page}"]`)
-    if (hadLayout && element && pendingPage.current === null) root.scrollTop = offsetIn(root, element) + anchor.current.offset * element.offsetHeight
+    const { page, offset } = anchor.current
+    const element = root.querySelector<HTMLElement>(`[data-pdf-page="${page}"]`)
+    // Above page 1 (the paper header) the spot is a distance from the top, which a new page size does not move.
+    // Before this, a width change on load (a scrollbar appearing) jumped a fresh reader past the header to page 1.
+    if (hadLayout && pendingPage.current === null) {
+      if (page === 0) root.scrollTop = offset
+      else if (element) root.scrollTop = offsetIn(root, element) + offset * element.offsetHeight
+    }
     flushPendingPage()
   }, [pageWidth, flushPendingPage])
 
@@ -403,7 +411,10 @@ export default function PdfViewer(props: PdfViewerProps) {
       }
       if (!current) return
       const page = Number(current.dataset.pdfPage)
-      anchor.current = { page, offset: (root.scrollTop - offsetIn(root, current)) / Math.max(1, current.offsetHeight) }
+      const top = offsetIn(root, current)
+      anchor.current = page === 1 && root.scrollTop < top
+        ? { page: 0, offset: root.scrollTop }
+        : { page, offset: (root.scrollTop - top) / Math.max(1, current.offsetHeight) }
       if (page !== reportedPage.current) { reportedPage.current = page; latest.current.onPageChange(page) }
     })
   }
@@ -438,7 +449,8 @@ export default function PdfViewer(props: PdfViewerProps) {
       onPointerOver={onPointerOver}
       onPointerOut={onPointerOut}
       onPointerMove={onPointerMove}
-      className="pdf-viewer relative h-full overflow-auto bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+      // The viewer keeps its own place across size changes, so the browser's scroll anchoring would only fight it.
+      className="pdf-viewer relative h-full overflow-auto bg-muted outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
     >
       {/* Pinned to the left edge, so a page zoomed wider than the reader does not carry it sideways. */}
       {props.header && <div className="sticky left-0 w-full">{props.header}</div>}
