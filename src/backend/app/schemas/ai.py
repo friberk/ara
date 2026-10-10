@@ -36,6 +36,10 @@ class RetrievalSummary(BaseModel):
     sub_questions: list[str] = Field(default_factory=list)
     passages_found: int = 0
     passages_used: int = 0
+    # Candidates dropped for scoring far below the best one, and the tokens of the evidence sent
+    # (ARA-094).
+    pruned: int = 0
+    evidence_tokens: int = 0
     limited_by_context: bool = False
     note: str | None = None
 

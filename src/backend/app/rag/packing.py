@@ -14,12 +14,9 @@ from uuid import UUID
 from llama_index.core.schema import BaseNode, NodeWithScore
 
 from app.integrations.tokens import TokenCounter
+from app.rag.selection import FIRST_PASS_PASSAGES, FLOOR
 
 SEPARATOR = "\n"
-# "About 2 passages" per paper before relevance shares the rest: the design's per-paper floor,
-# a per-document quota so one long paper cannot crowd out the others (LlamaIndex's
-# multi-document pattern; docs/plans/retrieval-orchestration.md, step 6).
-FLOOR = 2
 
 
 @dataclass(frozen=True)
@@ -78,7 +75,7 @@ def pack_evidence(
     budget: int,
     counter: TokenCounter,
     neighbours: Mapping[str, Sequence[BaseNode]] | None = None,
-    max_passages: int = 16,
+    max_passages: int = FIRST_PASS_PASSAGES,
     headers: Mapping[str, str] | None = None,
     kept: Collection[str] = (),
 ) -> list[Passage]:
