@@ -9,11 +9,12 @@ import { renderApp } from '@/test/render'
 vi.mock('./PdfViewer', async () => {
   const { useEffect } = await import('react')
   return {
-    default: function PdfViewerStub({ documentId, highlight, zoom, navigation, onDocumentLoad, onHighlight, header }: import('./PdfViewer').PdfViewerProps) {
+    default: function PdfViewerStub({ documentId, highlight, zoom, navigation, onDocumentLoad, onHighlight, header, bar }: import('./PdfViewer').PdfViewerProps) {
       useEffect(() => onDocumentLoad(15), [onDocumentLoad])
       return (
         <div role="group" aria-label="PDF viewer">
           {header}
+          {bar}
           <p>{`Showing ${documentId}${highlight ? ` at page ${highlight.citation.page}` : ''}`}</p>
           {highlight?.claim && <p>{`Supporting “${highlight.claim}”`}</p>}
           <p>{`Zoom ${zoom}${navigation ? `, asked for page ${navigation.page}` : ''}`}</p>

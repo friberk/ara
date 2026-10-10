@@ -14,7 +14,6 @@ export function GenerationSettingsProvider({ children }: { children: React.React
     // A saved local default stays known, as the server reports it unavailable, so nothing switches to a paid model.
     const items = withoutOpenModels((models.data?.items ?? []).filter(isChatModel), openModels, saved.data?.default_model)
     const savedPreference = saved.data?.default_model ? { model: saved.data.default_model, reasoning_effort: saved.data.reasoning_effort } : null
-    const savedDefaults = savedPreference ? normaliseSettings(items, savedPreference) : null
     // Missing defaults may choose a first model; a failed settings request is not evidence
     // that there is no saved local default. Keep automatic paid selection blocked.
     const fallback = saved.isSuccess ? items.find((model) => model.status !== 'unavailable') : undefined
@@ -26,7 +25,6 @@ export function GenerationSettingsProvider({ children }: { children: React.React
       setSettings: (next) => setChoice(normaliseSettings(items, next)),
       models: items,
       selectedModel,
-      savedDefaults,
       loading: models.isPending || saved.isPending,
       error: models.error ?? saved.error,
       retry: () => { void models.refetch(); void saved.refetch() },

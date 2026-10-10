@@ -63,12 +63,11 @@ test('Given a session choice, Then it overrides the default and usability follow
   expect(result.current.usableFor('summary')).toBe(true)
 })
 
-test.each(['default', 'on'])('Given declared supported %s alias, Then prospective selection and default comparison use High', async (reasoning) => {
+test.each(['default', 'on'])('Given declared supported %s alias, Then the selection uses High', async (reasoning) => {
   const local = model('native', { provider: 'ollama', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high'], reasoning_aliases: { default: 'high', on: 'high' } })
   mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning } })
   const { result } = mount()
   await waitFor(() => expect(result.current.settings).toEqual({ model: 'native', reasoning_effort: 'high' }))
-  expect(result.current.savedDefaults).toEqual({ model: 'native', reasoning_effort: 'high' })
   expect(result.current.usableFor('chat')).toBe(true)
 })
 

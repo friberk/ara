@@ -7,9 +7,9 @@ import { renderApp } from '@/test/render'
 vi.mock('./PdfViewer', async () => {
   const { useEffect } = await import('react')
   return {
-    default: function PdfViewerStub({ documentId, onDocumentLoad }: import('./PdfViewer').PdfViewerProps) {
+    default: function PdfViewerStub({ documentId, onDocumentLoad, header, bar }: import('./PdfViewer').PdfViewerProps) {
       useEffect(() => onDocumentLoad(15), [onDocumentLoad])
-      return <p>{`Showing ${documentId}`}</p>
+      return <div>{header}{bar}<p>{`Showing ${documentId}`}</p></div>
     },
   }
 })

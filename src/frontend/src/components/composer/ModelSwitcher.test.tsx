@@ -30,7 +30,6 @@ test.each(['default', 'on'])('Given saved %s aliases High, Then the composer sho
   const { calls } = mockApi({ 'GET /models': { items: [local] }, 'GET /settings': { default_model: local.key, reasoning_effort: reasoning } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
-  expect(screen.getByRole('menuitem', { name: 'Default model' })).toHaveAttribute('aria-disabled', 'true')
   act(() => screen.getByRole('menuitem', { name: /Reasoning effort/ }).focus())
   await user.keyboard('{ArrowRight}')
   const high = await screen.findByRole('menuitemradio', { name: 'High' })
@@ -95,7 +94,6 @@ test('Given missing local weights, When explored by keyboard, Then the explanati
   await user.keyboard('{Enter}')
   expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/low')
   expect(item).toHaveAttribute('aria-disabled', 'true')
-  expect(screen.getByRole('menuitem', { name: 'Model settings' })).toHaveAttribute('href', '/settings#local-models')
 })
 
 test('Given deleted default weights, Then the selected model remains visible and no hosted model replaces it', async () => {
@@ -118,15 +116,17 @@ test('Given unavailable and supported models, Then exact IDs and reasoning capab
   expect(screen.getByLabelText('Selection')).toHaveTextContent('gpt-5.6-luna/high')
 })
 
-test('Given a changed selection, When Set as default is chosen, Then the exact model and effort are saved', async () => {
-  const { calls } = mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'PUT /settings': { default_model: luna.key, reasoning_effort: 'high' } })
+test('Given the picker is open, Then it offers models and reasoning only, with no default or settings shortcuts', async () => {
+  const { calls } = mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } })
   const { user } = mount()
   await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
-  expect(screen.getByRole('menuitem', { name: 'Default model' })).toHaveAttribute('aria-disabled', 'true')
   await chooseEffort(user, 'High')
   await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Set as default' }))
-  await waitFor(() => expect(calls.find((call) => call.method === 'PUT')?.body).toEqual({ default_model: luna.key, reasoning_effort: 'high' }))
+  expect(await screen.findByRole('menuitemradio', { name: /GPT-5.6 Luna/ })).toBeVisible()
+  expect(screen.queryByRole('menuitem', { name: /default/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: 'Model settings' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  expect(calls.some((call) => call.method === 'PUT')).toBe(false)
 })
 
 test('Given a model that cannot stream, When choosing a chat model, Then it is disabled with the reason', async () => {
@@ -154,19 +154,6 @@ test('Given models are still loading, Then the switcher is disabled and says so'
   mount()
   expect(await screen.findByRole('button', { name: 'Model: Loading models' })).toBeDisabled()
 })
-
-test('Given saving the default fails, Then the menu stays open and explains the error inline', async () => {
-  // Errors stay inline (DESIGN.md: toasts are for success only).
-  mockApi({ 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'PUT /settings': () => new Response(JSON.stringify({ code: 'SETTINGS_UNAVAILABLE', message: 'Settings could not be saved. Try again.' }), { status: 503, headers: { 'Content-Type': 'application/json' } }) })
-  const { user } = mount()
-  await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
-  await chooseEffort(user, 'High')
-  await user.click(screen.getByRole('button', { name: 'Model: GPT-5.6 Luna, High reasoning' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Set as default' }))
-  const menu = await screen.findByRole('menu')
-  expect(await within(menu).findByRole('alert')).toHaveTextContent('Settings could not be saved. Try again.')
-})
-
 
 test('Given a verified local thinking model, When choosing explicit levels, Then aliases stay out of its menu and named IDs are kept', async () => {
   const local = { ...localMissing, status: 'available', reasoning_efforts: ['default', 'none', 'on', 'low', 'medium', 'high', 'research'], reasoning_aliases: { default: 'high', on: 'high' }, unavailable_reason: null, unavailable_code: null, installation: { ...localMissing.installation, state: 'ready', weights_present: true } }

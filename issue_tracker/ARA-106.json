@@ -1,0 +1,33 @@
+{
+  "id": "ARA-106",
+  "title": "Quieter answer footer, a clearer context and cost card, and a model picker without settings shortcuts",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"In chat view, the copy answer button should be at bottom right. Also remove the \\\"GPT-5.6 Luna\\\" \\\"Low reasoning\\\" and \\\"Details\\\" stuff. Also in the hollow circle, add a \\\"Cost\\\" heading similar to context heading there. Remove the \\\"Model window 1.05M tokens\\\" text. Also work on the representation of \\\"3%\\\". Currently it is seperated by a middle dot, which is AI-ism. I think we can have a better design there. Use your Impeccable design skill. In the model picker, remove the \\\"Set as default\\\" and \\\"Model settings\\\" choices.\"",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given a finished answer, when it shows, then its footer has no model name, no reasoning effort and no Details disclosure. The copy button sits at the footer's bottom right. Interrupted and Failed badges stay on the left.",
+    "Given the context ring, when its card opens, then it has a visible 'Context' heading and a matching 'Cost' heading. Context shows used and total tokens and the share used without a middle dot or a slash-and-dot string; the share is its own value, with a thin meter if it reads better. There is no 'Model window …' line.",
+    "Given the cost section, when it shows, then the total and its breakdown rows sit under 'Cost'. A local model reads plainly, without a middle dot.",
+    "Given the composer's model picker, when it opens, then it offers models and reasoning effort only. 'Set as default' and 'Model settings' are gone. Defaults stay editable in Settings.",
+    "Given the codebase, when this lands, then components and helpers used only by the removed UI are deleted (for example AnswerDetails, GenerationMeta and the picker's default-saving code), with their tests. The API stays unchanged."
+  ],
+  "test_cases": [
+    "Answer footer: no model, effort or Details; copy button last in the footer, right-aligned.",
+    "Context card: headings 'Context' and 'Cost'; no 'Model window'; no '·' anywhere in the card; percent rendered as its own element.",
+    "Model picker: no 'Set as default' or 'Model settings' items."
+  ],
+  "status": "completed",
+  "related_files": [
+    "src/frontend/src/features/chat/Messages.tsx",
+    "src/frontend/src/features/chat/AnswerDetails.tsx",
+    "src/frontend/src/features/chat/ContextMeter.tsx",
+    "src/frontend/src/components/composer/ModelSwitcher.tsx"
+  ],
+  "commits": [
+    "173552f"
+  ],
+  "pull_requests": [],
+  "verification": "Red first (4 files, before implementation): 6 failed, 28 passed: ContextMeter (no 'Context' heading; no 'Local model, no charge'), ModelSwitcher and open-models-flag (the Set as default and Model settings items were still present), ConversationPane.standalone (model text still in the footer; copy not last). Green after: npm run check passed, 715 tests in 90 files (two ConversationPane.test.tsx tests that expected the old historical effort labels were updated, and one ContextMeter test for a 404% share was updated); npm run build passed. Browser: Vite on port 5217 proxying the read-only copy at 8011, Chromium screenshots in light, dark and 390px of the footer, the open context card and the open picker, in /private/tmp/claude-505/-Users-bcakar-Documents-friBot-cs593-hw1/bcece1ee-7349-41a8-8a9f-76be1d8b081c/scratchpad/ara106/ (footer-*.png, context-*.png, picker-*.png). The picker menu was not screenshotted on the item list below Reasoning because it no longer has one. Deleted: AnswerDetails and its test, GenerationMeta, effortText (format.ts and its test), the picker's default-saving code. savedDefaults in the generation-settings context now has no consumer in the UI and was left, as it is outside the listed files.",
+  "updated_at": "2026-10-10"
+}

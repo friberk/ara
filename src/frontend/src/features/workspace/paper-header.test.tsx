@@ -5,10 +5,10 @@ import type { Citation } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
-// The stand-in renders the header it is given above its pages, as the real viewer does inside its scroll column.
+// The stand-in renders the header and the PDF bar it is given above its pages, as the real viewer does inside its scroll column.
 vi.mock('./PdfViewer', () => ({
-  default: ({ documentId, header }: { documentId: string; header?: React.ReactNode }) => (
-    <div role="region" aria-label="PDF document">{header}<p>{`Showing ${documentId}`}</p></div>
+  default: ({ documentId, header, bar }: { documentId: string; header?: React.ReactNode; bar?: React.ReactNode }) => (
+    <div role="region" aria-label="PDF document">{header}<div data-pdf-bar="">{bar}</div><p>{`Showing ${documentId}`}</p></div>
   ),
 }))
 
@@ -253,11 +253,16 @@ test('Given a narrow reader, Then Edit details shrinks to its icon and keeps its
   expect((await header()).firstElementChild).toHaveClass('@container')
 })
 
-test('Given a paper with its PDF, Then a "PDF" heading with the file name sits between the header and page 1, scrolling with them', async () => {
+test('Given a paper with its PDF, Then the PDF bar (its heading, the file name and the controls) sits between the header and page 1', async () => {
   mockApi({ 'GET /papers/p1': paper })
   renderApp('/papers/p1')
   const document = await screen.findByRole('region', { name: 'PDF document' })
   const heading = within(document).getByRole('heading', { level: 3, name: /^PDF/ })
+  // The PDF controls belong to the PDF: they are on its bar, not above the paper's details (user feedback).
+  const bar = heading.closest('[data-pdf-bar]') as HTMLElement
+  expect(within(bar).getByRole('toolbar', { name: 'PDF controls' })).toBeInTheDocument()
+  expect(within(bar).getByRole('button', { name: 'PDF options' })).toBeInTheDocument()
+  expect(within(screen.getByRole('region', { name: 'PDF reader' })).getAllByRole('toolbar', { name: 'PDF controls' })).toHaveLength(1)
   expect(heading).toHaveClass('text-sm', 'font-medium')
   expect(within(heading).getByText('evidence.pdf')).toHaveClass('text-muted-foreground')
   expect(heading).not.toHaveTextContent('·')
@@ -277,15 +282,26 @@ test('Given a paper without a PDF, Then the same "PDF" heading leads the ways to
   expect(heading.compareDocumentPosition(await within(reader).findByText('Attach the PDF to read, summarize and ask')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   // Its states sit under it in the outline.
   expect(within(reader).queryAllByRole('heading', { level: 2 }).map((item) => item.textContent)).toEqual([paper.title])
+  // Without a PDF there is nothing to page or zoom: the heading stands alone.
+  expect(within(reader).queryByRole('toolbar', { name: 'PDF controls' })).not.toBeInTheDocument()
 })
 
-test('Given an earlier PDF a citation opened, Then its existing label stands and no second "PDF" heading is added', async () => {
-  mockApi({ 'GET /papers/p1': paper })
+test('Given an earlier PDF a citation opened, Then the same bar names that version’s file', async () => {
+  mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-0': { id: 'doc-0', paper_id: 'p1', file_name: 'first-draft.pdf', page_count: 9, byte_size: 2048, status: 'ready', acquisition: null, created_at: '2026-10-01T00:00:00Z' } })
   const { user } = renderApp('/papers/p1')
   await screen.findByRole('region', { name: 'PDF document' })
   await user.click(screen.getByRole('button', { name: 'Cite an earlier PDF' }))
   const document = await screen.findByText('Showing doc-0')
   const reader = screen.getByRole('region', { name: 'PDF reader' })
   expect(within(reader).getByText('Showing an earlier PDF version')).toBeVisible()
-  expect(within(document.closest('[role="region"]') as HTMLElement).queryByRole('heading', { level: 3, name: /^PDF/ })).not.toBeInTheDocument()
+  const viewer = document.closest('[role="region"]') as HTMLElement
+  expect(await within(viewer).findByRole('heading', { level: 3, name: 'PDF first-draft.pdf' })).toBeInTheDocument()
+})
+
+test('Given the reader, Then the paper header has no background of its own, so header, bar and pages read as one surface', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  renderApp('/papers/p1')
+  const top = await header()
+  expect(top.className).not.toMatch(/(^|\s)bg-/)
+  expect(top.className).not.toMatch(/(^|\s)border-b(\s|$)/)
 })

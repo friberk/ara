@@ -2,7 +2,7 @@
 // mutation-verified (each case fails when the behaviour it names is removed). react-pdf is replaced by a canvas-free
 // stand-in that renders a pdf.js-shaped text layer: one span[role=presentation] per line, a <br> at each line end
 // and .endOfContent once the layer is complete.
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Citation } from '@/api/types'
 import { FADE_MS, HOLD_MS } from './highlight-lifetime'
 import PdfViewer, { type PdfViewerProps } from './PdfViewer'
@@ -451,36 +451,6 @@ describe('PdfViewer highlight lifetime (ARA-089, test-first, fake timers)', () =
 })
 
 describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
-  test('Given a header and the PDF heading, When a citation on page 2 is shown, Then both scroll with the pages, the jump lands below them and the passage is marked', async () => {
-    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
-    const scrolls: number[] = []
-    vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(function (this: Element, options?: ScrollToOptions | number) {
-      if (typeof options === 'object' && options.top !== undefined) scrolls.push(options.top)
-    })
-    // jsdom has no layout: the header is 320px tall and each page 1,000px, 16px apart, so page 2 starts at 1,352px.
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      const page = Number((this as HTMLElement).dataset?.pdfPage)
-      if (page) return new DOMRect(0, 336 + (page - 1) * 1016, 800, 1000)
-      if (this.tagName === 'HEADER') return new DOMRect(0, 0, 800, 320)
-      return new DOMRect(0, 0, 800, 600)
-    })
-    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
-    // The header as PdfReader passes it: the paper header, then the "PDF" section heading (ARA-101 follow-up).
-    const header = <><header><h2>Traceable Research Systems</h2></header><h3>PDF <span>research.pdf</span></h3></>
-    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={{ citation: onMethod, nonce: 1 }} header={header} {...handlers} />)
-    await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('highlighted'))
-    const document = screen.getByRole('region', { name: 'PDF document' })
-    const title = screen.getByRole('heading', { name: 'Traceable Research Systems' })
-    const section = screen.getByRole('heading', { level: 3, name: 'PDF research.pdf' })
-    expect(document).toContainElement(title)
-    expect(document).toContainElement(section)
-    expect(title.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(section.compareDocumentPosition(screen.getByRole('group', { name: 'Page 1' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(scrolls).toContain(1352 - 8)
-    expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
-    vi.restoreAllMocks()
-  })
-
   /**
    * A small layout model for jsdom: a 600px viewer whose scrollTop is stored, a 320px header, and pages as tall as the
    * viewer sizes them (their style height, which follows the width), 16px apart with page 1 at 336. Widths are reported
@@ -498,15 +468,17 @@ describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
     } as unknown as typeof ResizeObserver
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
     const height = (element: HTMLElement) => parseFloat(element.style.height) || 0
+    const BAR = 44
+    const hasBar = () => !!document.querySelector('[data-pdf-bar]')
     const pageTop = (page: number) => {
-      let top = 336
+      let top = 336 + (hasBar() ? BAR : 0)
       for (const element of document.querySelectorAll<HTMLElement>('[data-pdf-page]')) {
         if (Number(element.dataset.pdfPage) === page) break
         top += height(element) + 16
       }
       return top
     }
-    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.dataset.pdfPage ? height(this) : 0 })
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.dataset.pdfPage ? height(this) : this.hasAttribute('data-pdf-bar') ? BAR : 0 })
     vi.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) { return tops.get(this) ?? 0 })
     vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) { tops.set(this, value); writes.push(value) })
     vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(function (this: Element, options?: ScrollToOptions | number) {
@@ -518,12 +490,16 @@ describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
       const page = Number((this as HTMLElement).dataset?.pdfPage)
       if (page) return new DOMRect(0, pageTop(page) - scrolled, 800, height(this as HTMLElement))
       if (this.tagName === 'HEADER') return new DOMRect(0, -scrolled, 800, 320)
+      if (this.hasAttribute('data-pdf-bar-sentinel')) return new DOMRect(0, 320 - scrolled, 800, 0)
+      const marked = this.closest('[data-pdf-page]')
+      if (marked && this.hasAttribute('data-citation-highlight')) return new DOMRect(0, pageTop(Number((marked as HTMLElement).dataset.pdfPage)) + 100 - scrolled, 600, 24)
       return new DOMRect(0, 0, 800, 600)
     })
     return {
       writes,
       scrollTop: () => tops.get(viewer()) ?? 0,
       pageTop,
+      BAR,
       scrollTo: (top: number) => { tops.set(viewer(), top); fireEvent.scroll(viewer()) },
       resize: (width: number) => act(() => { callback?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver) }),
     }
@@ -577,5 +553,60 @@ describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
   test('Given the viewer, Then the browser does not anchor its scrolling, which the viewer does itself', () => {
     render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
     expect(screen.getByRole('region', { name: 'PDF document' })).toHaveClass('[overflow-anchor:none]')
+  })
+
+  const bar = <div><h3>PDF <span>research.pdf</span></h3><div role="toolbar" aria-label="PDF controls" /></div>
+  const title = <header><h2>Traceable Research Systems</h2></header>
+
+  test('Given the header and the PDF bar, When a citation on page 2 is shown, Then the page lands just under the docked bar and the passage is centred in the space below it', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={{ citation: onMethod, nonce: 1 }} header={title} bar={bar} {...handlers} />)
+    await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('highlighted'))
+    const region = screen.getByRole('region', { name: 'PDF document' })
+    const pdf = within(region).getByRole('heading', { level: 3, name: 'PDF research.pdf' })
+    const docked = pdf.closest('[data-pdf-bar]') as HTMLElement
+    expect(docked).toHaveClass('sticky', 'top-0', 'bg-background')
+    expect(within(region).getByRole('heading', { name: 'Traceable Research Systems' }).compareDocumentPosition(docked) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(docked.compareDocumentPosition(screen.getByRole('group', { name: 'Page 1' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // First the page: its top just under the bar. Then the passage, centred in what the bar leaves visible.
+    expect(layout.writes).toContain(layout.pageTop(2) - layout.BAR - 8)
+    const passageTop = layout.pageTop(2) + 100
+    expect(layout.scrollTop()).toBe(passageTop + 12 - layout.BAR - (600 - layout.BAR) / 2)
+    expect(passageTop - layout.scrollTop()).toBeGreaterThanOrEqual(layout.BAR)
+    expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
+    vi.restoreAllMocks()
+  })
+
+  test('Given the PDF bar, When page 3 is asked for, Then page 3’s top lands just under the bar', async () => {
+    const layout = layoutModel()
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const view = render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={title} bar={bar} {...handlers} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    view.rerender(<PdfViewer documentId="doc-1" zoom={1} navigation={{ documentId: 'doc-1', page: 3, nonce: 1 }} highlight={null} header={title} bar={bar} {...handlers} />)
+    await waitFor(() => expect(layout.scrollTop()).toBe(layout.pageTop(3) - layout.BAR - 8))
+    vi.restoreAllMocks()
+  })
+
+  test('Given the PDF bar, Then it docks with a hairline only once the header has scrolled away', async () => {
+    const layout = layoutModel()
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} header={title} bar={bar} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
+    await screen.findByRole('group', { name: 'Page 3' })
+    const docked = document.querySelector('[data-pdf-bar]') as HTMLElement
+    expect(docked).not.toHaveAttribute('data-stuck')
+    layout.scrollTo(900)
+    await waitFor(() => expect(docked).toHaveAttribute('data-stuck', 'true'))
+    // The border is always there and only takes a colour once docked, so docking never shifts the pages by a pixel.
+    expect(docked).toHaveClass('border-b', 'border-transparent', 'data-stuck:border-border')
+    layout.scrollTo(0)
+    await waitFor(() => expect(docked).not.toHaveAttribute('data-stuck'))
+    vi.restoreAllMocks()
+  })
+
+  test('Given the viewer, Then its ground is the app background, the same white as the paper header', () => {
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={null} onDocumentLoad={vi.fn()} onPageChange={vi.fn()} onHighlight={vi.fn()} />)
+    const region = screen.getByRole('region', { name: 'PDF document' })
+    expect(region).toHaveClass('bg-background')
+    expect(region).not.toHaveClass('bg-muted')
   })
 })

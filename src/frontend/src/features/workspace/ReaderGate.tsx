@@ -71,20 +71,19 @@ export function ReaderGate({ paper }: { paper: Paper }) {
   // While retrieval brings the PDF, uploading your own copy is the secondary way; otherwise it is the main one.
   const coming = usePdfComing(paper)
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto bg-background px-4">
       {/* The paper's bibliography leads, as above a PDF (ARA-101); it carries the abstract. */}
       <PaperHeader paper={paper} />
-      {/* The PDF section, as above a PDF: its heading, then the ways to get one (ARA-101 follow-up). */}
-      <div className="mx-auto grid max-w-md gap-4 px-5 pt-6 pb-10">
-        <PdfHeading />
-        <div className="grid gap-8">
-          {paper.upload_match ? <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} />
-            : followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
-            : paper.document_status === 'processing' ? <ProcessingGate paper={paper} />
-            : paper.document_status === 'failed' ? <FailedGate paper={paper} onUploaded={onUploaded} onRetrieved={onRetrieved} />
-            : coming ? <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} variant="secondary" chooseLabel="Upload your own copy instead" onAccepted={onUploaded} /></>
-            : <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={onUploaded} /></>}
-        </div>
+      {/* The PDF section, as above a PDF: the bar's heading alone, with nothing yet to page or zoom, then the ways
+          to get one, all on the header's left edge (ARA-101 follow-up). */}
+      <div className="flex min-h-11 items-center py-1.5"><PdfHeading /></div>
+      <div className="grid max-w-md gap-8 pt-2 pb-10">
+        {paper.upload_match ? <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} />
+          : followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
+          : paper.document_status === 'processing' ? <ProcessingGate paper={paper} />
+          : paper.document_status === 'failed' ? <FailedGate paper={paper} onUploaded={onUploaded} onRetrieved={onRetrieved} />
+          : coming ? <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} variant="secondary" chooseLabel="Upload your own copy instead" onAccepted={onUploaded} /></>
+          : <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={onUploaded} /></>}
       </div>
     </div>
   )
