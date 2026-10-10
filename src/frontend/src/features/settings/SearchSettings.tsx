@@ -17,8 +17,6 @@ function roughly(count: number) { return rounded(count).toLocaleString() }
 // OpenAI's rule of thumb for English text: a token is about three-quarters of a word. Words come from the rounded
 // token count shown beside them, so the two figures agree.
 function words(tokens: number) { return roughly(rounded(tokens) * 0.75) }
-/** A search index choice by its catalog label (its trade-off), else by the model's own name. */
-function choiceName(profile: EmbeddingProfile) { return profile.label ?? profile.display_name }
 function cost(estimate: ReindexEstimate) {
   if (estimate.price_per_million === 0) return 'none, because this model runs on this server'
   return estimate.estimated_cost_usd < 0.01 ? 'less than $0.01' : `$${estimate.estimated_cost_usd.toFixed(2)}`
@@ -38,14 +36,13 @@ function RebuildDialog({ profile, open, onCancel, onConfirm }: { profile: Embedd
               <AlertDialogTitle>{empty ? 'Switch the search index model?' : 'Rebuild the search index?'}</AlertDialogTitle>
               <AlertDialogDescription>
                 {empty
-                  ? `Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with “${choiceName(profile)}”.`
+                  ? `Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with “${profile.display_name}”.`
                   : data
-                    ? `Switching the search index to “${choiceName(profile)}” reads ${papers(data.papers)} in your library again in the background: about ${roughly(data.tokens)} tokens, roughly ${words(data.tokens)} words.`
-                    : `Switching the search index to “${choiceName(profile)}” reads every paper in your library again in the background.`}
+                    ? `Switching the search index to “${profile.display_name}” reads ${papers(data.papers)} in your library again in the background: about ${roughly(data.tokens)} tokens, roughly ${words(data.tokens)} words.`
+                    : `Switching the search index to “${profile.display_name}” reads every paper in your library again in the background.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="grid gap-2 text-sm text-muted-foreground">
-              {profile.label && <p className="text-xs">Model: {profile.display_name}</p>}
               {estimate.isPending && <p role="status">Counting your papers…</p>}
               {data && !empty && <p>Estimated cost: {cost(data)}.</p>}
               {data && !empty && <p>Questions keep working while it runs: each paper keeps its current index until its new one is ready.</p>}
@@ -77,7 +74,7 @@ function SearchIndex({ profiles, saved, placeholder }: { profiles?: EmbeddingPro
       headingId={id}
       title="Search index"
       status={save.isSuccess ? 'Rebuilding in the background' : ''}
-      description={<p>Meaning search: this model reads each paper to build the index that matches your question by meaning, not only by its words. Switching models reads every paper again in the background, and each paper keeps its current index until its new one is ready.</p>}
+      description={<p>For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question, even when they use different words. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready.</p>}
     >
       {placeholder}
       {profiles && saved && <ChoiceList label="Search index model">
@@ -85,9 +82,7 @@ function SearchIndex({ profiles, saved, placeholder }: { profiles?: EmbeddingPro
           // A saved local model stays visible while open models are off, but it cannot be chosen again.
           const frozen = !openModels && profile.provider === 'ollama'
           return (
-            <ChoiceRow key={profile.key} name={id} value={profile.key} checked={chosen === profile.key} disabled={frozen} onSelect={() => { if (profile.key !== saved.embedding_profile) { setPending(profile); setConfirming(true) } }} title={choiceName(profile)}>
-              {/* The model's own name is secondary: the choice leads with what it trades. */}
-              {profile.label && <span className="text-xs">{profile.display_name}</span>}{' '}
+            <ChoiceRow key={profile.key} name={id} value={profile.key} checked={chosen === profile.key} disabled={frozen} onSelect={() => { if (profile.key !== saved.embedding_profile) { setPending(profile); setConfirming(true) } }} title={profile.display_name}>
               {profile.description && <span>{profile.description}</span>}{' '}
               {!frozen && <span>{profile.price_per_million > 0 ? `Indexing costs $${profile.price_per_million} per million tokens, about ${words(1_000_000)} words.` : 'Runs on this server, with no per-token cost.'}</span>}{' '}
               {/* Still selectable: the server accepts it and papers keep their current index until the model is ready. */}

@@ -1244,8 +1244,6 @@ export interface components {
             price_per_million: number;
             /** Description */
             description?: string | null;
-            /** Label */
-            label?: string | null;
         };
         /** EmbeddingProfilePage */
         EmbeddingProfilePage: {

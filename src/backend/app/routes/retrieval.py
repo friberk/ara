@@ -67,7 +67,6 @@ async def profiles(request: Request):
                     local_model_key=local_key(settings, profile),
                     price_per_million=float(profile.price_per_million),
                     description=profile.description,
-                    label=profile.label,
                 )
             )
         rerankers = []
