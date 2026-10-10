@@ -34,6 +34,8 @@ export type PdfViewerProps = {
   onDocumentLoad: (numPages: number) => void
   onPageChange: (page: number) => void
   onHighlight: (outcome: HighlightOutcome) => void
+  /** Shown above page 1 in the same scroll column, so it scrolls away with the document (the paper header, ARA-101). */
+  header?: React.ReactNode
 }
 
 type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean; waitingForGeometry?: boolean; expired?: boolean }
@@ -438,6 +440,8 @@ export default function PdfViewer(props: PdfViewerProps) {
       onPointerMove={onPointerMove}
       className="pdf-viewer relative h-full overflow-auto bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
     >
+      {/* Pinned to the left edge, so a page zoomed wider than the reader does not carry it sideways. */}
+      {props.header && <div className="sticky left-0 w-full">{props.header}</div>}
       <Document
         file={downloadUrl(documentId)}
         suspense={false}

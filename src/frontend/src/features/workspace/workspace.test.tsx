@@ -9,10 +9,11 @@ import { renderApp } from '@/test/render'
 vi.mock('./PdfViewer', async () => {
   const { useEffect } = await import('react')
   return {
-    default: function PdfViewerStub({ documentId, highlight, zoom, navigation, onDocumentLoad, onHighlight }: import('./PdfViewer').PdfViewerProps) {
+    default: function PdfViewerStub({ documentId, highlight, zoom, navigation, onDocumentLoad, onHighlight, header }: import('./PdfViewer').PdfViewerProps) {
       useEffect(() => onDocumentLoad(15), [onDocumentLoad])
       return (
         <div role="group" aria-label="PDF viewer">
+          {header}
           <p>{`Showing ${documentId}${highlight ? ` at page ${highlight.citation.page}` : ''}`}</p>
           {highlight?.claim && <p>{`Supporting “${highlight.claim}”`}</p>}
           <p>{`Zoom ${zoom}${navigation ? `, asked for page ${navigation.page}` : ''}`}</p>
@@ -170,16 +171,15 @@ test('Given provider metadata, When only the title is edited, Then only the titl
     'GET /papers/p1': () => json(stored),
   })
   const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('button', { name: 'Paper details' }))
-  await user.click(within(await screen.findByRole('dialog', { name: paper.title })).getByRole('button', { name: 'Edit details' }))
+  await screen.findByText('Showing doc-1')
+  await user.click(screen.getByRole('button', { name: 'Edit details' }))
   const title = within(await screen.findByRole('dialog', { name: 'Edit details' })).getByRole('textbox', { name: 'Title' })
   await user.clear(title)
   await user.type(title, 'Corrected title')
   await user.click(screen.getByRole('button', { name: 'Save details' }))
-  // The sheet names the paper too; behind it, the header follows once the sheet closes.
-  expect(await screen.findByRole('dialog', { name: 'Corrected title' })).toBeVisible()
-  await user.keyboard('{Escape}')
+  // The top bar and the paper header above the PDF both follow.
   expect(await screen.findByRole('heading', { level: 1, name: 'Corrected title' })).toBeVisible()
+  expect(screen.getByRole('heading', { level: 2, name: 'Corrected title' })).toBeVisible()
   expect(calls.filter((call) => call.method === 'PATCH').map((call) => call.body)).toEqual([{ title: 'Corrected title' }])
 })
 
@@ -323,8 +323,8 @@ describe('test-after coverage (mutation-verified)', () => {
   test('Given an impossible publication year, When the details are saved, Then the field explains the range and nothing is sent', async () => {
     const { calls } = mockApi({ 'GET /papers/p1': paper })
     const { user } = renderApp('/papers/p1')
-    await user.click(await screen.findByRole('button', { name: 'Paper details' }))
-    await user.click(within(await screen.findByRole('dialog', { name: paper.title })).getByRole('button', { name: 'Edit details' }))
+    await screen.findByText('Showing doc-1')
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
     const year = within(await screen.findByRole('dialog', { name: 'Edit details' })).getByRole('textbox', { name: 'Publication year' })
     await user.clear(year)
     await user.type(year, '12')

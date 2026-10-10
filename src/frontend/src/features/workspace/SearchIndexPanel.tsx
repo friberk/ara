@@ -1,9 +1,8 @@
-import { useId, useState } from 'react'
-import { ChevronDown, CircleAlert, CircleCheck, CircleDashed, CircleSlash, LoaderCircle, type LucideIcon } from 'lucide-react'
+import { useId } from 'react'
+import { CircleAlert, CircleCheck, CircleDashed, CircleSlash, LoaderCircle, type LucideIcon } from 'lucide-react'
 import type { PaperRetrieval, RetrievalIndex } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -76,27 +75,13 @@ function IndexDetails({ paperId }: { paperId: string }) {
   )
 }
 
-/**
- * The ⓘ sheet's Advanced disclosure (ARA-097), collapsed by default: the library model's index for this paper, with
- * Rebuild. It loads only when opened.
- */
+/** The library model's index for this paper, in the ⓘ dialog (ARA-101): it loads when the dialog opens. */
 export function SearchIndexPanel({ paperId }: { paperId: string }) {
   const id = useId()
-  const [open, setOpen] = useState(false)
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-3">
-      <h3 className="text-sm font-medium">
-        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
-          Advanced
-          <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground motion-safe:transition-transform group-data-[state=open]:rotate-180" />
-        </CollapsibleTrigger>
-      </h3>
-      <CollapsibleContent>
-        <section aria-labelledby={`${id}-index`} className="grid gap-3">
-          <h4 id={`${id}-index`} className="text-sm font-medium">Search index</h4>
-          <IndexDetails paperId={paperId} />
-        </section>
-      </CollapsibleContent>
-    </Collapsible>
+    <section aria-labelledby={`${id}-index`} className="grid gap-3">
+      <h3 id={`${id}-index`} className="text-sm font-medium">Search index</h3>
+      <IndexDetails paperId={paperId} />
+    </section>
   )
 }

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { ApiError } from '@/api/client'
@@ -18,7 +18,6 @@ import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { JoinedRedirect } from './JoinedRedirect'
 import type { ReaderTab } from './ReaderDocuments'
-import { PaperDetailsSheet } from './PaperDetailsSheet'
 import { PaperPdfStatus } from './PaperPdfStatus'
 import { ReaderPanel } from './ReaderPanel'
 import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type WorkspaceContextValue, type WorkspaceView } from './workspace-context'
@@ -27,13 +26,15 @@ import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type Works
 const views: WorkspaceView[] = ['chat', 'pdf']
 const parseView = (value: string | null): WorkspaceView => views.find((view) => view === value) ?? 'chat'
 
-/** The paper's name and, when the PDF is not ready, its state icon, with ⓘ for its details beside them (ARA-097). */
-function PaperTitle({ paper, onDeleted }: { paper: Paper; onDeleted: () => void }) {
+/**
+ * The paper's name and, when the PDF is not ready, its state icon. It stays in the top bar because the reader, whose
+ * header holds the paper's details and ⓘ (ARA-101), can be hidden.
+ */
+function PaperTitle({ paper }: { paper: Paper }) {
   return (
     <>
       <h1 className="min-w-0 truncate text-sm font-medium md:text-base">{paperName(paper)}</h1>
       <PaperPdfStatus paper={paper} />
-      <PaperDetailsSheet paper={paper} onDeleted={onDeleted} />
     </>
   )
 }
@@ -41,7 +42,6 @@ function PaperTitle({ paper, onDeleted }: { paper: Paper; onDeleted: () => void 
 /** Reader and conversation for one paper; owns the workspace contract the conversation pane talks to. */
 function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   const isMobile = useIsMobile()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const view = parseView(searchParams.get('view'))
   const [sourceRequest, setSourceRequest] = useState<SourceRequest | null>(null)
@@ -97,7 +97,7 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   return (
     <WorkspaceContext.Provider value={context}>
       <ShellHeader>
-        <PaperTitle paper={paper} onDeleted={() => navigate('/library', { replace: true })} />
+        <PaperTitle paper={paper} />
         {!isMobile && (
           <Tooltip>
             <TooltipTrigger asChild>

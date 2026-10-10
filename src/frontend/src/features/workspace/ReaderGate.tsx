@@ -12,16 +12,7 @@ import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
 import { usePdfComing } from '@/hooks/queries/uploads'
 import { FullTextAccess } from './FullTextAccess'
-
-function Abstract({ text }: { text: string | null }) {
-  if (!text) return null
-  return (
-    <section className="grid gap-2">
-      <h2 className="text-sm font-medium">Abstract</h2>
-      <p className="text-sm leading-relaxed whitespace-pre-line text-pretty text-muted-foreground">{text}</p>
-    </section>
-  )
-}
+import { PaperHeader } from './PaperHeader'
 
 /** The paper's latest failed ingest job; the paper filter is checked here too in case the server ignores it. */
 function useFailedIngest(paper: Paper) {
@@ -81,6 +72,8 @@ export function ReaderGate({ paper }: { paper: Paper }) {
   const coming = usePdfComing(paper)
   return (
     <div className="h-full overflow-y-auto">
+      {/* The paper's bibliography leads, as above a PDF (ARA-101); it carries the abstract. */}
+      <PaperHeader paper={paper} />
       <div className="mx-auto grid max-w-md gap-8 px-5 py-10">
         {paper.upload_match ? <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} />
           : followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
@@ -88,7 +81,6 @@ export function ReaderGate({ paper }: { paper: Paper }) {
           : paper.document_status === 'failed' ? <FailedGate paper={paper} onUploaded={onUploaded} onRetrieved={onRetrieved} />
           : coming ? <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} variant="secondary" chooseLabel="Upload your own copy instead" onAccepted={onUploaded} /></>
           : <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={onUploaded} /></>}
-        <Abstract text={paper.document_status === 'metadata_only' && !followed && !paper.upload_match ? paper.abstract : null} />
       </div>
     </div>
   )

@@ -20,7 +20,7 @@ test('Given stored OpenAlex copies, When saved, Then real PDF pages open and a s
     await expect(firstPage(page)).toBeVisible({ timeout: 45_000 })
     if (id === 'W19001') {
       const summary = page.getByRole('article', { name: 'Paper summary' })
-      await expect(summary.getByRole('button', { name: 'Version 1 of 1', exact: true })).toBeVisible({ timeout: 45_000 })
+      await expect(summary.getByRole('button', { name: 'Show full summary', exact: true })).toBeVisible({ timeout: 45_000 })
     }
     await page.reload()
     await expect(firstPage(page)).toBeVisible()

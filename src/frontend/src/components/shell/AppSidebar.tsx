@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Library, Search, Settings, SquarePen } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import {
@@ -9,11 +9,13 @@ import { AraMark, AraWordmark } from '@/components/brand/AraBrand'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { usePapers } from '@/hooks/queries/papers'
+import { PaperActions } from '@/features/library/PaperActions'
 import { SidebarRecent } from './SidebarRecent'
 
 function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
   const papers = usePapers('', { pageSize: 6 })
   const location = useLocation()
+  const navigate = useNavigate()
   const items = papers.data?.pages[0]?.items ?? []
   if (papers.isError || (!papers.isPending && !items.length)) return null
   return (
@@ -29,6 +31,11 @@ function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
                 <span>{paper.title ?? 'Untitled paper'}</span>
               </Link>
             </SidebarMenuButton>
+            <PaperActions
+              paper={paper}
+              trigger="sidebar"
+              onDeleted={() => { if (location.pathname.startsWith(`/papers/${paper.id}`)) navigate('/') }}
+            />
           </SidebarMenuItem>
         ))}
       </SidebarMenu>

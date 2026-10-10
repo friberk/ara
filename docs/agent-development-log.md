@@ -1660,6 +1660,83 @@ An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 me
 
 I approved ARA-097's design, which put every paper detail behind ⓘ in a side sheet, bibliography included, and I merged it at `bbf480a` after a browser check that judged only whether it worked. The user rejected it: "ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." My error was reading the earlier request ("This kind of detailed info should go to modal") as covering the bibliography too. The user meant only the behind-the-scenes details. ARA-101 moves the bibliography back above the PDF and makes ⓘ a small modal for provenance, identifiers and the search index. The user also asked why "Ready to read" was still on the paper page. ARA-098 phase 2a had held that header until ARA-097 merged, and it went in at `2b368e1`. A browser check on the test copy then found no "Ready to read" text, and only the "No PDF yet" icon on a paper without a PDF.
 
+### 2026-10-10 — ARA-102: summary card shows only the summary
+
+User feedback: the summary card showed a "Uses <model> with <effort>" line with no summary, and a "Version n of m", model, reasoning and timestamp line with one. Test first: three assertions failed on the old card (the Uses line, the model/effort/time text, and the version menu). After the change they passed (23 tests in the summary folder). Removed: the version menu, the selected-version state, the metadata row and `formatTimestamp` (its only consumer was the time line). Kept: `GenerationMeta` and `effortText`, which chat messages use. Regeneration from the card is gone with the version menu. The card shows the latest summary and no Generate control once one exists. The three e2e specs that asserted version buttons were updated but not run. `local-models.spec.ts` no longer regenerates a summary on a shared fixture paper, so its check of the saved reasoning default on a new summary is weaker; the lead should decide whether to restore that through an API call. Commit `6bd1170`.
+
+### 2026-10-10 — ARA-102: regenerate icon beside the summary heading
+
+The user asked for a way to regenerate the summary now that the version menu is gone. Test first: three tests (icon present only with a summary, a click requests a summary with the current settings, disabled while a summary job runs) failed as missing-button errors. The icon is an icon-xs ghost button using RefreshCw, labelled "Regenerate summary" with a tooltip. It reuses start(), spins while a job or request is in flight, and keeps the current summary visible. One of the new tests was missing an await on the async query and was fixed before the green run. Commit 323c58dc4b6174df5664327b77c0169378c8ee5f.
+
+### 2026-10-10 — ARA-102: e2e regenerates through the heading icon
+
+E2E-04 (conversation) and E2E-12 (local models) no longer reuse a stored summary on later runs. They regenerate through the "Regenerate summary" button and wait for the stored summary count to rise before checking content. Not run: the spec needs the live stack. Commit 94a33f21ca59d6383b91662ec1ea9b8c966cadff.
+
+### 2026-10-10 — ARA-103: paper actions behind a hover "…" in the sidebar
+
+**Request.** "In the sidebar, for papers, can we show the "..." thing to show controls for papers? They should appear on hover."
+
+**Design.** `PaperActions` gained an optional `trigger?: 'button' | 'sidebar'` (default `button`, so Library and workspace call sites are unchanged). `'sidebar'` renders a `SidebarMenuAction showOnHover` and opens the menu to the right, as `SidebarRecent` does. `SidebarPapers` renders it after each row's link and passes `onDeleted`, which navigates to `/` only when the route starts with `/papers/<that id>`. The row link already gets right padding from the primitive when a menu action exists, and the action is hidden in the icon-collapsed sidebar.
+
+**Red.** The four new tests in `components/shell/sidebar-paper-actions.test.tsx` failed 4 of 4 with `Unable to find an accessible element with the role "button" and name "Actions for “Attention is all you need”"`. After the change they passed 4 of 4.
+
+**Verification and errors.** My first `tsc` run failed on an unused `json` import in the new test; removed it. `sed -i` with a BSD flag failed, so I used the editor. Full `npm run check` showed one or two 5 s timeouts per run (library-manage "When Delete is chosen", the Ctrl+K palette test); each passed alone or with its folder (library-manage 7/7, shell 22/22). I did not run a pre-change baseline to prove those were already load-flaky. `npm run build` passed. Hover reveal and truncation were not seen in a browser.
+
+## 2026-10-10 - ARA-101 paper metadata above the PDF; ⓘ keeps only provenance and the search index
+
+The user rejected ARA-097's details sheet: "You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." The lead assigned it to the same agent, on `feat/ara-101-paper-header` from `feat/ux-feedback-round` (`32528d0`), with the impeccable skill loaded (Operate mode, the existing design system). No backend change and no new dependency. ARA-097's tabless reader, PDF menu and Remove PDF behaviour stay as they were.
+
+**Decisions:**
+- **Paper header.** `PaperHeader` lays the old Details tab out as a reading header on the paper ground, with a hairline below. It shows the title (1.125rem semibold), every author, the year and italic venue (`PaperCitation` with `wrap` and no authors, since the full list is just above), DOI and record links, the abstract in `ClampedText`, and the DOI-owner note. Edit details and ⓘ sit at the title's top right. A field the paper lacks is left out; a missing abstract says so.
+- **Scrolling.** The header scrolls away with the document. `PdfViewer` takes a `header` and renders it as the first child of its own scroll column, pinned `sticky left-0` so a wide zoom doesn't carry it sideways; the controls bar sits outside that column and stays put. Before choosing, I read `PdfViewer`:
+  - every page offset is `offsetIn`, a bounding-rect difference with the root, so pages below a header are found where they are;
+  - page tracking probes 30% down the root, so the header only means page 1 reads as current a little longer;
+  - zoom anchoring and the lazy pages are relative to pages, not to the root's top.
+
+  The collapsing-row fallback was not needed. `PdfReader`'s Suspense fallback shows the same header above page placeholders while pdf.js loads.
+- **No PDF and reader tabs.** `ReaderGate` puts the header above its ways to get a PDF, and its own Abstract section is deleted. A reader tab gets the header of its tab's paper, because `PdfReader` and `ReaderGate` already receive that paper.
+- **ⓘ.** `PaperSourcesDialog` is a centred `Dialog` named "Sources and search index". It holds:
+  - `MetadataSources`, which now always renders and takes Look up again as children;
+  - the identifiers with copy;
+  - `SearchIndexPanel`, now a plain section: the dialog is the "advanced" place, so the Collapsible is gone;
+  - Delete paper, shown only for the workspace's own paper (`useOptionalWorkspace`).
+
+  `LookupNotice` lost its children slot, which only the sheet used.
+- **Removed.** `PaperDetailsSheet.tsx`, the ⓘ in the top bar, and the `overlayClassName` prop that only the sheet used (`sheet.tsx` is back to `bf1daea`). The top bar keeps the title beside ARA-098's `PaperPdfStatus`.
+
+**Red, then green:**
+- **New tests.** `paper-header.test.tsx` (13 tests) failed with `Unable to find role="heading" and name "Evidence based research"` (no level-2 header). The new `PdfViewer` test (citation jump with a header) failed with `Unable to find … heading "Traceable Research Systems"`.
+- **My first green attempt failed for two reasons.**
+  - The dialog's search index read `{items: []}` from the unmocked retrieval route (`Cannot read properties of undefined (reading 'some')`), so the dialog tests now mock it.
+  - jsdom's `clientHeight` is 0, so `flushPendingPage` returned early and the jump never scrolled. With a 600px viewer, the test now shows the jump landing at page 2's offset below the 320px header (1344).
+- **Existing tests that changed.**
+  - The top-bar title now shares its name with the header's h2, so `shell.test.tsx` asks for level 1.
+  - `workspace.test.tsx`'s stub renders the header, and its edit tests use the header's Edit details.
+  - `search-index.test.tsx` and `open-models-flag.test.tsx` no longer expand Advanced.
+- **Narrow header.** It failed `toHaveClass("sr-only @md:not-sr-only")`, then passed.
+
+**Visual check.** My Vite ran on 5198 against the test copy's API on 8011, read-only: the script logged any non-GET request, and none was made. Nothing was edited, looked up, removed or deleted. Screenshots are in the session scratch directory (`shots101/`).
+- **Round 1 (desktop light and dark, 390px light and dark).** The header and the dialog looked as intended, with no horizontal overflow. The PDF's region measured 592/592 on desktop and 390/390 on a phone, and the phone dialog was 358 × 697 inside 390 × 844. The no-PDF state shows the abstract once. Scrolling 1800px moved the header off and the page number to 3.
+
+  Found: at 390px the Edit details label squeezed the title into four lines. Fixed with a container query: below 28rem the label becomes screen-reader text beside its pencil.
+- **Round 2.** The title got 288px at 390px. Focus returned to ⓘ after Esc. A citation chip ("Source, Han 2018, page 7, …") jumped to page 7, marked the passage in view and announced "Highlighted the cited passage on page 7.". Zoom in and Fit width kept page 7, and scrolling to the top showed the header and page 1 again.
+
+**Verification.** `npm run check` was clean: typecheck and lint, 690 tests in 91 files. `npm run build` passed with the existing chunk-size warning. The mechanical design detector found nothing in the changed files. The backend was not changed, so its suite was not run.
+
+**Not verified:**
+- The updated `e2e/workspace.spec.ts` was type-checked but not run.
+- The other-paper reader tab was not seen in a browser: the test copy has no chat that cites a second paper from another paper's workspace. It is covered by the unit test.
+
+### 2026-10-10 — Lead: Library test collided with the sidebar paper menu (ARA-103)
+
+After ARA-101 merged (`58ae56b`), `library-manage.test.tsx` failed once with "Found multiple elements with the role \"button\" and name \"Actions for “Attention is all you need”\"". ARA-103 gave each sidebar Papers row the same `PaperActions` menu and label as the Library row. Whenever the sidebar's papers query resolved before the Library's, the test's screen-wide query found both buttons. The test's `rowActions` helper now looks inside `main`. Three full-file runs then passed 7/7. The same file's "link to a deleted paper" test failed in two whole-file runs while the machine's load average was about 15 to 17, with several agents running suites. It then passed 5/5 alone and 3/3 in whole-file runs, so I'm treating it as load-sensitive, not broken. It gets rechecked in the final quiet full run.
+
+### 2026-10-10 - ARA-104: chat history behind a History icon, with relative times
+
+The user asked for relative times in the conversation switcher and a less verbose "Conversations about this paper". Test first: `relative-time.test.ts` failed with a missing module, and the 11 `ChatSwitcher.test.tsx` cases failed against the old dropdown (`Tests 11 failed (11)`). Built as directed: the title menu keeps Rename and Delete (none for an unsaved chat), a lucide History icon opens a Popover with cmdk rows (title, optional latest question, compact time, check on the open chat), and a filter shows only above 7 chats. Times are "now", "12m", "3h", "2d", then "Oct 2" or "Oct 2, 2025", with `<time>` title for the exact moment and a screen-reader span for the long form. The helper lives in `src/lib/relative-time.ts`; the Activity files were left for ARA-100 and `FullTextAccess` still imports the old `useNow`.
+
+Deviations: (1) the popover's accessible name is "Chat history for this paper", the only place "this paper" appears. (2) The check column from the stock CommandItem stays reserved so the times align in one column. (3) Without a filter, the list itself takes focus on open so arrow keys work. (4) The filter is found by placeholder in tests, because the shared InputGroup and cmdk input both expose a combobox role. Mobile: the first shot had the popover touching the left edge; `collisionPadding={16}` fixed it. Old switcher tests were rewritten for the new list, and the two date-precision and empty-state tests were removed as covered by the new ones. Not run: the Playwright spec update.
+
 ## 2026-10-10 - ARA-100 Remove the Activity page
 
 - Prompt: the user decided "I think we should remove the Activity page. It doesn't make sense in a product like this." The lead assigned the removal, the in-context checks and automatic recovery for storage cleanup.

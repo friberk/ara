@@ -71,7 +71,7 @@ test('Given Ctrl+K, Then the palette opens, finds a paper by title and opens its
   const input = await screen.findByPlaceholderText('Search papers, conversations and actions')
   await user.type(input, 'attention')
   await user.click(await screen.findByRole('option', { name: /Attention Is All You Need/ }))
-  expect(await screen.findByRole('heading', { name: 'Attention Is All You Need' })).toBeVisible()
+  expect(await screen.findByRole('heading', { level: 1, name: 'Attention Is All You Need' })).toBeVisible()
   expect(screen.queryByPlaceholderText('Search papers, conversations and actions')).not.toBeInTheDocument()
 })
 

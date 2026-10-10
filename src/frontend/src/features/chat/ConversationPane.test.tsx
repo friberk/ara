@@ -150,10 +150,10 @@ test('Given several chats, When another is chosen in the switcher, Then its URL 
     'GET /chats': { items: [chatRow('c1', { title: 'Research question', last_question_preview: 'What was measured?' }), chatRow('c2', { title: 'Older discussion', papers: [included(paper, { document_id: 'd0' })], last_activity_at: '2026-10-07T12:00:00Z' })] },
   })
   const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: /Research question/ }))
-  const older = await screen.findByRole('menuitemradio', { name: /Older discussion/ })
+  await user.click(await screen.findByRole('button', { name: 'Chat history' }))
+  const older = await screen.findByRole('option', { name: /Older discussion/ })
   expect(older).toHaveTextContent('Earlier PDF')
-  expect(screen.getByRole('menuitemradio', { name: /Research question/ })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('option', { name: /Research question/ })).toHaveAttribute('aria-current', 'true')
   await user.click(older)
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c2'))
   await user.click(screen.getByRole('button', { name: 'New conversation' }))
@@ -210,9 +210,9 @@ test('Given legacy chats on the default title, Then the switcher names them like
     },
   })
   const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: 'What is this paper about?' }))
-  expect(await screen.findByRole('menuitemradio', { name: /^What is this paper about\?/ })).toHaveAttribute('aria-checked', 'true')
-  expect(screen.getByRole('menuitemradio', { name: /^Paper discussion/ })).toHaveTextContent('No questions yet')
+  await user.click(await screen.findByRole('button', { name: 'Chat history' }))
+  expect(await screen.findByRole('option', { name: /^What is this paper about\?/ })).toHaveAttribute('aria-current', 'true')
+  expect(screen.getByRole('option', { name: /^Paper discussion/ })).toHaveTextContent('No questions yet')
 })
 
 test('Given auto-titled chats, Then a row repeats its question only when a later question differs', async () => {
@@ -226,10 +226,10 @@ test('Given auto-titled chats, Then a row repeats its question only when a later
     },
   })
   const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: 'What datasets are used' }))
-  const single = await screen.findByRole('menuitemradio', { name: /^What datasets are used/ })
+  await user.click(await screen.findByRole('button', { name: 'Chat history' }))
+  const single = await screen.findByRole('option', { name: /^What datasets are used/ })
   expect(single.textContent?.match(/What datasets are used/g)).toHaveLength(1)
-  expect(screen.getByRole('menuitemradio', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
+  expect(screen.getByRole('option', { name: /^What problem does this paper address/ })).toHaveTextContent('What are the major limitations?')
 })
 
 test('Given the open chat uses an earlier PDF, Then the switcher label marks it and says so in its accessible name', async () => {

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { SidebarMenuAction } from '@/components/ui/sidebar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useJob } from '@/hooks/queries/jobs'
 import { useLookUpAgain } from '@/hooks/queries/papers'
@@ -28,20 +29,23 @@ function LookupFollower({ jobId, onSettled }: { jobId: string; onSettled: () => 
 
 /**
  * A paper's actions: edit its details, look it up again, delete it. The same menu sits on each Library row and in the
- * workspace header, so both places behave alike.
+ * workspace header, so both places behave alike. `trigger="sidebar"` renders the "…" as a hover-revealed sidebar row action.
  */
-export function PaperActions({ paper, onDeleted, className }: { paper: Paper; onDeleted?: () => void; className?: string }) {
+export function PaperActions({ paper, onDeleted, className, trigger = 'button' }: { paper: Paper; onDeleted?: () => void; className?: string; trigger?: 'button' | 'sidebar' }) {
   const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null)
   const [following, setFollowing] = useState<string | null>(null)
   const lookup = useLookUpAgain(paper.id)
   const name = paperName(paper)
+  const label = `Actions for “${name}”`
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={`Actions for “${name}”`} className={cn('text-muted-foreground', className)}><MoreHorizontal aria-hidden="true" /></Button>
+          {trigger === 'sidebar'
+            ? <SidebarMenuAction showOnHover aria-label={label} className={className}><MoreHorizontal aria-hidden="true" /></SidebarMenuAction>
+            : <Button variant="ghost" size="icon-sm" aria-label={label} className={cn('text-muted-foreground', className)}><MoreHorizontal aria-hidden="true" /></Button>}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuContent {...(trigger === 'sidebar' ? { side: 'right' as const, align: 'start' as const } : { align: 'end' as const })} className="w-52">
           <DropdownMenuItem onSelect={() => setDialog('edit')}><Pencil aria-hidden="true" />Edit details</DropdownMenuItem>
           {canLookUp(paper) && (
             <DropdownMenuItem

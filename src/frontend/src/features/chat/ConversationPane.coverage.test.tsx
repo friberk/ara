@@ -110,33 +110,6 @@ test('Given an interrupted answer with no text, Then it says no answer was saved
   expect(within(await screen.findByRole('article', { name: 'Assistant message' })).getByText('No answer was saved.')).toBeVisible()
 })
 
-test('Given chats from today, this year and last year, Then each row shows its last activity at the right precision', async () => {
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-10-08T15:00:00Z'))
-  const today = '2026-10-08T12:00:00Z'
-  const thisYear = '2026-03-02T12:00:00Z'
-  const lastYear = '2025-06-30T12:00:00Z'
-  mockApi({
-    ...settings,
-    'GET /chats': { items: [chatRow('c1', { title: 'Today chat', last_activity_at: today }), chatRow('c2', { title: 'Spring chat', last_activity_at: thisYear }), chatRow('c3', { title: 'Old chat', last_activity_at: lastYear })] },
-  })
-  const { user } = mount('/papers/p1/chats/c1')
-  await user.click(await screen.findByRole('button', { name: 'Today chat' }))
-  const format = (iso: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, options).format(new Date(iso))
-  expect(await screen.findByRole('menuitemradio', { name: /^Today chat/ })).toHaveTextContent(format(today, { hour: 'numeric', minute: '2-digit' }))
-  const spring = screen.getByRole('menuitemradio', { name: /^Spring chat/ })
-  expect(spring).toHaveTextContent(format(thisYear, { month: 'short', day: 'numeric' }))
-  expect(spring).not.toHaveTextContent('2026')
-  expect(screen.getByRole('menuitemradio', { name: /^Old chat/ })).toHaveTextContent(format(lastYear, { month: 'short', day: 'numeric', year: 'numeric' }))
-})
-
-test('Given a paper with no chats, Then the switcher says there are none yet', async () => {
-  mockApi(settings)
-  const { user } = mount('/papers/p1')
-  await user.click(await screen.findByRole('button', { name: 'New conversation', expanded: false }))
-  expect(await screen.findByRole('menuitem', { name: 'No conversations yet' })).toBeInTheDocument()
-})
-
 test('Given the history still loading, Then a loading placeholder stands in for the thread', async () => {
   mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': never })
   mount('/papers/p1/chats/c1')
