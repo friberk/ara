@@ -1969,3 +1969,44 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
   - `generated.ts` matches the production, flag-on `create_app(Settings()).openapi()`; its diff has only the new fields.
   - The detector found nothing in the changed files.
   - Not run: the Playwright specs, which were updated for the dialog but need the shared fixed-port stack. The Open models category was not screenshotted, because the test copy has the flag off.
+
+### 2026-10-10 - ARA-109 Library and search explains how answers find passages
+
+- Prompt: the user asked whether the new settings "will make the retrieval, search, reranker etc clear". The lead asked for:
+  - a plain explainer at the top of Library and search;
+  - each control tied to a step of it;
+  - the user's words in labels, with "embedding" only as a muted model name;
+  - plain labels for the search index options;
+  - "tokens" explained;
+  - Models saying that an open chat keeps its model.
+  The lead also approved the model price fields, the retrieval descriptions and save-on-change, and forwarded the finish reviewer's first verdict, which had reached the lead instead of me.
+- **Explainer.** "When you ask about your papers, search finds the passages that match your question's words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from." I checked it against `docs/plans/retrieval-orchestration.md`:
+  - search is hybrid, keyword plus vector, fused;
+  - the reranker scores the first 40 candidates;
+  - without reranking, the fusion order is kept;
+  - every answer is built from retrieved passages and cites them.
+- **Sections, in the explainer's order.**
+  - Search index ("Meaning search: …"; switching reads every paper again in the background and each paper keeps its index until the new one is ready).
+  - Reordering by relevance (was Reranking). It says what it improves, what it adds per question (from the catalog), and that off means search order with no extra time or cost. The model name sits in a label-size line under the help.
+  - Paper details ("Separate from answering: …").
+  - Each section is described by its help text for screen readers.
+- **Labels.**
+  - The search index options read "Higher quality" and "Lower cost", with the model's own name as secondary text.
+  - Deviation, with reason: the label lives in the embedding catalog (`EmbeddingProfile.label`, exposed on `EmbeddingProfileOut`) rather than in frontend code. The lead also asked that the catalog stay the only source of names and text, with no model ids in the UI. `display_name` is unchanged, so each paper's search index panel is unchanged.
+  - The rebuild dialog names the label, puts "Model: OpenAI text-embedding-3-small" in label text, and gives the tokens in words ("about 53,000 tokens, roughly 40,000 words").
+- **Tokens.**
+  - The Models units note adds "A token is about three-quarters of a word." (OpenAI's rule of thumb).
+  - Search index rows read "per million tokens, about 750,000 words".
+- **Models.**
+  - "A chat that already has answers keeps the model it last used, and any chat can switch from the menu next to the send button." I verified this in code: `ConversationThread` adopts the latest answer's model as the composer's choice, which takes precedence over the saved default.
+  - A test-after check confirms it: with a chat's model adopted, changing the saved default leaves the selection on the chat's model. It passed on first run, as expected for existing behaviour.
+- **Red first.**
+  - Backend: three label tests failed (`AttributeError: 'EmbeddingProfile' object has no attribute 'label'`, the schema assertion, `KeyError: 'label'`), then passed with the retrieval contract, route, rerank and flag tests (58).
+  - Frontend: the settings folder ran 11 failed and 53 passed before the change (missing the "Higher quality" and "Lower cost" radios, the Reordering region and switch, the explainer, and the token sentence), then 72 passed with the flag file.
+- **Earlier finish-review items.** The 390px row shape was fixed in `c980bd3` and scored resolved. DESIGN.md was updated in `04a728f` and `15d7090`.
+- **Visual round.** One confirming round (`r3-*` in the scratchpad), same method as before, with the catalog labels added to the capture script. It shows:
+  - the explainer leading the panel;
+  - the labelled index rows with the model names under them;
+  - the reordering line under its help;
+  - the rebuild dialog in words.
+- **Verification.** `npm run check` passed 765 tests in 94 files, and `npm run build` passed. `generated.ts` was regenerated from the production, flag-on schema, adding only `label`. The full backend suite at `15d7090` passed 1228 in 269 s, with Ruff clean. `feat/ux-feedback-round` (`6de5f6a`, which has ARA-108 and ARA-110) was already merged in `35ce8c2`, with nothing newer to merge.
