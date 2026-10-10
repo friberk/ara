@@ -33,6 +33,7 @@ from app.models.research import DocumentPage, ModelConfiguration, Paper, PaperSo
 from app.repositories.jobs import enqueue, fence, now, payload_uuid, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
 from app.schemas.research import SearchResult
+from app.services.deletion import settle_deleted_locked
 
 SETTING_KEY = "metadata"
 SOURCES = ("openalex", "semantic_scholar")
@@ -264,11 +265,12 @@ async def apply(
             .with_for_update()
             .execution_options(populate_existing=True)
         )
+        if paper is None:
+            # Deleted while the provider answered (ARA-095).
+            settle_deleted_locked(job)
+            return
         result = {"outcome": "matched", "provider": found.provider, "matched_by": by}
-        if paper is not None:
-            result |= await merge(session, paper, found, doi, by=by, new_paper=new_paper)
-        else:
-            result["outcome"] = "paper_missing"
+        result |= await merge(session, paper, found, doi, by=by, new_paper=new_paper)
         job.state, job.stage, job.progress, job.result = "completed", "completed", 100, result
         job.error_code = job.error_message = None
         job.lease_token = job.lease_expires_at = None
@@ -374,6 +376,13 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
             .returning(BackgroundJob.attempts)
         )
         if started is None:
+            return
+        if paper_id is not None and await session.get(Paper, paper_id) is None:
+            # The paper was deleted before its lookup ran (ARA-095); no provider is asked.
+            job = await session.scalar(
+                select(BackgroundJob).where(*fence(job_id, generation, token)).with_for_update()
+            )
+            settle_deleted_locked(job)
             return
         attempts = started
         selected = await metadata_source(session)
