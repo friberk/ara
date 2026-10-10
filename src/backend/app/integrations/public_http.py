@@ -88,11 +88,7 @@ class PublicPDFTransport(httpx.AsyncBaseTransport):
                 "unsafe_url", "The PDF link has an unsafe destination."
             ) from None
         if hostname not in self.allowed_hosts:
-            raise DownloadPolicyError(
-                "unsupported_source",
-                "Automatic download is not configured for this host. "
-                "Open it in your browser or upload the PDF.",
-            )
+            raise DownloadPolicyError("unsafe_url", "The PDF link left OpenAlex's storage.")
         return hostname, port
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:

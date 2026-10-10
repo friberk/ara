@@ -58,15 +58,15 @@ const paper = {
 }
 const metadataOnly = { ...paper, document_status: 'metadata_only', active_document_id: null }
 
-test('Given a metadata-only paper the server does not retrieve automatically, Then the PDF gate and Details offer retrieval alongside manual attachment after asking once', async () => {
-  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'GET /papers/p1/fulltext': { paper_id: 'p1', availability: 'unknown', locations: [], attempts: [] }, 'POST /papers/p1/retrieve-fulltext/automatic': { paper_id: 'p1', job_id: null } })
+test('Given a metadata-only paper and no OpenAlex key, Then the PDF gate and Details offer the DOI link beside the upload without asking for retrieval', async () => {
+  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'GET /papers/p1/fulltext': { paper_id: 'p1', api_key_configured: false, retrieval_job: null } })
   const { user } = renderApp('/papers/p1')
-  expect(await screen.findByRole('button', { name: 'Find PDF' })).toBeVisible()
+  expect(await screen.findByRole('link', { name: 'Open the paper' })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
   expect(screen.getByRole('button', { name: 'Upload PDF' })).toBeVisible()
   await user.click(screen.getByRole('tab', { name: 'Details' }))
-  expect(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('button', { name: 'Find PDF' })).toBeVisible()
-  // ARA-084: a DOI allows discovery, so opening the workspace asks the server once; it started nothing here.
-  expect(calls.filter((call) => call.method === 'POST').map((call) => call.path)).toEqual(['/papers/p1/retrieve-fulltext/automatic'])
+  expect(within(screen.getByRole('tabpanel', { name: 'Details' })).getByRole('link', { name: 'Open the paper' })).toBeVisible()
+  // ARA-087: without a key nothing can be downloaded, so nothing is requested.
+  expect(calls.some((call) => call.method === 'POST')).toBe(false)
 })
 
 function narrowScreen() {
