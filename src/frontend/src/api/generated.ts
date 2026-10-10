@@ -221,7 +221,8 @@ export interface paths {
         put?: never;
         /**
          * Retrieve Fulltext Automatically
-         * @description Start retrieval for a paper saved before automatic retrieval; every repeat replays it.
+         * @description Start retrieval for a paper saved before automatic retrieval or without a key at the time;
+         *     every repeat replays it.
          */
         post: operations["retrieve_fulltext_automatically_api_v1_papers__paper_id__retrieve_fulltext_automatic_post"];
         delete?: never;
@@ -892,36 +893,6 @@ export interface components {
              */
             job_id: string;
         };
-        /** FullTextAttemptView */
-        FullTextAttemptView: {
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "openalex" | "semantic_scholar";
-            /** Source Label */
-            source_label: string;
-            /** Version */
-            version?: string | null;
-            /** Is Oa */
-            is_oa?: boolean | null;
-            /** License */
-            license?: string | null;
-            /** Response Status */
-            response_status?: number | null;
-            /**
-             * Outcome
-             * @enum {string}
-             */
-            outcome: "downloaded" | "access_required" | "blocked" | "not_found" | "rate_limited" | "unavailable" | "invalid_pdf" | "unsafe_url" | "unsupported_source" | "no_pdf_link" | "already_attached" | "superseded";
-            /** Reason */
-            reason: string;
-            /**
-             * Checked At
-             * Format: date-time
-             */
-            checked_at: string;
-        };
         /** FullTextInput */
         FullTextInput: {
             /**
@@ -958,24 +929,13 @@ export interface components {
              * Format: uuid
              */
             paper_id: string;
-            /**
-             * Availability
-             * @enum {string}
-             */
-            availability: "open_copy_reported" | "publisher_link_only" | "unknown";
-            /** Locations */
-            locations?: components["schemas"]["FullTextLocation"][];
+            /** Api Key Configured */
+            api_key_configured: boolean;
             retrieval_job?: components["schemas"]["JobStatus"] | null;
-            /** Source Host */
-            source_host?: string | null;
             /** Document Id */
             document_id?: string | null;
             /** Ingest Job Id */
             ingest_job_id?: string | null;
-            /** Last Checked At */
-            last_checked_at?: string | null;
-            /** Attempts */
-            attempts?: components["schemas"]["FullTextAttemptView"][];
             /** Acquisition */
             acquisition?: {
                 [key: string]: unknown;
