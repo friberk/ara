@@ -1586,3 +1586,24 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
   - history pills without the ×;
   - the chat-scope paper row in existing chats unchanged.
 - **Handover.** The ARA-096 agent was resumed for it.
+
+**ARA-096 follow-up built: pills only, titled, with hover × and citation card (2026-10-10, same agent).** `feat/ux-feedback-round` (`30e53be`) was merged into the branch first; it fast-forwarded. The impeccable design context (DESIGN.md, the src-frontend surface brief) and the craft floor were read before any UI edit.
+- **As built.**
+  - **Composer.** The home and new-chat chip rows are gone. Attachments are the papers the pills mention; a new chat always includes its own paper. The @ button inserts a pill: at the caret when the question gave focus to a control of its own form, otherwise at the end. In an existing chat it adds nothing before sending, and the client's add-paper path is removed.
+  - **Pill.** The pill's label, which is also the question text and the server span, is the title. It is cut to 300 characters, or falls back to "Surname Year" when there is no title. It renders at 13 px with the attached-PDF `PdfStateIcon` (new `tooltip={false}`, so no second popup) and is cut near 28ch with an ellipsis.
+  - **PaperPill.** One component serves the editor (a React node view; the Mention node is selectable) and history. Hover or node selection highlights it and shows a 16 px round × at the top right with a larger hit area. The × keeps focus and removes the pill and the space after it. A HoverCard opens after 300 ms or on selection with `PaperCitation`, plus the full title when it is cut, and closes on Escape and blur. The title is the accessible name and the plain-text citation the description; history pills are images without the ×.
+- **Red → green.**
+  - `mentionLabel`/`shortCitation is not a function`, then 5 passed.
+  - PdfStateIcon: `not.toHaveAttribute("data-slot", "tooltip-trigger")`, then 12 passed.
+  - PaperPill: unresolved import, then green after a test fix. `user.click` moves the pointer onto the × first, which user-event reports to React as leaving the pill, so the press is dispatched directly.
+  - Composer, against the committed editor: 5 failed (four `Unable to find … role "group" … "Dense passage retrieval"`, one `Cannot read properties of null (reading 'insert')`). Then 18 passed, after awaiting the React node view, which draws a tick later.
+  - App, chat and history: `Unable to find role="group" … "Traceable research systems"`, `Failed to resolve import "./pill"`, `citationText is not a function`. Then green.
+  - The server test for a title label passed at first run; it is a regression guard, since the server only checks spans.
+- **Browser round** (Playwright's Chromium driving a temporary Vite harness with stubbed data; light, dark and 390 px; harness deleted).
+  - **Late picker close.** Typing "with @" straight after a pick left the @ typed with no picker in 3 of 8 runs. The first picker's close arrived 200–500 ms late with a stale `open`, dismissed the new suggestion and moved focus. A ref now tracks the live session; `use-paper-mention.test.ts` failed on the previous hook (`expected "vi.fn()" to not be called at all, but actually been called 1 times`) and passes now, and the browser runs went to 0 of 8.
+  - **Focus delay.** Focus came back about 50 ms after a pick. Inserting a pill now focuses the question synchronously.
+  - **History surface.** History pills shared the bubble's quiet surface and lost their edge, most visibly in dark mode. They now sit on the paper tone (`surface="paper"`, red first).
+  - **Checked and fine.** Pills are 20 px tall on the 15 px line, keep the Geist features, wrap whole at 390 px with no horizontal overflow, and the arrow keys select the pill.
+  - **Harness artefact.** Back-to-back key presses through CDP can outrun Chrome's asynchronous `selectionchange`, so ProseMirror's selection lags; keys paced like typing behave.
+- **Verification.** Backend 1193 passed in 266.91 s with Ruff clean. `npm run check`: 678 tests in 87 files. `npm run build` passed; the main chunk went from 742.77 to 758.51 kB (gzip 224.56 to 228.97 kB).
+- **Not verified:** the Playwright specs (updated: editor pills are groups, plus an @-button journey); real touch devices; IME; screen reader output.
