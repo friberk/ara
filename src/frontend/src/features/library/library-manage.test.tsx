@@ -38,7 +38,8 @@ function library(initial = [attention, sanitization]) {
 }
 
 async function rowActions(user: ReturnType<typeof userEvent.setup>, title: string) {
-  await user.click(await screen.findByRole('button', { name: `Actions for “${title}”` }))
+  // The sidebar's Papers list has the same menu (ARA-103), so look in the Library itself.
+  await user.click(await within(await screen.findByRole('main')).findByRole('button', { name: `Actions for “${title}”` }))
   return screen.getByRole('menu')
 }
 

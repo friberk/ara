@@ -58,12 +58,22 @@ export function citationLine(paper: Pick<Paper, 'authors' | 'year'> & { venue?: 
   return { authors: authorShort(paper.authors), year: paper.year ? String(paper.year) : '', venue: paper.venue?.trim() ?? '' }
 }
 
+/** The longest pill label; the server accepts 500 characters and the question carries the label as text. */
+const LABEL_CHARS = 300
+
 /**
- * A paper's citation as one line, which names its mention pill for screen readers (ARA-096): "Vaswani et al. (2017).
- * Attention Is All You Need. NeurIPS." Missing parts are left out.
+ * A mention pill's label, which the question also carries as text (ARA-096): the paper's title, cut only when very
+ * long, or "Karpukhin 2020" when it has none.
  */
-export function citationText(paper: Pick<Paper, 'title' | 'authors' | 'year'> & { venue?: string | null }) {
+export function mentionLabel(paper: Pick<Paper, 'title' | 'authors' | 'year'>) {
+  const title = paper.title?.trim()
+  if (!title) return mentionName(paper)
+  return title.length > LABEL_CHARS ? `${title.slice(0, LABEL_CHARS - 1).trimEnd()}…` : title
+}
+
+/** PaperCitation as plain text, which describes a mention pill to screen readers: "Han et al. (2018), Venue". */
+export function shortCitation(paper: Pick<Paper, 'authors' | 'year'> & { venue?: string | null }) {
   const { authors, year, venue } = citationLine(paper)
   const lead = authors && year ? `${authors} (${year})` : authors || year
-  return `${[lead, paper.title?.trim() || 'Untitled paper', venue].filter(Boolean).map((part) => part.replace(/\.$/, '')).join('. ')}.`
+  return [lead, venue].filter(Boolean).join(', ')
 }

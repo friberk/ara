@@ -1,4 +1,3 @@
-import type { Paper } from '@/api/types'
 import { Composer } from '@/components/composer/Composer'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
@@ -11,11 +10,8 @@ import type { QuestionGate } from './question-gate'
 const defaultNote = 'Answers come from this paper’s PDF and cite their pages. Check important claims against the source.'
 const severalNote = 'Answers come from these papers’ PDFs and cite their pages. Check important claims against the source.'
 
-/**
- * The papers a conversation asks about, edited with the @ button (ARA-088). Typing @ mentions a paper with a pill
- * (ARA-096); `onMentioned` hears of it where pills choose papers.
- */
-export type PaperSelection = { selected: string[]; onSelect: (paper: Paper) => void; onMentioned?: (paper: Paper) => void; header?: React.ReactNode }
+/** The papers a conversation asks about, which the @ picker shows as checked; typing @ or the @ button mentions one (ARA-096). */
+export type PaperSelection = { selected: string[] }
 
 /** The docked question composer. Its footnote explains whatever is keeping a question from being sent. */
 export function ConversationComposer({ chatId, draft, onDraftChange, onSubmit, gate, sendable, busy, onStop, note, papers }: {
@@ -34,7 +30,7 @@ export function ConversationComposer({ chatId, draft, onDraftChange, onSubmit, g
   papers?: PaperSelection
 }) {
   const { settings } = useGenerationSettings()
-  const mention = usePaperMention({ selected: papers?.selected ?? [], onToggle: (paper) => papers?.onSelect(paper), onMentioned: papers?.onMentioned })
+  const mention = usePaperMention({ selected: papers?.selected ?? [] })
   const several = (papers?.selected.length ?? 1) > 1
   return (
     <Composer
@@ -50,11 +46,11 @@ export function ConversationComposer({ chatId, draft, onDraftChange, onSubmit, g
       submitDisabled={!!gate.reason || gate.waiting || !sendable}
       busy={busy}
       onStop={onStop}
-      header={papers?.header}
       onMention={papers ? mention.onMention : undefined}
+      mentionTarget={mention.target}
       leading={
         <>
-          {papers && <PaperPicker label="Add or remove papers" disabled={gate.locked} {...mention.picker} />}
+          {papers && <PaperPicker label="Mention a paper" disabled={gate.locked} {...mention.picker} />}
           {chatId && <ContextMeter chatId={chatId} settings={settings} />}
         </>
       }

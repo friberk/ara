@@ -41,7 +41,7 @@ export function ConversationPane({ paper, chatId }: ConversationPaneProps) {
       {!chatId ? (
         <NewConversation paper={paper} />
       ) : chat ? (
-        <ConversationThread key={chat.id} paper={paper} chat={chat} papers={{ selected: editing.selected, onSelect: editing.toggle }} />
+        <ConversationThread key={chat.id} paper={paper} chat={chat} papers={{ selected: editing.selected }} />
       ) : chats.isPending || chats.isFetching || lookup.isFetching ? (
         // A chat created elsewhere (the home composer) may be missing from a cached list until it refetches.
         <div role="status" aria-label="Loading conversation" className="mx-auto grid w-full max-w-3xl gap-3 px-4 pt-2">

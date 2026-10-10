@@ -1,12 +1,13 @@
 import type { components } from '@/api/generated'
+import type { PillPaper } from '@/components/paper/PaperPill'
 
 /**
  * A paper a question mentions with a composer pill (ARA-096). `start` and `end` count Unicode code points of the
  * question, as the server indexes it, so text before a pill may hold emoji or other astral characters.
  */
 export type MentionSpan = components['schemas']['PaperMention']
-/** A pill in a draft; `citation` names it for screen readers and is never sent. */
-export type DraftMention = MentionSpan & { citation?: string }
+/** A pill in a draft; `paper` holds the details for its citation card and is never sent. */
+export type DraftMention = MentionSpan & { paper?: PillPaper }
 /** A question being written: its text, with each pill as its label, and the pills. */
 export type Draft = { text: string; mentions: DraftMention[] }
 

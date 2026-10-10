@@ -88,16 +88,16 @@ test('Given the chat composer, When @ mentions a paper outside the chat, Then it
   await user.type(input, 'How does @')
   expect(await screen.findByRole('option', { name: /Dense passage retrieval/ })).toHaveAttribute('aria-checked', 'true')
   await user.click(await screen.findByRole('option', { name: /Late interaction retrieval/ }))
-  await waitFor(() => expect(within(input).getByRole('img', { name: 'Khattab (2020). Late interaction retrieval.' })).toBeVisible())
+  expect(await within(input).findByRole('group', { name: 'Late interaction retrieval' })).toHaveAccessibleDescription('Khattab (2020)')
   await waitFor(() => expect(input).toHaveFocus())
   // Not added and not a chip until the question is sent (ARA-096).
   expect(calls.some((call) => call.method === 'POST' && call.path === '/chats/c1/papers')).toBe(false)
   expect(within(await chips()).getAllByRole('listitem')).toHaveLength(2)
   await user.type(input, 'differ?{Enter}')
-  await waitFor(() => expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ content: 'How does Khattab 2020 differ?' }))
-  expect((calls.find((call) => call.path === '/chats/c1/messages/stream')?.body as { mentions: unknown }).mentions).toEqual([{ paper_id: 'p3', label: 'Khattab 2020', start: 9, end: 21 }])
+  await waitFor(() => expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ content: 'How does Late interaction retrieval differ?' }))
+  expect((calls.find((call) => call.path === '/chats/c1/messages/stream')?.body as { mentions: unknown }).mentions).toEqual([{ paper_id: 'p3', label: 'Late interaction retrieval', start: 9, end: 35 }])
   // The sent question shows its pill.
-  expect(await within(await screen.findByRole('article', { name: 'Your message' })).findByRole('img', { name: 'Khattab (2020). Late interaction retrieval.' })).toBeVisible()
+  expect(await within(await screen.findByRole('article', { name: 'Your message' })).findByRole('img', { name: 'Late interaction retrieval' })).toBeVisible()
 })
 
 test('Given a pill for a paper outside the chat, When it is deleted before sending, Then the chat is unchanged and nothing is mentioned', async () => {
@@ -113,7 +113,7 @@ test('Given a pill for a paper outside the chat, When it is deleted before sendi
   await waitFor(() => expect(isEditable(input)).toBe(true))
   await user.type(input, 'Compare @')
   await user.click(await screen.findByRole('option', { name: /Late interaction retrieval/ }))
-  await waitFor(() => expect(within(input).getByRole('img')).toBeVisible())
+  await within(input).findByRole('group', { name: 'Late interaction retrieval' })
   deletePill(input, 0)
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
   await waitFor(() => expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ content: 'Compare', mentions: [] }))
@@ -171,19 +171,19 @@ test('Given a new conversation, When a second paper is mentioned with @, Then th
   await user.type(input, '@')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   const question = screen.getByRole('textbox', { name: 'Question about these papers' })
-  expect(screen.getByRole('button', { name: 'Remove Dense passage retrieval' })).toBeVisible()
-  await waitFor(() => expect(textIn(question)).toBe('Karpukhin 2020 '))
+  await waitFor(() => expect(textIn(question)).toBe('Dense passage retrieval '))
+  // The pills are the attachments: no chip row above the question (ARA-096).
+  expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument()
   // Typing @ again and choosing the conversation's own paper only mentions it.
   await user.type(question, 'or @')
   await user.click(await screen.findByRole('option', { name: /Evidence based research/ }))
-  await waitFor(() => expect(textIn(question)).toBe('Karpukhin 2020 or Author 2024 '))
-  expect(screen.getByRole('button', { name: 'Remove Evidence based research' })).toBeVisible()
+  await waitFor(() => expect(textIn(question)).toBe('Dense passage retrieval or Evidence based research '))
   await user.type(question, 'How do they compare?{Enter}')
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] }))
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c9'))
   await waitFor(() => expect(calls.find((call) => call.path === '/chats/c9/messages/stream')?.body).toMatchObject({
-    content: 'Karpukhin 2020 or Author 2024 How do they compare?',
-    mentions: [{ paper_id: 'p2', label: 'Karpukhin 2020', start: 0, end: 14 }, { paper_id: 'p1', label: 'Author 2024', start: 18, end: 29 }],
+    content: 'Dense passage retrieval or Evidence based research How do they compare?',
+    mentions: [{ paper_id: 'p2', label: 'Dense passage retrieval', start: 0, end: 23 }, { paper_id: 'p1', label: 'Evidence based research', start: 27, end: 50 }],
   }))
 })
 
@@ -194,9 +194,9 @@ test('Given a new conversation, When the only pill of an added paper is deleted,
   await waitFor(() => expect(isEditable(input)).toBe(true))
   await user.type(input, 'Compare @')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
-  expect(await screen.findByRole('button', { name: 'Remove Dense passage retrieval' })).toBeVisible()
+  expect(screen.getByRole('textbox', { name: 'Question about these papers' })).toBe(input)
+  await within(input).findByRole('group', { name: 'Dense passage retrieval' })
   deletePill(input, 0)
-  expect(screen.queryByRole('button', { name: 'Remove Dense passage retrieval' })).not.toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBe(input)
 })
 
@@ -233,7 +233,7 @@ test('Given a chat over fifteen papers, Then three chips show and the rest colla
   await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/m9')).toHaveLength(1))
 })
 
-test('Given a paper already in the chat, When its pill is deleted, Then it stays in the chat; the @ button removes it and its pills', async () => {
+test('Given a paper already in the chat, When its pill is deleted, Then it stays; removing it from the chat removes its pills', async () => {
   let papers = [included(paper), included(paper2)]
   const { calls } = mockApi({
     ...settings,
@@ -251,18 +251,35 @@ test('Given a paper already in the chat, When its pill is deleted, Then it stays
   const dense = await screen.findByRole('option', { name: /Dense passage retrieval/ })
   expect(dense).toHaveAttribute('aria-checked', 'true')
   await user.click(dense)
-  await waitFor(() => expect(textIn(input)).toBe('What does Karpukhin 2020 '))
+  await waitFor(() => expect(textIn(input)).toBe('What does Dense passage retrieval '))
+  await within(input).findByRole('group', { name: 'Dense passage retrieval' })
   deletePill(input, 0)
-  expect(within(input).queryByRole('img')).not.toBeInTheDocument()
+  expect(within(input).queryByRole('group')).not.toBeInTheDocument()
   expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
   expect(within(await chips()).getAllByRole('listitem')).toHaveLength(2)
-  // Mentioned again, then removed with the @ button: the paper leaves the chat and its pill the question.
+  // Mentioned again, then removed with its chip above the chat: the paper leaves the chat and its pill the question.
   await user.type(input, '@')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
-  await waitFor(() => expect(within(input).getByRole('img', { name: /Dense passage retrieval/ })).toBeVisible())
-  await user.click(screen.getByRole('button', { name: 'Add or remove papers' }))
-  expect(await screen.findByPlaceholderText('Find a paper in your library')).toBeVisible()
-  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  await within(input).findByRole('group', { name: 'Dense passage retrieval' })
+  await user.click(within(await chips()).getByRole('button', { name: 'Remove Dense passage retrieval from this conversation' }))
   await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/p2')).toHaveLength(1))
-  await waitFor(() => expect(within(input).queryByRole('img')).not.toBeInTheDocument())
+  await waitFor(() => expect(within(input).queryByRole('group')).not.toBeInTheDocument())
+})
+
+test('Given the chat composer, When the @ button is used, Then the paper becomes a pill at the end of the question and nothing is added before sending', async () => {
+  const { calls } = mockApi({
+    ...settings,
+    'GET /chats': { items: [chatRow('c1', both)] },
+    'GET /chats/c1/messages': { items: [] },
+    'GET /papers': { items: [paper, paper2, paper3] },
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  const input = await screen.findByRole('textbox', { name: 'Question about these papers' })
+  await waitFor(() => expect(isEditable(input)).toBe(true))
+  await user.click(screen.getByRole('button', { name: 'Mention a paper' }))
+  await user.click(await screen.findByRole('option', { name: /Late interaction retrieval/ }))
+  expect(await within(input).findByRole('group', { name: 'Late interaction retrieval' })).toBeInTheDocument()
+  await waitFor(() => expect(input).toHaveFocus())
+  expect(calls.some((call) => call.method !== 'GET')).toBe(false)
+  expect(within(await chips()).getAllByRole('listitem')).toHaveLength(2)
 })

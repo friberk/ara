@@ -251,7 +251,7 @@ The product's mark is the wordmark "ara." (the dot is part of the name), set in 
 
 ## Layout
 
-The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), Library and Activity, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher.
+The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), Library and Activity, then Papers and Recent groups, with Settings and Theme in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher: the open chat's title (its menu holds Rename and Delete), a History icon that opens a popover of this paper's chats newest first with compact relative times ("now", "12m", "3h", "2d", then "Oct 2"), and the New conversation icon.
 
 Content routes centre a single column at max-w-3xl (48rem). Home centres the display greeting, the composer and suggestion chips vertically, with a 28px gap and 12vh of extra bottom padding so the group sits slightly above centre. Search pins the composer to the bottom of the results column, like a chat thread. Search results and library entries are borderless rows with 24px and 20px vertical padding, divided by hairlines.
 
