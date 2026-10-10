@@ -30,9 +30,9 @@ function Wrapper({ title, description, onActivate, children }: { title: string; 
  *
  * A pill with onActivate (the row above a multi-paper chat, ARA-110) is one button named by the title; keyboard focus
  * darkens it and shows the remove button like hover does, and Tab reaches that button next. A pill whose × does more
- * than drop a mention names it in removeLabel; a pill near the top of its pane opens its card below (cardSide) ("Remove <title> from this chat").
+ * than drop a mention names it in removeLabel; a pill near the top of its pane opens its card below (cardSide), and one in a tight row cuts its title at fewer characters (maxChars) ("Remove <title> from this chat").
  */
-export function PaperPill({ title, paper, selected = false, onRemove, onActivate, removeDisabled = false, removeLabel, cardSide = 'top', surface = 'muted' }: { title: string; paper?: PillPaper | null; selected?: boolean; onRemove?: () => void; onActivate?: () => void; removeDisabled?: boolean; removeLabel?: string; cardSide?: 'top' | 'bottom'; surface?: 'muted' | 'paper' }) {
+export function PaperPill({ title, paper, selected = false, onRemove, onActivate, removeDisabled = false, removeLabel, cardSide = 'top', maxChars = 28, surface = 'muted' }: { title: string; paper?: PillPaper | null; selected?: boolean; onRemove?: () => void; onActivate?: () => void; removeDisabled?: boolean; removeLabel?: string; cardSide?: 'top' | 'bottom'; maxChars?: number; surface?: 'muted' | 'paper' }) {
   const description = useId()
   const label = useRef<HTMLSpanElement>(null)
   const [hovered, setHovered] = useState(false)
@@ -71,7 +71,7 @@ export function PaperPill({ title, paper, selected = false, onRemove, onActivate
         >
           <Wrapper title={title} description={citation ? description : undefined} onActivate={onActivate}>
             <PdfStateIcon state="ready" decorative tooltip={false} className="size-3.5 self-center [&>svg]:size-3.5" />
-            <span ref={(element) => { label.current = element; if (selected) measure(element) }} aria-hidden="true" className="min-w-0 max-w-[28ch] truncate">{title}</span>
+            <span ref={(element) => { label.current = element; if (selected) measure(element) }} aria-hidden="true" style={{ maxWidth: `${maxChars}ch` }} className="min-w-0 truncate">{title}</span>
           </Wrapper>
           {citation && <span id={description} hidden>{citation}</span>}
           {onRemove && active && (

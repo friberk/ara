@@ -128,3 +128,11 @@ test('Given a pill with its own remove label, Then the remove button carries it 
   expect(screen.getByRole('button', { name: `Remove ${title} from this chat` })).toBeVisible()
   expect(screen.queryByRole('button', { name: `Remove ${title}` })).not.toBeInTheDocument()
 })
+
+test('Given a pill with no size, Then its title is cut at 28 characters; a row pill can ask for fewer (ARA-110)', () => {
+  const { unmount } = pill()
+  expect(screen.getByText(title)).toHaveStyle({ maxWidth: '28ch' })
+  unmount()
+  pill({ maxChars: 16 })
+  expect(screen.getByText(title)).toHaveStyle({ maxWidth: '16ch' })
+})
