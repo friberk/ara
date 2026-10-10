@@ -20,7 +20,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - GET /search?provider=openalex&q=...&cursor=...&limit=20 → SearchPage.
 - POST /papers `{provider,external_id}` → Paper; server re-fetches canonical result, no trust in browser metadata.
 - GET /papers?q=...&limit=...&offset=... → `{items:Paper[]}`.
-- GET /papers/{id} → Paper; PATCH `{title?,authors?,year?,abstract?,doi?}` → Paper.
+- GET /papers/{id} → Paper; PATCH `{title?,authors?,year?,abstract?,doi?,venue?}` → Paper; DELETE → 204. Deletion previews, bulk deletion and Look up again are under ARA-095, below.
 - POST /documents multipart `{file,paper_id?,request_id}` → UploadAccepted.
 - GET /jobs → `{items:Job[]}`; GET /jobs/{id} → Job; POST /jobs/{id}/retry → Job.
 - POST /papers/{id}/summaries `{model,reasoning_effort,request_id}` → `{job_id,summary_id?}`; GET same → `{items:Summary[],blocked?}` (ARA-084, below).
@@ -279,7 +279,7 @@ A malformed packet gives no clues and never an error. The LLM metadata step keep
 - **`attach`** (Replace or Attach) moves the document to the library paper as its active PDF; earlier documents stay its versions. It also moves the placeholder's chats (their `chat_papers` links; a chat that already includes the library paper keeps that paper's pinned PDF) and summaries, deletes the placeholder and returns the library `Paper` (200).
   - An unread document gets a fresh ingest job on that paper.
   - A ready document is indexed for that paper, and the automatic summary is queued once.
-- **`discard`** deletes the placeholder, its document (by cascade) and the stored original, and returns 204.
+- **`discard`** deletes the placeholder and its document (by cascade) as any paper deletion does, queues the durable `storage_cleanup` job for the stored original (ARA-095; it was removed inline before), and returns 204.
 - **Repeats are safe.** A second `attach` returns the same paper, and a second `discard` returns 204. A paper without a pending match returns 409 `NO_PENDING_MATCH`.
 
 **Labels.** Matches, redirects and DOI owners live in the `upload_matches` and `paper_redirects` tables and the `documents.doi_owner_paper_id` column (migration `0009_upload_match_tables`; ARA-086 first kept them as prefixed `model_configurations` rows). Foreign keys cascade: deleting a placeholder, library paper or document removes its match; deleting a redirect's target removes the redirect; deleting a DOI owner clears the column. The migration moves valid prefixed rows, drops orphans and deletes the prefixed rows; its downgrade restores them. The API is unchanged. The `processing` document badge now reads "Preparing PDF".
@@ -306,4 +306,31 @@ Migration `0010_chat_papers` (head; `SCHEMA_REVISION`) replaces `chat_sessions.p
 - **`GET /chats/{id}`** → `ChatSummary`, so a link from a paper the chat no longer covers can find its first paper. Missing → 404 `CHAT_NOT_FOUND`.
 - **Answers.** A chat may have any number of papers, and the statements an answer runs do not grow with them. Retrieval runs one keyword and one vector search per query across the chat's pinned PDFs (`(document_id, chunk_set) IN (…)`). Each list holds at most 30 passages, and each paper at most max(2, ⌈30/N⌉) of them; the lists are fused with RRF. With several papers the planner also runs on a first question. It sees at most 20 papers, those the question names first, and may return up to 5 `sub_questions` (`{paper, question}`, paper numbered from 1 by ordinal), each searched only within its paper; `Message.retrieval.sub_questions` lists them. Papers the question names, by full title or as a chip names them ("Surname Year"), and the targets of sub-questions are kept: named papers without a sub-question share one more search, and kept papers answer first. The reranker's head takes the papers in turns. Packing gives every paper a floor of two passages while floors fit; when they don't, the most relevant papers answer, at most 8 (16 passages / 2), and `retrieval.note` says how many. The others add nothing to that turn. Evidence is grouped under one `Paper N: title (first author et al., year)` header per answering paper, with its sub-question cut to 300 characters; the system prompt states only how many papers the chat has. The trace records `sub_questions`, `kept`, per-list `paper` numbers, `papers` (passages per answering document), `papers_in_scope` and `routed_out`. Citation validation accepts any pinned PDF of the chat and still rejects any other document (`UNGROUNDED_OUTPUT`).
 - **Local models.** A question to a local model in a chat over several papers → 409 `MULTI_PAPER_LOCAL` ("Chats over several papers need a hosted model…"); a replay still returns its stored answer. Open models are frozen (ARA-090).
+
+## Deleting papers and editing details (ARA-095)
+
+No migration. Deletion relies on the existing foreign keys and the `chat_papers_last_paper` trigger.
+
+**Endpoints.**
+- `GET /papers/{id}/deletion-preview` → `DeletionPreview`; 404 `PAPER_NOT_FOUND` for an unknown paper. `POST /papers/deletion-preview` `{paper_ids: UUID[] (1–200)}` → the combined `DeletionPreview`, with unknown IDs in `missing`. Reading a preview changes nothing.
+- `DeletionPreview`: `papers` (`PaperLink[]`), `missing` (UUID[] in request order), `pdfs` (stored PDFs, every version), `summaries`, `deleted_chats` (`{id,title}[]`, chats about only these papers), `updated_chats` (chats that keep other papers), `active_jobs` (queued or running work that stops), `answering` (a chat about these papers is writing an answer now).
+- `DELETE /papers/{id}` → 204; a repeat or an unknown paper → 404 `PAPER_NOT_FOUND`. A placeholder's old ID is not followed through `paper_redirects`.
+- `POST /papers/delete` `{paper_ids}` → `{deleted: UUID[], missing: UUID[]}` in request order, in one transaction; a repeat returns everything as missing. An empty list → 422.
+- Either deletion refuses with 409 `CHAT_BUSY` ("Wait for the current answer to finish before deleting.") while a chat about the papers has an answer with a live lease; expired answers are marked interrupted first, as chat deletion does.
+
+**What goes and what stays.**
+- The paper and, by cascade, its authors, provider records, documents (every PDF version) with their pages, sections, passages, embeddings and retrieval indexes, summaries, PDF retrieval requests, upload requests, pending upload matches naming it and redirects to it. `documents.doi_owner_paper_id` pointing at it is cleared.
+- A chat whose papers are all deleted is deleted with its messages and memories. A chat that also covers other papers keeps them; its first paper (and URL) moves to the lowest remaining ordinal. Saved citations stay readable: `GET /chats/{id}/messages` returns them with `paper_id: null` once their document is gone.
+- An upload waiting for Replace or Cancel against a deleted library paper goes on as its own paper: its match row is removed, and its document is re-read (or, if it was already read, indexed and summarized once).
+- Locks: the identity locks that saving, uploading, attaching and lookups take (`upload_match:<id>` for the papers and their placeholders, `doi:`, `source:` and `pdf:` keys), then the affected chats, then the papers, in ID order.
+
+**Background work.**
+- In the same transaction, every `queued` or `processing` job whose payload names a deleted paper (`paper_id`), one of its documents (`document_id`) or a deleted chat (`chat_id`) becomes `failed` with `error_code` `PAPER_DELETED`, message "Stopped because the paper was deleted.", no lease, and `result {outcome: "paper_deleted", paper_title}`. Rows locked by a worker at that moment are skipped (`SKIP LOCKED`) and settle themselves: ingest, PDF retrieval and metadata lookups fail with `PAPER_DELETED` when they find the paper gone; summary and index jobs end as before (failed, or completed `skipped`) and write nothing. The job retry route does not accept `PAPER_DELETED`.
+- `JobStatus.paper_title` keeps the deleted paper's title from `result.paper_title`, with `paper_id: null`, so Activity names it without a link.
+- One `storage_cleanup` job (payload `{object_keys, paper_titles}`) is queued with its outbox event in the deletion commit when the papers had PDFs. It removes each object, keeping any key a live document still names; removing a missing object succeeds, so duplicates and reruns are harmless. A storage error waits 30 s, then 60 s, and fails with `STORAGE_UNAVAILABLE` on the third attempt; `POST /jobs/{id}/retry` accepts it. It never writes a paper row. When a deleted PDF was still `uploading`, the job waits 300 s, past the 120 s ingest grace, so an object stored late is removed too.
+
+**Editing and Look up again.**
+- `PATCH /papers/{id}` accepts `venue` (≤ 300 characters, nullable). Papers have no venue column, so a manual venue is stored as `metadata_provenance.venue = {source: "manual", value}`; `Paper.venue` reads that value (null when cleared) before the provider record.
+- `POST /papers/{id}/metadata-lookup` (no body) → 202 `JobStatus` of a `metadata` job with payload `{paper_id, document_id, refresh: true, clues}`. It needs a title, DOI or provider record, else 409 `LOOKUP_UNAVAILABLE`; unknown paper → 404. A lookup already queued or running for the paper is returned instead of a new one. `clues` carries the paper's earlier lookup clues, so an arXiv ID only the PDF had is kept.
+- A refresh reads the paper's current title, authors, year and DOI when it runs. For each source, chosen first, it reads the paper's saved record at that source (`matched_by: "record"`), else searches by DOI, arXiv ID and title as the upload lookup does. A DOI the user entered (`provenance.doi.source == "manual"`) is accepted without the printed-title check. It replaces provider and PDF values, never `manual` ones, and keeps the lookup's rate-limit wait and three attempts.
 
