@@ -48,12 +48,14 @@ from app.rag.chunking import CHUNK_SET, default_counter
 from app.rag.citations import SOURCE, HandleMap, HandleTransducer, passage_citations
 from app.rag.packing import SEPARATOR, node_passage, render_evidence
 from app.rag.retrievers import chunk_node
-from app.repositories.jobs import enqueue, fence, now
+from app.repositories.jobs import enqueue, fence, now, requeue_failed_locked
 from app.services.costs import call_cost
 from app.services.memory import billed_tokens
 from app.services.summarization import summary_blocker
 
 KIND = "section_summaries"
+# Startup queues a reading's failed job again this many times; each is a paid attempt.
+MAX_REVIVALS = 3
 # A section of one passage is its own summary; RAPTOR summarises groups of chunks.
 MIN_CHUNKS = 2
 # About RAPTOR's summary nodes, which averaged 131 tokens (Sarthi et al., ICLR 2024).
@@ -207,8 +209,46 @@ async def backfill_section_summaries(resources) -> int:
             document = await session.scalar(
                 select(Document).where(Document.id == document_id).with_for_update()
             )
-            queued += await queue_section_summaries(session, resources, document) is not None
+            queued += await queue_section_summaries(
+                session, resources, document
+            ) is not None or await revive_section_summaries(session, resources, document)
     return queued
+
+
+async def revive_section_summaries(session, resources, document) -> bool:
+    """Queue a reading's failed job again at startup, at most MAX_REVIVALS times (ARA-105).
+
+    Only when its newest job failed and the saved default can summarize it, with that default's
+    model and effort. The caller holds the document's row lock, so concurrent startups revive
+    once. A job still queued, running or completed is left alone.
+    """
+    eligible = await load_eligible(session, document)
+    if not eligible:
+        return False
+    job = await session.scalar(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.kind == KIND,
+            BackgroundJob.payload.contains(
+                {"document_id": str(document.id), "sections": sections_version(eligible)}
+            ),
+        )
+        .order_by(BackgroundJob.created_at.desc(), BackgroundJob.id)
+        .limit(1)
+        .with_for_update()
+    )
+    if (
+        job is None
+        or job.state != "failed"
+        or int(job.payload.get("revivals") or 0) >= MAX_REVIVALS
+    ):
+        return False
+    model, effort = await default_selection(resources)
+    tokens = sum(chunk.token_count for item in eligible for chunk in item.chunks)
+    if await summary_blocker(session, resources, model, effort, input_tokens=tokens):
+        return False
+    requeue_failed_locked(session, job, model=model, reasoning_effort=effort)
+    return True
 
 
 def add_usage(total: dict, usage: dict) -> dict:
