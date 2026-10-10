@@ -1214,3 +1214,10 @@ The design doc is updated.
 **Verification.** Backend `test-stack.py test` in isolated project `ara-catalog-test`: 1048 passed in 204.19 s. Ruff check clean. Frontend `npm run check`: 583 passed; `npm run build` passed.
 
 **Not done or unverified.** Evidence selection (16 passages) is unchanged for ARA-094. OpenAI's tier multipliers are recorded in the catalog comment but not modelled in cost, because no request exceeds 272K. The cache-write rate is applied to the `cache_write_tokens` count that the SDK model reports; I have not seen a live response with a non-zero value.
+
+**Live OpenAlex check (ARA-087, 2026-10-10).**
+- **Setup.** The user added an OpenAlex API key to the main `.env`. The lead copied only that key, without printing it, into the integration worktree's `.env`. The lead then started an isolated `ara-live` Compose project on ports 8011/5181, with no OpenAI key, the open-models flag off and fresh volumes.
+- **Download path.** Live search worked. Saving "Attention Is All You Need" (W2626778328) downloaded OpenAlex's stored PDF automatically within about 3 s. This confirms the real redirect host is accepted, which had previously been inferred only from documentation. The 11-page document became ready, and the automatic summary was blocked with MODEL_NOT_CONFIGURED, with no fallback.
+- **Fallback path.** An IEEE paper (W3163652268) ended `not_stored` without contacting any other host.
+- **Logs and UI.** Logs show the key only as `[REDACTED]`. Screenshots of both workspaces showed the intended copy.
+- **Cost.** One content download, about $0.01 of the user's free daily allowance.
