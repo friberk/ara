@@ -2,6 +2,7 @@ import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import type { EmbeddingProfile } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
+import { useOpenModels, withoutOpenModels } from '@/hooks/queries/features'
 import { cn } from '@/lib/utils'
 
 const statusBadges: Record<EmbeddingProfile['status'], { label: string; tone: string }> = {
@@ -34,10 +35,11 @@ export function StatusBadge({ status }: { status: EmbeddingProfile['status'] }) 
 
 /** A local model's reason and a way to install it; shared by the Settings lists and a paper's index panel. */
 export function UnavailableReason({ profile }: { profile: Pick<EmbeddingProfile, 'unavailable_reason' | 'local_model_key'> }) {
+  const openModels = useOpenModels()
   return (
     <span className="flex flex-wrap gap-x-2">
       <span>{profile.unavailable_reason ?? 'Not available on the server right now.'}</span>{' '}
-      {profile.local_model_key && <Link to="/settings#local-models" className="text-foreground underline decoration-foreground/25 hover:decoration-foreground">Go to Local models</Link>}
+      {profile.local_model_key && openModels && <Link to="/settings#local-models" className="text-foreground underline decoration-foreground/25 hover:decoration-foreground">Go to Local models</Link>}
     </span>
   )
 }
@@ -48,11 +50,13 @@ export function UnavailableReason({ profile }: { profile: Pick<EmbeddingProfile,
  */
 export function ProfileOptions({ profiles, value, onChange, label, defaultChoice }: { profiles: EmbeddingProfile[]; value: string | null; onChange: (key: string | null) => void; label: string; defaultChoice?: string }) {
   const name = useId()
+  const openModels = useOpenModels()
   return (
     <div role="radiogroup" aria-label={label} className="divide-y overflow-hidden rounded-xl border">
       {defaultChoice !== undefined && <OptionRow name={name} value="" checked={value === null} onSelect={() => onChange(null)} title="Use default">{defaultChoice}</OptionRow>}
-      {profiles.map((profile) => (
-        <OptionRow key={profile.key} name={name} value={profile.key} checked={value === profile.key} onSelect={() => onChange(profile.key)} title={profile.display_name} badge={<StatusBadge status={profile.status} />}>
+      {withoutOpenModels(profiles, openModels, value).map((profile) => (
+        // A saved local model stays visible while open models are off, but it cannot be chosen again.
+        <OptionRow key={profile.key} name={name} value={profile.key} checked={value === profile.key} onSelect={() => onChange(profile.key)} title={profile.display_name} badge={<StatusBadge status={profile.status} />} disabled={!openModels && profile.provider === 'ollama'}>
           <span className="font-mono break-all">{profile.model_id}</span>
           {/* Still selectable: the server accepts it and the paper searches by keyword until the model is ready. */}
           {profile.status === 'unavailable' && <UnavailableReason profile={profile} />}

@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ProfileOptions, UnavailableReason } from '@/components/retrieval/ProfileOptions'
+import { useOpenModels } from '@/hooks/queries/features'
 import { isBuilding, useEmbeddingProfiles, usePaperRetrieval, useRebuildPaperRetrieval, useUpdatePaperRetrieval } from '@/hooks/queries/retrieval'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +57,7 @@ function IndexDetails({ paperId }: { paperId: string }) {
   const retrieval = usePaperRetrieval(paperId)
   const profiles = useEmbeddingProfiles()
   const rebuild = useRebuildPaperRetrieval(paperId)
+  const openModels = useOpenModels()
   const [changing, setChanging] = useState(false)
   const error = retrieval.error ?? profiles.error
   if (error) return <ErrorNotice error={error} retry={() => { void retrieval.refetch(); void profiles.refetch() }} />
@@ -68,6 +70,8 @@ function IndexDetails({ paperId }: { paperId: string }) {
   const view = viewOf(index)
   const badge = badges[view]
   const percent = index && view === 'building' && index.total > 0 ? Math.min(99, Math.round(100 * index.embedded / index.total)) : null
+  // A local search model while open models are off: every hosted model is listed, so an unlisted one is local too.
+  const openModelOff = !openModels && (!profile || profile.provider === 'ollama')
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -98,7 +102,7 @@ function IndexDetails({ paperId }: { paperId: string }) {
             <ChangeModelForm paperId={paperId} data={data} profiles={items} defaultName={defaultName} onDone={() => setChanging(false)} />
           </DialogContent>
         </Dialog>
-        <Button variant="outline" size="sm" disabled={view === 'building' || rebuild.isPending} onClick={() => rebuild.mutate()}>{view === 'missing' ? 'Build index' : 'Rebuild index'}</Button>
+        {!openModelOff && <Button variant="outline" size="sm" disabled={view === 'building' || rebuild.isPending} onClick={() => rebuild.mutate()}>{view === 'missing' ? 'Build index' : 'Rebuild index'}</Button>}
       </div>
       <ErrorNotice error={rebuild.error} />
     </div>

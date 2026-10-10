@@ -281,6 +281,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Features
+         * @description Server features the browser adapts to; open models are experimental (ARA-090).
+         */
+        get: operations["features_api_v1_features_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models": {
         parameters: {
             query?: never;
@@ -896,6 +916,14 @@ export interface components {
             default_profile: string;
             /** Rerankers */
             rerankers?: components["schemas"]["RerankerOut"][];
+        };
+        /**
+         * Features
+         * @description Server features the browser adapts to (ARA-090).
+         */
+        Features: {
+            /** Open Models */
+            open_models: boolean;
         };
         /** FullTextAccepted */
         FullTextAccepted: {
@@ -2299,6 +2327,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    features_api_v1_features_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
                 };
             };
         };
