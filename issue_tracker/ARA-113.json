@@ -1,0 +1,46 @@
+{
+  "id": "ARA-113",
+  "title": "Scripted demo video: every feature recorded with testreel on an empty stack, joined with branded title cards",
+  "type": "documentation",
+  "priority": "P1",
+  "description": "User request on 2026-10-10: \"record us a demo using https://github.com/greentfrapp/testreel ... Start from an empty database, history etc. We will have two papers one is usenixsecurity26-liu-yichen.pdf and the other one is https://arxiv.org/abs/2406.11618 you will retrieve from arxiv. Demonstrate the search and upload capabilities. Pretty much demonstrate all of our main features. Seperate clip by clip. Between each clip we will insert a \\\"Windows Movie Maker\\\" type of fade black background white text (consistent with our branding).\" Mid-planning the user added: \"can we find another third ReDoS paper to demonstrate auto PDF fetch?\" Choices made with the user: fresh isolated local stack, light theme, silent video, search and save the SoK (no OpenAlex copy, so its arXiv PDF is uploaded), upload the USENIX '26 PDF, use the FSE '18 ReDoS study (OpenAlex stores its PDF) for the automatic fetch, app clips framed as a window on #0a0a0a, all nine clips, opening line \"Berk Cakar - CS 59300 - Homework 1 Demo\".",
+  "dependencies": [
+    "ARA-087",
+    "ARA-107"
+  ],
+  "acceptance_criteria": [
+    "Given the dev stack and its data, when the demo is recorded, then only the separate ara-demo Compose project is reset and the dev stack's papers and chats are unchanged.",
+    "Given an empty ara-demo stack, when record.mjs --reset runs, then clip 1 starts with no papers, chats or search history.",
+    "Given hw1.md's video list, when the master video plays, then it shows a search, saving a paper, uploading a PDF, a generated summary and at least one question about a paper.",
+    "Given OpenAlex's stored copy of the FSE '18 paper and no copy of the SoK, when both are saved from one search, then the first PDF arrives automatically and the second is attached from arXiv on camera.",
+    "Given a long wait for the network or the model, when the clip is assembled, then the wait is time-lapsed with a visible 'Sped up N×' badge and each new status label keeps a moment at normal speed.",
+    "Given the title cards, when they render, then they use the ara. wordmark, Geist and the brand's black and white, and fade through black between clips.",
+    "Given the finished run, when it is probed, then the master is 1920x1080 H.264 with a silent audio track, and each clip also exists as its own file."
+  ],
+  "test_cases": [
+    "npm test in scripts/demo: segment planning, time mapping, badge windows and the generated filtergraph (red first against stubs, then green).",
+    "A synthetic testsrc2 clip through clipFilter: duration matches outputDuration and the burned-in timestamps match mapTime within one output frame.",
+    "A full rehearsal take on ara-demo, with frames extracted from every clip and inspected.",
+    "A final take from --reset, probed with ffmpeg and checked with contact sheets every 7 s plus single frames at each card and transition."
+  ],
+  "status": "completed",
+  "related_files": [
+    "scripts/demo/README.md",
+    "scripts/demo/stack.sh",
+    "scripts/demo/record.mjs",
+    "scripts/demo/assemble.mjs",
+    "scripts/demo/cards.mjs",
+    "scripts/demo/card.html",
+    "scripts/demo/cards.json",
+    "scripts/demo/lib/timeline.mjs",
+    "scripts/demo/lib/timeline.test.mjs",
+    "scripts/demo/lib/stage.mjs",
+    "scripts/demo/lib/render.mjs",
+    "scripts/demo/clips/index.mjs",
+    "docs/reference.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Red first: lib/timeline.test.mjs failed on a missing module, then 17 of 18 against stubs, then passed; the overlay shortest=1 fix and the per-stretch minimum window were each added as failing tests first; npm test now passes 19. A synthetic testsrc2 clip through clipFilter matched outputDuration (25.96 s against 25.944 s), and its burned-in timestamps matched mapTime within one output frame. A full rehearsal on ara-demo exposed six script faults (link names, empty-state rerun, an ambiguous Summary heading, picker names starting 'PDF attached', loose palette matching, badge flicker), each fixed and re-recorded. The final take from --reset hit one more race (a regenerated summary replacing its text under the chip click); after the fix, clips 5-9 were re-recorded into the same run. Master: 1920x1080 H.264, 25 fps, 280.2 s, silent AAC, 31 MB; contact sheets every 7 s and single frames checked every card, clip, fade and badge. The dev stack still has 6 papers and 6 chats.",
+  "updated_at": "2026-10-10"
+}

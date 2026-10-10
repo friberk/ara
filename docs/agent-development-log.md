@@ -2161,3 +2161,48 @@ Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean,
 - **Diagrams.** mermaid-cli 11.4.2 rendered all three blocks. The architecture diagram first drew five crossing edges to the external services, and the PDF flow had a redundant "You upload the PDF" node. Edges to the subgraph and a direct upload edge fixed both, and the re-renders were clean.
 - **Checks.** A script resolved every relative link and anchor in `README.md` and `docs/reference.md` (0 problems). No code changed, so no test suite was run.
 - **Follow-up: supported models.** After their own pass (demo note, wording), the user asked for "a section where we list support models now for each task i.e., LLM, embedding, reranker". The tables come from `hosted_catalog.py`, `embedding_catalog.py`, `reranker_catalog.py` and `model_catalog.py`. Before writing which model the helper jobs use, I checked the code: planning and memory compaction follow the chat's model and effort (`memory_model`), while section summaries, the automatic summary and the metadata fallback use the saved default (`default_selection`). The first draft said every local model "passes readiness checks"; only the 3.7B and 7B have that evidence and 27B was never run, so the sentence now says exactly that.
+
+### 2026-10-10 - ARA-113 scripted demo video
+
+- **Request.** The user asked for the homework demo to be recorded with testreel (github.com/greentfrapp/testreel), "Start from an empty database, history etc.", using `usenixsecurity26-liu-yichen.pdf` and arXiv 2406.11618, showing search, upload and "pretty much all of our main features", clip by clip, with "Windows Movie Maker" style fade-to-black title cards in the brand. Mid-planning they added: "can we find another third ReDoS paper to demonstrate auto PDF fetch?"
+- **Decisions with the user.** A fresh isolated local stack, light theme, silent video, all nine clips, app clips framed as a window on #0a0a0a, and the opening line "Berk Cakar - CS 59300 - Homework 1 Demo".
+  - OpenAlex merges arXiv 2406.11618 into the ASIA CCS '25 record W4413176238, which has `has_content.pdf: false`. Saving it therefore shows "OpenAlex doesn't have this PDF", and the arXiv copy is uploaded on camera.
+  - For the automatic fetch, a title-and-abstract search filtered on `has_content.pdf:true` found the FSE '18 study W2899462170. The query "regular expression denial of service" returns it at #3 and the SoK at #8, so one search shows both outcomes.
+- **How it works.**
+  - `scripts/demo/stack.sh` runs a separate Compose project, `ara-demo`, on 5182/8012 with its own volumes and refuses any other project name. A plan-review agent caught that the API's origin check would reject every browser write unless `CORS_ORIGINS` names the new port.
+  - `record.mjs` drives each clip through testreel's `recordPage` in a fresh context. It warms the dev server first and waits off camera for background jobs between clips.
+  - `assemble.mjs` trims each clip, time-lapses the logged waits with a "Sped up N×" badge, pads to 1080p and joins the clips with cards rendered from Geist and the wordmark.
+- **testreel limits found in its source.**
+  - `recorder.scroll()` calls `window.scrollTo`, but the app only scrolls inner regions.
+  - `navigate()` waits for `networkidle`, which never comes while the app polls jobs.
+  - There is no upload action and no per-step speed in the programmatic API.
+  - The clips therefore scroll elements themselves, use `page.goto` plus a locator wait, answer the file chooser from `page.on('filechooser')`, and leave time-lapse to our own assembly.
+- **Red, then green.**
+  - `lib/timeline.test.mjs` first failed for a missing module, then 17 of 18 failed against stub exports, then all 18 passed.
+  - A real ffmpeg run on a synthetic `testsrc2` clip hung: `overlay` kept reading the looped badge image. A test for `shortest=1` failed, the fix passed, and the re-run matched the predicted duration (25.96 s against 25.944 s). The burned-in timestamps matched `mapTime` within one output frame.
+  - A single `trim`/`concat` graph per segment was rejected beforehand, because splitting one input buffers whole clips in memory. One piecewise `setpts` map streams instead.
+- **Rehearsal failures, all on the isolated stack.**
+  - The FSE card has no separate OpenAlex link (the record link equals the DOI), so the link hovers became conditional.
+  - The empty-state check failed on a second run, as intended, which led to the `--reset` flag.
+  - "Summary" also matched a heading inside the generated summary (a strict-mode violation).
+  - The @ picker's options are named "PDF attached …", so the anchored `^SoK` matched nothing.
+  - The ⌘K palette's loose matching ranked the FSE paper above the chat for "limitations", so the clip clicks the conversation itself.
+  - Badge windows as short as 0.04 s appeared. The red-then-green rule change keeps gaps under 4 s at 1× and gives every compressed stretch at least 1 s on screen.
+- **Final take.**
+  - `record.mjs --reset --run final` recorded clips 1–4, then clip 5 failed. The reader stayed on page 1 because the regenerated summary replaced the old text just after the chip was picked: the card opens as soon as the job ends, sometimes still showing the old summary.
+  - A direct click on the current stack jumped to page 2. The clip now waits for the new text to settle (1.8 s in the take), and citation clicks re-pick and retry once.
+  - Clips 5–9 were re-recorded into the same run, as the plan allows for clip 5.
+- **Result.**
+  - `docs/evidence/generated/demo/final/ara-demo.mp4`: 1920x1080 H.264, 25 fps, 280.2 s, with a silent AAC track, 31 MB. Each clip is also in `clips/`.
+  - Real waits:
+    - FSE PDF from OpenAlex: 11.7 s.
+    - SoK "no stored copy": 1.5 s.
+    - arXiv and USENIX preparation: 9.7 s and 10.2 s.
+    - Details lookup: 4.3 s.
+    - Summary regeneration: 51.2 s (22× and 16× on screen).
+    - Answers: 8.9 s and 12.7 s, streamed at 1×.
+  - The USENIX paper's details end up from OpenAlex's arXiv record after the catalog lookup, and the clip 4 card says so.
+- **Checks.**
+  - Contact sheets every 7 s plus single frames covered every card, clip, fade and badge.
+  - The dev stack still has 6 papers and 6 chats, as before.
+  - `npm test` passes 19 tests. The first `npm test` script passed the bare `lib/` directory, which Node ran as a file and failed, so it now uses a glob.

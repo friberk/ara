@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ara. title card</title>
+<style>
+  /* Brand: DESIGN.md and branding/README.md. Fonts are injected as data URLs by lib/render.mjs. */
+  :root {
+    --ground: #0a0a0a;
+    --ink: #fafafa;
+    --muted: #a3a3a3;
+    --sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+    --mono: "Geist Mono Variable", ui-monospace, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; background: var(--ground); color: var(--ink); }
+  body {
+    font-family: var(--sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  .stage { position: relative; width: 1920px; height: 1080px; display: grid; place-items: center; }
+  .stack { display: grid; justify-items: center; text-align: center; max-width: 1440px; }
+  .wordmark svg { display: block; height: 100%; width: auto; }
+  .wordmark path { fill: var(--ink); }
+
+  /* Feature cards */
+  .step { font-family: var(--mono); font-size: 22px; letter-spacing: 0.12em; color: var(--muted); }
+  .title { margin-top: 30px; font-size: 84px; font-weight: 600; line-height: 1.08; letter-spacing: -0.025em; text-wrap: balance; }
+  .subtitle { margin-top: 28px; font-size: 32px; font-weight: 400; line-height: 1.4; color: var(--muted); max-width: 1320px; text-wrap: balance; }
+  .corner { position: absolute; left: 96px; bottom: 84px; height: 40px; }
+
+  /* Opening and closing cards */
+  .hero .wordmark { height: 176px; }
+  .hero .name { margin-top: 44px; font-size: 46px; font-weight: 500; letter-spacing: -0.02em; }
+  .hero .line { margin-top: 20px; font-size: 28px; color: var(--muted); }
+
+  /* Time-lapse badge, captured alone on a transparent background */
+  .badge-host { width: auto; height: auto; background: transparent; display: inline-block; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 15px 6px 12px; border-radius: 999px;
+    background: rgba(10, 10, 10, 0.9); color: var(--ink);
+    font-family: var(--mono); font-size: 17px; font-weight: 500; letter-spacing: 0.02em; line-height: 20px;
+  }
+  .badge svg { width: 17px; height: 17px; display: block; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

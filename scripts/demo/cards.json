@@ -1,0 +1,47 @@
+{
+  "opening": {
+    "name": "AI Research Assistant",
+    "line": "Berk Cakar - CS 59300 - Homework 1 Demo"
+  },
+  "clips": {
+    "01-search": {
+      "title": "Search for papers",
+      "subtitle": "Search OpenAlex by topic. Each result shows its authors, year, abstract and links."
+    },
+    "02-save": {
+      "title": "Save a paper",
+      "subtitle": "It joins your library, and its PDF is fetched from OpenAlex automatically."
+    },
+    "03-attach": {
+      "title": "No stored copy? Upload the PDF",
+      "subtitle": "OpenAlex has no copy of this SoK, so we attach the PDF from arXiv."
+    },
+    "04-upload": {
+      "title": "Upload a PDF",
+      "subtitle": "The title and authors are read from the PDF, then matched to the full OpenAlex record."
+    },
+    "05-summary": {
+      "title": "Summarize a paper",
+      "subtitle": "Written from the paper’s full text, with page citations you can check."
+    },
+    "06-ask": {
+      "title": "Ask about a paper",
+      "subtitle": "Answers cite their pages. Click a citation to see the passage."
+    },
+    "07-multi": {
+      "title": "Ask across papers",
+      "subtitle": "Mention papers with @ to compare them in one conversation."
+    },
+    "08-library": {
+      "title": "Your library stays",
+      "subtitle": "Still there after restarting the app. Filter it, edit details and reopen chats."
+    },
+    "09-settings": {
+      "title": "Settings",
+      "subtitle": "Theme, default model and reasoning, search index and where paper details come from."
+    }
+  },
+  "closing": {
+    "name": "AI Research Assistant"
+  }
+}

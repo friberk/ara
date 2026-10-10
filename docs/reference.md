@@ -253,7 +253,7 @@ The installed local skill is `.agents/skills/pymupdf-pdf/SKILL.md`. Its executab
 
 Architecture, traceability, priorities and milestones: [implementation plan](implementation-plan.md). Exact API shapes: [API contract](api-contract.md). Actual development observations: [agent journal](agent-development-log.md). Stable issues: `issue_tracker/ARA-*.json`. Current delivery status and verification: [execution progress](execution-progress.md) and [verification record](verification-final.md).
 
-A live five-workflow recording is available locally at `docs/evidence/generated/live-demo/live-demo.webm`; generated evidence is ignored by Git. The [submission checklist](submission-checklist.md) supports the student's own reflection and final submission. The source lives in the private GitHub repository `friberk/ara`; `.github/workflows/ci.yaml` verifies every push to `main` and deploys it to the demo server when verification passes.
+A live five-workflow recording is available locally at `docs/evidence/generated/live-demo/live-demo.webm`; generated evidence is ignored by Git. The submitted demo video is scripted: [scripts/demo](../scripts/demo/README.md) records every feature on an empty, isolated `ara-demo` stack with testreel and joins the clips with title cards (ARA-113). The [submission checklist](submission-checklist.md) supports the student's own reflection and final submission. The source lives in the private GitHub repository `friberk/ara`; `.github/workflows/ci.yaml` verifies every push to `main` and deploys it to the demo server when verification passes.
 
 ## License and third-party dependencies
 
