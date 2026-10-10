@@ -1524,3 +1524,13 @@ An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` f
   - *Green.* 180 passed across the retrieval and chat suites; Ruff flagged one long line, since fixed.
 - **Verification.** The full backend after the merge: 1180 passed in 252.84 s, Ruff clean. The frontend did not change, so it was not re-run.
 - **Not verified.** No live OpenAI call, no Playwright run. The cap of 4 is not measured on the user's papers.
+
+## 2026-10-10 - ARA-098 PDF state icons (phase 1)
+
+- **Scope.** Frontend only. Added one shared `PdfStateIcon` (`components/paper/PdfStateIcon.tsx`, labels in `pdf-state.ts`) and used it in the Library rows, the sidebar Papers list and the command palette. Library rows now use `PaperCitation` and have no status badge. DESIGN.md documents the icon and removes PDF state from the green and amber tints.
+- **Red.** `PdfStateIcon.test.tsx` failed first because the module did not exist. Then the library and shell tests failed with `Unable to find an accessible element with the role "img" and name "No PDF yet"` and `Unable to find an element with the text: Vaswani et al. (2017)`.
+- **Green.** After implementation one full `npx vitest run` passed 646 of 646. Two later full runs, made while Vite and a seed server ran, each had one or two timeouts in unrelated files (library-manage, workspace, a palette test); those files passed 36 of 36 when rerun alone.
+- **Correction.** My first icon test guessed the lucide class name `lucide-file-question-mark`; the real class is `lucide-file-question`. This was a test bug, not a component bug.
+- **Decision.** In the sidebar and palette the icon is not a tab stop, because the row is already the stop, so its tooltip opens on hover only there. Its label becomes part of the link name, so two sidebar tests now match by regex.
+- **Visual round.** Chromium from the project's Playwright, a seeded stub API and Vite on port 5198. Light, dark, 1100px and 390px: no horizontal overflow, the venue truncates first, the red failed icon and muted question icon read clearly, and the tooltip shows on hover. Screenshots stayed outside the repo.
+- **Pending.** Phase 2 after ARA-096 and ARA-097 merge: picker, workspace header, deleting the old badge components, and the e2e text.
