@@ -61,9 +61,12 @@ export function PaperHeader({ paper }: { paper: Paper }) {
           </div>
         )}
         <Links paper={paper} />
-        {paper.abstract?.trim()
-          ? <ClampedText text={paper.abstract.trim()} className="mt-1" textClassName="max-w-[70ch] whitespace-pre-line" />
-          : <p className="mt-1 text-sm text-muted-foreground">No abstract is available for this paper yet.</p>}
+        <div className="mt-1 grid gap-1.5">
+          <h3 className="text-sm font-medium">Abstract</h3>
+          {paper.abstract?.trim()
+            ? <ClampedText text={paper.abstract.trim()} textClassName="max-w-[70ch] whitespace-pre-line" />
+            : <p className="text-sm text-muted-foreground">No abstract is available for this paper yet.</p>}
+        </div>
         {paper.pdf_doi_owner && (
           <p className="text-sm text-pretty">
             {`This PDF’s DOI belongs to “${paper.pdf_doi_owner.title || 'Untitled paper'}” in your library.`}{' '}

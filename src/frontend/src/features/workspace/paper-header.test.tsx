@@ -67,6 +67,10 @@ test('Given a paper with its PDF, Then the reader opens with its bibliography ab
   expect(within(top).getByRole('link', { name: /^DOI/ })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
   expect(within(top).getByRole('link', { name: /^OpenAlex/ })).toHaveAttribute('href', 'https://openalex.org/W123')
   expect(within(top).getByText(paper.abstract)).toHaveClass('line-clamp-3')
+  // The abstract has its own small heading, grouped with its text (ARA-101 follow-up).
+  const abstract = within(top).getByRole('heading', { level: 3, name: 'Abstract' })
+  expect(abstract).toHaveClass('text-sm', 'font-medium')
+  expect(abstract.nextElementSibling).toContainElement(within(top).getByText(paper.abstract))
   expect(within(top).getByRole('button', { name: 'Edit details' })).toBeVisible()
   expect(within(top).getByRole('button', { name: 'Sources and search index' })).toBeVisible()
   // The PDF follows the header in the same scrolling column.
@@ -78,6 +82,7 @@ test('Given a sparse paper, Then the header shows what exists and says plainly t
   renderApp('/papers/p1')
   const top = await header('Untitled notes')
   expect(within(top).getByText('No abstract is available for this paper yet.')).toBeVisible()
+  expect(within(top).getByRole('heading', { level: 3, name: 'Abstract' }).nextElementSibling).toHaveTextContent('No abstract is available for this paper yet.')
   expect(within(top).queryByRole('list', { name: 'Links' })).not.toBeInTheDocument()
   expect(within(top).queryByText(/Not available|null|undefined/)).not.toBeInTheDocument()
   expect(top.querySelectorAll('p').length).toBe(1)
@@ -131,7 +136,7 @@ test('Given ⓘ, When it is pressed, Then a centred dialog lists sources, Look u
   const identifiers = within(dialog).getByRole('region', { name: 'Identifiers' })
   expect(within(identifiers).getByText('10.1234/evidence')).toHaveClass('font-mono')
   expect(within(identifiers).getByText('W123')).toHaveClass('font-mono')
-  expect(await within(dialog).findByText('212 passages · 14 sections')).toBeVisible()
+  expect(await within(dialog).findByText('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')).toBeVisible()
   expect(within(dialog).getByRole('heading', { name: 'Search index' })).toBeVisible()
   expect(within(dialog).getByRole('button', { name: 'Delete paper…' })).toBeVisible()
   expect(within(dialog).queryByText(paper.abstract)).not.toBeInTheDocument()
