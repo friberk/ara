@@ -136,11 +136,11 @@ test('Given a recent chat, When deleted and confirmed, Then the chat is removed'
   await waitFor(() => expect(calls.some((call) => call.method === 'DELETE' && call.path === '/chats/c1')).toBe(true))
 })
 
-test('Given the theme menu, When Dark is chosen, Then the dark tokens apply and the choice persists', async () => {
+test('Given Settings > General, When Dark is chosen, Then the dark tokens apply and the choice persists', async () => {
   mockApi({})
-  const { user } = renderApp('/')
-  await user.click(screen.getByRole('button', { name: 'Theme: System' }))
-  await user.click(await screen.findByRole('menuitemradio', { name: 'Dark' }))
+  const { user } = renderApp('/settings')
+  const theme = await screen.findByRole('radiogroup', { name: 'Theme' })
+  await user.click(within(theme).getByRole('radio', { name: 'Dark' }))
   await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
   expect(window.localStorage.getItem('theme')).toBe('dark')
 })

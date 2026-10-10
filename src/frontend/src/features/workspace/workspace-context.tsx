@@ -22,6 +22,8 @@ export type WorkspaceContextValue = {
   setView: (view: WorkspaceView) => void
   sourceRequest: SourceRequest | null
   showSource: (citation: Citation, claim?: string) => void
+  /** Opens a paper's current PDF in its reader tab, without a passage (the pills above a multi-paper chat, ARA-110). */
+  showPaper: (paperId: string) => void
   /** The reader reports whether the excerpt was found in the text layer (or its boxes outlined), so the UI can say so. */
   highlightOutcome: HighlightOutcome | null
   reportHighlight: (outcome: HighlightOutcome) => void

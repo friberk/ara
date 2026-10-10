@@ -7,7 +7,6 @@ import {
 } from '@/components/ui/sidebar'
 import { AraMark, AraWordmark } from '@/components/brand/AraBrand'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
-import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { usePapers } from '@/hooks/queries/papers'
 import { PaperActions } from '@/features/library/PaperActions'
 import { useSettingsDialog } from '@/features/settings/settings-url'
@@ -103,7 +102,6 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
               <Settings aria-hidden="true" /><span>Settings</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem><ThemeToggle /></SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />

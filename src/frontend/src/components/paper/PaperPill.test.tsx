@@ -84,3 +84,55 @@ test('Given a pill inside a question bubble, Then it sits on the paper tone so i
   expect(image).toHaveClass('bg-background')
   expect(image).not.toHaveClass('bg-muted')
 })
+
+test('Given a pill that can be activated, Then it is one button named by the title, and a click or Enter calls onActivate (ARA-110)', async () => {
+  const onActivate = vi.fn()
+  const user = userEvent.setup()
+  pill({ onActivate })
+  const button = screen.getByRole('button', { name: title })
+  expect(button).toHaveAccessibleDescription('Karpukhin & Oguz (2020), EMNLP')
+  await user.click(button)
+  expect(onActivate).toHaveBeenCalledTimes(1)
+  button.focus()
+  await user.keyboard('{Enter}')
+  expect(onActivate).toHaveBeenCalledTimes(2)
+})
+
+test('Given an activatable, removable pill, When it is focused, Then its remove button shows, can be reached with Tab and removes without activating', async () => {
+  const onActivate = vi.fn()
+  const onRemove = vi.fn()
+  const user = userEvent.setup()
+  pill({ onActivate, onRemove })
+  expect(screen.queryByRole('button', { name: `Remove ${title}` })).not.toBeInTheDocument()
+  await user.tab()
+  expect(screen.getByRole('button', { name: title })).toHaveFocus()
+  await user.tab()
+  const remove = screen.getByRole('button', { name: `Remove ${title}` })
+  expect(remove).toHaveFocus()
+  await user.keyboard('{Enter}')
+  expect(onRemove).toHaveBeenCalledTimes(1)
+  expect(onActivate).not.toHaveBeenCalled()
+})
+
+test('Given a pill whose paper is being removed, Then its remove button is disabled', async () => {
+  const user = userEvent.setup()
+  pill({ onActivate: vi.fn(), onRemove: vi.fn(), removeDisabled: true })
+  await user.hover(screen.getByRole('button', { name: title }))
+  expect(screen.getByRole('button', { name: `Remove ${title}` })).toBeDisabled()
+})
+
+test('Given a pill with its own remove label, Then the remove button carries it instead of "Remove <title>" (ARA-110)', async () => {
+  const user = userEvent.setup()
+  pill({ onActivate: vi.fn(), onRemove: vi.fn(), removeLabel: `Remove ${title} from this chat` })
+  await user.hover(screen.getByRole('button', { name: title }))
+  expect(screen.getByRole('button', { name: `Remove ${title} from this chat` })).toBeVisible()
+  expect(screen.queryByRole('button', { name: `Remove ${title}` })).not.toBeInTheDocument()
+})
+
+test('Given a pill with no size, Then its title is cut at 28 characters; a row pill can ask for fewer (ARA-110)', () => {
+  const { unmount } = pill()
+  expect(screen.getByText(title)).toHaveStyle({ maxWidth: '28ch' })
+  unmount()
+  pill({ maxChars: 16 })
+  expect(screen.getByText(title)).toHaveStyle({ maxWidth: '16ch' })
+})
