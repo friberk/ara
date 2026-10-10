@@ -11,20 +11,22 @@ upload joins that paper instead of duplicating it:
   placeholder, the document and its stored original.
 A match the catalog lookup finds later is recorded the same way and asks the same question.
 
-State lives in `model_configurations`, keyed by the placeholder paper or document, so no
-migration is needed:
-- `upload_match:<placeholder>`: the pending match. Placeholders with one are hidden from the
-  library listing and listed by GET /uploads/matches instead.
-- `paper_redirect:<placeholder>`: where an attached or replaced upload went, so an open link to
-  the placeholder still reaches its paper.
-- `pdf_doi_owner:<document>`: an upload into a chosen paper whose DOI belongs to another paper.
+State lives in tables whose foreign keys remove it with the rows it names (ARA-092):
+- `upload_matches`, keyed by the placeholder paper: the pending match. Placeholders with one are
+  hidden from the library listing (a NOT EXISTS on the key) and listed by GET /uploads/matches
+  instead. Deleting the placeholder, the library paper or the document deletes the match.
+- `paper_redirects`, keyed by the retired placeholder's ID: where an attached or replaced upload
+  went, so an open link to the placeholder still reaches its paper. The old ID has no row to
+  reference, so only the target is a foreign key; deleting the target deletes the redirect.
+- `documents.doi_owner_paper_id`: an upload into a chosen paper whose DOI belongs to another
+  paper. Deleting the owner clears it.
 """
 
 import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import String, cast, delete, func, select, update
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import AppError
@@ -32,19 +34,17 @@ from app.integrations.academic import normalized_doi
 from app.models.research import (
     ChatSession,
     Document,
-    ModelConfiguration,
     Paper,
     PaperAuthor,
+    PaperRedirect,
     PaperSummary,
+    UploadMatch,
 )
 from app.repositories.jobs import enqueue
 from app.repositories.papers import identity_locks
 from app.schemas.research import SearchResult
 from app.services.metadata import Clues, acceptable, title_score
 
-PENDING = "upload_match:"
-REDIRECT = "paper_redirect:"
-DOI_OWNER = "pdf_doi_owner:"
 logger = logging.getLogger(__name__)
 
 
@@ -55,15 +55,18 @@ class LibraryMatch:
     matched_by: str
 
 
-def pending_paper_ids():
-    """Placeholder paper IDs (as text) whose upload waits for the user's decision."""
-    return select(func.substr(ModelConfiguration.key, len(PENDING) + 1)).where(
-        ModelConfiguration.key.startswith(PENDING)
-    )
+def pending_papers():
+    """Filter for placeholder papers whose upload waits for the user's decision."""
+    return exists().where(UploadMatch.placeholder_paper_id == Paper.id)
 
 
 def library_papers():
-    return cast(Paper.id, String).not_in(pending_paper_ids())
+    """Filter for papers that are in the library, not held placeholders."""
+    return ~pending_papers()
+
+
+def pending_lock_key(placeholder_id: UUID) -> str:
+    return f"upload_match:{placeholder_id}"
 
 
 async def has_pdf(session, paper: Paper) -> bool:
@@ -134,15 +137,15 @@ async def hold(
     session, *, placeholder_id: UUID, document_id: UUID, match: LibraryMatch, found_by: str
 ) -> dict:
     """Record a pending match; a repeat keeps the first record."""
-    value = {
-        "paper_id": str(match.paper_id),
-        "document_id": str(document_id),
-        "matched_by": match.matched_by,
-        "found_by": found_by,
-    }
     await session.execute(
-        insert(ModelConfiguration)
-        .values(key=f"{PENDING}{placeholder_id}", value=value)
+        insert(UploadMatch)
+        .values(
+            placeholder_paper_id=placeholder_id,
+            library_paper_id=match.paper_id,
+            document_id=document_id,
+            matched_by=match.matched_by,
+            found_by=found_by,
+        )
         .on_conflict_do_nothing()
     )
     return {"paper_id": str(match.paper_id), "outcome": "pending", "matched_by": match.matched_by}
@@ -162,15 +165,12 @@ async def absorb(session, *, placeholder_id: UUID, library: Paper, document: Doc
             update(model).where(model.paper_id == placeholder_id).values(paper_id=library.id)
         )
     await session.flush()
+    # Deleting the placeholder also deletes its pending match.
     await session.execute(delete(Paper).where(Paper.id == placeholder_id))
     await session.execute(
-        delete(ModelConfiguration).where(ModelConfiguration.key == f"{PENDING}{placeholder_id}")
-    )
-    redirect = {"paper_id": str(library.id)}
-    await session.execute(
-        insert(ModelConfiguration)
-        .values(key=f"{REDIRECT}{placeholder_id}", value=redirect)
-        .on_conflict_do_update(index_elements=["key"], set_={"value": redirect})
+        insert(PaperRedirect)
+        .values(old_paper_id=placeholder_id, paper_id=library.id)
+        .on_conflict_do_update(index_elements=["old_paper_id"], set_={"paper_id": library.id})
     )
 
 
@@ -182,36 +182,40 @@ async def note_doi_owner(session, document_id: UUID, paper: Paper, doi: str | No
         select(Paper.id).where(Paper.normalized_doi == doi, Paper.id != paper.id)
     )
     if owner is not None:
+        # A repeat keeps the first owner.
         await session.execute(
-            insert(ModelConfiguration)
-            .values(key=f"{DOI_OWNER}{document_id}", value={"paper_id": str(owner)})
-            .on_conflict_do_nothing()
+            update(Document)
+            .where(Document.id == document_id, Document.doi_owner_paper_id.is_(None))
+            .values(doi_owner_paper_id=owner)
         )
 
 
 async def redirect_target(session, paper_id: UUID) -> UUID | None:
-    row = await session.get(ModelConfiguration, f"{REDIRECT}{paper_id}")
-    return UUID(row.value["paper_id"]) if row else None
+    return await session.scalar(
+        select(PaperRedirect.paper_id).where(PaperRedirect.old_paper_id == paper_id)
+    )
 
 
 async def match_view(session, paper: Paper) -> tuple[dict | None, dict | None]:
     """The pending match and the DOI owner of the active PDF, as PaperDetail fields."""
-    pending = await session.get(ModelConfiguration, f"{PENDING}{paper.id}")
+    pending = await session.get(UploadMatch, paper.id)
     match = None
     if pending is not None:
-        library = await session.get(Paper, UUID(pending.value["paper_id"]))
-        if library is not None:
-            match = {
-                "paper_id": library.id,
-                "title": library.title,
-                "has_pdf": await has_pdf(session, library),
-                "matched_by": pending.value.get("matched_by", "doi"),
-                "found_by": pending.value.get("found_by", "ingest"),
-            }
+        library = await session.get(Paper, pending.library_paper_id)
+        match = {
+            "paper_id": library.id,
+            "title": library.title,
+            "has_pdf": await has_pdf(session, library),
+            "matched_by": pending.matched_by,
+            "found_by": pending.found_by,
+        }
     owner = None
     if paper.active_document_id is not None:
-        row = await session.get(ModelConfiguration, f"{DOI_OWNER}{paper.active_document_id}")
-        other = await session.get(Paper, UUID(row.value["paper_id"])) if row else None
+        other = await session.scalar(
+            select(Paper)
+            .join(Document, Document.doi_owner_paper_id == Paper.id)
+            .where(Document.id == paper.active_document_id)
+        )
         if other is not None:
             owner = {"paper_id": other.id, "title": other.title}
     return match, owner
@@ -228,10 +232,8 @@ async def resolve(resources, placeholder_id: UUID, decision: str) -> UUID | None
 
     discarded_key = None
     async with resources.sessions() as session, session.begin():
-        await identity_locks(session, [f"{PENDING}{placeholder_id}"])
-        row = await session.get(
-            ModelConfiguration, f"{PENDING}{placeholder_id}", with_for_update=True
-        )
+        await identity_locks(session, [pending_lock_key(placeholder_id)])
+        row = await session.get(UploadMatch, placeholder_id, with_for_update=True)
         if row is None:
             target = await redirect_target(session, placeholder_id)
             if decision == "attach" and target is not None:
@@ -242,8 +244,8 @@ async def resolve(resources, placeholder_id: UUID, decision: str) -> UUID | None
             raise AppError(
                 409, "NO_PENDING_MATCH", "This upload has no library match waiting for a choice."
             )
-        library_id = UUID(row.value["paper_id"])
-        document_id = UUID(row.value["document_id"])
+        library_id = row.library_paper_id
+        document_id = row.document_id
         papers = {
             paper.id: paper
             for paper in (

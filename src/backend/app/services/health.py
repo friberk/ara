@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy import text
 
-SCHEMA_REVISION = "0008_library_embeddings"
+SCHEMA_REVISION = "0009_upload_match_tables"
 
 
 async def readiness(resources) -> dict[str, str]:

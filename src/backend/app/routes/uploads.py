@@ -3,12 +3,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Request, Response
-from sqlalchemy import String, cast, select
+from sqlalchemy import select
 
 from app.models.research import Paper
 from app.repositories.papers import paper_detail
 from app.schemas.research import MatchDecision, PaperDetail, PaperPage
-from app.services.upload_match import pending_paper_ids, resolve
+from app.services.upload_match import pending_papers, resolve
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["documents"])
 
@@ -19,7 +19,7 @@ async def pending_matches(request: Request):
         ids = (
             await session.scalars(
                 select(Paper.id)
-                .where(cast(Paper.id, String).in_(pending_paper_ids()))
+                .where(pending_papers())
                 .order_by(Paper.created_at.desc())
                 .limit(100)
             )
