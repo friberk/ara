@@ -228,7 +228,7 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 
 ### Hierarchy
 - **Display** (600, 28px, tight tracking, balanced wrap): the home greeting above the composer ("What are you researching?"). Used once per screen at most.
-- **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library and Settings.
+- **Headline** (600, 1.5rem, tight tracking): the page title on Search and Library. Settings is a dialog, not a page: its title and the open category's title use 1rem at the same weight and tracking, and each setting's heading is 0.875rem medium.
 - **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the paper header above the PDF at 1.125rem.
 - **Reading** (400, 15.5px, 28px line): assistant answers, user messages and summaries. This is the conversation's reading voice, one step above the interface.
 - **Composer** (400, 15px, 24px line): text typed into the composer.
@@ -251,7 +251,7 @@ The product's mark is the wordmark "ara." (the dot is part of the name), set in 
 
 ## Layout
 
-The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), and Library, then Papers and Recent groups, with Settings in the footer. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher: the open chat's title (its menu holds Rename and Delete), a History icon that opens a popover of this paper's chats newest first with compact relative times ("now", "12m", "3h", "2d", then "Oct 2"), and the New conversation icon.
+The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to a 3rem icon rail (⌘B). Below 768px it becomes an 18rem offcanvas sheet. The sidebar holds New research, Find papers and chats (⌘K command palette), and Library, then Papers and Recent groups, with Settings in the footer. Settings opens as a dialog over the current page rather than a route. The main column has a 48px header that pages can fill with a title, a status badge or a chat switcher: the open chat's title (its menu holds Rename and Delete), a History icon that opens a popover of this paper's chats newest first with compact relative times ("now", "12m", "3h", "2d", then "Oct 2"), and the New conversation icon.
 
 Content routes centre a single column at max-w-3xl (48rem). Home centres the display greeting, the composer and suggestion chips vertically, with a 28px gap and 12vh of extra bottom padding so the group sits slightly above centre. Search pins the composer to the bottom of the results column, like a chat thread. Search results and library entries are borderless rows with 24px and 20px vertical padding, divided by hairlines.
 
@@ -273,7 +273,7 @@ The system is flat by default and uses tonal layering. Depth comes from the side
 
 ## Shapes
 
-Corners follow the shadcn scale derived from a 10px base radius. Controls (buttons, inputs, tabs) use 10px, small buttons and icon buttons are capped at 8 to 12px, and menu items and sidebar rows use 8px. Radius grows with the size of the surface: grouped settings use 14px, user bubbles and the summary card 18px, and the composer 22px. Fully round shapes are reserved for the send and stop buttons, the scroll-to-latest button, suggestion chips and badges. Citation chips are small 6px rectangles so they sit inside running text. PDF pages keep a near-square 2px corner because they represent paper.
+Corners follow the shadcn scale derived from a 10px base radius. Controls (buttons, inputs, tabs) use 10px, small buttons and icon buttons are capped at 8 to 12px, and menu items and sidebar rows use 8px. Radius grows with the size of the surface: grouped settings (the bordered choice lists in the Settings dialog) use 14px, user bubbles and the summary card 18px, and the composer 22px. Fully round shapes are reserved for the send and stop buttons, the scroll-to-latest button, suggestion chips and badges. Citation chips are small 6px rectangles so they sit inside running text. PDF pages keep a near-square 2px corner because they represent paper.
 
 ## Components
 
@@ -319,6 +319,15 @@ The PDF bar ends with a vertical-ellipsis button named "PDF options". Its dropdo
 
 ### PDF state icon
 `PdfStateIcon` is the leading icon of every paper row (Library, sidebar Papers, command palette, @ picker) and appears in the paper workspace header only when the PDF is not ready. It is 16px and uses ink, muted and destructive only, never green or amber: attached is `FileText` in foreground ink, none is `FileQuestion` in muted ink, preparing is a muted `LoaderCircle` that spins only when motion is allowed, and failed is a destructive `FileWarning`. A tooltip opens on hover and keyboard focus ("PDF attached", "No PDF yet", "Preparing PDF…", "PDF couldn’t be read") and the same text names the icon for screen readers. Inside a link or option the icon is not a tab stop. There is no text badge for PDF state.
+
+### Settings dialog
+Settings is a stock shadcn Dialog over the current page, opened from the sidebar footer or the command palette. On desktop it is about 760 by 560px (never taller than the viewport less 4rem) with a 14px corner: a category column on the sidebar ground at the left, with the "Settings" title and the categories General, Models, Library and search, and Open models (listed only while the experimental open-models flag is on), and the open category's panel at the right, under its title and the close button, scrolling inside. Category rows use the sidebar row's 8px corner, muted hover and medium-weight active state. Below 768px it fills the screen: the category list comes first in 44px rows with a trailing chevron, and a category opens with a back control ("All settings") beside its title.
+
+The URL names the open category (`?settings=<category>`). Opening pushes one history entry, so the browser's Back closes it, and switching category replaces that entry. Esc and the close button return focus to the control that opened it. Old `/settings` links open it over home, and `/settings#local-models` opens Open models.
+
+Each setting is a section divided from the next by a hairline: a medium 0.875rem heading, one sentence in muted text on what it changes, its control at the right or below, and a quiet "Saved" in muted label text beside the heading once a save lands. Choices save as they are made, with no Save button. The one exception is the search index model: choosing another opens an alert dialog that gives the number of papers, the token count rounded to two significant figures and the estimated cost, and Cancel keeps the previous model.
+
+Choice lists are bordered 14px lists of radio rows divided by hairlines. Each row has the name, one plain line from the catalog, and, for chat models, the facts in label size with tabular figures (Input, Output and Context, in fixed columns from the small breakpoint). The chosen row takes the quiet-surface fill. The default model carries a check and the word "Default" at the right of its row rather than a pill. Reasoning levels and the theme use the segmented control (see Navigation), and six reasoning levels form a 3 by 2 grid on a phone. Reranking and binary reasoning use a shadcn Switch. Settings has no status pills.
 
 ### Status Badges
 Fully round, 20px tall, label size at regular weight, with a leading 12px icon. Completed and available states use the green tints. Processing, running and interrupted use the amber tints. Failed uses the destructive tint. PDF state is not a badge; see the PDF state icon. The processing icon spins only when the user allows motion.
