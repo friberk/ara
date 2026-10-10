@@ -1485,3 +1485,10 @@ An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` f
 - No visual browser check.
 - Section summaries were not generated for real papers, so their cost on the user's library is unknown. The order of magnitude is one paper summary per PDF.
 - ARA-079's original local small-model case is not exercised while open models are frozen.
+
+**Section summaries now ground through their passages (ARA-079/094 follow-up).**
+- **The user's question.** The user asked why section summaries were needed and how they are cited. The lead explained:
+  - they came from ARA-079, bundled into the approved retrieval plan without separate discussion;
+  - they answer broad questions under retrieval-always, as in RAPTOR, LlamaIndex hierarchical retrieval and GraphRAG global search.
+- **A gap the lead found.** Reading `rag/packing.py`, the lead saw that a summary's unselected source chunks received handles without their text being sent. Grounding was indirect: claim → summary → passage.
+- **The user's choice.** The user chose "summaries route, passages ground": send the summary's key source passages as real evidence and strip markers to unsent chunks. The ARA-094 agent was resumed for it.
