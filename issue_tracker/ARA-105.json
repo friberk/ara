@@ -22,7 +22,7 @@
     "Integration: concurrent backfills revive once.",
     "Existing section summary tests stay green."
   ],
-  "status": "done",
+  "status": "completed",
   "related_files": [
     "src/backend/app/services/section_summaries.py",
     "src/backend/app/repositories/jobs.py"
