@@ -1,0 +1,40 @@
+{
+  "id": "ARA-096",
+  "title": "Inline @ mention pills for papers in every composer (TipTap)",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"removing @Han 18 doesn't remove the attachment. Instead of text can we have the @ thing like an entity inside a pill or something like that?\" Today, typing @ inserts plain text '@Surname Year' into a textarea while the paper is attached separately, so deleting the text leaves the attachment. The server recognises named papers by literal text matching. The user chose TipTap (headless ProseMirror with the official Mention extension) over Lexical or a hand-built contenteditable.",
+  "dependencies": [
+    "ARA-088"
+  ],
+  "acceptance_criteria": [
+    "Given any composer (home, new chat, chat), when the user types @ and picks a paper, then an atomic inline pill (icon plus 'Surname Year' or a short title) is inserted where @ was typed.",
+    "Given a pill, when the user deletes it (Backspace, Delete, a selection or cut), then it is removed as one unit. A paper that the pill brought into the draft is no longer attached unless another pill or an explicit chip still references it.",
+    "Given an existing chat, when the user mentions a paper not yet in the chat, then it is added only when the message is sent, atomically with that message and idempotent per request UUID. Deleting the pill before sending leaves the chat unchanged.",
+    "Given an existing chat, when the user mentions a paper already in it, then the question is focused on that paper. Deleting the pill does not remove the paper from the chat; removal stays with the chip \u00d7, the '+N more' list or the toolbar picker.",
+    "Given a sent message, when history renders, then its mentions show as the same non-editable pills, and the server receives structured mentioned paper IDs instead of relying on '@Surname Year' text.",
+    "Given the composer, when the user types, then today's behaviour holds: Enter sends, Shift+Enter adds a line, IME composition works, plain-text paste works, autosize, placeholder, disabled states and the context meter. Screen readers announce pills, and keyboard users can move over and delete them.",
+    "Given the frontend bundle, when TipTap is added, then only the needed extensions are installed (no starter-kit bloat), with exact lockfile versions and licenses recorded."
+  ],
+  "test_cases": [
+    "Unit and component: pill insertion, atomic deletion syncing attachments, duplicate mentions, paste, Enter and Shift+Enter, IME guard, accessibility labels.",
+    "Backend: send with mentioned paper IDs adds missing papers atomically and idempotently; named-paper routing uses the IDs.",
+    "History renders pills.",
+    "Playwright spec for typing @, picking, deleting a pill and sending, run at integration."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/components/composer/Composer.tsx",
+    "src/frontend/src/components/composer/use-paper-mention.ts",
+    "src/frontend/src/components/composer/PaperPicker.tsx",
+    "src/frontend/src/features/chat/ConversationComposer.tsx",
+    "src/frontend/src/features/chat/NewConversation.tsx",
+    "src/frontend/src/features/research/HomePage.tsx",
+    "src/backend/app/routes/chat.py",
+    "src/backend/app/services/chat.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 with the user's approval (TipTap). Branch feat/ara-096-mention-pills.",
+  "updated_at": "2026-10-10"
+}

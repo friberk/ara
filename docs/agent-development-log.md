@@ -1316,3 +1316,9 @@ The design doc is updated.
   - **Counts.** `npm run check`: 618 tests in 80 files. `npm run build` passed with the existing chunk-size warning.
 
 **Paper deletion and metadata editing (ARA-095).** The user asked why papers cannot be deleted or their metadata edited. The lead checked the code. Deletion was never built: there is no endpoint and no UI. Editing exists only in the workspace Details tab (Edit) and covers title, authors, year, DOI and abstract, but not venue. It is not reachable from the Library, and "Look up again" appears only after a failed lookup. The user approved ARA-095, assigned to an Opus agent, in parallel with ARA-094.
+
+**Mention pills (ARA-096).** The user found that deleting the inserted "@Han 2018" text left the paper attached, and asked for entity pills instead of text. The lead proposed atomic inline pills synced with attachments:
+- in an existing chat, papers mentioned in the draft are added only on send;
+- mentions of papers already in the chat only focus the question;
+- structured mention IDs replace literal "@Surname Year" matching.
+The user chose TipTap (with its Mention extension) over Lexical or a hand-built contenteditable. The work went to an Opus agent.
