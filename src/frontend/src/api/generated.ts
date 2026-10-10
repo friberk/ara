@@ -620,6 +620,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/uploads/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending Matches */
+        get: operations["pending_matches_api_v1_uploads_matches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/uploads/{paper_id}/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide */
+        post: operations["decide_api_v1_uploads__paper_id__match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1088,6 +1122,14 @@ export interface components {
             paper_title?: string | null;
             readonly error: components["schemas"]["JobError"] | null;
         };
+        /** MatchDecision */
+        MatchDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "attach" | "discard";
+        };
         /** Message */
         Message: {
             /**
@@ -1239,6 +1281,18 @@ export interface components {
             };
             /** File Name */
             file_name?: string | null;
+            upload_match?: components["schemas"]["UploadMatch"] | null;
+            pdf_doi_owner?: components["schemas"]["PaperLink"] | null;
+        };
+        /** PaperLink */
+        PaperLink: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Title */
+            title: string | null;
         };
         /** PaperPage */
         PaperPage: {
@@ -1621,6 +1675,31 @@ export interface components {
              * @default false
              */
             duplicate: boolean;
+        };
+        /**
+         * UploadMatch
+         * @description A new upload that is this library paper; it waits for Replace/Attach or Cancel (ARA-086).
+         */
+        UploadMatch: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Title */
+            title: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Matched By
+             * @enum {string}
+             */
+            matched_by: "doi" | "arxiv" | "title";
+            /**
+             * Found By
+             * @enum {string}
+             */
+            found_by: "ingest" | "lookup";
         };
         /** ValidationError */
         ValidationError: {
@@ -3088,6 +3167,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MetadataSettings"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_matches_api_v1_uploads_matches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperPage"];
+                };
+            };
+        };
+    };
+    decide_api_v1_uploads__paper_id__match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paper_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperDetail"];
+                };
+            };
+            /** @description The upload was discarded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

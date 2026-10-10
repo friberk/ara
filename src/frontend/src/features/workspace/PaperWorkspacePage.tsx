@@ -12,11 +12,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ShellHeader } from '@/components/shell/shell-header'
+import { MatchDecision } from '@/components/upload/MatchDecision'
 import { ConversationPane } from '@/features/chat'
 import { paperName } from '@/features/research/paper-format'
 import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { DetailsPanel } from './DetailsPanel'
+import { JoinedRedirect } from './JoinedRedirect'
 import { PaperStatusBadge } from './PaperStatusBadge'
 import { MobilePdfView, ReaderPanel } from './ReaderPanel'
 import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type WorkspaceContextValue, type WorkspaceView } from './workspace-context'
@@ -88,6 +90,7 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
           </Tooltip>
         )}
       </ShellHeader>
+      {paper.upload_match && paper.document_status === 'ready' && <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} variant="banner" />}
       {isMobile ? (
         <Tabs value={view} onValueChange={(value) => setView(parseView(value))} className="min-h-0 flex-1 gap-0 border-t">
           <div className="px-3 py-2">
@@ -140,6 +143,7 @@ function WorkspaceSkeleton() {
 export default function PaperWorkspacePage() {
   const { paperId, chatId } = useParams()
   const query = usePaper(paperId)
+  if (query.data && paperId && query.data.id !== paperId) return <JoinedRedirect paper={query.data} />
   if (query.data) return <Workspace key={query.data.id} paper={query.data} chatId={chatId} />
   if (query.error instanceof ApiError && query.error.status === 404) {
     return <EmptyState icon={FileQuestion} title="Paper not found" action={<Button asChild><Link to="/library">Open library</Link></Button>}>This paper isn’t in your library. It may have been removed.</EmptyState>

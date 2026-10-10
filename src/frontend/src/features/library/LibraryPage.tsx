@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { DocumentStatusBadge } from '@/components/feedback/DocumentStatusBadge'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
+import { PendingMatches } from '@/components/upload/PendingMatches'
 import { UploadList } from '@/components/upload/UploadList'
 import { DropOverlay } from '@/components/upload/DropOverlay'
 import { usePageDrop } from '@/components/upload/use-page-drop'
@@ -105,6 +106,7 @@ export default function LibraryPage() {
       </header>
       {uploadOpen && <AddPdfs onChoose={choose} onClose={closeUpload} />}
       <UploadList uploads={uploads} className="mt-6" />
+      <PendingMatches hidden={uploads.items.flatMap((item) => (item.accepted ? [item.accepted.paper_id] : []))} className="mt-6" />
 
       <InputGroup className="mt-8 h-9">
         <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>

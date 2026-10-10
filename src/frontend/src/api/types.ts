@@ -64,3 +64,6 @@ export type RerankerKey = NonNullable<RetrievalSettings['reranker']>
 // Uploaded-paper metadata lookups (ARA-086, docs/api-contract.md).
 export type MetadataSettings = Schemas['MetadataSettings']
 export type MetadataSource = MetadataSettings['source']
+export type UploadMatch = Schemas['UploadMatch']
+export type PaperLink = Schemas['PaperLink']
+export type MatchDecision = Schemas['MatchDecision']['decision']

@@ -9,6 +9,7 @@ from app.models.research import Paper
 from app.repositories.fulltext import enqueue_automatic
 from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
 from app.schemas.research import PaperDetail, PaperPage, PaperPatch, Provider, SavePaper, SearchPage
+from app.services.upload_match import library_papers
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
 
@@ -52,7 +53,14 @@ async def library(
     offset: int = Query(default=0, ge=0),
 ):
     async with request.app.state.resources.sessions() as session:
-        statement = select(Paper.id).order_by(Paper.created_at.desc()).limit(limit).offset(offset)
+        # Uploads waiting for a match decision are listed by GET /uploads/matches (ARA-086).
+        statement = (
+            select(Paper.id)
+            .where(library_papers())
+            .order_by(Paper.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if q:
             statement = statement.where(Paper.title.ilike(f"%{q}%"))
         ids = (await session.scalars(statement)).all()

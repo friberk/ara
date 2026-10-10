@@ -103,3 +103,49 @@ def test_a_page_set_in_one_size_has_no_printed_title_so_the_info_title_stays():
     data = document.tobytes()
     document.close()
     assert extracted(data)["title"] == "Original PDF Title"
+
+
+def test_xmp_title_beats_a_printed_info_title_and_supplies_creators_venue_and_year():
+    from support.front_matter import AUTHORS, with_xmp, xmp_packet
+
+    data = with_xmp(
+        toolchain_pdf(info_title="Module While You Are Sleeping", stamp=None),
+        xmp_packet(
+            title=TITLE,
+            creators=["Seunghun Han", "Wook Shin"],
+            venue="27th USENIX Security Symposium",
+            cover_date="2018-08-15",
+        ),
+    )
+    metadata = extracted(data)
+    assert metadata["title"] == TITLE
+    assert metadata["authors"] == ["Seunghun Han", "Wook Shin"]
+    assert metadata["venue"] == "27th USENIX Security Symposium"
+    # The publication date counts; the file's xmp:CreateDate (2026) never does.
+    assert metadata["year"] == 2018
+    assert AUTHORS.startswith("Seunghun Han")
+
+
+def test_xmp_junk_title_is_filtered_like_the_info_title():
+    from support.front_matter import with_xmp, xmp_packet
+
+    data = with_xmp(toolchain_pdf(stamp=None), xmp_packet(title="main.tex"))
+    assert extracted(data)["title"] == TITLE
+
+
+@pytest.mark.parametrize(
+    "fields", [{"doi": "10.1145/3510003.3510047"}, {"identifier": "doi:10.1145/3510003.3510047"}]
+)
+def test_xmp_doi_is_the_identifier_clue_before_text_dois(fields):
+    from support.front_matter import with_xmp, xmp_packet
+
+    metadata = extracted(with_xmp(toolchain_pdf(stamp=None), xmp_packet(**fields)))
+    assert metadata["doi"] == "10.1145/3510003.3510047"
+
+
+def test_malformed_xmp_never_fails_extraction():
+    from support.front_matter import with_xmp
+
+    data = with_xmp(toolchain_pdf(stamp=None), "<x:xmpmeta><rdf:RDF><dc:title>unclosed")
+    metadata = extracted(data)
+    assert metadata["title"] == TITLE and metadata["venue"] is None
