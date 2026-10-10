@@ -39,6 +39,8 @@ MODELS = {
 
 # Passage headers start a line: "[S1] Results · p. 3". Example handles inside instructions do not.
 PASSAGE_HANDLE = re.compile(r'(?:^|\\n|\n|")\[(S\d{1,3})\] ')
+# Evidence groups of a chat over several papers (ARA-088) start with "Paper N: ".
+PAPER_GROUP = re.compile(r'(?:^|\\n|\n|")Paper \d+: ')
 SOURCE = re.compile(r"source:([0-9a-fA-F-]{36})")
 RERANK = re.compile(r"<Query>: (.*?)\n<Document>: (.*?)<\|im_end\|>", re.S)
 
@@ -51,13 +53,20 @@ def embedding_dimensions(model: str) -> int:
 
 
 def cited_answer(prompt: str, first: str, second: str, wrapper: str = "[{}]") -> str:
-    """Cite the first supplied passage handle, else the first legacy source UUID."""
+    """Cite the first supplied passage handle (one per paper when the evidence is grouped by paper),
+    else the first legacy source UUID."""
     if "NO-EVIDENCE-FIXTURE" in prompt:
         return "[insufficient-evidence] The supplied passages do not report this."
     handles = list(dict.fromkeys(PASSAGE_HANDLE.findall(prompt)))
     sources = list(dict.fromkeys(SOURCE.findall(prompt)))
+    # Several papers: cite the first passage of each paper's group, as a comparison would.
+    firsts = [
+        found.group(1)
+        for group in PAPER_GROUP.finditer(prompt)
+        if (found := PASSAGE_HANDLE.search(prompt, group.end()))
+    ]
     if handles:
-        citation = " " + wrapper.format(handles[0])
+        citation = " " + "".join(wrapper.format(h) for h in dict.fromkeys(firsts or handles[:1]))
     elif sources:
         citation = " " + wrapper.format("source:" + sources[0])
     else:
