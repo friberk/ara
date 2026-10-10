@@ -284,7 +284,9 @@ async def resolve(resources, placeholder_id: UUID, decision: str) -> UUID | None
             if document.status == "ready":
                 # Found late: the PDF is already read; index it for its paper and summarize it
                 # once, as when a PDF becomes ready.
-                await hooks.after_chunks_persisted(session, document_id=document.id)
+                await hooks.after_chunks_persisted(
+                    session, document_id=document.id, resources=resources
+                )
                 await queue_automatic_summary(session, resources, document)
             else:
                 # Held before its pages were stored: read it now, on its paper.

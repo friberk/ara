@@ -108,6 +108,12 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.services.summarization import run_summary_job
 
             await run_summary_job(resources, identifier, generation, token, payload)
+        elif kind == "section_summaries":
+            from app.services import section_summaries
+
+            await section_summaries.run_section_summaries_job(
+                resources, identifier, generation, token, payload
+            )
         elif kind == "metadata":
             from app.services.metadata import run_metadata_job
 
