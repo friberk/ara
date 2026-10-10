@@ -127,7 +127,11 @@ async def test_given_a_comparative_question_when_answering_then_each_paper_is_se
         asks[1]["question"],
     ]
     (request,) = calls
-    assert TITLE in request["instructions"] and DENSE_TITLE in request["instructions"]
+    # The evidence headers name the papers; the system prompt states only how many there are.
+    assert "about 2 papers" in request["instructions"]
+    assert (
+        TITLE in request["input"][-1]["content"] and DENSE_TITLE in request["input"][-1]["content"]
+    )
     evidence = groups(request["input"][-1]["content"])
     assert sorted(evidence) == [1, 2]
     assert all(len(handles) >= 2 for handles in evidence.values())

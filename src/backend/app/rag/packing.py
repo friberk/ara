@@ -1,11 +1,12 @@
 """Evidence packing by real tokens, with short `[S#]` handles in document order (ARA-073).
 
-Several papers (ARA-088) follow docs/plans/retrieval-orchestration.md, step 6: each paper in
-scope gets a floor of FLOOR passages before relevance shares the rest, and when not every
-floor fits, the most relevant papers answer. Passages are grouped under a short paper header.
+Several papers (ARA-088) follow docs/plans/retrieval-orchestration.md, steps 6 and 7: papers
+the question names come first, then each paper in relevance order gets a floor of FLOOR
+passages while floors fit, and relevance shares the rest; the others add nothing to this turn.
+Passages are grouped under a short paper header.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from itertools import groupby
 from uuid import UUID
@@ -79,15 +80,17 @@ def pack_evidence(
     neighbours: Mapping[str, Sequence[BaseNode]] | None = None,
     max_passages: int = 16,
     headers: Mapping[str, str] | None = None,
+    kept: Collection[str] = (),
 ) -> list[Passage]:
     """Floors first, then the most relevant passages, then same-section neighbours.
 
-    Papers are taken in relevance order (their best candidate's rank). Each gets its first FLOOR
-    candidates that fit; the first paper whose floor does not fit, and every less relevant
-    paper, is left out. The most relevant paper always keeps whatever of its floor fits. A
-    passage that does not fit is skipped whole, never truncated. Passages and headers are costed
-    with the widest handle and their separator, so the rendered evidence stays within `budget`.
-    With `headers`, groups follow their order (the chat's paper order).
+    Papers are taken with the `kept` ones (named by the question) first, then in relevance order
+    (their best candidate's rank). Each gets its first FLOOR candidates that fit; a named paper
+    with fewer candidates takes what it has. The first other paper whose floor does not fit, and
+    every paper after it, is left out. The first paper always keeps whatever of its floor fits.
+    A passage that does not fit is skipped whole, never truncated. Passages and headers are
+    costed with the widest handle and their separator, so the rendered evidence stays within
+    `budget`. With `headers`, groups follow their order (the chat's order).
     """
     widest = f"S{max_passages}"
     separator = counter.count(SEPARATOR)
@@ -113,8 +116,10 @@ def pack_evidence(
     candidates: dict[str, list[BaseNode]] = {}
     for item in nodes:
         candidates.setdefault(item.node.metadata["document_id"], []).append(item.node)
+    order = sorted(candidates, key=lambda document: document not in kept)
     answering = []
-    for document, ranked in candidates.items():
+    for document in order:
+        ranked = candidates[document]
         need, floor = header_size(document), []
         for node in ranked:
             if len(floor) == FLOOR:
@@ -122,14 +127,21 @@ def pack_evidence(
             if need + size(node) <= remaining:
                 floor.append(node)
                 need += size(node)
-        if len(floor) < min(FLOOR, len(ranked)) or len(chosen) + len(floor) > max_passages:
+        # A named paper answers with what it has; any other paper needs its whole floor, and one
+        # with fewer candidates than that is skipped.
+        if document not in kept and len(ranked) < FLOOR:
+            continue
+        needed = min(FLOOR, len(ranked)) if document in kept else FLOOR
+        if len(floor) < needed or len(chosen) + len(floor) > max_passages:
+            if document in kept:
+                continue
             break
         answering.append(document)
         remaining -= header_size(document)
         for node in floor:
             add(node)
     if not answering and candidates:
-        best = next(iter(candidates))
+        best = order[0]
         if header_size(best) <= remaining:
             answering.append(best)
             remaining -= header_size(best)

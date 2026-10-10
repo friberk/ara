@@ -71,14 +71,11 @@ class ChatInput(GenerationInput):
         return value.strip()
 
 
-# A chat covers at most this many papers; the user's default for ARA-088.
-MAX_CHAT_PAPERS = 5
-
-
 class ChatCreate(BaseModel):
-    """The papers a new chat covers, in order; the first one's page is the chat's URL."""
+    """The papers a new chat covers, in order, any number of them (ARA-088); the first one's
+    page is the chat's URL."""
 
-    paper_ids: list[UUID] = Field(min_length=1, max_length=MAX_CHAT_PAPERS)
+    paper_ids: list[UUID] = Field(min_length=1)
     title: str = Field(default="Paper discussion", min_length=1, max_length=200)
 
     @field_validator("paper_ids")

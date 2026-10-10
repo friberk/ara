@@ -55,7 +55,8 @@ async def test_given_two_ready_papers_when_creating_then_the_chat_covers_both_in
 
 
 async def test_given_invalid_paper_lists_when_creating_then_nothing_is_created(resources):
-    """Unknown, unready, repeated or too many papers are refused before a chat exists."""
+    """Unknown, unready or repeated papers are refused before a chat exists; any number of
+    ready papers is accepted (no cap, user decision on 2026-10-10)."""
     ready = [paper for paper, _, _ in await papers(resources, 6)]
     async with resources.sessions() as session, session.begin():
         bare = Paper(title="Metadata only", metadata_provenance={})
@@ -70,12 +71,15 @@ async def test_given_invalid_paper_lists_when_creating_then_nothing_is_created(r
         )
         assert unready.status_code == 409 and unready.json()["code"] == "PAPER_NOT_READY"
         assert "Metadata only" in unready.json()["message"]
-        for paper_ids in ([], [ready[0], ready[0]], ready):
+        for paper_ids in ([], [ready[0], ready[0]]):
             refused = await client.post(
                 "/api/v1/chats", json={"paper_ids": [str(item) for item in paper_ids]}
             )
             assert refused.status_code == 422, paper_ids
         assert (await client.get("/api/v1/chats")).json() == {"items": []}
+        six = await client.post("/api/v1/chats", json={"paper_ids": [str(item) for item in ready]})
+        assert six.status_code == 201, six.text
+        assert [item["paper_id"] for item in six.json()["papers"]] == [str(item) for item in ready]
 
 
 async def test_given_a_chat_when_papers_are_added_then_each_pins_its_pdf_at_that_moment(
@@ -121,10 +125,10 @@ async def test_given_a_chat_when_papers_are_added_then_each_pins_its_pdf_at_that
                     f"/api/v1/chats/{chat['id']}/papers", json={"paper_id": str(paper)}
                 )
             ).status_code == 200
-        full = await client.post(
+        sixth = await client.post(
             f"/api/v1/chats/{chat['id']}/papers", json={"paper_id": str(seeded[5][0])}
         )
-        assert full.status_code == 409 and full.json()["code"] == "CHAT_PAPER_LIMIT"
+        assert sixth.status_code == 200 and len(sixth.json()["papers"]) == 6
         unknown = await client.post(
             f"/api/v1/chats/{chat['id']}/papers", json={"paper_id": str(uuid4())}
         )

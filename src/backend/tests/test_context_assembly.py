@@ -283,18 +283,29 @@ def test_given_retrieval_query_when_assembling_then_user_message_names_it():
     )
 
 
-def test_given_several_papers_when_instructing_then_each_is_named_by_a_bounded_header():
-    """A multi-paper chat names every paper; long titles and author lists are cut (ARA-088)."""
+def test_given_several_papers_when_instructing_then_labels_are_bounded_and_comparisons_ruled():
+    """A multi-paper prompt states the count and the comparison rule; paper labels for evidence
+    headers and the planner cut long titles and author lists (ARA-088)."""
     from app.services.context import COMPARE_RULES, PaperHeader, answer_instructions, paper_label
 
     long = PaperHeader(title="T" * 2000, authors=[f"Author {n}" for n in range(20)], year=None)
     instructions = answer_instructions([paper(), long])
     assert instructions.startswith("You are a research assistant answering questions about 2")
-    assert "Paper 1: Traceable research (Ada Example; 2024)" in instructions
-    assert f"Paper 2: {'T' * 300} (Author 0, " in instructions and "T" * 301 not in instructions
-    assert "Author 7 et al.; year unknown)" in instructions and "Author 8" not in instructions
     assert instructions.endswith(COMPARE_RULES)
     assert answer_instructions([paper()]).startswith("You are a research assistant answering")
-    assert "Paper 1" not in answer_instructions([paper()])
+    assert "Title: Traceable research" in answer_instructions([paper()])
     assert paper_label(paper()) == "Traceable research (Ada Example, 2024)"
     assert len(paper_label(long)) < 200 and paper_label(long).endswith("(Author 0 et al.)")
+
+
+def test_given_many_papers_when_instructing_then_the_prompt_does_not_grow_with_them():
+    """Any number of papers (ARA-088): evidence headers name the answering papers, so the system
+    prompt states only how many papers the chat has."""
+    from app.integrations.tokens import TiktokenCounter
+    from app.services.context import PaperHeader, answer_instructions
+
+    counter = TiktokenCounter()
+    few = [PaperHeader(f"Title {n}", [f"Author {n}"], 2020) for n in range(3)]
+    many = [PaperHeader(f"Title {n}", [f"Author {n}"], 2020) for n in range(300)]
+    assert counter.count(answer_instructions(many)) - counter.count(answer_instructions(few)) <= 1
+    assert "Title 1" not in answer_instructions(many)

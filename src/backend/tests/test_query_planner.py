@@ -1,6 +1,7 @@
 """Follow-up questions become standalone search queries before retrieval (ARA-077)."""
 
 import json
+import re
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -430,3 +431,36 @@ async def test_given_one_paper_when_the_planner_returns_sub_questions_then_they_
         question=FOLLOW_UP,
     )
     assert plan.source == "model" and plan.sub_questions == ()
+
+
+@pytest.mark.integration
+async def test_given_many_papers_when_planning_then_the_list_is_bounded_named_first_and_five_asked(
+    resources, monkeypatch
+):
+    """Any number of papers: the planner sees at most 20 of them, the named ones first, and a
+    comparison gets at most five sub-questions (Open Notebook's Ask plans up to five searches)."""
+    from app.services import memory
+    from app.services.context import PaperHeader
+
+    papers = [PaperHeader(f"Study {n}", [f"Author {n}"], 2020) for n in range(25)]
+    asks = [{"paper": n, "question": f"What does study {n - 1} report?"} for n in range(1, 9)]
+    requests = hosted_responses(
+        monkeypatch, resources, lambda body: plan_output(sub_questions=asks)
+    )
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=[],
+        memory_summary=None,
+        question="How does Study 22 compare with the others?",
+        papers=papers,
+        named=[22],
+    )
+    assert len(plan.sub_questions) == 5
+    (body,) = requests
+    listed = re.findall(r"^Paper (\d+): ", body["instructions"], re.M)
+    assert len(listed) == 20 and listed[0] == "23"
+    assert "5 more papers" in body["instructions"]
+    assert body["text"]["format"]["schema"]["properties"]["sub_questions"]["maxItems"] == 5
+    assert body["max_output_tokens"] == 300 + 5 * 80 + 1024

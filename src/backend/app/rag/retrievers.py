@@ -1,11 +1,13 @@
 """Paper-scoped keyword and vector retrievers: LlamaIndex interfaces over our sessions (ARA-073).
 
 Both always filter the chat's documents, each to its current chunk set, and skip references
-unless asked. One search spans every document in scope and returns each document's own top k
-(per-document metadata filtering, ARA-088). Each call opens its own session, so the retrievers
-can run in parallel.
+unless asked. One search spans every document in scope (per-document metadata filtering,
+ARA-088) and returns at most `top_k` passages however many papers a chat has; no paper takes
+more than its share, so one long paper cannot fill the list. Each call opens its own session, so
+the retrievers can run in parallel.
 """
 
+import math
 import re
 from collections.abc import Sequence
 from uuid import UUID
@@ -38,8 +40,15 @@ def chunk_node(chunk: DocumentChunk) -> TextNode:
     )
 
 
+# A paper's share of one list: an equal part of top k, but never less than the per-paper floor
+# of two passages (docs/plans/retrieval-orchestration.md, step 7), so a paper the floor admits
+# has candidates for it.
+SHARE_FLOOR = 2
+
+
 class PaperRetriever(BaseRetriever):
-    """`scopes` are (document_id, chunk_set) pairs; `top_k` applies to each document."""
+    """`scopes` are (document_id, chunk_set) pairs. A search returns at most `top_k` passages,
+    each document at most max(SHARE_FLOOR, ceil(top_k / documents)) of them."""
 
     def __init__(
         self,
@@ -61,8 +70,12 @@ class PaperRetriever(BaseRetriever):
             statement = statement.where(DocumentChunk.kind != "references")
         return statement
 
-    async def best(self, session, scored, score, *, descending: bool, scopes=None):
-        """Each document's top k of `scored` (a select of chunk ids and `score`), best first."""
+    async def best(self, session, scored, score, *, descending: bool, scopes=None, limit=None):
+        """The best `limit` (default top k) of `scored`, a select of chunk ids and `score`, with
+        each document limited to its share; best first."""
+        scopes = scopes or self.scopes
+        limit = self.top_k if limit is None else limit
+        share = max(SHARE_FLOOR, math.ceil(self.top_k / len(scopes)))
         order = score.desc() if descending else score
         position = func.row_number().over(
             partition_by=DocumentChunk.document_id, order_by=(order, DocumentChunk.ordinal)
@@ -72,12 +85,13 @@ class PaperRetriever(BaseRetriever):
         rows = await session.execute(
             select(DocumentChunk, value)
             .join(ranked, ranked.c.id == DocumentChunk.id)
-            .where(ranked.c.position <= self.top_k)
+            .where(ranked.c.position <= share)
             .order_by(
                 value.desc() if descending else value,
                 DocumentChunk.ordinal,
                 DocumentChunk.document_id,
             )
+            .limit(limit)
         )
         return rows.all()
 
@@ -99,17 +113,17 @@ class PgLexicalRetriever(PaperRetriever):
             words = list(dict.fromkeys(WORD.findall(question.lower())))[:MAX_WORDS]
             matched = {chunk.document_id for chunk, _ in rows}
             rest = [scope for scope in self.scopes if scope[0] not in matched]
-            if rest and words:
+            if rest and words and len(rows) < self.top_k:
                 query = func.to_tsquery("english", " | ".join(words))
-                rows += await self.search(session, query, rest)
+                rows += await self.search(session, query, rest, self.top_k - len(rows))
         return [NodeWithScore(node=chunk_node(chunk), score=float(rank)) for chunk, rank in rows]
 
-    async def search(self, session, query, scopes=None):
+    async def search(self, session, query, scopes=None, limit=None):
         rank = func.ts_rank_cd(DocumentChunk.search_vector, query, 32)
         scored = select(DocumentChunk.id, rank.label("score")).where(
             DocumentChunk.search_vector.op("@@")(query)
         )
-        return await self.best(session, scored, rank, descending=True, scopes=scopes)
+        return await self.best(session, scored, rank, descending=True, scopes=scopes, limit=limit)
 
 
 class PgVectorRetriever(PaperRetriever):

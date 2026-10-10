@@ -31,6 +31,7 @@ from app.integrations.model_catalog import local_spec
 from app.integrations.open_models import offered_reranker
 from app.models.research import (
     ChatMessage,
+    ChatPaper,
     ChatSession,
     Document,
     ModelConfiguration,
@@ -51,7 +52,7 @@ from app.repositories.local_models import use_held
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
 from app.services import memory
-from app.services.chat_papers import pinned
+from app.services.chat_papers import named_papers, pinned
 from app.services.context import (
     INSTRUCTIONS_VERSION,
     RECALL_SHARE,
@@ -139,15 +140,6 @@ async def replayed(session, chat_id: UUID, body) -> tuple[ChatSession, ChatMessa
     return chat, replay
 
 
-async def paper_header(session, paper: Paper) -> PaperHeader:
-    authors = await session.scalars(
-        select(PaperAuthor.name)
-        .where(PaperAuthor.paper_id == paper.id)
-        .order_by(PaperAuthor.ordinal)
-    )
-    return PaperHeader(title=paper.title, authors=list(authors), year=paper.year)
-
-
 MULTI_PAPER_LOCAL = (
     "Chats over several papers need a hosted model. Choose a hosted model, or remove papers "
     "to ask a local model."
@@ -172,21 +164,38 @@ class Prepared:
 
 
 async def chat_scopes(session, chat_id: UUID) -> tuple[list[Scope], list[PaperHeader]]:
-    """The chat's papers with their pinned PDFs, which must be ready and indexed by chunks."""
-    links = await pinned(session, chat_id)
+    """The chat's papers with their pinned PDFs, which must be ready and indexed by chunks.
+
+    Two queries for any number of papers: the links with their PDFs and papers, then authors.
+    """
+    rows = (
+        await session.execute(
+            select(ChatPaper, Document, Paper)
+            .join(Document, Document.id == ChatPaper.document_id)
+            .join(Paper, Paper.id == ChatPaper.paper_id)
+            .where(ChatPaper.chat_id == chat_id)
+            .order_by(ChatPaper.ordinal)
+        )
+    ).all()
+    authors: dict[UUID, list[str]] = {}
+    for paper_id, name in await session.execute(
+        select(PaperAuthor.paper_id, PaperAuthor.name)
+        .where(PaperAuthor.paper_id.in_([paper.id for _, _, paper in rows]))
+        .order_by(PaperAuthor.paper_id, PaperAuthor.ordinal)
+    ):
+        authors.setdefault(paper_id, []).append(name)
     scopes, headers = [], []
-    for number, link in enumerate(links, start=1):
-        document = await session.get(Document, link.document_id)
-        if document is None or document.status != "ready" or document.chunk_set is None:
+    for number, (_, document, paper) in enumerate(rows, start=1):
+        if document.status != "ready" or document.chunk_set is None:
             raise HTTPException(
                 409,
                 "This paper is being prepared for the new search. Try again in a minute."
-                if document is not None and document.status == "ready"
+                if document.status == "ready"
                 else "The selected document is not ready",
             )
-        header = await paper_header(session, await session.get(Paper, link.paper_id))
-        label = f"Paper {number}: {paper_label(header)}" if len(links) > 1 else ""
-        scopes.append(Scope(link.document_id, document.chunk_set, label))
+        header = PaperHeader(title=paper.title, authors=authors.get(paper.id, []), year=paper.year)
+        label = f"Paper {number}: {paper_label(header)}" if len(rows) > 1 else ""
+        scopes.append(Scope(document.id, document.chunk_set, label))
         headers.append(header)
     return scopes, headers
 
@@ -315,7 +324,18 @@ async def plan_for_answer(resources, prepared: Prepared, remembered: AnswerMemor
         memory_summary=remembered.summary[1] if remembered.summary else None,
         question=prepared.question,
         papers=prepared.papers,
+        named=named_papers(prepared.question, prepared.papers) if len(prepared.papers) > 1 else (),
     )
+
+
+def kept_papers(prepared: Prepared, plan: QueryPlan) -> list[int]:
+    """Papers this answer always keeps: those the question or its standalone form names, and
+    the targets of a comparison's sub-questions (ARA-088)."""
+    if len(prepared.papers) < 2:
+        return []
+    asked = f"{prepared.question}\n{plan.standalone_question}"
+    targets = [index for index, _ in plan.sub_questions]
+    return sorted({*named_papers(asked, prepared.papers), *targets})
 
 
 async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory, plan, evidence):
@@ -509,6 +529,7 @@ async def stream_answer(
                 counter=prepared.limits.counter,
                 reranker=prepared.reranker,
                 sub_questions=plan.sub_questions,
+                kept=kept_papers(prepared, plan),
                 on_stage=lambda stage: queue.put(("status", stage)),
             )
             if plan.standalone_question != prepared.question:

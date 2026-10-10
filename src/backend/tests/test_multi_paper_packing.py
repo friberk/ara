@@ -112,3 +112,25 @@ def test_given_five_papers_and_a_tight_budget_when_packing_then_floors_hold_or_p
         # Every answering paper has its floor, and the answering papers are the most relevant.
         assert all(counts[name] >= 2 for name in answering) or len(answering) == 1
         assert answering == list("EDCBA")[: len(answering)]
+
+
+def test_given_a_paper_the_question_names_when_packing_then_it_answers_before_more_relevant_ones():
+    """Named papers are always kept: their floors come first, then relevance routes the rest."""
+    from app.rag.packing import pack_evidence
+
+    ranked = [hit("A", 0), hit("B", 0), hit("C", 0), hit("A", 1), hit("B", 1), hit("C", 1)]
+    floor = header_size("A") + 2 * size(ranked[0])
+    passages = pack_evidence(
+        ranked, budget=2 * floor + 10, counter=COUNTER, headers=HEADERS, kept={str(PAPERS["C"])}
+    )
+    assert sorted(set(papers_of(passages))) == ["A", "C"]
+
+
+def test_given_a_paper_with_one_candidate_when_packing_then_it_is_skipped_and_the_next_answers():
+    """A floor needs two passages: a paper with one candidate adds nothing, but a less relevant
+    paper whose floor fits still answers."""
+    from app.rag.packing import pack_evidence
+
+    ranked = [hit("A", 0), hit("B", 0), hit("C", 0), hit("A", 1), hit("C", 1)]
+    passages = pack_evidence(ranked, budget=100_000, counter=COUNTER, headers=HEADERS)
+    assert sorted(set(papers_of(passages))) == ["A", "C"]

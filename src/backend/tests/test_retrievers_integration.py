@@ -144,10 +144,10 @@ async def test_given_query_without_embedding_when_searching_vectors_then_it_is_r
 async def test_given_two_papers_in_scope_when_searching_vectors_then_each_keeps_its_top_k(
     resources,
 ):
-    """One filtered vector search spans the chat's papers; each paper returns its own top k."""
+    """One filtered vector search spans the chat's papers; each paper keeps its share of top k."""
     _, first, first_chunks = await seed_structured(resources)
     _, second, second_chunks = await seed_structured(resources, sections=OTHER)
-    found = await vector(resources, first, second, top_k=2).aretrieve(query("protein folding"))
+    found = await vector(resources, first, second, top_k=4).aretrieve(query("protein folding"))
     by_paper = [item.node.metadata["document_id"] for item in found]
     assert by_paper.count(str(first)) == 2 and by_paper.count(str(second)) == 1
     assert found[0].node.node_id == str(second_chunks[0])
@@ -166,3 +166,20 @@ async def test_given_one_paper_has_every_word_when_searching_keywords_then_anoth
     _, second, second_chunks = await seed_structured(resources, sections=folding)
     found = await lexical(resources, first, second).aretrieve("recall latency")
     assert [item.node.node_id for item in found] == [str(first_chunks[3]), str(second_chunks[0])]
+
+
+async def test_given_many_papers_in_scope_when_searching_then_the_list_stays_within_top_k(
+    resources,
+):
+    """However many papers a chat has, one search returns at most top k passages, and no paper
+    takes more than max(2, ceil(top k / N)) of them, so several papers reach the pool."""
+    from collections import Counter
+
+    documents = [(await seed_structured(resources, title=f"Paper {n}"))[1] for n in range(3)]
+    for retriever, ask in (
+        (vector(resources, *documents, top_k=4), query("dense retrieval recall")),
+        (lexical(resources, *documents, top_k=4), "retrieval"),
+    ):
+        found = await retriever.aretrieve(ask)
+        per_paper = Counter(item.node.metadata["document_id"] for item in found)
+        assert len(found) == 4 and max(per_paper.values()) <= 2 and len(per_paper) >= 2

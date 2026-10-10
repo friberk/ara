@@ -41,12 +41,12 @@ RULES = (
     "earlier answers are not handles. If the passages do not support an answer, reply with "
     f"{INSUFFICIENT} and say briefly what is missing. Answer in clear Markdown."
 )
-# Several papers (ARA-088): evidence is grouped under "Paper N:" headers, and a comparison
+# Several papers (ARA-088): evidence is grouped under "Paper N: <label>" headers, and a comparison
 # cites each paper's own passages, as the synthesis step of LlamaIndex's sub-question pattern.
 COMPARE_RULES = (
-    "The passages are grouped under their paper's number. When the question compares papers, "
-    "cover each relevant paper, say which paper each claim comes from and cite that paper's own "
-    "passages."
+    "The passages are grouped under a header naming their paper. When the question compares "
+    "papers, cover each relevant paper, say which paper each claim comes from and cite that "
+    "paper's own passages."
 )
 # Restated beside the question: small local models without reasoning skipped the system rule.
 CITE_REMINDER = (
@@ -112,7 +112,9 @@ def author_list(paper: PaperHeader) -> str:
 
 
 def answer_instructions(papers: Sequence[PaperHeader]) -> str:
-    """The system prompt names the chat's papers with bounded headers: title, authors, year."""
+    """One paper is named in the system prompt. With several, which may be any number, only the
+    count is stated: the evidence headers name the papers that answer, so the prompt does not
+    grow with the chat."""
     if len(papers) == 1:
         (paper,) = papers
         return (
@@ -121,15 +123,9 @@ def answer_instructions(papers: Sequence[PaperHeader]) -> str:
             f"Authors: {author_list(paper)}\n"
             f"Year: {paper.year or 'Unknown'}\n\n" + RULES
         )
-    listed = "".join(
-        f"Paper {number}: {(paper.title or 'Unknown')[:300]} ({author_list(paper)}; "
-        f"{paper.year or 'year unknown'})\n"
-        for number, paper in enumerate(papers, start=1)
-    )
     return (
-        f"You are a research assistant answering questions about {len(papers)} papers.\n"
-        + listed
-        + "\n"
+        f"You are a research assistant answering questions about {len(papers)} papers. The "
+        "passages come from the papers most relevant to the question.\n\n"
         + RULES
         + " "
         + COMPARE_RULES
