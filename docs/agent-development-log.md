@@ -1749,3 +1749,11 @@ The user rejected ARA-097's details sheet: "You should have the title author lis
   - The index sentence wraps cleanly.
 - **Verification.** `npm run check` passed with 695 tests in 92 files, and `npm run build` passed with the existing chunk-size warning.
   - Run alone, `library-manage.test.tsx`'s Delete test fails on this base with `Found multiple elements with the role "button" and name "Actions for “Attention is all you need”"`. ARA-103's sidebar row menu also matches that name. `feat/ux-feedback-round` has since changed that test, so the merge brings the fix. This branch does not touch it.
+- **The PDF heading, the same day.** The user also asked: "Also for the PDF part, can we have a heading / title as well?"
+  - `PdfHeading` is an `h3` "PDF" in the Abstract heading's style. The file name (`paper.file_name`) follows it in muted text, with no separator glyph.
+  - `PdfReader` passes it to `PdfViewer` with the paper header, so it sits above page 1 and scrolls with the document. The controls bar stays the only pinned element.
+  - With no ready PDF, `ReaderGate` puts the same heading first in its column. Its "Preparing the PDF" and "This PDF couldn't be processed" headings became `h4`, so the outline reads title, Abstract, PDF.
+  - An earlier PDF version keeps its "Showing an earlier PDF version" banner and gets no second label.
+  - **Red, then green.** The two new tests for the heading above the PDF and above the gate failed with `Unable to find … heading … /^PDF/` and `… "PDF"`. The test that an earlier version gets no extra heading passed at its first run, since nothing had added one yet. The citation-jump test, extended to pass the heading with the header, also passed at once: `PdfViewer` renders whatever header it is given.
+  - **Verification.** `npm run check` passed with 698 tests in 92 files, and `npm run build` passed.
+  - **Visual round.** It was read-only against :8011 at desktop light and 390px. The reader's headings read title, "Abstract", "PDF sec18-han.pdf" above a PDF, and title, "Abstract", "PDF" above the no-PDF states. Nothing overflows. A citation jump to page 7 still marked the passage in view, and scrolling to the top showed page 1.
