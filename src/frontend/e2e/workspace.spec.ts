@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
 // Paper workspace (ARA-037, ARA-097) against the isolated e2e stack: synthetic research.pdf and fixture model responses.
-// The reader has no tabs; the paper's details are behind ⓘ and the PDF's actions in the reader's menu.
+// The reader has no tabs; the paper's bibliography heads the PDF, ⓘ keeps its sources and search index (ARA-101), and the
+// PDF's actions are in the reader's menu.
 const pdfPath = process.env.E2E_PDF_PATH ?? '/tmp/ara-fixtures/research.pdf'
 const title = 'Traceable Research Systems'
 type Paper = { id: string; document_status: string; active_document_id: string | null }
@@ -93,12 +94,22 @@ test('E2E-03 Given a saved paper, when its PDF is uploaded in the workspace, the
   await expect(menu.getByRole('menuitem', { name: 'Open original' })).toHaveAttribute('href', `/api/v1/documents/${documentId}/download`)
   await expect(menu.getByText('3 pages', { exact: false })).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Paper details' }).click()
-  const details = page.getByRole('dialog', { name: title })
-  await expect(details.getByText('Ada Researcher')).toBeVisible()
+  // The bibliography is the first thing in the PDF's scroll column, and ⓘ holds only what lies behind it.
+  // Inside the app's main region a <header> has no landmark role, so it is found by its heading.
+  const header = page.getByRole('region', { name: 'PDF document' }).locator('header').filter({ has: page.getByRole('heading', { level: 2, name: title }) })
+  await expect(header.getByRole('heading', { level: 2, name: title })).toBeVisible()
+  await expect(header.getByText('Ada Researcher')).toBeVisible()
+  const info = header.getByRole('button', { name: 'Sources and search index' })
+  await info.click()
+  const details = page.getByRole('dialog', { name: 'Sources and search index' })
   await expect(details.getByRole('heading', { name: 'Where this information came from' })).toBeVisible()
+  await expect(details.getByText('Ada Researcher')).toHaveCount(0)
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: 'Paper details' })).toBeFocused()
+  await expect(info).toBeFocused()
+  // Reading on scrolls the header away while the controls bar stays.
+  await page.getByRole('region', { name: 'PDF document' }).evaluate((viewer) => { viewer.scrollTop = viewer.scrollHeight })
+  await expect(header).not.toBeInViewport()
+  await expect(page.getByLabel('Page number')).toBeVisible()
 })
 
 test('Given a cited summary, when a citation chip is clicked, then the reader jumps to the page and marks the passage', async ({ page, request }) => {
@@ -120,7 +131,7 @@ test('Given a cited summary, when a citation chip is clicked, then the reader ju
   await expect(citedPage.locator('[data-citation-highlight]').first()).toBeVisible()
 })
 
-test('Given a narrow screen, then Chat and PDF are segments, ⓘ is a bottom sheet and a citation opens the PDF at its page', async ({ page, request }) => {
+test('Given a narrow screen, then Chat and PDF are segments, the paper header and ⓘ fit, and a citation opens the PDF at its page', async ({ page, request }) => {
   const paper = await readyPaper(request)
   await citedSummary(request, paper)
   await page.setViewportSize({ width: 390, height: 844 })
@@ -129,14 +140,14 @@ test('Given a narrow screen, then Chat and PDF are segments, ⓘ is a bottom she
   await expect(page.getByRole('tab')).toHaveText(['Chat', 'PDF'])
   expect(await noHorizontalOverflow(page)).toBeTruthy()
   expect(await threadFits(page)).toBeTruthy()
-  await page.getByRole('button', { name: 'Paper details' }).click()
-  const details = page.getByRole('dialog', { name: title })
-  await expect(details).toHaveAttribute('data-side', 'bottom')
-  await expect(details.getByText('Ada Researcher')).toBeVisible()
-  await page.keyboard.press('Escape')
   await page.getByRole('tab', { name: 'PDF' }).click()
   await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
   expect(await noHorizontalOverflow(page)).toBeTruthy()
+  await page.getByRole('button', { name: 'Sources and search index' }).click()
+  const details = page.getByRole('dialog', { name: 'Sources and search index' })
+  const box = await details.boundingBox()
+  expect(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 844).toBeTruthy()
+  await page.keyboard.press('Escape')
   await page.getByRole('tab', { name: 'Chat' }).click()
   await expect(page).not.toHaveURL(/view=/)
   const { chip, cited } = await firstCitation(page)

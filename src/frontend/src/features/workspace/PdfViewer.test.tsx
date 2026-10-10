@@ -449,3 +449,30 @@ describe('PdfViewer highlight lifetime (ARA-089, test-first, fake timers)', () =
     expect(fadeState()).toBeNull()
   })
 })
+
+describe('PdfViewer with the paper header above page 1 (ARA-101)', () => {
+  test('Given a header, When a citation on page 2 is shown, Then the header scrolls with the pages, the jump lands below it and the passage is marked', async () => {
+    const handlers = { onDocumentLoad: vi.fn(), onPageChange: vi.fn(), onHighlight: vi.fn() }
+    const scrolls: number[] = []
+    vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(function (this: Element, options?: ScrollToOptions | number) {
+      if (typeof options === 'object' && options.top !== undefined) scrolls.push(options.top)
+    })
+    // jsdom has no layout: the header is 320px tall and each page 1,000px, 16px apart, so page 2 starts at 1,352px.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const page = Number((this as HTMLElement).dataset?.pdfPage)
+      if (page) return new DOMRect(0, 336 + (page - 1) * 1016, 800, 1000)
+      if (this.tagName === 'HEADER') return new DOMRect(0, 0, 800, 320)
+      return new DOMRect(0, 0, 800, 600)
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    render(<PdfViewer documentId="doc-1" zoom={1} navigation={null} highlight={{ citation: onMethod, nonce: 1 }} header={<header><h2>Traceable Research Systems</h2></header>} {...handlers} />)
+    await waitFor(() => expect(handlers.onHighlight).toHaveBeenCalledWith('highlighted'))
+    const document = screen.getByRole('region', { name: 'PDF document' })
+    const header = screen.getByRole('heading', { name: 'Traceable Research Systems' })
+    expect(document).toContainElement(header)
+    expect(header.compareDocumentPosition(screen.getByRole('group', { name: 'Page 1' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(scrolls).toContain(1352 - 8)
+    expect(marked(2)).toEqual([methodLines[1], methodLines[2]])
+    vi.restoreAllMocks()
+  })
+})

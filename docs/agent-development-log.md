@@ -1681,3 +1681,48 @@ E2E-04 (conversation) and E2E-12 (local models) no longer reuse a stored summary
 **Red.** The four new tests in `components/shell/sidebar-paper-actions.test.tsx` failed 4 of 4 with `Unable to find an accessible element with the role "button" and name "Actions for “Attention is all you need”"`. After the change they passed 4 of 4.
 
 **Verification and errors.** My first `tsc` run failed on an unused `json` import in the new test; removed it. `sed -i` with a BSD flag failed, so I used the editor. Full `npm run check` showed one or two 5 s timeouts per run (library-manage "When Delete is chosen", the Ctrl+K palette test); each passed alone or with its folder (library-manage 7/7, shell 22/22). I did not run a pre-change baseline to prove those were already load-flaky. `npm run build` passed. Hover reveal and truncation were not seen in a browser.
+
+## 2026-10-10 - ARA-101 paper metadata above the PDF; ⓘ keeps only provenance and the search index
+
+The user rejected ARA-097's details sheet: "You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff." The lead assigned it to the same agent, on `feat/ara-101-paper-header` from `feat/ux-feedback-round` (`32528d0`), with the impeccable skill loaded (Operate mode, the existing design system). No backend change and no new dependency. ARA-097's tabless reader, PDF menu and Remove PDF behaviour stay as they were.
+
+**Decisions:**
+- **Paper header.** `PaperHeader` lays the old Details tab out as a reading header on the paper ground, with a hairline below. It shows the title (1.125rem semibold), every author, the year and italic venue (`PaperCitation` with `wrap` and no authors, since the full list is just above), DOI and record links, the abstract in `ClampedText`, and the DOI-owner note. Edit details and ⓘ sit at the title's top right. A field the paper lacks is left out; a missing abstract says so.
+- **Scrolling.** The header scrolls away with the document. `PdfViewer` takes a `header` and renders it as the first child of its own scroll column, pinned `sticky left-0` so a wide zoom doesn't carry it sideways; the controls bar sits outside that column and stays put. Before choosing, I read `PdfViewer`:
+  - every page offset is `offsetIn`, a bounding-rect difference with the root, so pages below a header are found where they are;
+  - page tracking probes 30% down the root, so the header only means page 1 reads as current a little longer;
+  - zoom anchoring and the lazy pages are relative to pages, not to the root's top.
+
+  The collapsing-row fallback was not needed. `PdfReader`'s Suspense fallback shows the same header above page placeholders while pdf.js loads.
+- **No PDF and reader tabs.** `ReaderGate` puts the header above its ways to get a PDF, and its own Abstract section is deleted. A reader tab gets the header of its tab's paper, because `PdfReader` and `ReaderGate` already receive that paper.
+- **ⓘ.** `PaperSourcesDialog` is a centred `Dialog` named "Sources and search index". It holds:
+  - `MetadataSources`, which now always renders and takes Look up again as children;
+  - the identifiers with copy;
+  - `SearchIndexPanel`, now a plain section: the dialog is the "advanced" place, so the Collapsible is gone;
+  - Delete paper, shown only for the workspace's own paper (`useOptionalWorkspace`).
+
+  `LookupNotice` lost its children slot, which only the sheet used.
+- **Removed.** `PaperDetailsSheet.tsx`, the ⓘ in the top bar, and the `overlayClassName` prop that only the sheet used (`sheet.tsx` is back to `bf1daea`). The top bar keeps the title beside ARA-098's `PaperPdfStatus`.
+
+**Red, then green:**
+- **New tests.** `paper-header.test.tsx` (13 tests) failed with `Unable to find role="heading" and name "Evidence based research"` (no level-2 header). The new `PdfViewer` test (citation jump with a header) failed with `Unable to find … heading "Traceable Research Systems"`.
+- **My first green attempt failed for two reasons.**
+  - The dialog's search index read `{items: []}` from the unmocked retrieval route (`Cannot read properties of undefined (reading 'some')`), so the dialog tests now mock it.
+  - jsdom's `clientHeight` is 0, so `flushPendingPage` returned early and the jump never scrolled. With a 600px viewer, the test now shows the jump landing at page 2's offset below the 320px header (1344).
+- **Existing tests that changed.**
+  - The top-bar title now shares its name with the header's h2, so `shell.test.tsx` asks for level 1.
+  - `workspace.test.tsx`'s stub renders the header, and its edit tests use the header's Edit details.
+  - `search-index.test.tsx` and `open-models-flag.test.tsx` no longer expand Advanced.
+- **Narrow header.** It failed `toHaveClass("sr-only @md:not-sr-only")`, then passed.
+
+**Visual check.** My Vite ran on 5198 against the test copy's API on 8011, read-only: the script logged any non-GET request, and none was made. Nothing was edited, looked up, removed or deleted. Screenshots are in the session scratch directory (`shots101/`).
+- **Round 1 (desktop light and dark, 390px light and dark).** The header and the dialog looked as intended, with no horizontal overflow. The PDF's region measured 592/592 on desktop and 390/390 on a phone, and the phone dialog was 358 × 697 inside 390 × 844. The no-PDF state shows the abstract once. Scrolling 1800px moved the header off and the page number to 3.
+
+  Found: at 390px the Edit details label squeezed the title into four lines. Fixed with a container query: below 28rem the label becomes screen-reader text beside its pencil.
+- **Round 2.** The title got 288px at 390px. Focus returned to ⓘ after Esc. A citation chip ("Source, Han 2018, page 7, …") jumped to page 7, marked the passage in view and announced "Highlighted the cited passage on page 7.". Zoom in and Fit width kept page 7, and scrolling to the top showed the header and page 1 again.
+
+**Verification.** `npm run check` was clean: typecheck and lint, 690 tests in 91 files. `npm run build` passed with the existing chunk-size warning. The mechanical design detector found nothing in the changed files. The backend was not changed, so its suite was not run.
+
+**Not verified:**
+- The updated `e2e/workspace.spec.ts` was type-checked but not run.
+- The other-paper reader tab was not seen in a browser: the test copy has no chat that cites a second paper from another paper's workspace. It is covered by the unit test.
