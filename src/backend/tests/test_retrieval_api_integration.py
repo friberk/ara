@@ -301,6 +301,7 @@ async def test_given_embed_job_when_listing_jobs_then_it_links_to_its_paper(reso
     assert {item["paper_id"] for item in listed} == {str(paper_id), str(other_paper)}
 
 
+@pytest.mark.open_models
 async def test_given_a_library_when_estimating_a_switch_then_papers_tokens_and_cost_are_returned(
     resources, client
 ):

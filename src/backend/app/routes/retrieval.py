@@ -132,6 +132,8 @@ async def update_retrieval_settings(body: RetrievalSettings, request: Request):
 async def reindex_estimate(profile: str, request: Request):
     """Papers and tokens a switch to `profile` would embed, priced from stored chunk counts."""
     chosen = embedding_profile(profile)
+    if open_models.open_profile(request.app.state.resources.settings, chosen):
+        raise open_models.disabled(open_models.CHOOSE_SEARCH)
     ready = (
         select(RetrievalIndex.id)
         .where(

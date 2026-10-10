@@ -246,6 +246,29 @@ async def test_given_local_library_model_when_flag_off_then_keyword_search_expla
 
 
 @pytest.mark.integration
+async def test_given_flag_off_when_estimating_a_switch_then_only_hosted_models_are_priced(
+    resources,
+):
+    await seed_structured(resources)
+    async with client_for(resources) as client:
+        url = "/api/v1/retrieval/reindex-estimate"
+        hosted = await client.get(url, params={"profile": SMALL})
+        assert hosted.status_code == 200 and hosted.json()["papers"] == 1
+        local = await client.get(url, params={"profile": QWEN})
+        assert local.status_code == 409 and local.json()["code"] == DISABLED
+
+
+@pytest.mark.integration
+@pytest.mark.open_models
+async def test_given_flag_on_when_estimating_a_local_switch_then_it_is_free(resources):
+    await seed_structured(resources)
+    async with client_for(resources) as client:
+        local = await client.get("/api/v1/retrieval/reindex-estimate", params={"profile": QWEN})
+        assert local.status_code == 200
+        assert (local.json()["papers"], local.json()["estimated_cost_usd"]) == (1, 0)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("preferred", [QWEN, OPENAI])
 async def test_given_ready_local_index_when_flag_off_then_answers_search_by_keywords(
     resources, monkeypatch, preferred

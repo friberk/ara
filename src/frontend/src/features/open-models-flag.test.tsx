@@ -131,3 +131,24 @@ test('Given a local library search model with open models off, Then Details expl
   expect(await screen.findByText(reason)).toBeVisible()
   expect(screen.getByText(/Searching with/)).toHaveTextContent(`Searching with ${qwen.display_name}`)
 })
+
+test('Given a saved local library model with open models off, When switching, Then only hosted models are offered and estimated', async () => {
+  const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02 }
+  const qwen8b: EmbeddingProfile = { ...qwen, key: 'qwen3-embed-8b', display_name: 'Qwen3 Embedding 8B' }
+  const { calls } = mockApi({
+    ...off, 'GET /models': { items: [luna] }, 'GET /settings': hostedDefaults,
+    'GET /retrieval/profiles': { items: [openai, small, { ...qwen, status: 'unavailable', unavailable_reason: searchReason, local_model_key: null }, qwen8b], default_profile: qwen.key, rerankers: [hostedReranker] },
+    'GET /retrieval/settings': { embedding_profile: qwen.key, reranker: hostedReranker.key },
+    'GET /retrieval/reindex-estimate': { profile: small.key, papers: 6, tokens: 120000, price_per_million: 0.02, estimated_cost_usd: 0.0024 },
+  })
+  const { user } = renderApp('/settings')
+  const choices = await screen.findByRole('radiogroup', { name: 'Search model' })
+  expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([openai.key, small.key, qwen.key])
+  expect(within(choices).getByRole('radio', { name: qwen.display_name })).toBeDisabled()
+  await user.click(within(choices).getByRole('radio', { name: small.display_name }))
+  await user.click(screen.getByRole('button', { name: 'Save search settings' }))
+  expect(await screen.findByRole('alertdialog', { name: 'Re-embed the whole library?' })).toBeVisible()
+  expect(await screen.findByText(/6 papers/)).toBeVisible()
+  const estimated = calls.filter((call) => call.path === '/retrieval/reindex-estimate').map((call) => call.url.searchParams.get('profile'))
+  expect(estimated).toEqual([small.key])
+})
