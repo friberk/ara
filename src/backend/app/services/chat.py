@@ -531,6 +531,7 @@ async def stream_answer(
                 sub_questions=plan.sub_questions,
                 kept=kept_papers(prepared, plan),
                 on_stage=lambda stage: queue.put(("status", stage)),
+                question_type=plan.question_type,
             )
             if plan.standalone_question != prepared.question:
                 evidence.summary.standalone_query = plan.standalone_question

@@ -178,3 +178,68 @@ def test_given_sixteen_relevant_papers_when_packing_then_twelve_answer_with_thei
         counts[passage.document_id] = counts.get(passage.document_id, 0) + 1
     assert len(counts) == FIRST_PASS_PASSAGES // 2 == 12
     assert all(count == 2 for count in counts.values())
+
+
+def section_of(ordinals, *, paper: str | None = None, words: int = 20):
+    return [candidate(n, paper=paper, words=words).node for n in ordinals]
+
+
+def test_given_a_broad_reach_when_packing_then_chunks_grow_to_their_section_nearest_first():
+    from app.rag.packing import pack_evidence
+
+    (hit,) = [candidate(5)]
+    section = {hit.node.node_id: section_of([4, 6, 3, 7, 2, 8])}
+    whole = pack_evidence([hit], budget=100_000, counter=COUNTER, neighbours=section, reach=None)
+    assert [p.ordinal for p in whole] == [2, 3, 4, 5, 6, 7, 8]
+    near = pack_evidence([hit], budget=100_000, counter=COUNTER, neighbours=section, reach=1)
+    assert [p.ordinal for p in near] == [4, 5, 6]
+
+
+def test_given_two_selected_chunks_when_expanding_then_both_grow_one_step_at_a_time():
+    """Small-to-big grows every selected chunk by one neighbour on each side before any grows
+    by two, so one long section cannot take all the room."""
+    from app.rag.packing import pack_evidence
+
+    first, second = candidate(10), candidate(30)
+    section = {
+        first.node.node_id: section_of([9, 11, 8, 12, 7, 13]),
+        second.node.node_id: section_of([29, 31, 28, 32]),
+    }
+    passages = pack_evidence(
+        [first, second],
+        budget=100_000,
+        counter=COUNTER,
+        neighbours=section,
+        reach=None,
+        max_passages=7,
+    )
+    assert sorted(p.ordinal for p in passages) == [8, 9, 10, 11, 29, 30, 31]
+
+
+def test_given_two_papers_when_expanding_then_each_grows_only_within_its_share():
+    from app.rag.packing import SEPARATOR, node_passage, pack_evidence, render_header
+
+    headers = {str(PAPERS["A"]): "Paper 1: A", str(PAPERS["B"]): "Paper 2: B"}
+    a = [candidate(n, paper="A", words=30) for n in (10, 20)]
+    b = [candidate(n, paper="B", words=30) for n in (10, 20)]
+    section = {a[0].node.node_id: section_of(range(11, 19), paper="A", words=30)}
+
+    def cost(node):
+        return COUNTER.count(node_passage(node, "S24").render()) + COUNTER.count(SEPARATOR)
+
+    header = COUNTER.count(render_header("Paper 1: A")) + COUNTER.count(SEPARATOR)
+    budget = 2 * (header + 5 * cost(a[0].node))
+    passages = pack_evidence(
+        [a[0], b[0], a[1], b[1]],
+        budget=budget,
+        counter=COUNTER,
+        neighbours=section,
+        headers=headers,
+        reach=None,
+    )
+    used_a = [p for p in passages if p.document_id == PAPERS["A"]]
+    # A's share is half the budget: its two candidates and three section chunks.
+    assert len(used_a) == 5
+    assert header + sum(cost(candidate(p.ordinal, paper="A", words=30).node) for p in used_a) <= (
+        budget // 2
+    )

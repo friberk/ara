@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
-from sqlalchemy import case, func, select, tuple_
+from sqlalchemy import case, func, or_, select, tuple_
 
 from app.core.errors import AppError
 from app.integrations.embedding_catalog import PROFILES, embedding_profile
@@ -96,6 +96,12 @@ class EvidenceResult:
     scores: dict[str, float] = field(default_factory=dict)
     # The limits of the attempt being packed: the first pass, or the one wider retry.
     evidence_pass: EvidencePass = FIRST_PASS
+    question_type: str = "lookup"
+
+    @property
+    def reach(self) -> int | None:
+        """How far chunks grow in their section: a broad question takes the whole section."""
+        return None if self.question_type == "broad" else self.evidence_pass.reach
 
     def pack(self, budget: int) -> list[Passage]:
         """Prune, then pack within the pass's caps and `budget` (the evidence ceiling E)."""
@@ -111,6 +117,7 @@ class EvidenceResult:
             max_passages=limits.max_passages,
             headers=self.headers,
             kept=self.kept,
+            reach=self.reach,
         )
         chosen = {str(item.chunk_id) for item in self.passages}
         self.summary.passages_used = len(self.passages)
@@ -250,42 +257,57 @@ async def opening_nodes(resources, scopes: Sequence[Scope]) -> list[NodeWithScor
         return [NodeWithScore(node=chunk_node(chunk), score=0.0) for chunk in chunks]
 
 
-async def neighbour_nodes(
+async def section_nodes(
     resources, scopes: Sequence[Scope], ranked: Sequence[NodeWithScore]
 ) -> dict[str, list[TextNode]]:
-    """The passages just before and after each candidate, when they share its section."""
+    """Each candidate's section around it, nearest first, for small-to-big expansion (step 8).
+
+    A section is the chunks sharing the candidate's heading; a candidate without a heading gets
+    only the passages just before and after it that have none either.
+    """
     chunk_sets = {str(scope.document_id): scope.chunk_set for scope in scopes}
-    wanted = {
+    sections = {
+        (UUID(item.node.metadata["document_id"]), item.node.metadata["section"])
+        for item in ranked
+        if item.node.metadata["section"]
+    }
+    nearby = {
         (UUID(item.node.metadata["document_id"]), item.node.metadata["ordinal"] + step)
         for item in ranked
+        if not item.node.metadata["section"]
         for step in (-1, 1)
     }
-    if not wanted:
+    key = (DocumentChunk.document_id, DocumentChunk.chunk_set)
+    found_by = []
+    if sections:
+        wanted = [(document, chunk_sets[str(document)], title) for document, title in sections]
+        found_by.append(tuple_(*key, DocumentChunk.heading).in_(wanted))
+    if nearby:
+        wanted = [(document, chunk_sets[str(document)], ordinal) for document, ordinal in nearby]
+        found_by.append(tuple_(*key, DocumentChunk.ordinal).in_(wanted))
+    if not found_by:
         return {}
     async with resources.sessions() as session:
         rows = await session.scalars(
-            select(DocumentChunk).where(
-                tuple_(
-                    DocumentChunk.document_id, DocumentChunk.chunk_set, DocumentChunk.ordinal
-                ).in_(
-                    [(document, chunk_sets[str(document)], ordinal) for document, ordinal in wanted]
-                ),
-                DocumentChunk.kind != "references",
-            )
+            select(DocumentChunk).where(or_(*found_by), DocumentChunk.kind != "references")
         )
-        nearby = {(str(chunk.document_id), chunk.ordinal): chunk for chunk in rows}
+        grouped: dict[tuple[str, str], list[DocumentChunk]] = {}
+        for chunk in rows:
+            grouped.setdefault((str(chunk.document_id), chunk.heading), []).append(chunk)
     found = {}
     for item in ranked:
         metadata = item.node.metadata
-        document, ordinal = metadata["document_id"], metadata["ordinal"]
-        same = [
-            chunk_node(nearby[(document, step)])
-            for step in (ordinal - 1, ordinal + 1)
-            if (document, step) in nearby
-            and nearby[(document, step)].heading == metadata["section"]
-        ]
+        document, own, heading = metadata["document_id"], metadata["ordinal"], metadata["section"]
+        same = sorted(
+            (
+                chunk
+                for chunk in grouped.get((document, heading), ())
+                if chunk.ordinal != own and (heading or abs(chunk.ordinal - own) == 1)
+            ),
+            key=lambda chunk: (abs(chunk.ordinal - own), chunk.ordinal),
+        )
         if same:
-            found[item.node.node_id] = same
+            found[item.node.node_id] = [chunk_node(chunk) for chunk in same]
     return found
 
 
@@ -362,6 +384,7 @@ async def retrieve_evidence(
     sub_questions: Sequence[tuple[int, str]] = (),
     kept: Collection[int] = (),
     on_stage: Callable[[str], Awaitable[None]] | None = None,
+    question_type: str = "lookup",
 ) -> EvidenceResult:
     """`queries` are searched in every paper; each (scope index, text) of `sub_questions` only in
     its paper; the `kept` scope indexes (papers the question names) share one more search with
@@ -376,6 +399,7 @@ async def retrieve_evidence(
         mode="keyword",
         search_queries=list(queries),
         sub_questions=[text for _, text in asked],
+        question_type=question_type,
     )
     notes: list[str] = []
     usable = offered(resources.settings, PROFILES)
@@ -476,7 +500,7 @@ async def retrieve_evidence(
     kept_documents = {str(scope.document_id) for scope in keep}
     floors = floor_candidates(ranked, kept_documents)
     expand = {item.node.node_id: item for item in [*ranked[: RETRY_PASS.max_passages], *floors]}
-    neighbours = await neighbour_nodes(resources, scopes, list(expand.values()))
+    neighbours = await section_nodes(resources, scopes, list(expand.values()))
     width = TOP_K
     trace = {
         "queries": list(queries),
@@ -526,6 +550,7 @@ async def retrieve_evidence(
         notes=notes,
         kept=kept_documents,
         scores=dict(reranked.scores) if reranked.reranked else {},
+        question_type=question_type,
     )
     result.pack(budget)
     timings["total"] = elapsed(started)

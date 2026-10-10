@@ -40,6 +40,8 @@ class RetrievalSummary(BaseModel):
     # (ARA-094).
     pruned: int = 0
     evidence_tokens: int = 0
+    # The planner's classification; a broad question grows chunks to their section (ARA-094).
+    question_type: Literal["lookup", "broad", "comparative"] | None = None
     limited_by_context: bool = False
     note: str | None = None
 

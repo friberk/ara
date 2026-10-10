@@ -6,6 +6,7 @@ passages while floors fit, and relevance shares the rest; the others add nothing
 Passages are grouped under a short paper header, the strongest groups at both ends (step 9).
 """
 
+from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from itertools import groupby
@@ -86,8 +87,9 @@ def pack_evidence(
     max_passages: int = FIRST_PASS_PASSAGES,
     headers: Mapping[str, str] | None = None,
     kept: Collection[str] = (),
+    reach: int | None = 1,
 ) -> list[Passage]:
-    """Floors first, then the most relevant passages, then same-section neighbours.
+    """Floors first, then the most relevant passages, then each chunk's section around it.
 
     Papers are taken with the `kept` ones (named by the question) first, then in relevance order
     (their best candidate's rank). Each gets its first FLOOR candidates that fit; a named paper
@@ -97,11 +99,15 @@ def pack_evidence(
     costed with the widest handle and their separator, so the rendered evidence stays within
     `budget`. With `headers`, each paper's passages form one group in page order, and the groups
     are ordered by their best candidate's rank with the strongest at both ends.
+
+    `neighbours` maps a candidate to chunks of its section; they are added `reach` ordinals away
+    at most (1: the neighbours; None: the whole section), nearest first.
     """
     widest = f"S{max_passages}"
     separator = counter.count(SEPARATOR)
     headers = headers or {}
     chosen: dict[str, Passage] = {}
+    spent: Counter = Counter()
     remaining = budget
 
     def size(node: BaseNode) -> int:
@@ -110,14 +116,15 @@ def pack_evidence(
     def header_size(document: str) -> int:
         return counter.count(render_header(headers[document])) + separator if headers else 0
 
-    def add(node: BaseNode) -> None:
+    def add(node: BaseNode, share: int | None = None) -> None:
         nonlocal remaining
         if node.node_id in chosen or len(chosen) >= max_passages:
             return
-        cost = size(node)
-        if cost <= remaining:
+        cost, document = size(node), node.metadata["document_id"]
+        if cost <= remaining and (share is None or spent[document] + cost <= share):
             chosen[node.node_id] = node_passage(node, widest)
             remaining -= cost
+            spent[document] += cost
 
     candidates: dict[str, list[BaseNode]] = {}
     for item in nodes:
@@ -144,6 +151,7 @@ def pack_evidence(
             break
         answering.append(document)
         remaining -= header_size(document)
+        spent[document] += header_size(document)
         for node in floor:
             add(node)
     if not answering and candidates:
@@ -151,12 +159,25 @@ def pack_evidence(
         if header_size(best) <= remaining:
             answering.append(best)
             remaining -= header_size(best)
+            spent[best] += header_size(best)
     for item in nodes:
         if item.node.metadata["document_id"] in answering:
             add(item.node)
-    for key in list(chosen):
-        for neighbour in (neighbours or {}).get(key, ()):
-            add(neighbour)
+    # Small-to-big (step 8): every selected chunk grows by one step on each side before any grows
+    # by two, and each paper only within an equal share of the budget, so one long section
+    # cannot take the room of the others.
+    share = budget // max(1, len(answering))
+    selected = [(key, chosen[key].ordinal) for key in chosen]
+    around = {key: (neighbours or {}).get(key, ()) for key, _ in selected}
+    furthest = max(
+        (abs(node.metadata["ordinal"] - own) for key, own in selected for node in around[key]),
+        default=0,
+    )
+    for distance in range(1, min(furthest, reach or furthest) + 1):
+        for key, own in selected:
+            for node in around[key]:
+                if abs(node.metadata["ordinal"] - own) == distance:
+                    add(node, share)
     # Groups open and close with the strongest papers (step 9); pages stay in order within each.
     strength = list(dict.fromkeys(item.node.metadata["document_id"] for item in nodes))
     groups = {document: rank for rank, document in enumerate(ends_first(strength))}
