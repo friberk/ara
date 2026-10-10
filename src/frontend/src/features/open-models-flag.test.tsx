@@ -115,7 +115,7 @@ test('Given a local library search model with open models off, Then the paper’
   mockApi({ ...off, 'GET /retrieval/profiles': { items: [openai, { ...qwen, status: 'unavailable', unavailable_reason: searchReason, local_model_key: null }], default_profile: qwen.key }, 'GET /papers/p1/retrieval': retrieval })
   renderWithProviders(<SearchIndexPanel paperId="p1" />)
   expect(await screen.findByText(reason)).toBeVisible()
-  expect(screen.getByText(/Searching with/)).toHaveTextContent(`Searching with ${qwen.display_name}`)
+  expect(screen.getByText(/^Searching /)).toHaveTextContent(`Searching 12 passages in 3 sections with ${qwen.display_name}.`)
 })
 
 test('Given a saved local library model with open models off, When switching, Then only hosted models are offered and estimated', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { ArrowUp, Square } from 'lucide-react'
 import type { Editor } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DraftMention } from '@/lib/mentions'
 import { cn } from '@/lib/utils'
-import { composerExtensions, configure, draftKey, setDraft, toContent, toDraft, type Mention } from './editor'
+import { composerExtensions, configure, draftKey, insertAtCaret, setDraft, toContent, toDraft, type Mention, type MentionTarget } from './editor'
 
-export type { Mention, PaperPill } from './editor'
+export type { Mention, MentionTarget, PaperPill } from './editor'
 
 const noMentions: readonly DraftMention[] = []
 
@@ -39,6 +39,8 @@ export type ComposerProps = {
   footnote?: React.ReactNode
   /** Typing @ at the start of a word calls this, to open the paper picker; a picked paper becomes a pill. */
   onMention?: (mention: Mention) => void
+  /** Filled with a handle that puts a pill at the caret, for the @ button (ARA-096). */
+  mentionTarget?: Ref<MentionTarget>
   maxLength?: number
   autoFocus?: boolean
   size?: 'default' | 'large'
@@ -49,7 +51,7 @@ export type ComposerProps = {
  * The one input surface of the app: Enter sends, Shift+Enter adds a line. A TipTap editor (ARA-096), so a paper
  * mentioned with @ is an atomic pill rather than text.
  */
-export function Composer({ value, mentions = noMentions, onValueChange, onSubmit, label, placeholder, submitLabel, disabled = false, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, onMention, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
+export function Composer({ value, mentions = noMentions, onValueChange, onSubmit, label, placeholder, submitLabel, disabled = false, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, onMention, mentionTarget, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
   const canSubmit = !disabled && !submitDisabled && !busy && value.trim().length > 0
   const stopping = busy && onStop
   const mentionable = !!onMention
@@ -60,6 +62,10 @@ export function Composer({ value, mentions = noMentions, onValueChange, onSubmit
   // Drafts the editor reported that the owner may still hand back; an older one can arrive after a newer keystroke.
   const reported = useRef([draftKey({ text: value, mentions: [...mentions] })])
   const focusOnMount = useRef(autoFocus)
+  const form = useRef<HTMLFormElement>(null)
+  // Whether a pill from the @ button goes at the caret: the question had focus, and gave it to a control of this form.
+  const keepCaret = useRef(false)
+  useImperativeHandle(mentionTarget, () => ({ insert: (pill) => insertAtCaret(editor, pill, keepCaret.current), focus: () => editor.commands.focus() }), [editor])
   const submit = useEffectEvent(() => { if (canSubmit) onSubmit() })
   const mention = useEffectEvent((handle: Mention) => onMention?.(handle))
   const change = useEffectEvent((text: string, next: DraftMention[]) => onValueChange(text, next))
@@ -71,8 +77,10 @@ export function Composer({ value, mentions = noMentions, onValueChange, onSubmit
     }
     const submitted = () => submit()
     const mentioned = (handle: Mention) => mention(handle)
-    editor.on('update', updated).on('composerSubmit', submitted).on('composerMention', mentioned)
-    return () => { editor.off('update', updated).off('composerSubmit', submitted).off('composerMention', mentioned) }
+    const focused = () => { keepCaret.current = true }
+    const blurred = ({ event }: { event: FocusEvent }) => { keepCaret.current = !!form.current?.contains(event.relatedTarget as Node | null) }
+    editor.on('update', updated).on('composerSubmit', submitted).on('composerMention', mentioned).on('focus', focused).on('blur', blurred)
+    return () => { editor.off('update', updated).off('composerSubmit', submitted).off('composerMention', mentioned).off('focus', focused).off('blur', blurred) }
   }, [editor])
   useEffect(() => {
     configure(editor, { label, placeholder, disabled, size, limit: maxLength, mentionable })
@@ -101,6 +109,7 @@ export function Composer({ value, mentions = noMentions, onValueChange, onSubmit
   return (
     <div className={cn('w-full', className)}>
       <form
+        ref={form}
         onSubmit={(event) => { event.preventDefault(); if (canSubmit) onSubmit() }}
         onClick={(event) => { if (event.target === event.currentTarget) editor.commands.focus() }}
         className={cn(

@@ -20,15 +20,18 @@ const openModels = { 'GET /features': { open_models: true } }
 
 function mount(value: Paper = paper) { return renderWithProviders(<SearchIndexPanel paperId={value.id} />) }
 
-test('Given a ready index on the default model, When expanded, Then it names the model, its state and the counts', async () => {
+test('Given a ready index on the default model, Then one plain sentence names the passages and the model, with no status pill', async () => {
   mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': retrieval() })
   mount()
   const panel = screen.getByRole('region', { name: 'Search index' })
-  expect(await within(panel).findByText('OpenAI text-embedding-3-large')).toBeVisible()
-  expect(within(panel).getByText(/Searching with/)).toHaveTextContent('Searching with OpenAI text-embedding-3-large')
-  expect(within(panel).getByText('text-embedding-3-large')).toHaveClass('font-mono')
-  expect(within(panel).getByText('Ready')).toBeVisible()
-  expect(within(panel).getByText('212 passages · 14 sections')).toBeVisible()
+  const sentence = await within(panel).findByText(/^Searching 212 passages in 14 sections with/)
+  expect(sentence).toHaveTextContent('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')
+  // The line breaks before the model's name, never at the hyphens inside it.
+  expect(within(sentence).getByText('OpenAI text-embedding-3-large')).toHaveClass('whitespace-nowrap')
+  // The model is named once, a ready index needs no pill, and the user has asked for no middle dots.
+  expect(within(panel).queryByText('text-embedding-3-large')).not.toBeInTheDocument()
+  expect(within(panel).queryByText('Ready')).not.toBeInTheDocument()
+  expect(panel).not.toHaveTextContent('·')
   expect(within(panel).queryByRole('progressbar')).not.toBeInTheDocument()
   // One library-wide model (ARA-091): there is no per-paper choice.
   expect(within(panel).queryByRole('button', { name: 'Change model' })).not.toBeInTheDocument()
@@ -47,14 +50,14 @@ test('Given Rebuild index, When pressed, Then the panel polls Building until Rea
   const panel = screen.getByRole('region', { name: 'Search index' })
   await user.click(await within(panel).findByRole('button', { name: 'Rebuild index' }))
   expect((calls.find((call) => call.method === 'POST')?.body as { request_id: string }).request_id).toMatch(uuid)
-  expect(await within(panel).findByText('Building')).toBeVisible()
+  expect(await within(panel).findByText('Building the index')).toBeVisible()
   expect(within(panel).getByText('42%')).toBeVisible()
   expect(within(panel).getByRole('progressbar', { name: 'Search index progress' })).toHaveAttribute('aria-valuenow', '42')
   expect(within(panel).getByText('Answers use keyword search until the index is ready.')).toBeVisible()
   expect(within(panel).getByRole('button', { name: 'Rebuild index' })).toBeDisabled()
   current = retrieval()
   await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
-  expect(await within(panel).findByText('Ready')).toBeVisible()
+  await waitFor(() => expect(within(panel).queryByText('Building the index')).not.toBeInTheDocument())
   expect(within(panel).queryByText(/keyword search/)).not.toBeInTheDocument()
   // Polling stops once nothing is building.
   const reads = calls.filter((call) => call.method === 'GET' && call.path === '/papers/p1/retrieval').length
@@ -67,7 +70,8 @@ test('Given a failed index, Then the error shows with Rebuild, and each rebuild 
   const { calls } = mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': failed, 'POST /papers/p1/retrieval/rebuild': () => json(failed, 202) })
   const { user } = mount()
   const panel = screen.getByRole('region', { name: 'Search index' })
-  expect(await within(panel).findByText('Failed')).toBeVisible()
+  expect(await within(panel).findByRole('alert')).toBeVisible()
+  expect(within(panel).queryByText('Failed')).not.toBeInTheDocument()
   expect(within(panel).getByRole('alert')).toHaveTextContent('The search model stopped responding. Rebuild to try again.')
   await user.click(within(panel).getByRole('button', { name: 'Rebuild index' }))
   await waitFor(() => expect(within(panel).getByRole('button', { name: 'Rebuild index' })).toBeEnabled())
@@ -86,7 +90,8 @@ test('Given an unavailable search model, Then the panel says why in plain langua
   })
   mount()
   const panel = screen.getByRole('region', { name: 'Search index' })
-  expect(await within(panel).findByText('Unavailable')).toBeVisible()
+  expect(await within(panel).findByText('Download Qwen3 Embedding 8B in Settings')).toBeVisible()
+  expect(within(panel).queryByText('Unavailable')).not.toBeInTheDocument()
   expect(within(panel).getByText('Download Qwen3 Embedding 8B in Settings')).toBeVisible()
 })
 
@@ -98,7 +103,7 @@ test('Given a new model building while the previous index is ready, Then answers
   })
   mount()
   const panel = screen.getByRole('region', { name: 'Search index' })
-  expect(await within(panel).findByText('Building')).toBeVisible()
+  expect(await within(panel).findByText('Building the index')).toBeVisible()
   expect(within(panel).getByText('Answers keep using the previous index until the new one is ready.')).toBeVisible()
   expect(within(panel).queryByText(/keyword search/)).not.toBeInTheDocument()
 })

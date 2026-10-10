@@ -31,13 +31,15 @@ export function useCreateChat() {
   })
 }
 
-/** Adds a paper (pinned to its active PDF) or removes one; the response names the chat's new first paper. */
+/**
+ * Removes a paper; the response names the chat's new first paper. Papers join a chat with the question whose pills
+ * mention them (ARA-096), so the client no longer adds them on their own.
+ */
 export function useChatPapers(chatId: string) {
   const client = useQueryClient()
   const settled = () => void client.invalidateQueries({ queryKey: queryKeys.chats.all })
-  const add = useMutation({ mutationFn: (paperId: string) => api<Chat>(`/chats/${chatId}/papers`, json('POST', { paper_id: paperId })), onSuccess: settled })
   const remove = useMutation({ mutationFn: (paperId: string) => api<Chat>(`/chats/${chatId}/papers/${paperId}`, { method: 'DELETE' }), onSuccess: settled })
-  return { add, remove }
+  return { remove }
 }
 
 export function useRenameChat() {

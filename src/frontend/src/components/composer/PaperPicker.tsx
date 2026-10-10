@@ -1,22 +1,24 @@
 import { useState } from 'react'
-import { AtSign, FileText, X } from 'lucide-react'
+import { AtSign } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DocumentStatusBadge } from '@/components/feedback/DocumentStatusBadge'
 import { PaperCitation } from '@/components/paper/PaperCitation'
+import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
+import { pdfStateLabels } from '@/components/paper/pdf-state'
 import { usePapers } from '@/hooks/queries/papers'
-import { VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
-import { cn } from '@/lib/utils'
 
 /**
  * Lists library papers; only papers with a processed PDF can be asked about. Each row gives the title and a short
- * citation (authors, year, venue), or the PDF's status while it is not ready. Papers in `selected` are checked the stock
+ * citation (authors, year, venue) beside an icon for the PDF's state. Papers in `selected` are checked the stock
  * cmdk way, and choosing one again hands it back to onSelect to remove. Search matches the title, author surnames, year
  * and venue. A conversation may include any number of papers (ARA-088).
  */
+/** Ends a label as a sentence, unless it already ends in punctuation such as an ellipsis. */
+const sentence = (label: string) => (/[.…!?]$/u.test(label) ? label : `${label}.`)
+
 export function PaperPickerList({ onSelect, selected = [], placeholder = 'Find a paper in your library' }: { onSelect: (paper: Paper) => void; selected?: readonly string[]; placeholder?: string }) {
   const papers = usePapers('', { pageSize: 50 })
   const items = papers.data?.pages.flatMap((page) => page.items) ?? []
@@ -29,15 +31,17 @@ export function PaperPickerList({ onSelect, selected = [], placeholder = 'Find a
           {items.map((paper) => {
             const ready = paper.document_status === 'ready'
             const added = selected.includes(paper.id)
+            const blocked = !added && !ready
             const keywords = [...paper.authors, paper.year ? String(paper.year) : '', paper.venue ?? ''].filter(Boolean)
             return (
-              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} keywords={keywords} disabled={!added && !ready} data-checked={added} aria-checked={added} onSelect={() => onSelect(paper)} className="items-start">
-                <FileText aria-hidden="true" className="mt-0.5" />
+              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} keywords={keywords} disabled={blocked} data-checked={added} aria-checked={added} onSelect={() => onSelect(paper)} className="items-start">
+                {/* A blocked row names why in its option name; the icon is then decorative so the state is not read twice. */}
+                <PdfStateIcon state={paper.document_status} focusable={false} decorative={blocked} className="mt-0.5" />
                 <div className="grid min-w-0 flex-1 gap-0.5">
                   <span className="line-clamp-2 text-sm">{paper.title ?? 'Untitled paper'}</span>
                   <PaperCitation paper={paper} />
                 </div>
-                {!ready && <DocumentStatusBadge state={paper.document_status} className="ml-auto shrink-0" />}
+                {blocked && <span className="sr-only">{sentence(pdfStateLabels[paper.document_status])} {paper.document_status === 'processing' ? 'You can ask once it is ready.' : 'Add one to ask about this paper.'}</span>}
               </CommandItem>
             )
           })}
@@ -78,48 +82,5 @@ export function PaperPicker({ onSelect, selected, disabled, open: controlled, on
         <PaperPickerList selected={selected} placeholder={mentioning ? 'Mention a paper' : undefined} onSelect={(paper) => { onSelect(paper); setOpen(false) }} />
       </PopoverContent>
     </Popover>
-  )
-}
-
-export function PaperContextChip({ paper, onRemove, removeLabel = 'Stop asking about this paper' }: { paper: Pick<Paper, 'title'>; onRemove?: () => void; removeLabel?: string }) {
-  return (
-    <span className={cn('inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-muted/60 py-1 pl-2 text-sm', onRemove ? 'pr-1' : 'pr-2')}>
-      <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate">{paper.title ?? 'Untitled paper'}</span>
-      {onRemove && <Button type="button" variant="ghost" size="icon-xs" className="rounded-md" aria-label={removeLabel} onClick={onRemove}><X aria-hidden="true" /></Button>}
-    </span>
-  )
-}
-
-/**
- * The papers chosen in a composer as removable chips. Beyond VISIBLE_PAPER_CHIPS they collapse into "+N more", which
- * lists every chosen paper with its own remove button.
- */
-export function PaperChips({ papers, onRemove }: { papers: Pick<Paper, 'id' | 'title'>[]; onRemove: (paper: Pick<Paper, 'id' | 'title'>) => void }) {
-  const several = papers.length > 1
-  const label = (paper: Pick<Paper, 'title'>) => `Remove ${paper.title ?? 'Untitled paper'}`
-  const hidden = papers.length - VISIBLE_PAPER_CHIPS
-  return (
-    <>
-      {papers.slice(0, VISIBLE_PAPER_CHIPS).map((paper) => <PaperContextChip key={paper.id} paper={paper} removeLabel={several ? label(paper) : undefined} onRemove={() => onRemove(paper)} />)}
-      {hidden > 0 && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button type="button" variant="outline" size="sm" className="h-auto rounded-lg py-1 font-normal text-muted-foreground">+{hidden} more</Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] p-1">
-            <ul aria-label="Chosen papers" className="max-h-72 overflow-y-auto">
-              {papers.map((paper) => (
-                <li key={paper.id} className="flex items-center gap-2 rounded-md py-1 pr-1 pl-2 text-sm hover:bg-muted">
-                  <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{paper.title ?? 'Untitled paper'}</span>
-                  <Button type="button" variant="ghost" size="icon-xs" aria-label={label(paper)} onClick={() => onRemove(paper)}><X aria-hidden="true" /></Button>
-                </li>
-              ))}
-            </ul>
-          </PopoverContent>
-        </Popover>
-      )}
-    </>
   )
 }

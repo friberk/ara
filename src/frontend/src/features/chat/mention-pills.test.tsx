@@ -8,29 +8,36 @@ import { assistantMessage, chatRow, included, mount, paper, paper2, settings, ss
 
 afterEach(() => vi.unstubAllGlobals())
 
-const dense = 'Karpukhin & Oguz (2020). Dense passage retrieval.'
+const title = 'Dense passage retrieval'
 
-test('Given saved questions, When history renders, Then their mentions are pills named by citation, and older questions stay plain text', async () => {
+test('Given saved questions, When history renders, Then their mentions are pills named by their label and described by the citation, with no remove button; older questions stay plain text', async () => {
   mockApi({
     ...settings,
     'GET /chats': { items: [chatRow('c1', { papers: [included(paper), included(paper2)] })] },
     'GET /chats/c1/messages': {
       items: [
-        { ...userMessage('u1', 'How does Karpukhin 2020 train?'), mentions: [{ paper_id: 'p2', label: 'Karpukhin 2020', start: 9, end: 23 }] },
+        { ...userMessage('u1', `How does ${title} train?`), mentions: [{ paper_id: 'p2', label: title, start: 9, end: 32 }] },
         assistantMessage('a1', 'With in-batch negatives.'),
-        userMessage('u2', 'And @Author 2024?'),
+        // Saved before pills carried the title: the label stays as it was sent.
+        { ...userMessage('u2', 'And Karpukhin 2020?'), mentions: [{ paper_id: 'p2', label: 'Karpukhin 2020', start: 4, end: 18 }] },
+        userMessage('u3', 'And @Author 2024?'),
       ],
     },
     'GET /papers/p2': paper2,
   })
-  mount('/papers/p1/chats/c1')
-  const [first, older] = await screen.findAllByRole('article', { name: 'Your message' })
-  const pill = await within(first!).findByRole('img', { name: dense })
+  const { user } = mount('/papers/p1/chats/c1')
+  const [first, older, plain] = await screen.findAllByRole('article', { name: 'Your message' })
+  const pill = within(first!).getByRole('img', { name: title })
+  await waitFor(() => expect(pill).toHaveAccessibleDescription('Karpukhin & Oguz (2020)'))
   expect(pill).toHaveAttribute('aria-roledescription', 'paper')
-  expect(pill).toHaveTextContent('Karpukhin 2020')
-  expect(first).toHaveTextContent('How does Karpukhin 2020 train?')
-  expect(within(older!).queryByRole('img')).not.toBeInTheDocument()
-  expect(older).toHaveTextContent('And @Author 2024?')
+  // The pill sits in the sentence as sent; its hidden citation text only describes it.
+  expect(first).toHaveTextContent(new RegExp(`^How does ${title}`))
+  expect(first).toHaveTextContent(/ train\?$/)
+  await user.hover(pill)
+  expect(screen.queryByRole('button', { name: `Remove ${title}` })).not.toBeInTheDocument()
+  expect(within(older!).getByRole('img', { name: 'Karpukhin 2020' })).toBeVisible()
+  expect(within(plain!).queryByRole('img')).not.toBeInTheDocument()
+  expect(plain).toHaveTextContent('And @Author 2024?')
 })
 
 test('Given a question that mentions a paper outside the chat, When its answer cites that paper, Then the answer is accepted', async () => {
@@ -52,7 +59,7 @@ test('Given a question that mentions a paper outside the chat, When its answer c
   await waitFor(() => expect(isEditable(input)).toBe(true))
   await user.type(input, 'What does @')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
-  await waitFor(() => expect(within(input).getByRole('img', { name: dense })).toBeVisible())
+  await within(input).findByRole('group', { name: title })
   await user.type(input, 'report?{Enter}')
   const reply = await screen.findByRole('article', { name: 'Assistant message' })
   await waitFor(() => expect(reply).toHaveTextContent('Dense recall is 0.79'))

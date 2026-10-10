@@ -1737,6 +1737,79 @@ The user asked for relative times in the conversation switcher and a less verbos
 
 Deviations: (1) the popover's accessible name is "Chat history for this paper", the only place "this paper" appears. (2) The check column from the stock CommandItem stays reserved so the times align in one column. (3) Without a filter, the list itself takes focus on open so arrow keys work. (4) The filter is found by placeholder in tests, because the shared InputGroup and cmdk input both expose a combobox role. Mobile: the first shot had the popover touching the left edge; `collisionPadding={16}` fixed it. Old switcher tests were rewritten for the new list, and the two date-precision and empty-state tests were removed as covered by the new ones. Not run: the Playwright spec update.
 
+**ARA-096 follow-up built: pills only, titled, with hover × and citation card (2026-10-10, same agent).** `feat/ux-feedback-round` (`30e53be`) was merged into the branch first; it fast-forwarded. The impeccable design context (DESIGN.md, the src-frontend surface brief) and the craft floor were read before any UI edit.
+- **As built.**
+  - **Composer.** The home and new-chat chip rows are gone. Attachments are the papers the pills mention; a new chat always includes its own paper. The @ button inserts a pill: at the caret when the question gave focus to a control of its own form, otherwise at the end. In an existing chat it adds nothing before sending, and the client's add-paper path is removed.
+  - **Pill.** The pill's label, which is also the question text and the server span, is the title. It is cut to 300 characters, or falls back to "Surname Year" when there is no title. It renders at 13 px with the attached-PDF `PdfStateIcon` (new `tooltip={false}`, so no second popup) and is cut near 28ch with an ellipsis.
+  - **PaperPill.** One component serves the editor (a React node view; the Mention node is selectable) and history. Hover or node selection highlights it and shows a 16 px round × at the top right with a larger hit area. The × keeps focus and removes the pill and the space after it. A HoverCard opens after 300 ms or on selection with `PaperCitation`, plus the full title when it is cut, and closes on Escape and blur. The title is the accessible name and the plain-text citation the description; history pills are images without the ×.
+- **Red → green.**
+  - `mentionLabel`/`shortCitation is not a function`, then 5 passed.
+  - PdfStateIcon: `not.toHaveAttribute("data-slot", "tooltip-trigger")`, then 12 passed.
+  - PaperPill: unresolved import, then green after a test fix. `user.click` moves the pointer onto the × first, which user-event reports to React as leaving the pill, so the press is dispatched directly.
+  - Composer, against the committed editor: 5 failed (four `Unable to find … role "group" … "Dense passage retrieval"`, one `Cannot read properties of null (reading 'insert')`). Then 18 passed, after awaiting the React node view, which draws a tick later.
+  - App, chat and history: `Unable to find role="group" … "Traceable research systems"`, `Failed to resolve import "./pill"`, `citationText is not a function`. Then green.
+  - The server test for a title label passed at first run; it is a regression guard, since the server only checks spans.
+- **Browser round** (Playwright's Chromium driving a temporary Vite harness with stubbed data; light, dark and 390 px; harness deleted).
+  - **Late picker close.** Typing "with @" straight after a pick left the @ typed with no picker in 3 of 8 runs. The first picker's close arrived 200–500 ms late with a stale `open`, dismissed the new suggestion and moved focus. A ref now tracks the live session; `use-paper-mention.test.ts` failed on the previous hook (`expected "vi.fn()" to not be called at all, but actually been called 1 times`) and passes now, and the browser runs went to 0 of 8.
+  - **Focus delay.** Focus came back about 50 ms after a pick. Inserting a pill now focuses the question synchronously.
+  - **History surface.** History pills shared the bubble's quiet surface and lost their edge, most visibly in dark mode. They now sit on the paper tone (`surface="paper"`, red first).
+  - **Checked and fine.** Pills are 20 px tall on the 15 px line, keep the Geist features, wrap whole at 390 px with no horizontal overflow, and the arrow keys select the pill.
+  - **Harness artefact.** Back-to-back key presses through CDP can outrun Chrome's asynchronous `selectionchange`, so ProseMirror's selection lags; keys paced like typing behave.
+- **Verification.** Backend 1193 passed in 266.91 s with Ruff clean. `npm run check`: 678 tests in 87 files. `npm run build` passed; the main chunk went from 742.77 to 758.51 kB (gzip 224.56 to 228.97 kB).
+- **Not verified:** the Playwright specs (updated: editor pills are groups, plus an @-button journey); real touch devices; IME; screen reader output.
+
+**Phase 2 (header, picker, deletion).** After ARA-097 merged, the workspace header got `PaperPdfStatus`: no icon when the PDF is ready, the state icon otherwise, and automatic retrieval shows as the preparing state (the old "Getting PDF" text is gone). Red: `Unable to find role="img" and name "Preparing PDF…"`. After ARA-096 merged, the @ picker rows use `PdfStateIcon` in place of `FileText` and the badge. A blocked row names its reason ("No PDF yet. Add one to ask about this paper.") in its option name and its icon is decorative; ready rows keep a labelled icon, because an existing test pins a row's text to the title alone. Red: `toHaveAccessibleName` failed and the badge was still present. `DocumentStatusBadge`, `document-state.ts`, `PaperStatusBadge` and their test case are deleted; a grep finds no remaining use. Visual round of the open picker against the real-data copy on :8011, read-only: light, dark and 390px, no overflow, state icons match the sidebar; blocked rows are dimmed as disabled options.
+
+
+**ARA-101 follow-up (2026-10-10): an Abstract heading and a quieter search index.**
+- **The request.** After ARA-101 merged (`58ae56b`), the user asked: "Can we have a heading/title for abstract?" While at it, the lead asked to tidy the ⓘ dialog's search index. It had a middle dot ("64 passages · 32 sections"), the model id shown twice, and a green "Ready" pill. The work went on `feat/ara-101b-abstract-heading` from `58ae56b`.
+- **What changed.**
+  - `PaperHeader` puts a small `h3` "Abstract" (`text-sm font-medium`) in a tight group with the abstract. When there is no abstract, the heading stays above "No abstract is available for this paper yet.", which reads better than a gap.
+  - `SearchIndexPanel` says it in one sentence: "Searching 64 passages in 32 sections with OpenAI text-embedding-3-large." A ready index adds nothing.
+  - Building shows a spinner line, "Building the index", with the progress bar.
+  - Failure keeps its alert, and unavailable or missing keep their notes. Rebuild index stays.
+  - The `Badge` and its tone table are gone.
+- **Red, then green.** 9 tests failed first:
+  - `Unable to find … heading "Abstract"` ×2;
+  - `Unable to find … "Searching 212 passages in 14 sections with OpenAI text-embedding-3-large."` ×2;
+  - `"Building the index"` ×2;
+  - the `Failed` and `Unavailable` pills still present ×2;
+  - the open-models flag sentence ×1.
+
+  Then 29 passed.
+- **Visual check, read-only against :8011 through Vite on 5198.** No non-GET request was made.
+  - Desktop light: the heading sits under the links, grouped with the abstract.
+  - At 390px: no overflow, and the dialog is 358 × 633 within 390 × 844.
+  - The index sentence wraps cleanly.
+- **Verification.** `npm run check` passed with 695 tests in 92 files, and `npm run build` passed with the existing chunk-size warning.
+  - Run alone, `library-manage.test.tsx`'s Delete test fails on this base with `Found multiple elements with the role "button" and name "Actions for “Attention is all you need”"`. ARA-103's sidebar row menu also matches that name. `feat/ux-feedback-round` has since changed that test, so the merge brings the fix. This branch does not touch it.
+- **The PDF heading, the same day.** The user also asked: "Also for the PDF part, can we have a heading / title as well?"
+  - `PdfHeading` is an `h3` "PDF" in the Abstract heading's style. The file name (`paper.file_name`) follows it in muted text, with no separator glyph.
+  - `PdfReader` passes it to `PdfViewer` with the paper header, so it sits above page 1 and scrolls with the document. The controls bar stays the only pinned element.
+  - With no ready PDF, `ReaderGate` puts the same heading first in its column. Its "Preparing the PDF" and "This PDF couldn't be processed" headings became `h4`, so the outline reads title, Abstract, PDF.
+  - An earlier PDF version keeps its "Showing an earlier PDF version" banner and gets no second label.
+  - **Red, then green.** The two new tests for the heading above the PDF and above the gate failed with `Unable to find … heading … /^PDF/` and `… "PDF"`. The test that an earlier version gets no extra heading passed at its first run, since nothing had added one yet. The citation-jump test, extended to pass the heading with the header, also passed at once: `PdfViewer` renders whatever header it is given.
+  - **Verification.** `npm run check` passed with 698 tests in 92 files, and `npm run build` passed.
+  - **Visual round.** It was read-only against :8011 at desktop light and 390px. The reader's headings read title, "Abstract", "PDF sec18-han.pdf" above a PDF, and title, "Abstract", "PDF" above the no-PDF states. Nothing overflows. A citation jump to page 7 still marked the passage in view, and scrolling to the top showed page 1.
+
+
+- **Merge, the model name and a reload bug, the same day.**
+  - **Merge.** `feat/ux-feedback-round` (`ba62a2a`) was merged in (`eb51d0b`); only the journal conflicted.
+  - **Model name.** The index sentence now breaks before the model name, not inside it ("text-embedding-" / "3-large"). The name is a `whitespace-nowrap` span (`a75bdca`). The test failed first with `Unable to find … "OpenAI text-embedding-3-large"`, then passed.
+  - **The reload bug.** The user reported: "on page refresh /paper/ scrolls to the PDF. It shouldn't do that." The lead could not reproduce it in headless Chromium.
+    - **Reproduced.** Playwright's headless Chromium starts with `--hide-scrollbars`, so scrollbars never take width there. With that flag removed and classic 15px scrollbars forced, a reload opened the reader at `scrollTop` 383 (1440px) and 421 (390px), past the header to page 1 (`shots101d/reload-scrollbars-*.png`). That matches macOS with "Show scroll bars: Always" or a mouse, and Windows.
+    - **Cause.** The lead's hypothesis was right. Once the pages render, the scrollbar narrows the viewer, so `pageWidth` changes a second time. The zoom-and-width anchor, which started at `{page: 1, offset: 0}`, then set `scrollTop` to page 1. The same anchor also drifted when zooming while reading the header: a negative fraction of page 1 does not survive a new page height.
+    - **Fix (`a8d2b44`).** The anchor can be page 0, the header region above page 1, with a pixel distance from the top. It starts there, `trackScroll` records it while above page 1, and a width change or zoom restores that distance. Mid-document it keeps the page and fraction as before. The viewer also gets `overflow-anchor: none`, so the browser's own scroll anchoring cannot fight it when the header changes height.
+    - **Red, then green.** A jsdom layout model stores `scrollTop`, page heights follow the width, and widths come through the ResizeObserver callback. Three tests failed first:
+      - a second width change on load moved the reader to `336` instead of 0;
+      - reading the header at 120px then resizing gave `124.35` instead of 120;
+      - the viewer lacked the `[overflow-anchor:none]` class.
+
+      A fourth test, keeping a quarter of the way into page 3 across a resize, passed before and after as the regression guard. The other 169 workspace tests, citation jumps included, stayed green.
+    - **Browser, after the fix.** The classic-scrollbar reload gives `scrollTop` 0 at 1440 and 390. Zoom in at the top stays at 0, and zoom in on page 3 stays on page 3. A citation jump still lands on page 7 with the passage marked in view, and the model name renders on one line (`shots101e/`).
+  - **Verification.** `npm run check` passed with 747 tests in 96 files after the merge, and `npm run build` passed.
+
+
 ## 2026-10-10 - ARA-100 Remove the Activity page
 
 - Prompt: the user decided "I think we should remove the Activity page. It doesn't make sense in a product like this." The lead assigned the removal, the in-context checks and automatic recovery for storage cleanup.

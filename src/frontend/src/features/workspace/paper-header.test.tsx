@@ -13,12 +13,18 @@ vi.mock('./PdfViewer', () => ({
 }))
 
 const other: Citation = { chunk_id: 'chunk-9', document_id: 'doc-2', paper_id: 'p2', page: 3, excerpt: 'Dense recall is 0.79.' }
+const earlier: Citation = { chunk_id: 'chunk-0', document_id: 'doc-0', page: 1, excerpt: 'An earlier extraction.' }
 vi.mock('@/features/chat', async () => {
   const { useWorkspace } = await import('./workspace-context')
   return {
     ConversationPane: function ConversationStub() {
       const { showSource } = useWorkspace()
-      return <section aria-label="Conversation"><button type="button" onClick={() => showSource(other)}>Cite the second paper</button></section>
+      return (
+        <section aria-label="Conversation">
+          <button type="button" onClick={() => showSource(other)}>Cite the second paper</button>
+          <button type="button" onClick={() => showSource(earlier)}>Cite an earlier PDF</button>
+        </section>
+      )
     },
   }
 })
@@ -67,6 +73,10 @@ test('Given a paper with its PDF, Then the reader opens with its bibliography ab
   expect(within(top).getByRole('link', { name: /^DOI/ })).toHaveAttribute('href', 'https://doi.org/10.1234/evidence')
   expect(within(top).getByRole('link', { name: /^OpenAlex/ })).toHaveAttribute('href', 'https://openalex.org/W123')
   expect(within(top).getByText(paper.abstract)).toHaveClass('line-clamp-3')
+  // The abstract has its own small heading, grouped with its text (ARA-101 follow-up).
+  const abstract = within(top).getByRole('heading', { level: 3, name: 'Abstract' })
+  expect(abstract).toHaveClass('text-sm', 'font-medium')
+  expect(abstract.nextElementSibling).toContainElement(within(top).getByText(paper.abstract))
   expect(within(top).getByRole('button', { name: 'Edit details' })).toBeVisible()
   expect(within(top).getByRole('button', { name: 'Sources and search index' })).toBeVisible()
   // The PDF follows the header in the same scrolling column.
@@ -78,6 +88,7 @@ test('Given a sparse paper, Then the header shows what exists and says plainly t
   renderApp('/papers/p1')
   const top = await header('Untitled notes')
   expect(within(top).getByText('No abstract is available for this paper yet.')).toBeVisible()
+  expect(within(top).getByRole('heading', { level: 3, name: 'Abstract' }).nextElementSibling).toHaveTextContent('No abstract is available for this paper yet.')
   expect(within(top).queryByRole('list', { name: 'Links' })).not.toBeInTheDocument()
   expect(within(top).queryByText(/Not available|null|undefined/)).not.toBeInTheDocument()
   expect(top.querySelectorAll('p').length).toBe(1)
@@ -131,7 +142,7 @@ test('Given ⓘ, When it is pressed, Then a centred dialog lists sources, Look u
   const identifiers = within(dialog).getByRole('region', { name: 'Identifiers' })
   expect(within(identifiers).getByText('10.1234/evidence')).toHaveClass('font-mono')
   expect(within(identifiers).getByText('W123')).toHaveClass('font-mono')
-  expect(await within(dialog).findByText('212 passages · 14 sections')).toBeVisible()
+  expect(await within(dialog).findByText(/^Searching 212 passages in 14 sections with/)).toHaveTextContent('Searching 212 passages in 14 sections with OpenAI text-embedding-3-large.')
   expect(within(dialog).getByRole('heading', { name: 'Search index' })).toBeVisible()
   expect(within(dialog).getByRole('button', { name: 'Delete paper…' })).toBeVisible()
   expect(within(dialog).queryByText(paper.abstract)).not.toBeInTheDocument()
@@ -240,4 +251,41 @@ test('Given a narrow reader, Then Edit details shrinks to its icon and keeps its
   const edit = within(await header()).getByRole('button', { name: 'Edit details' })
   expect(within(edit).getByText('Edit details')).toHaveClass('sr-only', '@md:not-sr-only')
   expect((await header()).firstElementChild).toHaveClass('@container')
+})
+
+test('Given a paper with its PDF, Then a "PDF" heading with the file name sits between the header and page 1, scrolling with them', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  renderApp('/papers/p1')
+  const document = await screen.findByRole('region', { name: 'PDF document' })
+  const heading = within(document).getByRole('heading', { level: 3, name: /^PDF/ })
+  expect(heading).toHaveClass('text-sm', 'font-medium')
+  expect(within(heading).getByText('evidence.pdf')).toHaveClass('text-muted-foreground')
+  expect(heading).not.toHaveTextContent('·')
+  const top = within(document).getByRole('heading', { level: 2, name: paper.title }).closest('header') as HTMLElement
+  expect(top.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(heading.compareDocumentPosition(within(document).getByText('Showing doc-1')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+test('Given a paper without a PDF, Then the same "PDF" heading leads the ways to get one, after the header', async () => {
+  mockApi({ 'GET /papers/p1': { ...paper, document_status: 'metadata_only', active_document_id: null, file_name: null } })
+  renderApp('/papers/p1')
+  const reader = await screen.findByRole('region', { name: 'PDF reader' })
+  const heading = await within(reader).findByRole('heading', { level: 3, name: 'PDF' })
+  expect(heading).toHaveClass('text-sm', 'font-medium')
+  const top = within(reader).getByRole('heading', { level: 2, name: paper.title }).closest('header') as HTMLElement
+  expect(top.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(heading.compareDocumentPosition(await within(reader).findByText('Attach the PDF to read, summarize and ask')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  // Its states sit under it in the outline.
+  expect(within(reader).queryAllByRole('heading', { level: 2 }).map((item) => item.textContent)).toEqual([paper.title])
+})
+
+test('Given an earlier PDF a citation opened, Then its existing label stands and no second "PDF" heading is added', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  const { user } = renderApp('/papers/p1')
+  await screen.findByRole('region', { name: 'PDF document' })
+  await user.click(screen.getByRole('button', { name: 'Cite an earlier PDF' }))
+  const document = await screen.findByText('Showing doc-0')
+  const reader = screen.getByRole('region', { name: 'PDF reader' })
+  expect(within(reader).getByText('Showing an earlier PDF version')).toBeVisible()
+  expect(within(document.closest('[role="region"]') as HTMLElement).queryByRole('heading', { level: 3, name: /^PDF/ })).not.toBeInTheDocument()
 })

@@ -33,6 +33,14 @@ def test_given_pills_when_a_question_is_sent_then_spans_index_its_text_in_code_p
     assert body("No pills here").mentions == []
 
 
+def test_given_a_title_as_the_pill_label_then_its_span_matches_with_punctuation_and_accents():
+    """Pills carry the paper title (ARA-096 follow-up); the server checks it like any label."""
+    title = "Dense Passage Retrieval: Open-Domain QA — Zürich (v2)"
+    content = f"Compare {title} with BM25."
+    sent = body(content, mention(8, title))
+    assert content[sent.mentions[0].start : sent.mentions[0].end] == title
+
+
 @pytest.mark.parametrize(
     "mentions",
     [

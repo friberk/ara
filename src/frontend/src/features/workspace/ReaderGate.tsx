@@ -12,7 +12,7 @@ import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { useJobs, useRetryJob } from '@/hooks/queries/jobs'
 import { usePdfComing } from '@/hooks/queries/uploads'
 import { FullTextAccess } from './FullTextAccess'
-import { PaperHeader } from './PaperHeader'
+import { PaperHeader, PdfHeading } from './PaperHeader'
 
 /** The paper's latest failed ingest job; the paper filter is checked here too in case the server ignores it. */
 function useFailedIngest(paper: Paper) {
@@ -29,7 +29,7 @@ function ProcessingGate({ paper, jobId, uploaded, onSettled }: { paper: Paper; j
   return (
     <div className="grid gap-6">
       <div className="grid gap-1.5">
-        <h2 className="text-sm font-medium">Preparing the PDF</h2>
+        <h4 className="text-sm font-medium">Preparing the PDF</h4>
         <p className="text-sm text-pretty text-muted-foreground">It opens here as soon as its pages are read, usually within a minute.</p>
       </div>
       <PreparationSteps steps={steps} />
@@ -44,7 +44,7 @@ function FailedGate({ paper, onUploaded, onRetrieved }: { paper: Paper; onUpload
   return (
     <div className="grid gap-6">
       <div className="grid gap-1.5">
-        <h2 className="text-sm font-medium">This PDF couldn’t be processed</h2>
+        <h4 className="text-sm font-medium">This PDF couldn’t be processed</h4>
         <p className="text-sm text-muted-foreground">{job?.error?.message ?? 'Text-based PDFs work best. Scanned pages need text recognition, which is turned off.'}</p>
       </div>
       {job && (
@@ -74,13 +74,17 @@ export function ReaderGate({ paper }: { paper: Paper }) {
     <div className="h-full overflow-y-auto">
       {/* The paper's bibliography leads, as above a PDF (ARA-101); it carries the abstract. */}
       <PaperHeader paper={paper} />
-      <div className="mx-auto grid max-w-md gap-8 px-5 py-10">
-        {paper.upload_match ? <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} />
-          : followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
-          : paper.document_status === 'processing' ? <ProcessingGate paper={paper} />
-          : paper.document_status === 'failed' ? <FailedGate paper={paper} onUploaded={onUploaded} onRetrieved={onRetrieved} />
-          : coming ? <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} variant="secondary" chooseLabel="Upload your own copy instead" onAccepted={onUploaded} /></>
-          : <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={onUploaded} /></>}
+      {/* The PDF section, as above a PDF: its heading, then the ways to get one (ARA-101 follow-up). */}
+      <div className="mx-auto grid max-w-md gap-4 px-5 pt-6 pb-10">
+        <PdfHeading />
+        <div className="grid gap-8">
+          {paper.upload_match ? <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} />
+            : followed ? <ProcessingGate paper={paper} jobId={followed.jobId} uploaded={followed.uploaded} onSettled={(failed) => { if (failed) setStarted(null) }} />
+            : paper.document_status === 'processing' ? <ProcessingGate paper={paper} />
+            : paper.document_status === 'failed' ? <FailedGate paper={paper} onUploaded={onUploaded} onRetrieved={onRetrieved} />
+            : coming ? <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} variant="secondary" chooseLabel="Upload your own copy instead" onAccepted={onUploaded} /></>
+            : <><FullTextAccess paper={paper} onAccepted={onRetrieved} /><UploadDropzone paperId={paper.id} chooseLabel="Upload PDF" title="Attach the PDF to read, summarize and ask" description="Text-based PDF, up to 25 MB. The reader, summaries and answers all cite its pages." onAccepted={onUploaded} /></>}
+        </div>
       </div>
     </div>
   )
