@@ -21,6 +21,6 @@
   ],
   "commits": [],
   "pull_requests": [],
-  "verification": "Deferred (P2) on 2026-10-09: not implemented on feat/rag-context. Live local answers fit 8-9 passages within the 3,072-token budget; broad questions on long papers remain the open case.",
-  "updated_at": "2026-10-09"
+  "verification": "Deferred (P2) on 2026-10-09: not implemented on feat/rag-context. Live local answers fit 8-9 passages within the 3,072-token budget; broad questions on long papers remain the open case. On 2026-10-10 it was folded into ARA-094 (retrieval orchestration design); implemented there.",
+  "updated_at": "2026-10-10"
 }

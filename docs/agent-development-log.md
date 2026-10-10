@@ -1164,3 +1164,17 @@ After the first round, the lead fast-forwarded the branch to the integration bra
   - NotebookLM stresses retrieval and ranking despite a 1M window.
   - Scite and SciSpace use retrieval and publish no token figures.
 - **The decision.** The user kept 64K "unless we decide" otherwise. ARA-093 is limited to putting each model's window and limits in the catalog, with no change in behaviour. Full text when it fits, as Claude Projects does, was noted as a later option for multi-paper chats.
+
+**Retrieval orchestration decided (2026-10-10).**
+- **Context strategy.** After comparing NotebookLM, Claude Projects, Open Notebook (lfnovo/open-notebook) and the research, the user kept retrieval for every answer, to preserve the value of the retrieval stack. Whole-paper mode was rejected. The user wants the context budget to follow the model window and the logic to follow published principles, with no feature flag keeping two implementations.
+- **Lead's corrections to earlier claims.** The packer is capped at 16 passages averaging 333 tokens, so the user's real answers averaged 6.8K input tokens. They were not filling a 64K "fill target", and our evidence is smaller than OpenAI file search's ~16K. Earlier statements calling the budget a fill target and claiming ~37K of evidence were wrong.
+- **Design.** Written to `docs/plans/retrieval-orchestration.md`:
+  - W derived from the window, with a 272K price-tier cap;
+  - history H = min(32K, 25% of W);
+  - a conservative first pass (≤24 passages, ≤16K) with pruning, never padding;
+  - per-paper floors and sub-questions;
+  - strongest-first-and-last ordering;
+  - section summaries;
+  - one Self-Route-style wider retry;
+  - map-reduce on small windows.
+- **Tickets.** ARA-093 implements the budgets, ARA-088 multi-paper chats, and ARA-094 the evidence changes (ARA-079 folded in). No check set is possible, so these are research-backed but unmeasured on the user's papers.

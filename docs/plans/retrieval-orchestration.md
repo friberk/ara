@@ -1,0 +1,63 @@
+# Retrieval orchestration for N papers and any context window
+
+Status: approved by the user on 2026-10-10. Implemented by ARA-093 (budgets from the catalog), ARA-088 (multi-paper chats) and ARA-094 (relevance-driven evidence, section summaries and a wider retry).
+
+## Principles
+
+- **Retrieval always.** Every answer is built from retrieved passages; the app never sends whole papers. The user chose this to keep the value of the hybrid retrieval stack.
+- **One implementation.** No feature flags or parallel "old/new" paths. A change replaces the previous behaviour.
+- **Every size derives from the model's window X.** Fixed numbers are defaults for large windows, always capped by a share of the budget.
+- **Follow published practice.** Each threshold below cites its source. Change a number only with a new source or observed evidence, and record the reason in the journal.
+- **Answers stay grounded.** Every claim cites a passage handle, citations are validated against the chat's documents, and unsupported answers say so.
+
+## Budget (ARA-093)
+
+```
+W  = min(X − answer_reserve − reasoning_reserve − safety, price_tier_cap)
+F  = instructions + question                 (if no evidence room remains: "question too long")
+H  = min(H_target, 25% of W)                 (H_target = 32K; history beyond H is summarised)
+E  = W − F − H                               (evidence ceiling)
+```
+
+- X, the answer reserve, reasoning headroom and the price-tier boundary come from the model's catalog entry. For GPT-5.6, input beyond 272K tokens is billed at a higher rate, so `price_tier_cap` = 272K.
+- `HOSTED_WORKING_CONTEXT_TOKENS` (64K) is retired.
+- History is append-only after the instructions. With OpenAI prompt caching, prefixes of 1,024 tokens or more are cached automatically, and GPT-5.6 cached reads are about 90% cheaper, so earlier turns are mostly cache reads.
+
+## Evidence (ARA-094; ARA-088 for several papers)
+
+1. **Plan.** Rewrite the question as a standalone query; classify it as lookup, broad or comparative; emit per-paper sub-questions for comparisons. Pattern: LlamaIndex Sub-Question Query Engine.
+2. **Candidates.** Hybrid lexical plus dense search over the chat's papers, filtered by document and fused with RRF. Section summaries (ARA-079) are candidates beside chunks.
+3. **Rerank** the pool, as in Anthropic Contextual Retrieval, where a reranker narrows about 150 candidates to 20.
+4. **Prune, never pad.** Drop passages far below the top score. Retrieved hard negatives degrade long-context generation (Jin et al., ICLR 2025).
+5. **First pass is conservative.** Use at most 24 passages and at most min(16K, E) tokens, close to OpenAI file search's defaults: up to 20 chunks of 800 tokens, a 16K retrieval budget for GPT-4-class models.
+6. **Per-paper floor.** In multi-paper chats each paper gets a floor of about 2 passages before relevance shares the rest. If the papers in scope exceed what fits (m = E1 / floor), route to the most relevant papers. On small windows, comparisons go map-reduce: one call per paper, then a synthesis.
+7. **Expand** selected chunks to neighbours or their section while the paper's share allows (small-to-big).
+8. **Order.** Group passages by paper with a short header; within each paper, order by page; put the strongest passages at the start and end. This is the retrieval-reordering finding of Jin et al., ICLR 2025, which builds on "lost in the middle".
+9. **Retry once.** If the model reports the evidence insufficient, retry with a lower prune bar, about twice the cap and section expansion, up to E. This adapts Self-Route (Li et al., EMNLP 2024 Industry), which escalates only when the model judges the evidence insufficient. Here the escalation is wider retrieval, not whole documents.
+10. **Observable.** Each answer records passage count, evidence tokens, pruned count, scores and whether it retried. "Details" and the context meter show them.
+
+## Window sizes (all derived)
+
+| | Local 16K | 128K | 1M (GPT-5.6) |
+|---|---|---|---|
+| W | ~12.5K | ~123K | 272K (tier cap) |
+| H | ~3K | 31K | 32K |
+| E | ~8K | ~90K | ~238K |
+| First pass | ~8K | ≤16K | ≤16K |
+| Retry | map-reduce | widen to E | widen to E |
+
+Open models remain frozen behind `EXPERIMENTAL_OPEN_MODELS`. The design must still work for any catalog X, and is tested with synthetic entries at 16K, 128K and 1M.
+
+## Not measured
+
+The user decided against a calibration or check set. These choices follow published practice but are not measured on the user's papers, and tickets and the journal must say so.
+
+## Sources
+
+- Li et al., *Retrieval Augmented Generation or Long-Context LLMs? A Comprehensive Study and Hybrid Approach*, EMNLP 2024 Industry — https://arxiv.org/abs/2407.16833
+- Jin et al., *Long-Context LLMs Meet RAG: Overcoming Challenges for Long Inputs in RAG*, ICLR 2025 — https://arxiv.org/abs/2410.05983
+- Liu et al., *Lost in the Middle: How Language Models Use Long Contexts*, TACL 2024 — https://arxiv.org/abs/2307.03172
+- Anthropic, *Introducing Contextual Retrieval* (September 2024) — https://www.anthropic.com/news/contextual-retrieval
+- OpenAI file search defaults (800-token chunks, 400 overlap, up to 20 results, 16K budget) — https://community.openai.com/t/token-budget-in-file-search-tool/806175
+- OpenAI prompt caching — https://developers.openai.com/api/docs/guides/prompt-caching
+- LlamaIndex multi-document and sub-question patterns — https://developers.llamaindex.ai/python/examples/query_engine/multi_doc_auto_retrieval/multi_doc_auto_retrieval/

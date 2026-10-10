@@ -1,0 +1,41 @@
+{
+  "id": "ARA-094",
+  "title": "Relevance-driven evidence, section summaries and one wider retry (retrieval always)",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "Implements steps 2\u20135 and 7\u201310 of docs/plans/retrieval-orchestration.md. Today the first pass is a fixed 16 passages averaging 333 tokens; the user's answers averaged 6.8K input tokens. The user chose retrieval always (no whole-paper mode) and principles from papers and OpenAI/Anthropic practice. No calibration set is possible, so the choices are research-backed and unmeasured on the user's papers, and records must say so. One implementation, no feature flag (user decision on 2026-10-10). Includes ARA-079 (section summaries).",
+  "dependencies": [
+    "ARA-079",
+    "ARA-088",
+    "ARA-093"
+  ],
+  "acceptance_criteria": [
+    "Given reranked candidates, when the first pass is assembled, then passages far below the top score are pruned (never padded), at most 24 passages and at most min(16K, E) tokens are used, and the thresholds cite OpenAI file search and Anthropic Contextual Retrieval.",
+    "Given selected passages, when they are ordered, then they are grouped by paper and page with the strongest at the start and end (Jin et al., ICLR 2025; Lost in the Middle).",
+    "Given a broad question, when evidence is built, then retrievable section summaries (ARA-079), generated once per section at ingestion with recorded cost, can win over small chunks, and selected chunks expand to their section within the paper's share.",
+    "Given an answer that reports insufficient evidence, when the retry runs (at most once), then retrieval widens (lower prune bar, about twice the cap, section expansion, up to E); the UI says it is searching more widely; the final answer replaces the first; both calls' usage is recorded and costed (adapting Self-Route, Li et al., EMNLP 2024).",
+    "Given a small window (synthetic X = 16K), when a comparison or retry needs more than E, then it uses per-paper map-reduce calls and a synthesis, each within W.",
+    "Given any answer, when Details renders, then it shows passage count, evidence tokens, pruned count and whether it retried.",
+    "Given the codebase, when this lands, then the fixed 16-passage path is replaced, not kept beside a flag."
+  ],
+  "test_cases": [
+    "Pruning and caps with synthetic score distributions; ordering; per-paper floors.",
+    "Section-summary generation, indexing, retrieval and cost recording.",
+    "Retry path: an insufficient first answer triggers exactly one widened retry; a sufficient answer never retries; usage recorded for both.",
+    "Small-window map-reduce at X = 16K.",
+    "Frontend: retry status and Details metrics."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/rag/pipeline.py",
+    "src/backend/app/rag/packing.py",
+    "src/backend/app/rag/rerank.py",
+    "src/backend/app/services/chat.py",
+    "src/backend/app/services/context.py",
+    "docs/plans/retrieval-orchestration.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10; starts after ARA-088 and ARA-093 merge.",
+  "updated_at": "2026-10-10"
+}
