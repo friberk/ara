@@ -1867,3 +1867,10 @@ The user asked: "Can we merge what we have to main? Record the branches for arch
 - Readiness reports ready. A browser smoke test of the dev app found no console errors, no Activity link, and the paper header, PDF bar and History button present. The one-time metadata refresh started for the `paper.dvi` upload.
 
 The branches recorded for archival are listed in AGENTS.md. Their worktrees under `.superpowers/worktrees/` remain until the user asks to remove them.
+
+## 2026-10-10 - ARA-105 Failed section summaries retry at startup
+
+- Prompt: after ARA-100 reported that a `section_summaries` job stays failed for good, the user approved "the capped retry": revive at the next start, at most three extra paid attempts per reading.
+- **Design.** `backfill_section_summaries` already holds each document's row lock. When `queue_section_summaries` queues nothing, `revive_section_summaries` looks at the reading's newest `section_summaries` job (same `document_id` and `sections` version as the dedupe). If it is `failed`, `payload.revivals` is below 3 and `summary_blocker` lets the saved default summarize, the same row is queued again: attempts 0, generation + 1, a new outbox event, `revivals` + 1, and `model`/`reasoning_effort` refreshed to the current default. The logic shares `requeue_failed_locked` in `repositories/jobs.py` with the ARA-100 storage-cleanup revival. No migration, no new job row, and the manual retry route still answers 409.
+- **Red first.** The 6 tests failed 3 and passed 3 before the code; the 3 passes assert that nothing happens, so they were vacuous until the code existed. Error corrected: my history test ran the backfill inside the transaction that added the older row.
+- **Result.** 6 new tests pass; full backend 1222 passed; Ruff clean.
