@@ -28,7 +28,7 @@ test('Given a chat over two papers, Then both show as chips, each summary opens 
   await user.click(within(list).getByRole('button', { name: 'Dense passage retrieval' }))
   const dialog = await screen.findByRole('dialog', { name: 'Dense passage retrieval' })
   expect(await within(dialog).findByText('Dense retrieval beats BM25 on recall.')).toBeVisible()
-  expect(within(dialog).getByText('Karpukhin et al., 2020')).toBeVisible()
+  expect(within(dialog).getByText('Karpukhin & Oguz · 2020')).toBeVisible()
 })
 
 test('Given a chat over one paper, Then its chip cannot be removed and its summary stays the first message', async () => {
@@ -88,7 +88,7 @@ test('Given the chat composer, When @ is typed, Then the library picker adds a p
   await user.type(input, 'How does @')
   expect(input).toHaveValue('How does ')
   const added = await screen.findByRole('option', { name: /Dense passage retrieval/ })
-  expect(added).toHaveTextContent('Added. Choose again to remove.')
+  expect(added).toHaveAttribute('aria-checked', 'true')
   await user.click(await screen.findByRole('option', { name: /Late interaction retrieval/ }))
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/chats/c1/papers')?.body).toEqual({ paper_id: 'p3' }))
   // A paper added by typing @ is mentioned in the question, so this turn keeps it (ARA-088).

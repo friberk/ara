@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SummaryCard } from '@/features/summary'
 import { usePaper } from '@/hooks/queries/papers'
-import { paperByline, VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
+import { citationLine, VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
 
 const titleOf = (paper: Pick<IncludedPaper, 'title'>) => paper.title?.trim() || 'Untitled paper'
 
@@ -21,7 +21,7 @@ function PaperSummaryDialog({ paper, onClose }: { paper: IncludedPaper; onClose:
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="pr-6 text-balance">{titleOf(paper)}</DialogTitle>
-          <DialogDescription>{detail.data ? paperByline(detail.data) || 'Paper summary' : 'Paper summary'}</DialogDescription>
+          <DialogDescription>{detail.data ? citationLine(detail.data) || 'Paper summary' : 'Paper summary'}</DialogDescription>
         </DialogHeader>
         {detail.data ? <SummaryCard paper={detail.data} /> : <Skeleton className="h-32 w-full rounded-2xl" />}
         <DialogFooter>

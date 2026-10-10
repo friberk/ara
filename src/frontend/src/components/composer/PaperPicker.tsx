@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AtSign, Check, FileText, X } from 'lucide-react'
+import { AtSign, FileText, X } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -7,12 +7,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { documentStateLabels } from '@/components/feedback/document-state'
 import { usePapers } from '@/hooks/queries/papers'
-import { VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
+import { citationLine, VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
 import { cn } from '@/lib/utils'
 
 /**
- * Lists library papers; only papers with a processed PDF can be asked about. Papers in `selected` show as added, and
- * choosing one again hands it back to onSelect to remove. A conversation may include any number of papers (ARA-088).
+ * Lists library papers; only papers with a processed PDF can be asked about. Each row gives the title and a short
+ * citation (authors, year, venue), or the PDF's status while it is not ready. Papers in `selected` are checked the stock
+ * cmdk way, and choosing one again hands it back to onSelect to remove. Search matches the title, author surnames, year
+ * and venue. A conversation may include any number of papers (ARA-088).
  */
 export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper: Paper) => void; selected?: readonly string[] }) {
   const papers = usePapers('', { pageSize: 50 })
@@ -26,15 +28,14 @@ export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper:
           {items.map((paper) => {
             const ready = paper.document_status === 'ready'
             const added = selected.includes(paper.id)
-            const detail = added ? 'Added. Choose again to remove.'
-              : !ready ? documentStateLabels[paper.document_status]
-              : [paper.authors[0], paper.year].filter(Boolean).join(', ') || 'Ready to ask'
+            const detail = ready ? citationLine(paper) : documentStateLabels[paper.document_status]
+            const keywords = [...paper.authors, paper.year ? String(paper.year) : '', paper.venue ?? ''].filter(Boolean)
             return (
-              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} disabled={!added && !ready} onSelect={() => onSelect(paper)} className="items-start">
-                {added ? <Check aria-hidden="true" className="mt-0.5" /> : <FileText aria-hidden="true" className="mt-0.5" />}
+              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} keywords={keywords} disabled={!added && !ready} data-checked={added} aria-checked={added} onSelect={() => onSelect(paper)} className="items-start">
+                <FileText aria-hidden="true" className="mt-0.5" />
                 <div className="grid min-w-0 gap-0.5">
                   <span className="line-clamp-2">{paper.title ?? 'Untitled paper'}</span>
-                  <span className="text-xs text-muted-foreground">{detail}</span>
+                  {detail && <span className="truncate text-xs text-muted-foreground">{detail}</span>}
                 </div>
               </CommandItem>
             )

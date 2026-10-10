@@ -41,9 +41,17 @@ export function mentionName(paper: Pick<Paper, 'title' | 'authors' | 'year'>) {
   return author && paper.year ? `${author} ${paper.year}` : paper.title?.trim() || 'Untitled paper'
 }
 
-/** "Karpukhin et al., 2020" under a paper's title. */
-export function paperByline(paper: Pick<Paper, 'authors' | 'year'>) {
-  const author = paper.authors[0] ? surname(paper.authors[0]) : null
-  const who = author && paper.authors.length > 1 ? `${author} et al.` : author
-  return [who, paper.year].filter(Boolean).join(', ')
+/** The author part of a citation: "Vaswani", "Vaswani & Shazeer" or "Vaswani et al."; empty without authors. */
+export function authorShort(authors: readonly string[]) {
+  const names = authors.map((name) => name.trim()).filter(Boolean).map(surname)
+  if (names.length > 2) return `${names[0]} et al.`
+  return names.join(' & ')
+}
+
+/**
+ * A paper's short citation from what it has, such as "Vaswani et al. · 2017 · NeurIPS", for the picker and the
+ * summary dialog. Missing parts are skipped; a paper with none of them has an empty line.
+ */
+export function citationLine(paper: Pick<Paper, 'authors' | 'year'> & { venue?: string | null }) {
+  return [authorShort(paper.authors), paper.year ? String(paper.year) : '', paper.venue?.trim() ?? ''].filter(Boolean).join(' · ')
 }

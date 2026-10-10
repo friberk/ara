@@ -37,7 +37,11 @@ test('Given papers already chosen, Then they show as added, choosing one again r
   const { user, rerender } = renderWithProviders(<TooltipProvider><PaperPicker onSelect={onSelect} selected={['p1']} /></TooltipProvider>)
   await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
   const added = await screen.findByRole('option', { name: /Paper 1/ })
-  expect(added).toHaveTextContent('Added. Choose again to remove.')
+  // Selection shows the stock way: a check and a checked state, with no helper text.
+  expect(added).toHaveAttribute('data-checked', 'true')
+  expect(added).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('option', { name: /Paper 2/ })).toHaveAttribute('aria-checked', 'false')
+  expect(screen.queryByText(/Added|Choose again/)).not.toBeInTheDocument()
   await user.click(added)
   expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p1' }))
   rerender(<TooltipProvider><PaperPicker onSelect={onSelect} selected={['p1', 'p2', 'p3', 'p4', 'p5']} /></TooltipProvider>)
@@ -59,4 +63,31 @@ test('Given many chosen papers, Then a few show as chips and the rest collapse i
   const list = await screen.findByRole('list', { name: 'Chosen papers' })
   await user.click(within(list).getByRole('button', { name: 'Remove Paper 5' }))
   expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ id: 'p5' }))
+})
+
+test('Given library papers, Then each row gives a short citation under its title, or its PDF status, and search matches authors, year and venue', async () => {
+  const vaswani = { ...paper('p1', 'Attention Is All You Need', 'ready'), authors: ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar'], year: 2017, venue: 'NeurIPS' }
+  const karpukhin = { ...paper('p2', 'Dense Passage Retrieval', 'ready'), authors: ['Vladimir Karpukhin', 'Barlas Oguz'], year: 2020, venue: 'EMNLP' }
+  const bare = { ...paper('p3', 'Untitled notes', 'ready'), authors: [], year: null, venue: null }
+  const waiting = { ...paper('p4', 'Paper being read', 'processing'), authors: ['Ada Researcher'], year: 2024 }
+  mockApi({ 'GET /papers': { items: [vaswani, karpukhin, bare, waiting] } })
+  const { user } = renderWithProviders(<TooltipProvider><PaperPicker onSelect={vi.fn()} /></TooltipProvider>)
+  await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
+  expect(await screen.findByRole('option', { name: /Attention Is All You Need/ })).toHaveTextContent('Vaswani et al. · 2017 · NeurIPS')
+  expect(screen.getByRole('option', { name: /Dense Passage Retrieval/ })).toHaveTextContent('Karpukhin & Oguz · 2020 · EMNLP')
+  const untitled = screen.getByRole('option', { name: /Untitled notes/ })
+  expect(untitled.textContent).toBe('Untitled notes')
+  expect(screen.getByRole('option', { name: /Paper being read/ })).toHaveTextContent('Preparing PDF')
+  expect(screen.queryByText(/undefined|null|Ready to ask/)).not.toBeInTheDocument()
+
+  const search = screen.getByPlaceholderText('Find a paper in your library')
+  await user.type(search, 'Shazeer')
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Attention Is All You NeedVaswani et al. · 2017 · NeurIPS'])
+  await user.clear(search)
+  await user.type(search, 'emnlp')
+  expect(screen.getByRole('option', { name: /Dense Passage Retrieval/ })).toBeVisible()
+  expect(screen.queryByRole('option', { name: /Attention Is All You Need/ })).not.toBeInTheDocument()
+  await user.clear(search)
+  await user.type(search, '2017')
+  expect(screen.getAllByRole('option')).toHaveLength(1)
 })
