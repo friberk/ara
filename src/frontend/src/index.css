@@ -198,6 +198,14 @@
   }
 }
 
+/*
+ * TipTap injects ProseMirror's base CSS unlayered, and it turns font features off ("liga" 0) to keep the caret true.
+ * The composer keeps the app's Geist features with it, as its textarea did; two classes outrank the injected rule.
+ */
+.ProseMirror.composer-editor {
+  font-feature-settings: "ss01", "cv11", "liga" 0;
+}
+
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
