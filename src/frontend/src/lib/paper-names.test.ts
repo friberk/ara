@@ -11,14 +11,11 @@ test('Given 0, 1, 2 or 3+ authors, Then the author part reads like a citation', 
   expect(authorShort(['  ', 'Noam Shazeer'])).toBe('Shazeer')
 })
 
-test('Given what a paper has, Then the citation line joins authors, year and venue and skips what is missing', () => {
+test('Given what a paper has, Then the citation parts are the short authors, the year and the venue, empty when missing', () => {
   const eight = ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit', 'Llion Jones', 'Aidan Gomez', 'Lukasz Kaiser', 'Illia Polosukhin']
-  expect(citationLine(paper(eight, 2017, 'NeurIPS'))).toBe('Vaswani et al. · 2017 · NeurIPS')
-  expect(citationLine(paper(['Ashish Vaswani'], 2017))).toBe('Vaswani · 2017')
-  expect(citationLine(paper(['Ashish Vaswani', 'Noam Shazeer'], null, 'NeurIPS'))).toBe('Vaswani & Shazeer · NeurIPS')
-  expect(citationLine(paper([], 2017, 'NeurIPS'))).toBe('2017 · NeurIPS')
-  expect(citationLine(paper([], null, '  '))).toBe('')
-  expect(citationLine(paper([]))).toBe('')
+  expect(citationLine(paper(eight, 2017, 'NeurIPS'))).toEqual({ authors: 'Vaswani et al.', year: '2017', venue: 'NeurIPS' })
+  expect(citationLine(paper(['Ashish Vaswani'], 2017))).toEqual({ authors: 'Vaswani', year: '2017', venue: '' })
+  expect(citationLine(paper([], null, '  '))).toEqual({ authors: '', year: '', venue: '' })
 })
 
 test('Given one naming source, Then chips and mentions name a paper by its first author and year', () => {

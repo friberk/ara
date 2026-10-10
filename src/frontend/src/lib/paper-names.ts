@@ -48,10 +48,12 @@ export function authorShort(authors: readonly string[]) {
   return names.join(' & ')
 }
 
+export type CitationParts = { authors: string; year: string; venue: string }
+
 /**
- * A paper's short citation from what it has, such as "Vaswani et al. · 2017 · NeurIPS", for the picker and the
- * summary dialog. Missing parts are skipped; a paper with none of them has an empty line.
+ * The parts of a paper's short citation, each empty when the paper lacks it: "Vaswani et al.", "2017" and "NeurIPS".
+ * PaperCitation sets them in APA/Harvard order for the picker and the summary dialog.
  */
-export function citationLine(paper: Pick<Paper, 'authors' | 'year'> & { venue?: string | null }) {
-  return [authorShort(paper.authors), paper.year ? String(paper.year) : '', paper.venue?.trim() ?? ''].filter(Boolean).join(' · ')
+export function citationLine(paper: Pick<Paper, 'authors' | 'year'> & { venue?: string | null }): CitationParts {
+  return { authors: authorShort(paper.authors), year: paper.year ? String(paper.year) : '', venue: paper.venue?.trim() ?? '' }
 }

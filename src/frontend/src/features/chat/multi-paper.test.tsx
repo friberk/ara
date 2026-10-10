@@ -28,7 +28,7 @@ test('Given a chat over two papers, Then both show as chips, each summary opens 
   await user.click(within(list).getByRole('button', { name: 'Dense passage retrieval' }))
   const dialog = await screen.findByRole('dialog', { name: 'Dense passage retrieval' })
   expect(await within(dialog).findByText('Dense retrieval beats BM25 on recall.')).toBeVisible()
-  expect(within(dialog).getByText('Karpukhin & Oguz · 2020')).toBeVisible()
+  expect(dialog).toHaveTextContent('Karpukhin & Oguz (2020)')
 })
 
 test('Given a chat over one paper, Then its chip cannot be removed and its summary stays the first message', async () => {
