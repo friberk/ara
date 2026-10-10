@@ -1,11 +1,12 @@
 """Hosted capabilities are selected independently for each model."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
 from app.core.config import Settings
-from app.integrations import llm
+from app.integrations import hosted_catalog, llm
 from app.routes.ai import models
 
 
@@ -36,7 +37,10 @@ async def test_given_one_hosted_capability_change_when_listing_then_other_models
 ):
     from app.routes import ai
 
-    monkeypatch.setitem(llm.HOSTED_REASONING_EFFORTS, "gpt-5.6-sol", ("none", "low"))
+    sol = hosted_catalog.HOSTED_MODELS["gpt-5.6-sol"]
+    monkeypatch.setitem(
+        hosted_catalog.HOSTED_MODELS, "gpt-5.6-sol", replace(sol, reasoning_efforts=("none", "low"))
+    )
     assert llm.validate_selection("gpt-5.6-sol", "low").reasoning_efforts == ["none", "low"]
     with pytest.raises(llm.LLMError):
         llm.validate_selection("gpt-5.6-sol", "max")

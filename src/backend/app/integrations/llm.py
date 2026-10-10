@@ -10,11 +10,11 @@ from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from sqlalchemy import func, select, text
 
 from app.integrations.context_registry import (
-    HOSTED_OUTPUT_TOKENS,
     context_profile,
     hosted_profile,
     hosted_reasoning_headroom,
 )
+from app.integrations.hosted_catalog import hosted_model
 from app.integrations.tokens import (
     PromptMessage,
     check_roles,
@@ -24,20 +24,7 @@ from app.integrations.tokens import (
 )
 from app.schemas.ai import Model
 
-OUTPUT_LIMIT = HOSTED_OUTPUT_TOKENS
 LOCAL_TEMPERATURE = 0.0
-# Each model owns its controls, even where their current documented sets match.
-# Source: https://developers.openai.com/api/docs/models/gpt-5.6-{sol,terra,luna}
-HOSTED_REASONING_EFFORTS = {
-    "gpt-5.6-sol": ("none", "low", "medium", "high", "xhigh", "max"),
-    "gpt-5.6-terra": ("none", "low", "medium", "high", "xhigh", "max"),
-    "gpt-5.6-luna": ("none", "low", "medium", "high", "xhigh", "max"),
-}
-PRICES = {
-    "gpt-5.6-sol": (Decimal("4"), Decimal("20")),
-    "gpt-5.6-terra": (Decimal("2"), Decimal("12")),
-    "gpt-5.6-luna": (Decimal("0.2"), Decimal("1.2")),
-}
 
 
 class LLMError(Exception):
@@ -75,16 +62,18 @@ def validate_selection(model: str, effort: str) -> Model:
             reasoning_efforts=["default"],
             context_window=8192,
         )
-    if model not in PRICES:
+    entry = hosted_model(model)
+    if entry is None:
         raise LLMError("INVALID_MODEL", "The requested model is not supported.", 422)
-    if effort not in HOSTED_REASONING_EFFORTS[model]:
+    if effort not in entry.reasoning_efforts:
         raise LLMError("INVALID_REASONING", "The reasoning effort is not supported.", 422)
     return Model(
         key=model,
         model_id=model,
-        display_name="GPT-5.6 " + model.rsplit("-", 1)[-1].capitalize(),
+        display_name=entry.display_name,
         status="unavailable",
-        reasoning_efforts=list(HOSTED_REASONING_EFFORTS[model]),
+        reasoning_efforts=list(entry.reasoning_efforts),
+        context_window=entry.window,
     )
 
 
@@ -202,11 +191,13 @@ def ensure_configured(settings) -> None:
         raise LLMError("MODEL_NOT_CONFIGURED", "Configure OPENAI_API_KEY on the server.", 503)
 
 
-def reservation_amount(model: str, input_tokens: int, output_tokens: int = OUTPUT_LIMIT) -> Decimal:
+def reservation_amount(model: str, input_tokens: int, output_tokens: int | None = None) -> Decimal:
     validate_selection(model, "low")
-    prices = PRICES[model]
-    # Reserve the entire output allocation, even if generation is interrupted.
-    return (prices[0] * input_tokens + prices[1] * output_tokens) / Decimal(1000000)
+    entry = hosted_model(model)
+    # Reserve the entire output allocation, even if generation is interrupted. Cached input is
+    # unknown beforehand, so the reservation prices every input token uncached.
+    output = entry.answer_reserve if output_tokens is None else output_tokens
+    return (entry.input_price * input_tokens + entry.output_price * output) / Decimal(1000000)
 
 
 async def reserve(resources, model: str, input_tokens: int) -> None:
@@ -270,10 +261,10 @@ class HostedLLM:
         if not messages or messages[0].role != "system":
             raise ValueError("A message list must start with the system instructions.")
         check_roles(messages)
-        if model not in PRICES:
+        if hosted_model(model) is None:
             raise LLMError("INVALID_MODEL", "The requested hosted model is not supported.", 422)
         validate_selection(model, effort)
-        profile = hosted_profile(self.settings, model)
+        profile = hosted_profile(model, effort)
         # An intermediate call also gets the effort's reasoning room above the answer allowance.
         limit = profile.max_output + hosted_reasoning_headroom(effort)
         output = output_allocation(

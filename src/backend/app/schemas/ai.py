@@ -120,7 +120,7 @@ class Model(DTO):
     reasoning_efforts: list[str]
     supports_streaming: bool = True
     supports_structured_output: bool = True
-    context_window: int = 1050000
+    context_window: int
 
 
 class Features(BaseModel):

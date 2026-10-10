@@ -58,6 +58,7 @@ def test_local_contract_preserves_pause_and_artifact_information():
         display_name="Local",
         status="unavailable",
         reasoning_efforts=["default"],
+        context_window=8192,
         installation={
             "state": "paused",
             "weights_present": False,
