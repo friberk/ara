@@ -15,12 +15,14 @@
     "No-summary card has no 'Uses' line.",
     "Summary card has no 'Version', model, effort or time text, and shows the latest summary when there are several."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/summary/SummaryCard.tsx"
   ],
-  "commits": [],
+  "commits": [
+    "6bd1170ef4ed7029a84003aa16c412909f41e31b"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's feedback. Branch feat/ara-102-summary-card.",
+  "verification": "Red (before SummaryCard.tsx changed): `npx vitest run src/features/summary` -> Test Files 2 failed | 4 passed (6); Tests 3 failed | 21 passed (24). Failures: 'Given no summary yet, Then Generate summary shows with no model or effort line' (found 'Uses Luna with low reasoning'); 'Given no summary, When Generate summary is pressed ...' (found the Luna span); 'Given two summary versions, Then only the latest shows ...' (found the Version 2 of 2 button). Green: `npx vitest run src/features/summary` -> Test Files 6 passed (6); Tests 23 passed (23). `npm run check` -> exit 0: eslint clean, tsc -b clean, Vitest Test Files 91 passed (91), Tests 689 passed (689). `npm run build` -> exit 0. E2E specs (conversation, fulltext, local-models) were edited but not run; they need the live stack.",
   "updated_at": "2026-10-10"
 }
