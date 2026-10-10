@@ -24,7 +24,7 @@ function removedItems(preview: DeletionPreview, single: boolean): string[] {
   const chats = preview.deleted_chats
   return [
     papers,
-    ...(preview.pdfs ? [`${count(preview.pdfs, 'PDF', 'PDFs')}, with their text and search index`] : []),
+    ...(preview.pdfs ? [`${count(preview.pdfs, 'PDF', 'PDFs')}, with ${preview.pdfs === 1 ? 'its' : 'their'} text and search index`] : []),
     ...(preview.summaries ? [count(preview.summaries, 'summary', 'summaries')] : []),
     ...(chats.length ? [`${count(chats.length, 'conversation', 'conversations')} about only ${single ? 'this paper' : 'these papers'}: ${quoted(chats.map((chat) => chat.title))}`] : []),
   ]
