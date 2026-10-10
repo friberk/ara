@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
+/** What typing @ hands the paper picker: put the cursor back, or insert a mention where @ was typed. */
+export type Mention = { refocus: () => void; insert: (text: string) => void }
+
 export type ComposerProps = {
   value: string
   onValueChange: (value: string) => void
@@ -26,11 +29,8 @@ export type ComposerProps = {
   trailing?: React.ReactNode
   /** One line under the composer: why it is disabled, or a quiet reminder. */
   footnote?: React.ReactNode
-  /**
-   * Typing @ at the start of a word calls this (to open the paper picker) instead of typing it, with a function that
-   * puts the cursor back in the field once the choice is made.
-   */
-  onMention?: (refocus: () => void) => void
+  /** Typing @ at the start of a word calls this (to open the paper picker) instead of typing it. */
+  onMention?: (mention: Mention) => void
   maxLength?: number
   autoFocus?: boolean
   size?: 'default' | 'large'
@@ -41,6 +41,8 @@ export type ComposerProps = {
 export function Composer({ value, onValueChange, onSubmit, label, placeholder, submitLabel, disabled, submitDisabled, busy, onStop, stopLabel = 'Stop generation', header, leading, trailing, footnote, onMention, maxLength = 8000, autoFocus, size = 'default', className }: ComposerProps) {
   const id = useId()
   const textarea = useRef<HTMLTextAreaElement>(null)
+  // Where the cursor goes back to after a mention: where @ was typed, or after the inserted text.
+  const caret = useRef<number | null>(null)
   const canSubmit = !disabled && !submitDisabled && !busy && value.trim().length > 0
   const stopping = busy && onStop
   return (
@@ -67,10 +69,17 @@ export function Composer({ value, onValueChange, onSubmit, label, placeholder, s
           onChange={(event) => onValueChange(event.target.value)}
           onKeyDown={(event) => {
             const field = event.currentTarget
-            const before = field.value.slice(0, field.selectionStart ?? field.value.length)
+            const at = field.selectionStart ?? field.value.length
+            const before = field.value.slice(0, at)
             if (onMention && event.key === '@' && !event.nativeEvent.isComposing && (!before || /\s$/.test(before))) {
               event.preventDefault()
-              onMention(() => textarea.current?.focus())
+              const current = field.value
+              caret.current = at
+              onMention({
+                // After the picker closes and any inserted text has rendered.
+                refocus: () => window.setTimeout(() => { textarea.current?.focus(); textarea.current?.setSelectionRange(caret.current ?? at, caret.current ?? at) }),
+                insert: (text) => { onValueChange(current.slice(0, at) + text + current.slice(at)); caret.current = at + text.length },
+              })
               return
             }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {

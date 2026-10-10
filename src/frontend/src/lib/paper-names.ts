@@ -32,6 +32,15 @@ export function chatPapersLabel(papers: Pick<IncludedPaper, 'title'>[]) {
   return papers.length > 1 ? `${title} +${papers.length - 1}` : title
 }
 
+/**
+ * How @ mentions a paper in a question: "Karpukhin 2020" as its chips name it, else its full title. The server keeps
+ * a paper the question names this way (ARA-088).
+ */
+export function mentionName(paper: Pick<Paper, 'title' | 'authors' | 'year'>) {
+  const author = paper.authors[0] ? surname(paper.authors[0]) : ''
+  return author && paper.year ? `${author} ${paper.year}` : paper.title?.trim() || 'Untitled paper'
+}
+
 /** "Karpukhin et al., 2020" under a paper's title. */
 export function paperByline(paper: Pick<Paper, 'authors' | 'year'>) {
   const author = paper.authors[0] ? surname(paper.authors[0]) : null

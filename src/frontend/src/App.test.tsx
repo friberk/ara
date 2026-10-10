@@ -59,7 +59,8 @@ test('Given library papers chosen in the composer, When a question is asked, The
   await user.type(screen.getByRole('textbox', { name: 'Question about this paper' }), '@')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   const question = screen.getByRole('textbox', { name: 'Question about these papers' })
-  expect(question).toHaveValue('')
+  // The paper chosen after typing @ is mentioned in the question.
+  await waitFor(() => expect(question).toHaveValue('@Karpukhin 2020 '))
   // A paper chosen after typing @ hands the cursor back to the question.
   await waitFor(() => expect(question).toHaveFocus())
   for (const name of ['Remove Traceable research systems', 'Remove Dense passage retrieval']) expect(screen.getByRole('button', { name })).toBeVisible()
@@ -68,7 +69,7 @@ test('Given library papers chosen in the composer, When a question is asked, The
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
   await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/chats')).toBe(true))
   expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] })
-  expect(peekQuestion('c9')).toMatchObject({ content: 'Which datasets were used?', settings: { model: luna.key, reasoning_effort: 'low' } })
+  expect(peekQuestion('c9')).toMatchObject({ content: '@Karpukhin 2020 Which datasets were used?', settings: { model: luna.key, reasoning_effort: 'low' } })
   expect(peekQuestion('c9')?.request_id).toMatch(/^[0-9a-f-]{36}$/)
 })
 
