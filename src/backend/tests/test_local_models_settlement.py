@@ -45,7 +45,9 @@ async def test_unconfirmed_failed_transfer_blocks_global_admission_until_ack(
         )
     token = await claim_model_job(resources.sessions, job.id, 1)
     if failure == "timeout":
-        resources.settings.ollama_pull_timeout_seconds = 0.05
+        # The budget covers the whole attempt, including the checks before the transfer starts.
+        # It must outlast them on a slow CI runner (50 ms did not), so only the transfer times out.
+        resources.settings.ollama_pull_timeout_seconds = 2
     pause_available = False
     stopped = []
     pulls = []

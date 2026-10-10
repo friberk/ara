@@ -2128,3 +2128,8 @@ Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean,
     - A menu opened before the PDF loaded was closed when the toolbar re-rendered; the trace shows "element was detached from the DOM".
     - Arrow keys outran Chrome's asynchronous `selectionchange`. A temporary debug spec with paced keys showed the second ArrowLeft selecting the pill (`ProseMirror-selectednode`) and Delete removing it. A 50 ms key delay was not enough, so the spec now steps until the pill is selected.
 - **Result.** On a fresh stack, 27 passed and 0 failed (3.6 min). No app code changed.
+- **CI found one more failure.** The next GitHub run (38074979884, `76d7292`) failed in the backend step: 1 failed, 1227 passed.
+  - The failing test was `test_unconfirmed_failed_transfer_blocks_global_admission_until_ack[timeout-0]`, with `len(pulls) == 1` getting `0 == 1`. It passed on `a33bda7`, and nothing since then touched local-model code.
+  - Cause: the test's 50 ms `ollama_pull_timeout_seconds` covers the whole attempt (`asyncio.timeout` in `run_model_job`), including the checks before the transfer starts. A slow runner used up the budget before the transfer request was sent.
+  - Red: a 1 ms budget failed locally, here even before the job reached `settling`.
+  - Green: a 2 s budget passes all 6 settlement tests, and Ruff is clean. Only the test changed. Open models stay frozen.
