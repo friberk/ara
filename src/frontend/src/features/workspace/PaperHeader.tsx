@@ -35,14 +35,14 @@ function Links({ paper }: { paper: Paper }) {
 }
 
 /**
- * The "PDF" section heading under the paper header, in the Abstract heading's style (ARA-101 follow-up). It follows
- * the header above the PDF and above the ways to get one, so both read header, Abstract, PDF. The file's name trails
- * in muted text.
+ * The "PDF" section heading under the paper header, in the Abstract heading's style (ARA-101 follow-up). It leads the
+ * PDF's bar above page 1 and the ways to get a PDF, so both read header, Abstract, PDF. The file's name trails in
+ * muted text; in a bar narrower than 24rem (a phone) it gives its room to the controls, and the PDF menu still names it.
  */
 export function PdfHeading({ fileName, className }: { fileName?: string | null; className?: string }) {
   return (
     <h3 className={cn('flex min-w-0 items-baseline gap-2 text-sm font-medium', className)}>
-      PDF{fileName && <>{' '}<span className="min-w-0 truncate font-normal text-muted-foreground" title={fileName}>{fileName}</span></>}
+      PDF{fileName && <>{' '}<span className="min-w-0 truncate font-normal text-muted-foreground @max-sm:hidden" title={fileName}>{fileName}</span></>}
     </h3>
   )
 }
@@ -51,16 +51,17 @@ export function PdfHeading({ fileName, className }: { fileName?: string | null; 
  * The paper's bibliography at the top of the reader (ARA-101): title, every author, year and venue, its DOI and
  * catalog links, and the abstract clamped to three lines, with Edit details and ⓘ beside the title. Above a PDF it is
  * the first thing in the PDF's scroll column, so it scrolls away with page 1; above the ways to get a PDF it leads them.
- * Fields the paper lacks are left out, except the abstract, which says so.
+ * Fields the paper lacks are left out, except the abstract, which says so. It has no surface or gutter of its own: the
+ * reader places it in the page column on the reader's one background.
  */
 export function PaperHeader({ paper }: { paper: Paper }) {
   const id = useId()
   const [editing, setEditing] = useState(false)
   const authors = paper.authors.join(', ')
   return (
-    <header aria-labelledby={`${id}-title`} className="border-b bg-background">
+    <header aria-labelledby={`${id}-title`}>
       {/* A container, so a narrow reader (a phone, or a 30% panel) gives the title the room, not the button labels. */}
-      <div className="@container mx-auto grid max-w-3xl gap-3 px-5 pt-5 pb-6">
+      <div className="@container grid gap-3 pt-5 pb-4">
         <div className="flex items-start gap-3">
           <h2 id={`${id}-title`} className="min-w-0 flex-1 text-lg leading-snug font-semibold text-balance break-words">{paperName(paper)}</h2>
           <div className="-mt-0.5 -mr-2 flex shrink-0 items-center gap-0.5">

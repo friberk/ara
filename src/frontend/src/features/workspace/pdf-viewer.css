@@ -1,10 +1,8 @@
 /* PDF reader (ARA-037). Pages stay white paper in both themes; only the evidence mark carries colour. */
 
+/* The page's edge is its ring-1 ring-border hairline on the reader's white ground (ARA-101); no shadow competes with it. */
 .pdf-viewer .pdf-page {
   border-radius: 2px;
-  box-shadow:
-    0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent),
-    0 4px 12px -4px color-mix(in oklch, var(--foreground) 12%, transparent);
 }
 
 /*

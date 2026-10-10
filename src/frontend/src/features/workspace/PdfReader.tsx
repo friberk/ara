@@ -3,9 +3,11 @@ import { History } from 'lucide-react'
 import type { Paper } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
+import { useDocument } from '@/hooks/queries/documents'
 import type { PdfControls } from './pdf-controls'
 import { PagesSkeleton } from './PagesSkeleton'
 import { PaperHeader, PdfHeading } from './PaperHeader'
+import { PdfToolbar } from './PdfToolbar'
 import { ReaderGate } from './ReaderGate'
 import { useWorkspace } from './workspace-context'
 
@@ -22,18 +24,35 @@ class ReaderErrorBoundary extends Component<{ children: React.ReactNode }, { err
 }
 
 /**
- * The PDF tab: a gate until the paper has a readable PDF, then the viewer. documentId is the version on screen,
- * which is the active PDF unless a citation asked for an earlier one.
+ * The PDF's bar: its heading and file name on the left, its controls on the right. It sits between the paper header
+ * and page 1 and docks at the top of the reader once the header has scrolled away, so the controls stay with the PDF.
  */
-export function PdfReader({ paper, documentId, controls, onShowCurrent }: { paper: Paper; documentId: string | null; controls: PdfControls; onShowCurrent: () => void }) {
+function PdfBar({ fileName, controls, documentId, managed }: { fileName?: string | null; controls: PdfControls; documentId: string; managed?: Paper }) {
+  return (
+    <div className="@container flex min-h-11 items-center gap-3 py-1.5">
+      <PdfHeading fileName={fileName} className="flex-1" />
+      <PdfToolbar controls={controls} documentId={documentId} managed={managed} className="-mr-2 shrink-0" />
+    </div>
+  )
+}
+
+/**
+ * The PDF tab: a gate until the paper has a readable PDF, then the viewer. documentId is the version on screen,
+ * which is the active PDF unless a citation asked for an earlier one. `managed` is the workspace paper when this is
+ * its current PDF, which the PDF menu can then replace or remove.
+ */
+export function PdfReader({ paper, documentId, controls, managed, onShowCurrent }: { paper: Paper; documentId: string | null; controls: PdfControls; managed?: Paper; onShowCurrent: () => void }) {
   const { sourceRequest, highlightOutcome, reportHighlight } = useWorkspace()
+  // The PDF menu reads the same record, so naming an earlier version costs no second request.
+  const file = useDocument(documentId)
   if (!documentId) return <ReaderGate paper={paper} />
   const highlight = sourceRequest?.citation.document_id === documentId ? sourceRequest : null
   const outcome = highlight ? highlightOutcome : null
   const current = documentId === paper.active_document_id
-  // Above page 1, scrolling with it: the paper header, then the PDF's heading. An earlier version keeps its banner
-  // above the viewer as its only label.
-  const header = <><PaperHeader paper={paper} />{current && <PdfHeading fileName={paper.file_name} className="px-4 pt-5" />}</>
+  // Above page 1: the paper header, which scrolls away, then the PDF's bar, which docks. An earlier version's bar
+  // names that version's file under the banner that says it is earlier.
+  const header = <PaperHeader paper={paper} />
+  const bar = <PdfBar fileName={current ? paper.file_name : file.data?.file_name} controls={controls} documentId={documentId} managed={managed} />
   return (
     <div className="flex h-full min-h-0 flex-col">
       {!current && (
@@ -54,8 +73,8 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
       {outcome === 'page-only' && highlight && <p aria-hidden="true" className="border-b px-4 py-2 text-xs text-muted-foreground">Couldn’t pinpoint the passage, so showing page {highlight.citation.page}.</p>}
       <div className="min-h-0 flex-1">
         <ReaderErrorBoundary key={documentId}>
-          {/* Until pdf.js has loaded, the header already shows above page-shaped placeholders. */}
-          <Suspense fallback={<div className="h-full overflow-hidden bg-muted">{header}<PagesSkeleton /></div>}>
+          {/* Until pdf.js has loaded, the header and the bar already show above page-shaped placeholders. */}
+          <Suspense fallback={<div className="h-full overflow-hidden bg-background"><div className="px-4">{header}{bar}</div><PagesSkeleton /></div>}>
             <PdfViewer
               key={documentId}
               documentId={documentId}
@@ -66,6 +85,7 @@ export function PdfReader({ paper, documentId, controls, onShowCurrent }: { pape
               onPageChange={controls.onPageChange}
               onHighlight={reportHighlight}
               header={header}
+              bar={bar}
             />
           </Suspense>
         </ReaderErrorBoundary>
