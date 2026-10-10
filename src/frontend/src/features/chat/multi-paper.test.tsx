@@ -168,3 +168,21 @@ test('Given a local model selected in a chat over two papers, Then the composer 
   await user.type(screen.getByRole('textbox', { name: 'Question about these papers' }), 'Compare them')
   expect(screen.getByRole('button', { name: 'Ask question' })).toBeDisabled()
 })
+
+test('Given a chat over fifteen papers, Then three chips show and the rest collapse into a list that can remove any paper', async () => {
+  const many = Array.from({ length: 15 }, (_, n) => included({ ...paper2, id: `m${n}`, title: `Study ${n}`, active_document_id: `md${n}` }))
+  const { calls } = mockApi({
+    ...settings,
+    'GET /chats': { items: [chatRow('c1', { papers: [included(paper), ...many.slice(1)] })] },
+    'GET /chats/c1/messages': { items: [] },
+    'DELETE /chats/c1/papers/m9': chatRow('c1', { papers: [included(paper), ...many.slice(1).filter((item) => item.paper_id !== 'm9')] }),
+  })
+  const { user } = mount('/papers/p1/chats/c1')
+  const list = await chips()
+  expect(within(list).getAllByRole('listitem')).toHaveLength(4)
+  await user.click(within(list).getByRole('button', { name: '+12 more' }))
+  const all = await screen.findByRole('list', { name: 'All papers in this conversation' })
+  expect(within(all).getAllByRole('listitem')).toHaveLength(15)
+  await user.click(within(all).getByRole('button', { name: 'Remove Study 9 from this conversation' }))
+  await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE' && call.path === '/chats/c1/papers/m9')).toHaveLength(1))
+})

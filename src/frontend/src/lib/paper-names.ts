@@ -1,7 +1,7 @@
 import type { IncludedPaper, Paper } from '@/api/types'
 
-/** A chat covers at most this many papers (ARA-088); the server refuses a sixth. */
-export const MAX_CHAT_PAPERS = 5
+/** Paper chips shown before the rest collapse into "+N more"; a chat may include any number of papers (ARA-088). */
+export const VISIBLE_PAPER_CHIPS = 3
 
 type Named = Pick<IncludedPaper, 'title' | 'first_author' | 'year'>
 

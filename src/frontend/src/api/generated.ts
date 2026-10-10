@@ -825,7 +825,8 @@ export interface components {
         };
         /**
          * ChatCreate
-         * @description The papers a new chat covers, in order; the first one's page is the chat's URL.
+         * @description The papers a new chat covers, in order, any number of them (ARA-088); the first one's
+         *     page is the chat's URL.
          */
         ChatCreate: {
             /** Paper Ids */

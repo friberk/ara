@@ -37,7 +37,7 @@ function TabEntry({ workspace, tab, closable, onClose }: { workspace: Paper; tab
   const paper = useTabPaper(workspace, tab.paperId)
   const name = paper ? shortPaperName(namedPaper(paper)) : 'Loading…'
   return (
-    <div className="flex items-center">
+    <div className="flex shrink-0 items-center">
       <TabsTrigger value={tab.paperId} title={paper?.title ?? undefined} className="h-7 max-w-[12rem] px-2.5 data-[state=active]:bg-muted data-[state=active]:shadow-none"><span className="truncate">{name}</span></TabsTrigger>
       {closable && (
         <Button type="button" variant="ghost" size="icon-xs" className="-ml-1 text-muted-foreground hover:text-foreground" aria-label={`Close ${name}`} onClick={onClose}>
@@ -72,7 +72,8 @@ export function ReaderDocuments({ paper, tabs, active, onActivate, onClose, onSh
     <div className="flex h-full min-h-0 flex-col">
       {strip && (
         <Tabs value={current} onValueChange={onActivate} className="shrink-0 border-b px-2 py-1">
-          <TabsList aria-label="Open PDFs" className="h-auto max-w-full flex-wrap justify-start bg-transparent p-0">
+          {/* Any number of papers can be open: the strip scrolls sideways instead of wrapping. */}
+          <TabsList aria-label="Open PDFs" className="h-auto w-full max-w-full justify-start overflow-x-auto overflow-y-hidden bg-transparent p-0 [scrollbar-width:thin]">
             {tabs.map((tab) => <TabEntry key={tab.paperId} workspace={paper} tab={tab} closable={tabs.length > 1} onClose={() => onClose(tab.paperId)} />)}
           </TabsList>
         </Tabs>

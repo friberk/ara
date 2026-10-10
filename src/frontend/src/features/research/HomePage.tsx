@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Composer } from '@/components/composer/Composer'
 import { ModelSwitcher } from '@/components/composer/ModelSwitcher'
-import { PaperContextChip, PaperPicker } from '@/components/composer/PaperPicker'
+import { PaperChips, PaperPicker } from '@/components/composer/PaperPicker'
 import { ProviderSwitcher } from '@/components/composer/ProviderSwitcher'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -92,7 +92,7 @@ export default function HomePage() {
           submitLabel={asking ? 'Ask question' : 'Search papers'}
           maxLength={asking ? 8000 : 300}
           submitDisabled={asking ? createChat.isPending || !generation.usableFor('chat') : false}
-          header={asking && papers.map((item) => <PaperContextChip key={item.id} paper={item} removeLabel={several ? `Remove ${item.title ?? 'Untitled paper'}` : undefined} onRemove={() => toggle(item)} />)}
+          header={asking && <PaperChips papers={papers} onRemove={(item) => setPapers((current) => current.filter((chosen) => chosen.id !== item.id))} />}
           onMention={(back) => { setRefocus(() => back); setPicking(true) }}
           leading={
             <>

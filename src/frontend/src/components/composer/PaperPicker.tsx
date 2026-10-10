@@ -7,17 +7,16 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { documentStateLabels } from '@/components/feedback/document-state'
 import { usePapers } from '@/hooks/queries/papers'
-import { MAX_CHAT_PAPERS } from '@/lib/paper-names'
+import { VISIBLE_PAPER_CHIPS } from '@/lib/paper-names'
 import { cn } from '@/lib/utils'
 
 /**
  * Lists library papers; only papers with a processed PDF can be asked about. Papers in `selected` show as added, and
- * choosing one again hands it back to onSelect to remove; once MAX_CHAT_PAPERS are chosen, the rest wait.
+ * choosing one again hands it back to onSelect to remove. A conversation may include any number of papers (ARA-088).
  */
 export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper: Paper) => void; selected?: readonly string[] }) {
   const papers = usePapers('', { pageSize: 50 })
   const items = papers.data?.pages.flatMap((page) => page.items) ?? []
-  const full = selected.length >= MAX_CHAT_PAPERS
   return (
     <Command>
       <CommandInput placeholder="Find a paper in your library" />
@@ -27,13 +26,11 @@ export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper:
           {items.map((paper) => {
             const ready = paper.document_status === 'ready'
             const added = selected.includes(paper.id)
-            const waiting = !added && full
             const detail = added ? 'Added. Choose again to remove.'
               : !ready ? documentStateLabels[paper.document_status]
-              : waiting ? `Up to ${MAX_CHAT_PAPERS} papers`
               : [paper.authors[0], paper.year].filter(Boolean).join(', ') || 'Ready to ask'
             return (
-              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} disabled={!added && (!ready || waiting)} onSelect={() => onSelect(paper)} className="items-start">
+              <CommandItem key={paper.id} value={`${paper.title ?? 'Untitled paper'} ${paper.id}`} disabled={!added && !ready} onSelect={() => onSelect(paper)} className="items-start">
                 {added ? <Check aria-hidden="true" className="mt-0.5" /> : <FileText aria-hidden="true" className="mt-0.5" />}
                 <div className="grid min-w-0 gap-0.5">
                   <span className="line-clamp-2">{paper.title ?? 'Untitled paper'}</span>
@@ -87,5 +84,38 @@ export function PaperContextChip({ paper, onRemove, removeLabel = 'Stop asking a
       <span className="truncate">{paper.title ?? 'Untitled paper'}</span>
       {onRemove && <Button type="button" variant="ghost" size="icon-xs" className="rounded-md" aria-label={removeLabel} onClick={onRemove}><X aria-hidden="true" /></Button>}
     </span>
+  )
+}
+
+/**
+ * The papers chosen in a composer as removable chips. Beyond VISIBLE_PAPER_CHIPS they collapse into "+N more", which
+ * lists every chosen paper with its own remove button.
+ */
+export function PaperChips({ papers, onRemove }: { papers: Pick<Paper, 'id' | 'title'>[]; onRemove: (paper: Pick<Paper, 'id' | 'title'>) => void }) {
+  const several = papers.length > 1
+  const label = (paper: Pick<Paper, 'title'>) => `Remove ${paper.title ?? 'Untitled paper'}`
+  const hidden = papers.length - VISIBLE_PAPER_CHIPS
+  return (
+    <>
+      {papers.slice(0, VISIBLE_PAPER_CHIPS).map((paper) => <PaperContextChip key={paper.id} paper={paper} removeLabel={several ? label(paper) : undefined} onRemove={() => onRemove(paper)} />)}
+      {hidden > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="outline" size="sm" className="h-auto rounded-lg py-1 font-normal text-muted-foreground">+{hidden} more</Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] p-1">
+            <ul aria-label="Chosen papers" className="max-h-72 overflow-y-auto">
+              {papers.map((paper) => (
+                <li key={paper.id} className="flex items-center gap-2 rounded-md py-1 pr-1 pl-2 text-sm hover:bg-muted">
+                  <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{paper.title ?? 'Untitled paper'}</span>
+                  <Button type="button" variant="ghost" size="icon-xs" aria-label={label(paper)} onClick={() => onRemove(paper)}><X aria-hidden="true" /></Button>
+                </li>
+              ))}
+            </ul>
+          </PopoverContent>
+        </Popover>
+      )}
+    </>
   )
 }

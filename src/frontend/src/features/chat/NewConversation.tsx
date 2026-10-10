@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ChatSummary, Collection, Paper } from '@/api/types'
-import { PaperContextChip } from '@/components/composer/PaperPicker'
+import { PaperChips } from '@/components/composer/PaperPicker'
 import { chatHref } from '@/components/shell/recent-items'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -66,7 +66,7 @@ export function NewConversation({ paper }: { paper: Paper }) {
           papers={{
             selected: chosen.map((item) => item.id),
             onSelect: toggle,
-            header: chosen.length > 1 && chosen.map((item) => <PaperContextChip key={item.id} paper={item} removeLabel={`Remove ${item.title ?? 'Untitled paper'}`} onRemove={() => toggle(item)} />),
+            header: chosen.length > 1 && <PaperChips papers={chosen} onRemove={(item) => setChosen((current) => (current.length > 1 ? current.filter((paper) => paper.id !== item.id) : current))} />,
           }}
         />
       }
