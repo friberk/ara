@@ -36,6 +36,8 @@ export type PdfViewerProps = {
   onHighlight: (outcome: HighlightOutcome) => void
   /** Shown above page 1 in the same scroll column, so it scrolls away with the document (the paper header, ARA-101). */
   header?: React.ReactNode
+  /** The PDF's heading and controls, between the header and page 1. It docks at the top once the header has gone. */
+  bar?: React.ReactNode
 }
 
 type ActiveHighlight = { citation: Citation; claim?: string; nonce: number; reported: boolean; waitingForGeometry?: boolean; expired?: boolean }
@@ -43,10 +45,13 @@ type LoadedDocument = Parameters<NonNullable<DocumentProps['onLoadSuccess']>>[0]
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function offsetIn(root: HTMLElement, element: Element) { return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop }
-/** Scrolls so the vertical middle of `element` is the middle of the reader. */
+/** The docked PDF bar covers this much of the reader's top edge, so landings and centring start below it. */
+function barHeight(root: HTMLElement) { return root.querySelector<HTMLElement>('[data-pdf-bar]')?.offsetHeight ?? 0 }
+/** Scrolls so the vertical middle of `element` is the middle of the reader below the bar. */
 function centreIn(root: HTMLElement, element: Element) {
   const middle = offsetIn(root, element) + element.getBoundingClientRect().height / 2
-  root.scrollTo({ top: Math.max(0, middle - root.clientHeight / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
+  const bar = barHeight(root)
+  root.scrollTo({ top: Math.max(0, middle - bar - (root.clientHeight - bar) / 2), behavior: prefersReducedMotion() ? 'instant' : 'smooth' })
 }
 
 /**
@@ -82,6 +87,15 @@ function clearMarks(root: HTMLElement) {
 const NO_REGIONS: Region[] = []
 const percent = (value: number) => `${Number(value.toFixed(3))}%`
 
+/**
+ * The header and the bar line up with the page column: as wide as a page and centred like one, never wider than the
+ * reader less its gutters, so all three share one left edge at every zoom. Pinned to the left edge, so a page zoomed
+ * wider than the reader does not carry them sideways.
+ */
+function Column({ pageWidth, children }: { pageWidth: number; children: React.ReactNode }) {
+  return <div className="mx-auto" style={{ maxWidth: pageWidth || undefined }}>{children}</div>
+}
+
 const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, regions, nonce, onTextLayer, onTextLayerError }: {
   pageNumber: number
   width: number
@@ -97,7 +111,7 @@ const PdfPage = memo(function PdfPage({ pageNumber, width, height, render, regio
   const textRendered = useCallback(() => onTextLayer(pageNumber), [onTextLayer, pageNumber])
   const textFailed = useCallback(() => onTextLayerError(pageNumber), [onTextLayerError, pageNumber])
   return (
-    <div data-pdf-page={pageNumber} role="group" aria-label={`Page ${pageNumber}`} className="pdf-page relative isolate shrink-0 overflow-hidden bg-card" style={{ width, height }}>
+    <div data-pdf-page={pageNumber} role="group" aria-label={`Page ${pageNumber}`} className="pdf-page relative isolate shrink-0 overflow-hidden bg-card ring-1 ring-border" style={{ width, height }}>
       {render && <Page pageNumber={pageNumber} width={width} devicePixelRatio={DEVICE_PIXEL_RATIO} loading={null} onRenderTextLayerSuccess={textRendered} onRenderTextLayerError={textFailed} />}
       {regions.map((region, index) => (
         <div
@@ -137,6 +151,7 @@ export default function PdfViewer(props: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([])
   const [nearby, setNearby] = useState<ReadonlySet<number>>(() => new Set())
+  const [stuck, setStuck] = useState(false)
   const pageWidth = width ? Math.max(160, Math.floor((width - GUTTER * 2) * zoom)) : 0
   const measured = pageWidth > 0
 
@@ -150,7 +165,7 @@ export default function PdfViewer(props: PdfViewerProps) {
     const element = root.querySelector(`[data-pdf-page="${page}"]`)
     if (!element) return
     pendingPage.current = null
-    root.scrollTo({ top: offsetIn(root, element) - GUTTER / 2, behavior: 'instant' })
+    root.scrollTo({ top: offsetIn(root, element) - barHeight(root) - GUTTER / 2, behavior: 'instant' })
   }, [])
 
   const stopLife = useCallback(() => {
@@ -403,6 +418,8 @@ export default function PdfViewer(props: PdfViewerProps) {
     frame.current = window.requestAnimationFrame(() => {
       const root = rootRef.current
       if (!root) return
+      const sentinel = root.querySelector('[data-pdf-bar-sentinel]')
+      setStuck(!!sentinel && root.scrollTop > offsetIn(root, sentinel))
       const probe = root.scrollTop + root.clientHeight * 0.3
       let current: HTMLElement | null = null
       for (const element of root.querySelectorAll<HTMLElement>('[data-pdf-page]')) {
@@ -450,10 +467,18 @@ export default function PdfViewer(props: PdfViewerProps) {
       onPointerOut={onPointerOut}
       onPointerMove={onPointerMove}
       // The viewer keeps its own place across size changes, so the browser's scroll anchoring would only fight it.
-      className="pdf-viewer relative h-full overflow-auto bg-muted outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+      className="pdf-viewer relative h-full overflow-auto bg-background outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
     >
-      {/* Pinned to the left edge, so a page zoomed wider than the reader does not carry it sideways. */}
-      {props.header && <div className="sticky left-0 w-full">{props.header}</div>}
+      {props.header && <div className="sticky left-0 w-full px-4"><Column pageWidth={pageWidth}>{props.header}</Column></div>}
+      {props.bar && (
+        <>
+          {/* Where the bar sits in the flow: once the reader scrolls past it, the bar is docked and shows its hairline. */}
+          <div data-pdf-bar-sentinel="" aria-hidden="true" />
+          <div data-pdf-bar="" data-stuck={stuck || undefined} className="sticky top-0 left-0 z-10 w-full border-b border-transparent bg-background px-4 data-stuck:border-border">
+            <Column pageWidth={pageWidth}>{props.bar}</Column>
+          </div>
+        </>
+      )}
       <Document
         file={downloadUrl(documentId)}
         suspense={false}

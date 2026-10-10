@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
-vi.mock('./PdfViewer', () => ({ default: ({ documentId }: { documentId: string }) => <p>{`Showing ${documentId}`}</p> }))
+vi.mock('./PdfViewer', () => ({ default: ({ documentId, bar }: { documentId: string; bar?: React.ReactNode }) => <div>{bar}<p>{`Showing ${documentId}`}</p></div> }))
 // jsdom has no layout, so the split handle would swallow clicks; move it away, as workspace.test does.
 const boundingRect = HTMLElement.prototype.getBoundingClientRect
 beforeEach(() => {

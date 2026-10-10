@@ -21,8 +21,9 @@ function ToolButton({ label, onClick, disabled, children }: { label: string; onC
 }
 
 /**
- * Page position, paging and zoom in the middle, the PDF menu at the end (ARA-097). The page field accepts a number to
- * jump to. `managed` is the workspace paper when this is its current PDF, which the menu can then replace or remove.
+ * Page position, paging and zoom, then the PDF menu (ARA-097), at the right of the PDF's bar. The page field accepts a
+ * number to jump to. `managed` is the workspace paper when this is its current PDF, which the menu can then replace or
+ * remove.
  */
 export function PdfToolbar({ controls, documentId, managed, className }: { controls: PdfControls; documentId: string; managed?: Paper; className?: string }) {
   const [draft, setDraft] = useState<string | null>(null)
@@ -32,8 +33,8 @@ export function PdfToolbar({ controls, documentId, managed, className }: { contr
     setDraft(null)
   }
   return (
-    <div role="toolbar" aria-label="PDF controls" className={cn('grid w-full grid-cols-[1fr_auto_1fr] items-center', className)}>
-      <div className="col-start-2 flex items-center gap-0.5">
+    <div role="toolbar" aria-label="PDF controls" className={cn('flex items-center gap-1', className)}>
+      <div className="flex items-center gap-0.5">
         <ToolButton label="Previous page" onClick={() => controls.goTo(page - 1)} disabled={!numPages || page <= 1}><ChevronUp aria-hidden="true" /></ToolButton>
         <div className="flex items-center gap-1.5 px-1 text-sm">
           <Input
@@ -59,7 +60,7 @@ export function PdfToolbar({ controls, documentId, managed, className }: { contr
       <ToolButton label="Zoom in" onClick={controls.zoomIn} disabled={!controls.canZoomIn}><ZoomIn aria-hidden="true" /></ToolButton>
       <ToolButton label="Fit width" onClick={controls.fitWidth}><MoveHorizontal aria-hidden="true" /></ToolButton>
       </div>
-      <div className="flex justify-end"><PdfMenu documentId={documentId} pages={numPages} managed={managed} /></div>
+      <PdfMenu documentId={documentId} pages={numPages} managed={managed} />
     </div>
   )
 }
