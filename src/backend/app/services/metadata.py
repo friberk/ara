@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, or_, select, update
 
 from app.core.errors import AppError
 from app.integrations.academic import AcademicSearch, normalized_doi
@@ -46,6 +46,15 @@ RETRY_CAP_SECONDS = 1800
 LOOKUP_DEADLINE_SECONDS = 45
 # Provenance that a provider value may replace; manual and provider values stay.
 LOCAL_SOURCES = {"pdf", "pdf_metadata", "extraction", "llm"}
+# Values read from the PDF itself, which reading the PDF again may replace (ARA-095).
+PDF_SOURCES = {"pdf", "pdf_metadata", "extraction"}
+# "again" (Look up again) replaces every value that is not manual. "backfill", the one-time
+# refresh of papers read before ARA-086, also fills values the provider had none for before.
+REFRESH_MODES = ("again", "backfill")
+BACKFILL_KEY = "metadata_backfill"
+# The startup refresh spaces its jobs out, so the catalogs see a trickle rather than a burst.
+BACKFILL_SPACING_SECONDS = 3
+CLUE_KEYS = ("title", "authors", "year", "doi", "arxiv_id", "venue")
 
 
 @dataclass
@@ -209,11 +218,18 @@ async def queue_refresh(session, paper_id: UUID) -> BackgroundJob:
         raise AppError(
             409, "LOOKUP_UNAVAILABLE", "Add the paper's title or DOI to look up its details."
         )
+    return await enqueue_refresh(session, paper.id, paper.active_document_id, "again")
+
+
+async def enqueue_refresh(
+    session, paper_id: UUID, document_id: UUID | None, mode: str, *, delay_seconds: float = 0
+) -> BackgroundJob:
+    """One refresh job; the clues of the paper's earlier lookup come along."""
     earlier = await session.scalar(
         select(BackgroundJob.payload["clues"])
         .where(
             BackgroundJob.kind == "metadata",
-            BackgroundJob.payload["paper_id"].astext == str(paper.id),
+            BackgroundJob.payload["paper_id"].astext == str(paper_id),
             BackgroundJob.payload.has_key("clues"),
         )
         .order_by(BackgroundJob.created_at.desc())
@@ -223,12 +239,173 @@ async def queue_refresh(session, paper_id: UUID) -> BackgroundJob:
         session,
         kind="metadata",
         payload={
-            "paper_id": str(paper.id),
-            "document_id": str(paper.active_document_id) if paper.active_document_id else None,
-            "refresh": True,
+            "paper_id": str(paper_id),
+            "document_id": str(document_id) if document_id else None,
+            "refresh": mode,
             "clues": earlier or {},
         },
+        delay_seconds=delay_seconds,
     )
+
+
+async def queue_backfill(resources) -> int:
+    """Queue the one-time refresh for every library paper with a provider record or a read PDF.
+
+    Papers saved or read before ARA-086 have no venue, and an upload may still carry a junk title
+    that the first-page rule now rejects. API startup calls this. The marker row commits with
+    the jobs, so concurrent and later startups queue nothing, and papers added afterwards are
+    looked up when they are saved or read. Returns the number of jobs queued.
+    """
+    from app.models.research import Document
+    from app.services.upload_match import library_papers
+
+    async with resources.sessions() as session, session.begin():
+        await identity_locks(session, [BACKFILL_KEY])
+        if await session.get(ModelConfiguration, BACKFILL_KEY) is not None:
+            return 0
+        linked = exists().where(PaperSource.paper_id == Paper.id)
+        read = exists().where(Document.id == Paper.active_document_id, Document.status == "ready")
+        papers = (
+            await session.execute(
+                select(Paper.id, Paper.active_document_id)
+                .where(library_papers(), or_(linked, read))
+                .order_by(Paper.created_at, Paper.id)
+            )
+        ).all()
+        for index, (paper_id, document_id) in enumerate(papers):
+            await enqueue_refresh(
+                session,
+                paper_id,
+                document_id,
+                "backfill",
+                delay_seconds=index * BACKFILL_SPACING_SECONDS,
+            )
+        session.add(
+            ModelConfiguration(
+                key=BACKFILL_KEY, value={"queued": len(papers), "queued_at": now().isoformat()}
+            )
+        )
+    return len(papers)
+
+
+def refresh_mode(payload: dict) -> str | None:
+    value = payload.get("refresh")
+    return value if value in REFRESH_MODES else None
+
+
+async def stored_pdf(session, paper: Paper) -> str | None:
+    """The object key of the PDF to read again: only for a read upload without a record."""
+    from app.models.research import Document
+
+    if paper.active_document_id is None or await session.scalar(
+        select(PaperSource.id).where(PaperSource.paper_id == paper.id).limit(1)
+    ):
+        return None
+    return await session.scalar(
+        select(Document.object_key).where(
+            Document.id == paper.active_document_id, Document.status == "ready"
+        )
+    )
+
+
+async def reread_pdf(resources, object_key: str) -> dict | None:
+    """The stored PDF's own metadata, read again by the child-process parser (XMP, first-page
+    title, DOI, arXiv ID). A missing object leaves the paper's details as the only clues."""
+    from minio.error import S3Error
+
+    from app.integrations.storage import read_object
+    from app.services.ingestion import parse_in_child
+    from app.services.uploads import MAX_UPLOAD_BYTES
+
+    try:
+        data = await resources.storage_call(
+            read_object,
+            resources.storage,
+            resources.settings.minio_bucket,
+            object_key,
+            MAX_UPLOAD_BYTES,
+        )
+    except S3Error as error:
+        if error.code == "NoSuchKey":
+            return None
+        raise AppError(503, "STORAGE_UNAVAILABLE", "The stored PDF could not be read.") from None
+    except Exception:
+        raise AppError(503, "STORAGE_UNAVAILABLE", "The stored PDF could not be read.") from None
+    parsed = await parse_in_child(data, layout=False)
+    return None if parsed.get("error") else parsed.get("metadata")
+
+
+async def take_pdf_values(session, paper: Paper, metadata: dict) -> None:
+    """Values read again from the PDF replace earlier PDF values and fill missing ones; manual,
+    model and provider values stay."""
+    from app.models.research import PaperAuthor
+
+    provenance = dict(paper.metadata_provenance)
+
+    def open_to(name: str, current) -> bool:
+        source = (provenance.get(name) or {}).get("source")
+        return source != "manual" and (current in (None, "") or source in PDF_SOURCES)
+
+    for name in ("title", "year", "abstract"):
+        value = metadata.get(name)
+        if value and value != getattr(paper, name) and open_to(name, getattr(paper, name)):
+            setattr(paper, name, value)
+            provenance[name] = {"source": "pdf"}
+    doi = normalized_doi(metadata.get("doi")) if isinstance(metadata.get("doi"), str) else None
+    if doi and doi != paper.normalized_doi and open_to("doi", paper.doi):
+        owner = await session.scalar(
+            select(Paper.id).where(Paper.normalized_doi == doi, Paper.id != paper.id)
+        )
+        if owner is None:
+            paper.doi = paper.normalized_doi = doi
+            provenance["doi"] = {"source": "pdf"}
+    authors = [name for name in metadata.get("authors") or [] if isinstance(name, str)]
+    listed = await session.scalar(
+        select(PaperAuthor.id).where(PaperAuthor.paper_id == paper.id).limit(1)
+    )
+    if authors and open_to("authors", listed):
+        await replace_authors(session, paper.id, authors)
+        provenance["authors"] = {"source": "pdf"}
+    paper.metadata_provenance = provenance
+    paper.updated_at = func.now()
+
+
+async def save_reread(resources, job_id, generation, token, paper_id, metadata, payload) -> bool:
+    """Write the re-read PDF's values and checkpoint its clues, so a retry never parses again.
+
+    False when the lease was lost or the paper is gone (then the job is settled)."""
+    doi = (
+        normalized_doi(metadata.get("doi"))
+        if metadata and isinstance(metadata.get("doi"), str)
+        else None
+    )
+    async with resources.sessions() as session, session.begin():
+        if doi:
+            await identity_locks(session, [f"doi:{doi}"])
+        job = await session.scalar(
+            select(BackgroundJob).where(*fence(job_id, generation, token)).with_for_update()
+        )
+        if job is None:
+            return False
+        paper = await session.scalar(
+            select(Paper)
+            .where(Paper.id == paper_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if paper is None:
+            settle_deleted_locked(job)
+            return False
+        if metadata:
+            await take_pdf_values(session, paper, metadata)
+            payload["clues"] = {
+                **(payload.get("clues") or {}),
+                **{key: metadata[key] for key in CLUE_KEYS if metadata.get(key)},
+            }
+        payload["reread"] = True
+        job.payload = dict(payload)
+        job.updated_at = now()
+    return True
 
 
 async def refresh_clues(
@@ -358,7 +535,7 @@ async def apply(
     by: str,
     *,
     new_paper=False,
-    refresh=False,
+    refresh: str | None = None,
 ):
     doi = normalized_doi(found.doi)
     async with resources.sessions() as session, session.begin():
@@ -391,6 +568,25 @@ async def apply(
         job.updated_at = now()
 
 
+async def empty_fields(session, paper: Paper) -> set[str]:
+    """Fields with no value, the venue counting as empty when no linked record names one."""
+    from app.models.research import PaperAuthor
+
+    empty = {name for name in ("title", "year", "abstract", "doi") if not getattr(paper, name)}
+    if not await session.scalar(
+        select(PaperAuthor.id).where(PaperAuthor.paper_id == paper.id).limit(1)
+    ):
+        empty.add("authors")
+    venues = await session.scalars(
+        select(PaperSource.metadata_snapshot["venue"].astext).where(
+            PaperSource.paper_id == paper.id
+        )
+    )
+    if not any(venues.all()):
+        empty.add("venue")
+    return empty
+
+
 async def merge(
     session,
     paper: Paper,
@@ -399,13 +595,14 @@ async def merge(
     *,
     by="title",
     new_paper=False,
-    refresh=False,
+    refresh: str | None = None,
 ) -> dict:
     """Write provider values over local ones; link the record unless another paper owns it.
 
     A new upload whose record another library paper owns asks to join that paper instead of
-    staying a duplicate (ARA-086); nothing is written to it meanwhile. A refresh ("Look up
-    again") also replaces earlier provider values; manual ones always stay (ARA-095).
+    staying a duplicate (ARA-086); nothing is written to it meanwhile. Look up again also
+    replaces earlier provider values, and the one-time refresh fills values a provider had none
+    for; manual values always stay (ARA-095).
     """
     source = await session.scalar(
         select(PaperSource).where(
@@ -439,13 +636,16 @@ async def merge(
     provenance = dict(paper.metadata_provenance)
     origin = {"source": found.provider, "external_id": found.external_id}
 
+    empty = await empty_fields(session, paper) if refresh == "backfill" else set()
+
     def replaceable(name: str) -> bool:
         current = provenance.get(name)
-        if not isinstance(current, dict):
+        source = current.get("source") if isinstance(current, dict) else None
+        if source == "manual":
+            return False
+        if source is None or source in LOCAL_SOURCES or refresh == "again":
             return True
-        if refresh:
-            return current.get("source") != "manual"
-        return current.get("source") in LOCAL_SOURCES
+        return name in empty
 
     updated = []
     if found.title and replaceable("title"):
@@ -494,7 +694,7 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
     paper_id = payload_uuid(payload, "paper_id")
     document_id = payload_uuid(payload, "document_id")
     clues = Clues.from_payload(payload.get("clues"))
-    refresh = payload.get("refresh") is True
+    refresh = refresh_mode(payload)
     async with resources.sessions() as session, session.begin():
         started = await session.scalar(
             update(BackgroundJob)
@@ -512,9 +712,12 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
             )
             settle_deleted_locked(job)
             return
-        records, trust_doi = {}, False
-        if refresh and paper is not None:
-            clues, records, trust_doi = await refresh_clues(session, paper, clues)
+        # A refresh of an upload without a record reads its stored PDF again, once (ARA-095).
+        reread = (
+            await stored_pdf(session, paper)
+            if refresh and paper is not None and not payload.get("reread")
+            else None
+        )
         attempts = started
         selected = await metadata_source(session)
         pages = (
@@ -527,6 +730,29 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
     if paper_id is None:
         await settle(resources, job_id, generation, token, result={"outcome": "paper_missing"})
         return
+    if reread:
+        try:
+            metadata = await reread_pdf(resources, reread)
+        except AppError as error:
+            await settle(
+                resources,
+                job_id,
+                generation,
+                token,
+                failure=(error.code, error.message),
+                delay=retry_delay(attempts, []),
+            )
+            return
+        if not await save_reread(resources, job_id, generation, token, paper_id, metadata, payload):
+            return
+    records, trust_doi = {}, False
+    if refresh:
+        async with resources.sessions() as session:
+            paper = await session.get(Paper, paper_id)
+            if paper is not None:
+                clues, records, trust_doi = await refresh_clues(
+                    session, paper, Clues.from_payload(payload.get("clues"))
+                )
     first_pages = "\n".join(pages)
     search = AcademicSearch(resources.http, resources.settings)
     failures: list[AppError] = []
