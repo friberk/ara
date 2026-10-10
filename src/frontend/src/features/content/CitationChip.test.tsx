@@ -177,7 +177,7 @@ test('Given a passage under a section, When previewed, Then its heading path sho
   const section = await screen.findByText('Results > Open-domain QA')
   const excerpt = await screen.findByText(fullExcerpt)
   expect(section.compareDocumentPosition(excerpt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  expect(screen.queryByText('Table')).toBeNull()
+  expect(screen.queryByText(/Table/)).toBeNull()
 })
 
 test('Given a table passage, When previewed, Then the preview says it is a table', async () => {
@@ -185,8 +185,16 @@ test('Given a table passage, When previewed, Then the preview says it is a table
   mockApi({ 'GET /documents/d1/chunks/c2': table })
   const { user } = renderWithProviders(<CitationChip citation={table} />)
   await user.hover(screen.getByRole('button', { name: 'Source, page 6, Results' }))
-  expect(await screen.findByText('Table')).toBeVisible()
-  expect(screen.getByText('Page 6')).toBeVisible()
+  expect(await screen.findByText('Page 6, Table')).toBeVisible()
+})
+
+test('Given a paper name, When previewed, Then the preview reads the paper, then the page, joined by commas (ARA-110)', async () => {
+  mockApi({ 'GET /documents/d1/chunks/c2': passage })
+  const { user } = renderWithProviders(<CitationChip citation={passage} paper="Han et al., 2018" />)
+  await user.hover(screen.getByRole('button', { name: /^Source, Han et al., 2018, page 6/ }))
+  const heading = await screen.findByText('Han et al., 2018, Page 6')
+  expect(heading).toBeVisible()
+  expect(heading.textContent).not.toContain('·')
 })
 
 test('Given a passage spanning pages 5 and 6, Then the chip reads p. 5–6 and the dialog names both pages', async () => {

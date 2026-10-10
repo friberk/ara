@@ -20,6 +20,17 @@ export function shortPaperName(paper: Named) {
   return title.length > 40 ? `${title.slice(0, 39).trimEnd()}…` : title
 }
 
+/**
+ * APA 7's in-text author-date part, which names a paper in a chat citation (ARA-110): "Han, 2018", "Han & Shin, 2018",
+ * "Han et al., 2018", "Han, n.d."; without authors a short title stands in.
+ */
+export function apaAuthorDate(paper: Pick<Paper, 'title' | 'authors' | 'year'>) {
+  const authors = authorShort(paper.authors)
+  if (authors) return `${authors}, ${paper.year ?? 'n.d.'}`
+  const title = shortPaperName({ title: paper.title, first_author: null, year: null })
+  return paper.year ? `${title}, ${paper.year}` : title
+}
+
 export function namedPaper(paper: Pick<Paper, 'title' | 'authors' | 'year'>): Named {
   return { title: paper.title, first_author: paper.authors[0] ?? null, year: paper.year }
 }

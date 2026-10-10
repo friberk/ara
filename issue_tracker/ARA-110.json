@@ -13,7 +13,10 @@
     "Given a chat with two or more papers, when it shows, then a row above the thread shows each paper with the composer's PaperPill: file icon and title, darker on hover or focus with a corner × when the paper can be removed, and a hover card with the short citation. Beyond three pills a '+N' pill opens a list of the rest as the same pills. Server rules on removal are unchanged (the last paper can't be removed).",
     "Given a pill in that row, when it is clicked or activated with Enter, then that paper's PDF opens in a reader tab, as a citation to it does. Without a workspace reader it opens the paper's page. There is no summary dialog and no 'Show summary' tooltip.",
     "Given a citation to a paper in a multi-paper chat, when its chip shows, then it reads APA-style 'Han et al., 2018, p. 2' (one author 'Han, 2018'; two authors 'Han & Shin, 2018'; no year 'n.d.'; no authors falls back to a short title), with no middle dot, and its accessible name matches. In a single-paper chat the chip stays 'p. 2'.",
-    "Given the codebase, when this lands, then PaperSummaryDialog and anything only it used are deleted, and README's citation example is updated."
+    "Given the codebase, when this lands, then PaperSummaryDialog and anything only it used are deleted, and README's citation example is updated.",
+    "Given a pill in the paper row, when it is hovered or focused, then its corner × is named 'Remove <title> from this chat' (composer pills keep 'Remove <title>'), because it removes the paper from the whole chat rather than a mention from the question. Added after the user's approval: \"OK, add those to ARA-110\".",
+    "Given a paper is removed from the chat through its pill, when the removal succeeds, then a toast 'Removed from this chat' offers Undo, and focus moves to the next pill (the previous one, else the pane) so keyboard users are not stranded.",
+    "Given Undo is pressed, when the paper is added back with POST /chats/{id}/papers, then its pill returns; if the re-add fails, then an error toast in plain words says the paper could not be put back in this chat. Known limit: Undo restores the paper's current PDF, not an older pinned version that its removal deleted."
   ],
   "test_cases": [
     "Row hidden for one paper; shown with PaperPill for several; +N overflow list.",
@@ -21,7 +24,7 @@
     "Citation label formats for one, two and three+ authors, missing year, missing authors; no '·'.",
     "Remove via × respects server rules."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
     "src/frontend/src/features/chat/ChatPapers.tsx",
     "src/frontend/src/features/chat/chat-sources.ts",
@@ -29,8 +32,11 @@
     "src/frontend/src/components/paper/PaperPill.tsx",
     "src/frontend/src/lib/paper-names.ts"
   ],
-  "commits": [],
+  "commits": [
+    "f70843c",
+    "e17a01c"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 with the user's choices. Branch feat/ara-110-chat-paper-pills.",
+  "verification": "Red then green with vitest: new tests for apaAuthorDate/sourceLabel/PaperPill/row/overflow/pill click/no dialog/remove label/toast/Undo/focus failed first, then passed. Final npm run check and npm run build results in docs/agent-development-log.md. Screenshots by Playwright against a Vite dev server with route-mocked API in the session scratchpad (ara110/).",
   "updated_at": "2026-10-10"
 }
