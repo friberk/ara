@@ -66,12 +66,17 @@ async def enqueue_reindex(resources) -> int:
 
 
 async def prepare_search(resources) -> None:
-    """API startup: re-ingest outdated documents, then queue missing or unavailable indexes.
+    """API startup: queue the one-time metadata refresh (ARA-095), re-ingest outdated documents,
+    then queue missing or unavailable indexes.
 
-    Retries until the database answers; every step is idempotent under concurrent runs.
+    Retries until the database answers; every step is idempotent under concurrent runs. The
+    refresh goes first, so a re-ingest finds its lookup already queued and asks no provider.
     """
+    from app.services.metadata import queue_backfill
+
     while True:
         try:
+            await queue_backfill(resources)
             await enqueue_reindex(resources)
             await reconcile_indexes(resources)
             return
