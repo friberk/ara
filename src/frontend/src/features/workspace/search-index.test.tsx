@@ -1,4 +1,4 @@
-// Paper "Search index" under Advanced in the ⓘ sheet (ARA-075, ARA-091, ARA-097): the library model, this paper's index state and rebuilds.
+// Paper "Search index" in the ⓘ dialog (ARA-075, ARA-091, ARA-101): the library model, this paper's index state and rebuilds.
 import { act, screen, waitFor, within } from '@testing-library/react'
 import type { EmbeddingProfile, Paper, PaperRetrieval, RetrievalIndex } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
@@ -19,24 +19,11 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 const openModels = { 'GET /features': { open_models: true } }
 
 function mount(value: Paper = paper) { return renderWithProviders(<SearchIndexPanel paperId={value.id} />) }
-async function expand(user: ReturnType<typeof mount>['user']) {
-  await user.click(screen.getByRole('button', { name: 'Advanced' }))
-  return screen.getByRole('region', { name: 'Search index' })
-}
-
-test('Given a ready paper, Then Advanced is collapsed and loads nothing until opened', () => {
-  const { calls } = mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': retrieval() })
-  mount()
-  const trigger = screen.getByRole('button', { name: 'Advanced' })
-  expect(trigger).toHaveAttribute('aria-expanded', 'false')
-  expect(screen.queryByText(/Searching with/)).not.toBeInTheDocument()
-  expect(calls.some((call) => call.path.includes('retrieval'))).toBe(false)
-})
 
 test('Given a ready index on the default model, When expanded, Then it names the model, its state and the counts', async () => {
   mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': retrieval() })
-  const { user } = mount()
-  const panel = await expand(user)
+  mount()
+  const panel = screen.getByRole('region', { name: 'Search index' })
   expect(await within(panel).findByText('OpenAI text-embedding-3-large')).toBeVisible()
   expect(within(panel).getByText(/Searching with/)).toHaveTextContent('Searching with OpenAI text-embedding-3-large')
   expect(within(panel).getByText('text-embedding-3-large')).toHaveClass('font-mono')
@@ -57,7 +44,7 @@ test('Given Rebuild index, When pressed, Then the panel polls Building until Rea
     'POST /papers/p1/retrieval/rebuild': () => { current = building; return json(current, 202) },
   })
   const { user } = mount()
-  const panel = await expand(user)
+  const panel = screen.getByRole('region', { name: 'Search index' })
   await user.click(await within(panel).findByRole('button', { name: 'Rebuild index' }))
   expect((calls.find((call) => call.method === 'POST')?.body as { request_id: string }).request_id).toMatch(uuid)
   expect(await within(panel).findByText('Building')).toBeVisible()
@@ -79,7 +66,7 @@ test('Given a failed index, Then the error shows with Rebuild, and each rebuild 
   const failed = retrieval({ mode: 'keyword', indexes: [index({ state: 'failed', embedded: 64, error: { code: 'EMBEDDING_FAILED', message: 'The search model stopped responding. Rebuild to try again.' } })] })
   const { calls } = mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': failed, 'POST /papers/p1/retrieval/rebuild': () => json(failed, 202) })
   const { user } = mount()
-  const panel = await expand(user)
+  const panel = screen.getByRole('region', { name: 'Search index' })
   expect(await within(panel).findByText('Failed')).toBeVisible()
   expect(within(panel).getByRole('alert')).toHaveTextContent('The search model stopped responding. Rebuild to try again.')
   await user.click(within(panel).getByRole('button', { name: 'Rebuild index' }))
@@ -97,8 +84,8 @@ test('Given an unavailable search model, Then the panel says why in plain langua
     'GET /retrieval/profiles': profiles,
     'GET /papers/p1/retrieval': retrieval({ effective_profile: qwen8b.key, mode: 'keyword', indexes: [index({ profile: qwen8b.key, state: 'unavailable', embedded: 0 })] }),
   })
-  const { user } = mount()
-  const panel = await expand(user)
+  mount()
+  const panel = screen.getByRole('region', { name: 'Search index' })
   expect(await within(panel).findByText('Unavailable')).toBeVisible()
   expect(within(panel).getByText('Download Qwen3 Embedding 8B in Settings')).toBeVisible()
 })
@@ -109,8 +96,8 @@ test('Given a new model building while the previous index is ready, Then answers
     'GET /retrieval/profiles': profiles,
     'GET /papers/p1/retrieval': retrieval({ effective_profile: qwen4b.key, mode: 'hybrid', indexes: [index(), index({ profile: qwen4b.key, state: 'queued', embedded: 0 })] }),
   })
-  const { user } = mount()
-  const panel = await expand(user)
+  mount()
+  const panel = screen.getByRole('region', { name: 'Search index' })
   expect(await within(panel).findByText('Building')).toBeVisible()
   expect(within(panel).getByText('Answers keep using the previous index until the new one is ready.')).toBeVisible()
   expect(within(panel).queryByText(/keyword search/)).not.toBeInTheDocument()
@@ -118,8 +105,8 @@ test('Given a new model building while the previous index is ready, Then answers
 
 test('Given the index cannot be loaded, Then the panel explains it inline with Try again', async () => {
   mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': () => json({ code: 'NOT_IMPLEMENTED', message: 'Search index details are not available yet.' }, 501) })
-  const { user } = mount()
-  const panel = await expand(user)
+  mount()
+  const panel = screen.getByRole('region', { name: 'Search index' })
   expect(await within(panel).findByRole('alert')).toHaveTextContent('Search index details are not available yet.')
   expect(within(panel).getByRole('button', { name: 'Try again' })).toBeEnabled()
 })

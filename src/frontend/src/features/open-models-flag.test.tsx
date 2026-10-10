@@ -125,8 +125,7 @@ test('Given a local library search model with open models off, Then the paper’
     indexes: [{ profile: qwen.key, state: 'unavailable', embedded: 12, total: 12, updated_at: null, error: { code: 'OPEN_MODELS_DISABLED', message: reason } }],
   }
   mockApi({ ...off, 'GET /retrieval/profiles': { items: [openai, { ...qwen, status: 'unavailable', unavailable_reason: searchReason, local_model_key: null }], default_profile: qwen.key }, 'GET /papers/p1/retrieval': retrieval })
-  const { user } = renderWithProviders(<SearchIndexPanel paperId="p1" />)
-  await user.click(screen.getByRole('button', { name: 'Advanced' }))
+  renderWithProviders(<SearchIndexPanel paperId="p1" />)
   expect(await screen.findByText(reason)).toBeVisible()
   expect(screen.getByText(/Searching with/)).toHaveTextContent(`Searching with ${qwen.display_name}`)
 })
