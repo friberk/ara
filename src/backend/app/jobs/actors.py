@@ -124,6 +124,10 @@ async def execute_job(job_id: str, generation: int) -> None:
             from app.services.memory import run_embed_turn_job
 
             await run_embed_turn_job(resources, identifier, generation, token, payload)
+        elif kind == "storage_cleanup":
+            from app.services.deletion import run_storage_cleanup_job
+
+            await run_storage_cleanup_job(resources, identifier, generation, token, payload)
         elif kind == "canary":
             await complete(
                 resources.sessions,

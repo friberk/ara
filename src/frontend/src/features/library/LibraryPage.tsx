@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Library, Search, SearchX, Upload, X } from 'lucide-react'
+import { Info, Library, Search, SearchX, Trash2, Upload, X } from 'lucide-react'
 import type { Paper } from '@/api/types'
+import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
@@ -17,21 +19,66 @@ import { useUploads } from '@/components/upload/use-upload'
 import { usePapers } from '@/hooks/queries/papers'
 import { PaperByline } from '@/features/research/PaperByline'
 import { countFormat, displayText, paperName } from '@/features/research/paper-format'
+import { DeletePapersDialog } from './DeletePapersDialog'
+import { PaperActions } from './PaperActions'
 
 const FILTER_DELAY_MS = 250
 
-function PaperRow({ paper }: { paper: Paper }) {
+function PaperRow({ paper, selected, onSelect }: { paper: Paper; selected: boolean; onSelect: (selected: boolean) => void }) {
+  const name = paperName(paper)
   return (
-    <article className="group relative py-5">
-      <h2 className="text-base leading-snug font-semibold tracking-tight text-balance break-words">
-        {/* The title link stretches over the row so the whole row opens the paper. */}
-        <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{paperName(paper)}</Link>
-      </h2>
-      <PaperByline authors={paper.authors} year={paper.year} className="mt-1.5">
-        <DocumentStatusBadge state={paper.document_status} />
-      </PaperByline>
-      {displayText(paper.abstract) && <p className="mt-2 line-clamp-2 text-sm leading-6 text-pretty text-muted-foreground">{displayText(paper.abstract)}</p>}
+    <article className="group relative flex items-start gap-3 py-5">
+      {/* The checkbox and the actions sit above the stretched title link. */}
+      <Checkbox className="relative z-10 mt-1" checked={selected} onCheckedChange={(value) => onSelect(value === true)} aria-label={`Select “${name}”`} />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-base leading-snug font-semibold tracking-tight text-balance break-words">
+          {/* The title link stretches over the row so the whole row opens the paper. */}
+          <Link to={`/papers/${paper.id}`} className="rounded-sm underline-offset-4 group-hover:underline after:absolute after:inset-0">{name}</Link>
+        </h2>
+        <PaperByline authors={paper.authors} year={paper.year} className="mt-1.5">
+          <DocumentStatusBadge state={paper.document_status} />
+        </PaperByline>
+        {displayText(paper.abstract) && <p className="mt-2 line-clamp-2 text-sm leading-6 text-pretty text-muted-foreground">{displayText(paper.abstract)}</p>}
+      </div>
+      <PaperActions paper={paper} className="relative z-10 -mt-0.5 -mr-2 shrink-0" />
     </article>
+  )
+}
+
+/** Select all, and once papers are chosen, what can be done with them together (ARA-095). */
+function SelectionBar({ papers, chosen, onChange, onDelete }: { papers: Paper[]; chosen: Paper[]; onChange: (ids: string[]) => void; onDelete: () => void }) {
+  const all = chosen.length > 0 && chosen.length === papers.length
+  return (
+    <div className="flex min-h-12 items-center gap-3 border-b py-2">
+      <Checkbox
+        id="select-all-papers"
+        checked={all ? true : chosen.length ? 'indeterminate' : false}
+        onCheckedChange={(value) => onChange(value === true ? papers.map((paper) => paper.id) : [])}
+        aria-label="Select all papers"
+      />
+      {chosen.length ? (
+        <div role="toolbar" aria-label="Selected papers" className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium tabular" aria-live="polite">{countFormat.format(chosen.length)} selected</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => onChange([])}>Clear selection</Button>
+            <Button variant="destructive" size="sm" onClick={onDelete}><Trash2 data-icon="inline-start" aria-hidden="true" />Delete…</Button>
+          </div>
+        </div>
+      ) : (
+        <label htmlFor="select-all-papers" className="text-sm text-muted-foreground">Select all</label>
+      )}
+    </div>
+  )
+}
+
+/** Shown after a link to a paper that no longer exists brought the reader here (ARA-095). */
+function MissingPaperNote({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <Alert role="status" className="mt-6 items-center">
+      <Info aria-hidden="true" />
+      <AlertDescription>That paper isn’t in your library anymore. It may have been deleted.</AlertDescription>
+      <AlertAction><Button variant="ghost" size="sm" onClick={onDismiss}>Dismiss</Button></AlertAction>
+    </Alert>
   )
 }
 
@@ -93,6 +140,13 @@ export default function LibraryPage() {
   const choose = () => picker.current?.click()
   const clearFilter = () => { setText(''); setSearchParams({}, { replace: true }) }
   const count = `${countFormat.format(items.length)}${papers.hasNextPage ? '+' : ''} ${items.length === 1 && !papers.hasNextPage ? 'paper' : 'papers'}`
+  // Only listed papers can be chosen, so a filter or a deletion never leaves hidden papers selected.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
+  const chosen = items.filter((paper) => selected.has(paper.id))
+  const select = (id: string, on: boolean) => setSelected((current) => { const next = new Set(current); if (on) next.add(id); else next.delete(id); return next })
+  const [deleting, setDeleting] = useState(false)
+  const missingPaper = (location.state as { missingPaper?: boolean } | null)?.missingPaper === true
+  const dismissNote = () => navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null })
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
@@ -104,6 +158,7 @@ export default function LibraryPage() {
         <Button onClick={choose}><Upload aria-hidden="true" />Upload PDF</Button>
         <input ref={picker} type="file" multiple accept="application/pdf,.pdf" aria-label="PDF files" tabIndex={-1} className="sr-only" onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
       </header>
+      {missingPaper && <MissingPaperNote onDismiss={dismissNote} />}
       {uploadOpen && <AddPdfs onChoose={choose} onClose={closeUpload} />}
       <UploadList uploads={uploads} className="mt-6" />
       <PendingMatches hidden={uploads.items.flatMap((item) => (item.accepted ? [item.accepted.paper_id] : []))} className="mt-6" />
@@ -131,9 +186,12 @@ export default function LibraryPage() {
           </EmptyState>
         ))}
         {items.length > 0 && (
-          <ul aria-label="Papers" className="divide-y">
-            {items.map((paper) => <li key={paper.id}><PaperRow paper={paper} /></li>)}
-          </ul>
+          <>
+            <SelectionBar papers={items} chosen={chosen} onChange={(ids) => setSelected(new Set(ids))} onDelete={() => setDeleting(true)} />
+            <ul aria-label="Papers" className="divide-y">
+              {items.map((paper) => <li key={paper.id}><PaperRow paper={paper} selected={selected.has(paper.id)} onSelect={(on) => select(paper.id, on)} /></li>)}
+            </ul>
+          </>
         )}
         {papers.isFetchNextPageError && <ErrorNotice error={papers.error} retry={() => void papers.fetchNextPage()} className="mt-2" />}
         {papers.hasNextPage && !papers.isFetchNextPageError && (
@@ -145,6 +203,12 @@ export default function LibraryPage() {
         )}
       </div>
 
+      <DeletePapersDialog
+        papers={chosen}
+        open={deleting && chosen.length > 0}
+        onOpenChange={setDeleting}
+        onDeleted={(ids) => setSelected((current) => new Set([...current].filter((id) => !ids.includes(id))))}
+      />
       <DropOverlay show={dragging} label="Drop PDFs to add them to your library" />
     </div>
   )

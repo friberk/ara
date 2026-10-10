@@ -163,13 +163,66 @@ test('Given a ready paper whose catalog lookup is running, When it finishes, The
 
 test('Given the catalog lookup ran out of attempts, Then Details explains it and can look the paper up again', async () => {
   const failed = { id: 'lookup-2', kind: 'metadata', state: 'failed', stage: 'failed', progress: 50, error: { code: 'PROVIDER_RATE_LIMITED', message: 'The metadata sources are rate limited, so the details read from the PDF were kept. Retry the lookup later.' }, result: null, attempts: 3, paper_id: 'p1', paper_title: paper.title, created_at: '2026-10-09T00:00:00Z' }
-  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? [failed] : [] }), 'POST /jobs/lookup-2/retry': { ...failed, state: 'queued', stage: 'queued', error: null } })
+  const queued = { ...failed, id: 'lookup-3', state: 'queued', stage: 'queued', error: null, attempts: 0 }
+  let lookups: Record<string, unknown>[] = [failed]
+  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /jobs': ({ url }) => json({ items: url.searchParams.get('kind') === 'metadata' ? lookups : [] }), 'POST /papers/p1/metadata-lookup': () => { lookups = [queued, failed]; return json(queued, 202) } })
   const { user } = renderApp('/papers/p1')
   await user.click(await screen.findByRole('tab', { name: 'Details' }))
   const details = screen.getByRole('tabpanel', { name: 'Details' })
   expect(await within(details).findByText(/the details read from the PDF were kept/)).toBeVisible()
   await user.click(within(details).getByRole('button', { name: 'Look up again' }))
-  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/jobs/lookup-2/retry')).toBe(true))
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/papers/p1/metadata-lookup')).toBe(true))
+  expect(await within(details).findByRole('button', { name: 'Looking up…' })).toBeDisabled()
+  expect(calls.some((call) => call.path.endsWith('/retry'))).toBe(false)
+})
+
+test('Given any paper with a title, DOI or record, Then Details can look it up again at any time and says edits stay', async () => {
+  const { calls } = mockApi({ 'GET /papers/p1': metadataOnly, 'POST /papers/p1/metadata-lookup': () => json({ id: 'lookup-1', kind: 'metadata', state: 'queued', stage: 'queued', progress: 0, error: null, paper_id: 'p1' }, 202) })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('tab', { name: 'Details' }))
+  const details = screen.getByRole('tabpanel', { name: 'Details' })
+  expect(within(details).getByText('Refreshes the details from the metadata source. Fields you edited stay as they are.')).toBeVisible()
+  await user.click(within(details).getByRole('button', { name: 'Look up again' }))
+  await waitFor(() => expect(calls.filter((call) => call.path === '/papers/p1/metadata-lookup')).toHaveLength(1))
+})
+
+test('Given a venue, Then Details shows it and the editor changes it like any other field', async () => {
+  let stored = { ...paper, venue: 'CHI' }
+  const { calls } = mockApi({
+    'GET /papers/p1': () => json(stored),
+    'PATCH /papers/p1': ({ body }) => json(stored = { ...stored, ...(body as object) }),
+  })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('tab', { name: 'Details' }))
+  const details = screen.getByRole('tabpanel', { name: 'Details' })
+  expect(within(details).getByText('CHI')).toBeVisible()
+  await user.click(within(details).getByRole('button', { name: 'Edit' }))
+  expect(within(details).getByRole('heading', { name: 'Edit details' })).toBeVisible()
+  const venue = within(details).getByRole('textbox', { name: 'Venue' })
+  await user.clear(venue)
+  await user.type(venue, 'CHI 2024')
+  await user.click(within(details).getByRole('button', { name: 'Save details' }))
+  expect(await within(details).findByText('CHI 2024')).toBeVisible()
+  expect(calls.filter((call) => call.method === 'PATCH').map((call) => call.body)).toEqual([{ venue: 'CHI 2024' }])
+})
+
+test('Given the workspace, When the paper is deleted from its actions, Then the Library opens and says so', async () => {
+  let deleted = false
+  const { calls } = mockApi({
+    'GET /papers/p1': () => deleted ? json({ code: 'PAPER_NOT_FOUND', message: 'Paper not found.' }, 404) : json(paper),
+    'GET /papers/p1/deletion-preview': { papers: [{ paper_id: 'p1', title: paper.title }], missing: [], pdfs: 1, summaries: 0, deleted_chats: [], updated_chats: [], active_jobs: 0, answering: false },
+    'DELETE /papers/p1': () => { deleted = true; return new Response(null, { status: 204 }) },
+  })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('button', { name: `Actions for “${paper.title}”` }))
+  await user.click(screen.getByRole('menuitem', { name: 'Delete…' }))
+  const dialog = await screen.findByRole('alertdialog', { name: `Delete “${paper.title}”?` })
+  await user.click(await within(dialog).findByRole('button', { name: 'Delete paper' }))
+  expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
+  expect(await screen.findByText(`Deleted “${paper.title}”`)).toBeVisible()
+  // The deletion's own redirect is not mistaken for a stale link.
+  expect(screen.queryByText('That paper isn’t in your library anymore. It may have been deleted.')).not.toBeInTheDocument()
+  expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual(['/papers/p1'])
 })
 
 test('Given field provenance, Then the details show the bibliography and where each field came from', async () => {
@@ -197,7 +250,7 @@ test('Given provider metadata, When only the title is edited, Then only the titl
   const title = screen.getByRole('textbox', { name: 'Title' })
   await user.clear(title)
   await user.type(title, 'Corrected title')
-  await user.click(screen.getByRole('button', { name: 'Save bibliography' }))
+  await user.click(screen.getByRole('button', { name: 'Save details' }))
   expect(await screen.findByRole('heading', { level: 1, name: 'Corrected title' })).toBeVisible()
   expect(calls.filter((call) => call.method === 'PATCH').map((call) => call.body)).toEqual([{ title: 'Corrected title' }])
   expect(screen.getByText('Authors: OpenAlex')).toBeVisible()
@@ -328,11 +381,11 @@ test('Given a failed paper, When its ingest job is known, Then the reader explai
   await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/jobs/job-9/retry')).toBe(true))
 })
 
-test('Given an unknown paper, Then the workspace says so and links back to the library', async () => {
+test('Given an unknown or deleted paper, Then the workspace returns to the Library with a short note', async () => {
   mockApi({ 'GET /papers/p1': () => json({ code: 'PAPER_NOT_FOUND', message: 'Paper not found.' }, 404) })
-  renderApp('/papers/p1')
-  expect(await screen.findByRole('heading', { name: 'Paper not found' })).toBeVisible()
-  expect(screen.getByRole('link', { name: 'Open library' })).toHaveAttribute('href', '/library')
+  renderApp('/papers/p1/chats/c1')
+  expect(await screen.findByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
+  expect(screen.getByText('That paper isn’t in your library anymore. It may have been deleted.')).toBeVisible()
 })
 
 // TEST-AFTER coverage: these behaviours were implemented before any test named them. Each case was added after the
@@ -376,7 +429,7 @@ describe('test-after coverage (mutation-verified)', () => {
     expect(screen.getByRole('tab', { name: 'PDF', selected: true })).toBeVisible()
   })
 
-  test('Given an impossible publication year, When the bibliography is saved, Then the field explains the range and nothing is sent', async () => {
+  test('Given an impossible publication year, When the details are saved, Then the field explains the range and nothing is sent', async () => {
     const { calls } = mockApi({ 'GET /papers/p1': paper })
     const { user } = renderApp('/papers/p1')
     await user.click(await screen.findByRole('tab', { name: 'Details' }))
@@ -384,7 +437,7 @@ describe('test-after coverage (mutation-verified)', () => {
     const year = screen.getByRole('textbox', { name: 'Publication year' })
     await user.clear(year)
     await user.type(year, '12')
-    await user.click(screen.getByRole('button', { name: 'Save bibliography' }))
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter a publication year between 1500 and 2100.')
     expect(year).toHaveAttribute('aria-invalid', 'true')
     expect(calls.some((call) => call.method === 'PATCH')).toBe(false)

@@ -291,8 +291,11 @@ async def job_statuses(session, jobs: list[BackgroundJob]) -> list[JobStatus]:
     for job in jobs:
         status = JobStatus.model_validate(job)
         paper_id = paper_of.get(job.id)
-        # A deleted paper leaves no link rather than one that would 404.
+        # A deleted paper leaves no link rather than one that would 404; a job its deletion
+        # stopped still names it (ARA-095).
         if paper_id in titles:
             status.paper_id, status.paper_title = paper_id, titles[paper_id]
+        elif isinstance(job.result, dict) and isinstance(job.result.get("paper_title"), str):
+            status.paper_title = job.result["paper_title"]
         statuses.append(status)
     return statuses

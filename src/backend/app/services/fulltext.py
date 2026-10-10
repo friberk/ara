@@ -13,6 +13,7 @@ from app.models.research import Document, DocumentUploadRequest, Paper, PaperSou
 from app.repositories.fulltext import enqueue_request
 from app.repositories.jobs import fence, now
 from app.schemas.fulltext import FullTextAccepted
+from app.services.deletion import PAPER_DELETED, STOPPED
 from app.services.uploads import (
     AttachmentGuard,
     AttachmentLeaseLost,
@@ -68,7 +69,9 @@ async def finish(resources, job_id, generation, token, result, *, reason=None):
             paper = await session.scalar(
                 select(Paper).where(Paper.id == UUID(job.payload["paper_id"])).with_for_update()
             )
-            if paper and str(paper.active_document_id) != result.get("document_id"):
+            if paper is None:
+                result, reason = {"outcome": "paper_deleted"}, STOPPED
+            elif str(paper.active_document_id) != result.get("document_id"):
                 document = (
                     await session.get(Document, paper.active_document_id)
                     if paper.active_document_id
@@ -79,7 +82,12 @@ async def finish(resources, job_id, generation, token, result, *, reason=None):
         job.state, job.stage = ("completed", "completed") if success else ("failed", "failed")
         job.progress = 100 if success else job.progress
         job.result = result
-        job.error_code = None if success else f"FULLTEXT_{result['outcome'].upper()}"
+        if success:
+            job.error_code = None
+        elif result["outcome"] == "paper_deleted":
+            job.error_code = PAPER_DELETED
+        else:
+            job.error_code = f"FULLTEXT_{result['outcome'].upper()}"
         job.error_message = None if success else (reason or "The PDF could not be retrieved.")[:400]
         job.lease_token, job.lease_expires_at = None, None
         job.updated_at = now()
@@ -216,6 +224,8 @@ async def run_fulltext_job(
             try:
                 work = await lookup_work(resources, paper_id)
             except AppError as error:
+                if error.code == "PAPER_NOT_FOUND":
+                    raise
                 # A refused or failed lookup ends this attempt; retrying is the user's choice.
                 limited = error.code == "PROVIDER_RATE_LIMITED"
                 await finish(
@@ -290,13 +300,13 @@ async def run_fulltext_job(
     except AttachmentLeaseLost:
         return
     except AttachmentSuperseded:
-        await finish(
-            resources,
-            job_id,
-            generation,
-            lease_token,
-            document_result(await current_document(resources, paper_id), "superseded"),
-        )
+        try:
+            result = document_result(await current_document(resources, paper_id), "superseded")
+        except AppError as error:
+            if error.code != "PAPER_NOT_FOUND":
+                raise
+            result = {"outcome": "paper_deleted"}
+        await finish(resources, job_id, generation, lease_token, result, reason=STOPPED)
     except TimeoutError:
         await finish(
             resources,
@@ -309,11 +319,13 @@ async def run_fulltext_job(
     except AppError as error:
         if error.status_code >= 500:
             raise
+        # The paper was deleted while this ran (ARA-095).
+        deleted = error.code == "PAPER_NOT_FOUND"
         await finish(
             resources,
             job_id,
             generation,
             lease_token,
-            {"outcome": "invalid_pdf"},
-            reason=error.message,
+            {"outcome": "paper_deleted" if deleted else "invalid_pdf"},
+            reason=STOPPED if deleted else error.message,
         )

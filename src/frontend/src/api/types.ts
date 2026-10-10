@@ -71,3 +71,6 @@ export type PaperLink = Schemas['PaperLink']
 export type MatchDecision = Schemas['MatchDecision']['decision']
 // Chats over several library papers (ARA-088, docs/api-contract.md).
 export type IncludedPaper = Schemas['IncludedPaper']
+// Deleting papers and their preview (ARA-095, docs/api-contract.md).
+export type DeletionPreview = Schemas['DeletionPreview']
+export type DeletedPapers = Schemas['DeletedPapers']

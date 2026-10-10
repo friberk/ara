@@ -11,6 +11,7 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 from support.academic import DOI, DOI_TITLE, openalex_work, providers
+from support.cleanup import cleanup_job, run_cleanup
 from support.front_matter import TITLE, toolchain_pdf
 from support.llm_server import metadata_model
 from test_automatic_summary_integration import save_defaults
@@ -203,6 +204,9 @@ async def test_cancel_discards_the_upload_and_its_stored_original(resources):
     assert invalid.status_code == 409 and invalid.json()["code"] == "NO_PENDING_MATCH"
     assert await count(resources, Paper, Paper.id == accepted.paper_id) == 0
     assert await count(resources, Document, Document.id == accepted.document_id) == 0
+    # The original is removed by the durable cleanup job that the discard queued (ARA-095).
+    assert (await cleanup_job(resources)).payload["object_keys"] == [key]
+    assert (await run_cleanup(resources)).state == "completed"
     with pytest.raises(S3Error):
         await resources.storage_call(
             resources.storage.stat_object, resources.settings.minio_bucket, key

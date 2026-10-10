@@ -20,6 +20,7 @@ from app.rag import hooks
 from app.rag.chunking import ChunkPlan, build_chunk_plan
 from app.repositories.jobs import fence, now, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
+from app.services.deletion import PAPER_DELETED, STOPPED, settle_deleted_locked
 from app.services.metadata import queue_lookup
 from app.services.upload_match import absorb, find_library_match, has_pdf, hold, note_doi_owner
 from app.services.uploads import MAX_UPLOAD_BYTES
@@ -207,14 +208,9 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
     async with resources.sessions() as session:
         document = await session.get(Document, document_id)
         if document is None:
+            # Documents go only with their paper (ARA-095).
             await finish_failure(
-                resources,
-                job_id,
-                generation,
-                lease_token,
-                document_id,
-                "DOCUMENT_NOT_FOUND",
-                "The uploaded document no longer exists.",
+                resources, job_id, generation, lease_token, document_id, PAPER_DELETED, STOPPED
             )
             return
         object_key, placeholder_id = document.object_key, document.paper_id
@@ -342,15 +338,31 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         )
         if job is None:
             return
-        document = await session.get(Document, document_id)
         metadata_doi = normalized_doi(metadata.get("doi"))
         if metadata_doi:
             await identity_locks(session, [f"doi:{metadata_doi}"])
+        # Deleting a paper locks it before its PDFs go (ARA-095). Once the paper is locked here,
+        # a document that is still there stays until this commit.
+        owner = await session.scalar(select(Document.paper_id).where(Document.id == document_id))
+        locked = {
+            paper.id: paper
+            for paper in (
+                await session.scalars(
+                    select(Paper)
+                    .where(Paper.id.in_({owner, *([match.paper_id] if match else [])}))
+                    .order_by(Paper.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).all()
+        }
+        document = await session.get(Document, document_id) if owner in locked else None
+        if document is None:
+            settle_deleted_locked(job)
+            return
         attached = None
         if match is not None:
-            library = await session.scalar(
-                select(Paper).where(Paper.id == match.paper_id).with_for_update()
-            )
+            library = locked.get(match.paper_id)
             if library is not None and await has_pdf(session, library):
                 # It received a PDF meanwhile: ask instead of attaching.
                 await complete_pending(session, job, document_id, placeholder_id, match)

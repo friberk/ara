@@ -35,7 +35,8 @@ export function useSaveMetadataSettings() {
  */
 export function usePaperLookup(paper: { id: string; document_status: DocumentState }): Job | null {
   const client = useQueryClient()
-  const jobs = useJobs({ paperId: paper.id, kind: 'metadata' }, { enabled: paper.document_status !== 'metadata_only' })
+  // Any paper can be looked up again (ARA-095), so its lookups are read even before it has a PDF.
+  const jobs = useJobs({ paperId: paper.id, kind: 'metadata' })
   const lookup = jobs.data?.items.find((job) => job.kind === 'metadata' && job.paper_id === paper.id) ?? null
   const { refetch } = jobs
   const ready = paper.document_status === 'ready'

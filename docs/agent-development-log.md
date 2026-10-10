@@ -1328,3 +1328,54 @@ The user chose TipTap (with its Mention extension) over Lexical or a hand-built 
 - **The design.** The lead designed it with the impeccable skill (Operate mode, the "Category Standard" design system). The ⓘ opens a Google Drive-style details sheet that keeps the PDF visible; the section order is in the ticket. The reader toolbar gains a PDF menu with file facts and Open, Download, Replace and Remove. Mobile becomes Chat | PDF.
 - **Defects added.** The screenshots showed two more defects, now in the ticket: horizontal overflow of chat answers at 390px, and the sticky paper-chip row showing text through it.
 - **Sequencing.** ARA-097 starts after ARA-095 lands, because it reuses deletion, editing and storage cleanup.
+
+## 2026-10-10 - ARA-095 paper deletion and complete metadata editing
+
+An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in its own `ara-delete-test` Compose project. The user's `ara` and `ara-live` stacks were not touched. No migration was written: deletion uses the existing cascades and the `chat_papers_last_paper` trigger. ARA-094 ran in parallel, so `rag/*`, `services/summarization.py` and the answer path in `services/chat.py` were left alone; only `expire` is imported from `services/chat.py`.
+
+**Decisions:**
+- **One deletion service.** `services/deletion.py` serves `DELETE /papers/{id}`, `POST /papers/delete` (one transaction for several papers) and the upload-match Cancel, which used to delete the placeholder and then remove its object inline. Previews are `GET /papers/{id}/deletion-preview` and `POST /papers/deletion-preview`; they count PDFs, summaries, chats deleted, chats that keep other papers, work that stops, and whether a chat is answering.
+- **Locks.** Identity locks first (`upload_match:` for the papers and their placeholders, `doi:`, `source:`, `pdf:`), then the affected chats, then the papers, in ID order. A chat with a live answer refuses the deletion with 409 `CHAT_BUSY`, as chat deletion does.
+- **In-flight work.** The deletion commit fails the papers' queued and running jobs with `PAPER_DELETED` and no lease, which fences their workers out. Job rows are taken `SKIP LOCKED`: ingest takes its job row before a DOI lock while a metadata lookup takes them the other way round, so waiting on job rows could deadlock. A skipped job settles itself: ingest now locks the document's paper before writing, retrieval maps `PAPER_NOT_FOUND` to `PAPER_DELETED` instead of `FULLTEXT_INVALID_PDF`, and a lookup checks the paper before asking any provider. Summary and index jobs were already safe (no rows written) and keep their own codes.
+- **Storage.** One `storage_cleanup` job per deletion, queued in the same commit. Object keys are per document, and sha256 is unique, so two papers never share an object; the job still keeps any key a live document names. Storage errors wait 30 s, then 60 s, then fail with the retryable `STORAGE_UNAVAILABLE`. A PDF still `uploading` delays the job 300 s, past the 120 s ingest grace, because the upload stores its object after committing the row.
+- **Held uploads.** Deleting a library paper that an upload is waiting on releases the upload as its own paper. Before, the cascade removed the match and left the placeholder stuck in "processing". The release reuses the attach path's continuation (`continue_upload`).
+- **Venue.** Papers have no venue column, so a manual venue is stored as `metadata_provenance.venue = {source: manual, value}` and read before the provider record.
+- **Look up again.** `POST /papers/{id}/metadata-lookup` queues a refresh at any time for a paper with a title, DOI or record. It returns a lookup that is already queued or running instead of starting another. When it runs, it reads the saved record first, trusts a DOI the user typed, replaces provider and PDF values but never manual ones, and keeps the existing backoff. The scope started as DOI or record only; I widened it to titles so that an upload whose first lookup gave up can still be retried from Details, which used the job retry route before.
+- **UI.** Library rows have a Checkbox, Select all with a selection toolbar, and a DropdownMenu with Edit details, Look up details again and Delete…. The same menu is in the workspace header. The AlertDialog lists what goes from the preview, keeps Cancel focused, stays disabled while a chat answers, and its button says "Delete paper" or "Delete N papers". A deleted paper's URL redirects to the Library with a note. Activity shows stopped work as Cancelled, names the paper without a link, and keeps it out of Failed.
+
+**Red, then green:**
+- **Deletion API.** 7 failed with `405 Method Not Allowed`, `404 == 200` and `KeyError: 'answering'`, then passed.
+- **Code written before its tests.** The cleanup job, job settlement and the upload release went in with the deletion service before their tests existed. I reproduced each red afterwards by stubbing it out:
+  - storage: 5 failed (`assert (None is not None)`, `'NoneType' object has no attribute 'id'`);
+  - settlement and release: 4 failed (`('queued', 'queued', None) == ('failed', 'failed', 'PAPER_DELETED')`). Without the fence, a summary ran on to `MODEL_NOT_CONFIGURED`.
+- **Runners.** 6 failed before the fix:
+  - ingest: `AttributeError: 'NoneType' object has no attribute 'paper_id'` at `ingestion.py:368`, and `DOCUMENT_NOT_FOUND`;
+  - retrieval: `FULLTEXT_INVALID_PDF`, twice;
+  - lookup: `('completed', None)`;
+  - Activity: `paper_title` None.
+- **Changed expectation.** The existing Cancel test failed with `DID NOT RAISE S3Error` once cleanup became a job. It now runs the job.
+- **Metadata.** 5 failed (venue `extra_forbidden` 422, lookup 404), then passed. The wider scope failed twice with `409 LOOKUP_UNAVAILABLE`, then passed.
+- **Frontend.**
+  - Library: 7 failed (`Unable to find role="button" and name "Actions for …"`, the select checkboxes, the note).
+  - Workspace: 3 failed (no POST to `/metadata-lookup`, missing helper text, missing header actions).
+  - Activity: 2 failed (`Cancelled`, `Deleted PDF cleanup`).
+  - The venue editor and redirect tests passed on their first run because the library tests had driven that code already.
+- **My mistakes.**
+  - One library assertion matched the sidebar's link too, so it was scoped to `main`.
+  - A test array type failed `tsc`.
+- **Test-after.** The 404 coverage for summaries, retrieval, chats, PATCH, lookup and download passed at once; that behaviour already existed.
+
+**Visual check.** I seeded the test database, served it with an API container on 8095 and Vite on 5195, and screenshotted it with the project's Playwright library (light, dark, 390 px). That found:
+- a tick instead of a dash for a partial selection;
+- "1 PDF, with their text";
+- a 403 `ORIGIN_NOT_ALLOWED` for my dev-server origin, which was environment-only and solved by passing `CORS_ORIGINS` to that container.
+
+**Process error.** `ruff format app` reformatted `development_worker.py` again; I restored it.
+
+**Verification.** Backend 1109 passed in 242.51 s with Ruff clean (baseline 1080). Frontend `npm run check`: 611 tests in 79 files (baseline 599 in 77). `npm run build` passed with the existing chunk-size warning. `generated.ts` was regenerated from the flag-on `app.openapi()`.
+
+**Not verified:**
+- The Playwright spec `e2e/library-manage.spec.ts` was not run; it was only type-checked on its own.
+- No live provider calls were made.
+- Real concurrent races were not run; the skip-locked path is simulated by deleting the paper with plain SQL.
+- Clicking a saved citation to a deleted paper opens the reader's error notice rather than a page; its excerpt still reads.
