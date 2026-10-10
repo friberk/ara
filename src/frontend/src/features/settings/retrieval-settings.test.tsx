@@ -6,8 +6,8 @@ import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
 const luna: Model = { kind: 'chat', key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low'], supports_streaming: true, supports_structured_output: true, context_window: 1_050_000 }
-const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13 }
-const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02 }
+const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13, description: 'OpenAI’s most capable search model, in English and other languages.' }
+const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02, description: 'A smaller model: cheaper to index, less capable than the large one.' }
 const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'unavailable', unavailable_reason: 'Download Qwen3 Embedding 4B in Settings', local_model_key: 'qwen3-embedding-4b', price_per_million: 0 }
 const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: 'qwen3-embedding:8b', display_name: 'Qwen3 Embedding 8B', dimensions: 4096, unavailable_reason: 'Download Qwen3 Embedding 8B in Settings', local_model_key: 'qwen3-embedding-8b' }
 const profiles = { items: [openai, small, qwen4b, qwen8b], default_profile: openai.key }
@@ -26,8 +26,8 @@ test('Given four search index models with OpenAI large saved, Then Library and s
   const choices = await within(section).findByRole('radiogroup', { name: 'Search index model' })
   expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-3-large', 'openai-3-small', 'qwen3-embed-4b', 'qwen3-embed-8b'])
   expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toBeChecked()
-  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toHaveAccessibleDescription(/Indexing costs \$0\.13 per million tokens\./)
-  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toHaveAccessibleDescription(/Indexing costs \$0\.02 per million tokens\./)
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toHaveAccessibleDescription('OpenAI’s most capable search model, in English and other languages. Indexing costs $0.13 per million tokens.')
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toHaveAccessibleDescription('A smaller model: cheaper to index, less capable than the large one. Indexing costs $0.02 per million tokens.')
   expect(within(section).getByText(/switching rebuilds the index for every paper in the background/)).toBeVisible()
   expect(within(section).queryByText(/embed/i, { selector: 'p' })).not.toBeInTheDocument()
 })
@@ -85,8 +85,8 @@ test('Given an empty library, When a new model is chosen, Then the dialog says t
 })
 
 // Reranker profiles come from the server's catalog (ARA-074); the UI renders whatever it lists.
-const hostedRerank: Reranker = { key: 'openai-gpt-6-luna', provider: 'openai', model_id: 'gpt-6-luna', display_name: 'OpenAI GPT-6 Luna', status: 'available', unavailable_reason: null, local_model_key: null, candidates: 40 }
-const localRerank: Reranker = { key: 'qwen3-rerank-0.6b', provider: 'ollama', model_id: 'dengcao/Qwen3-Reranker-0.6B:F16', display_name: 'Qwen3 Reranker 0.6B', status: 'unavailable', unavailable_reason: 'Download Qwen3 Reranker 0.6B in Settings.', local_model_key: 'qwen3-reranker-0.6b', candidates: 15 }
+const hostedRerank: Reranker = { key: 'openai-gpt-6-luna', provider: 'openai', model_id: 'gpt-6-luna', display_name: 'OpenAI GPT-6 Luna', status: 'available', unavailable_reason: null, local_model_key: null, candidates: 40, price_per_million: 0.1, description: 'Adds about 2 to 3 seconds and $0.004 to each question.' }
+const localRerank: Reranker = { key: 'qwen3-rerank-0.6b', provider: 'ollama', model_id: 'dengcao/Qwen3-Reranker-0.6B:F16', display_name: 'Qwen3 Reranker 0.6B', status: 'unavailable', unavailable_reason: 'Download Qwen3 Reranker 0.6B in Settings.', local_model_key: 'qwen3-reranker-0.6b', candidates: 15, price_per_million: 0, description: 'Private, but adds about 10 seconds to each question.' }
 const withRerankers = { ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank, localRerank] } }
 const hostedOnly = { ...base, 'GET /retrieval/profiles': { ...profiles, rerankers: [hostedRerank] } }
 
@@ -96,8 +96,8 @@ test('Given one hosted reranker turned on, Then Reranking is a switch that says 
   const section = await screen.findByRole('region', { name: 'Reranking' })
   const toggle = await within(section).findByRole('switch', { name: 'Reranking' })
   expect(toggle).toBeChecked()
-  expect(within(section).getByText(/a second model reads the 40 best matches and puts the passages that answer your question first/)).toBeVisible()
-  expect(within(section).getByText('Uses OpenAI GPT-6 Luna.')).toBeVisible()
+  expect(within(section).getByText('After search, a second model reads the 40 best matches and puts the passages that answer your question first, so answers cite better evidence.')).toBeVisible()
+  expect(within(section).getByText('Uses OpenAI GPT-6 Luna. Adds about 2 to 3 seconds and $0.004 to each question.')).toBeVisible()
   expect(within(section).queryByRole('radiogroup')).not.toBeInTheDocument()
   expect(within(section).queryByText('gpt-6-luna')).not.toBeInTheDocument()
 })
@@ -130,7 +130,8 @@ test('Given open models with a local reranker that is not installed, Then a list
   expect(within(choices).getByRole('radio', { name: 'OpenAI GPT-6 Luna' })).toBeChecked()
   const local = within(choices).getByRole('radio', { name: 'Qwen3 Reranker 0.6B' })
   expect(local).toBeDisabled()
-  expect(local).toHaveAccessibleDescription(/Download Qwen3 Reranker 0\.6B in Settings\./)
+  expect(local).toHaveAccessibleDescription(/^Private, but adds about 10 seconds to each question\. Download Qwen3 Reranker 0\.6B in Settings\./)
+  expect(within(choices).getByRole('radio', { name: 'OpenAI GPT-6 Luna' })).toHaveAccessibleDescription('Adds about 2 to 3 seconds and $0.004 to each question.')
   expect(within(local.closest('label') as HTMLElement).getByRole('link', { name: 'Go to Open models' })).toHaveAttribute('href', '/?settings=open-models#local-models')
 })
 

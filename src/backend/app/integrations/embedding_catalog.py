@@ -19,6 +19,8 @@ class EmbeddingProfile:
     query_instruction: str | None = None
     price_per_million: Decimal = Decimal("0")
     local_model_key: str | None = None
+    # What choosing it means, in one plain sentence from its OpenAI model page (ARA-109).
+    description: str | None = None
 
 
 # Qwen3 Embedding is instruction-aware on queries only; documents are embedded bare.
@@ -40,6 +42,9 @@ PROFILES: dict[str, EmbeddingProfile] = {
             8191,
             64,
             price_per_million=Decimal("0.13"),
+            # Tagline read 2026-10-10: "most capable embedding model for both english and
+            # non-english tasks".
+            description="OpenAI’s most capable search model, in English and other languages.",
         ),
         EmbeddingProfile(
             "openai-3-small",
@@ -50,6 +55,8 @@ PROFILES: dict[str, EmbeddingProfile] = {
             8191,
             64,
             price_per_million=Decimal("0.02"),
+            # Tagline read 2026-10-10: "small embedding model"; the large one is "most capable".
+            description="A smaller model: cheaper to index, less capable than the large one.",
         ),
         EmbeddingProfile(
             "qwen3-embed-4b",

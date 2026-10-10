@@ -20,6 +20,8 @@ class EmbeddingProfileOut(BaseModel):
     local_model_key: str | None = None
     # US dollars per million input tokens; 0 for local models.
     price_per_million: float = 0
+    # What choosing it means, for hosted models (ARA-109).
+    description: str | None = None
 
 
 class RerankerOut(BaseModel):
@@ -33,6 +35,9 @@ class RerankerOut(BaseModel):
     unavailable_reason: str | None = None
     local_model_key: str | None = None
     candidates: int
+    # US dollars per million input tokens, and what choosing it adds to each question (ARA-109).
+    price_per_million: float = 0
+    description: str | None = None
 
 
 class EmbeddingProfilePage(BaseModel):

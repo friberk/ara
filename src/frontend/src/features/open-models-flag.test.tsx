@@ -21,8 +21,8 @@ const local: Model = { ...luna, key: 'ifm-k2-horizon-7b', provider: 'ollama', mo
 const savedLocal: Model = { ...local, status: 'unavailable', installation: null, unavailable_code: 'OPEN_MODELS_DISABLED', unavailable_reason: disabled }
 const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13 }
 const qwen: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'available', unavailable_reason: null, local_model_key: 'qwen3-embedding-4b', price_per_million: 0 }
-const hostedReranker: Reranker = { key: 'openai-gpt-6-luna', provider: 'openai', model_id: 'gpt-6-luna', display_name: 'OpenAI GPT-6 Luna', status: 'available', unavailable_reason: null, local_model_key: null, candidates: 40 }
-const localReranker: Reranker = { key: 'qwen3-rerank-0.6b', provider: 'ollama', model_id: 'fanyx/Qwen3-Reranker-0.6B-Q8_0', display_name: 'Qwen3 Reranker 0.6B (local)', status: 'available', unavailable_reason: null, local_model_key: 'qwen3-reranker-0.6b', candidates: 12 }
+const hostedReranker: Reranker = { key: 'openai-gpt-6-luna', provider: 'openai', model_id: 'gpt-6-luna', display_name: 'OpenAI GPT-6 Luna', status: 'available', unavailable_reason: null, local_model_key: null, candidates: 40, price_per_million: 0.1, description: 'Adds about 2 to 3 seconds and $0.004 to each question.' }
+const localReranker: Reranker = { key: 'qwen3-rerank-0.6b', provider: 'ollama', model_id: 'fanyx/Qwen3-Reranker-0.6B-Q8_0', display_name: 'Qwen3 Reranker 0.6B (local)', status: 'available', unavailable_reason: null, local_model_key: 'qwen3-reranker-0.6b', candidates: 12, price_per_million: 0, description: 'Private, but adds about 10 seconds to each question.' }
 const hostedDefaults = { default_model: luna.key, reasoning_effort: 'low' }
 afterEach(() => vi.unstubAllGlobals())
 

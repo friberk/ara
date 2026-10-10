@@ -1242,6 +1242,8 @@ export interface components {
              * @default 0
              */
             price_per_million: number;
+            /** Description */
+            description?: string | null;
         };
         /** EmbeddingProfilePage */
         EmbeddingProfilePage: {
@@ -1797,6 +1799,13 @@ export interface components {
             local_model_key?: string | null;
             /** Candidates */
             candidates: number;
+            /**
+             * Price Per Million
+             * @default 0
+             */
+            price_per_million: number;
+            /** Description */
+            description?: string | null;
         };
         /** RetrievalIndexOut */
         RetrievalIndexOut: {

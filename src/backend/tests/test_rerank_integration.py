@@ -392,6 +392,8 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
         "unavailable_reason": "Add an OpenAI API key on the server.",
         "local_model_key": None,
         "candidates": HOSTED.candidates,
+        "price_per_million": float(HOSTED.price_per_million_input),
+        "description": HOSTED.description,
     }
     assert items[LOCAL] == {
         "key": LOCAL,
@@ -402,6 +404,8 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
         "unavailable_reason": "Download Qwen3 Reranker 0.6B in Settings.",
         "local_model_key": "qwen3-reranker-0.6b",
         "candidates": ON_DEVICE.candidates,
+        "price_per_million": 0.0,
+        "description": ON_DEVICE.description,
     }
 
 

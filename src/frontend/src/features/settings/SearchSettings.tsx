@@ -77,6 +77,7 @@ function SearchIndex({ profiles, saved, placeholder }: { profiles?: EmbeddingPro
           const frozen = !openModels && profile.provider === 'ollama'
           return (
             <ChoiceRow key={profile.key} name={id} value={profile.key} checked={chosen === profile.key} disabled={frozen} onSelect={() => { if (profile.key !== saved.embedding_profile) { setPending(profile); setConfirming(true) } }} title={profile.display_name}>
+              {profile.description && <span>{profile.description}</span>}{' '}
               {!frozen && <span>{profile.price_per_million > 0 ? `Indexing costs $${profile.price_per_million} per million tokens.` : 'Runs on this server, with no per-token cost.'}</span>}{' '}
               {/* Still selectable: the server accepts it and papers keep their current index until the model is ready. */}
               {profile.status === 'unavailable' && <UnavailableReason profile={profile} />}
@@ -90,12 +91,6 @@ function SearchIndex({ profiles, saved, placeholder }: { profiles?: EmbeddingPro
   )
 }
 
-// What each kind of reranker costs, by provider; the models themselves come from the server's catalog.
-const tradeoffs: Record<Reranker['provider'], string> = {
-  openai: 'Fast, with a small cost per question.',
-  ollama: 'Private. Adds about 10 seconds to each question.',
-}
-
 /** Reranking is on or off; with more than one reranker to choose from, a list says which one. Saves at once. */
 function Reranking({ rerankers, saved }: { rerankers: Reranker[]; saved: RetrievalSettings }) {
   const id = useId()
@@ -107,6 +102,8 @@ function Reranking({ rerankers, saved }: { rerankers: Reranker[]; saved: Retriev
   const active = listed.find((reranker) => reranker.key === current)
   const reads = (active ?? usable)?.candidates
   const choose = (reranker: string | null) => save.mutate({ embedding_profile: saved.embedding_profile, reranker })
+  // What a reranker adds to each question comes from the catalog; a frozen local one says nothing while open models are off.
+  const note = (reranker: Reranker) => (openModels || reranker.provider !== 'ollama' ? reranker.description : null)
   return (
     <SettingsSection
       headingId={id}
@@ -114,9 +111,9 @@ function Reranking({ rerankers, saved }: { rerankers: Reranker[]; saved: Retriev
       status={save.isSuccess ? 'Saved' : ''}
       description={(
         <>
-          <p>After search, a second model reads the {reads ? `${reads} ` : ''}best matches and puts the passages that answer your question first. Answers cite better evidence, but each question takes a few seconds longer and costs a little more.</p>
+          <p>After search, a second model reads the {reads ? `${reads} ` : ''}best matches and puts the passages that answer your question first, so answers cite better evidence.</p>
           {!listed.length && <p>This server offers no reranking model.</p>}
-          {current !== null && listed.length === 1 && active?.status === 'available' && <p>Uses {active.display_name}.</p>}
+          {current !== null && listed.length === 1 && active?.status === 'available' && <p>{[`Uses ${active.display_name}.`, note(active)].filter(Boolean).join(' ')}</p>}
         </>
       )}
       control={<Switch aria-labelledby={id} checked={current !== null} disabled={!usable && current === null} onCheckedChange={(on) => choose(on ? usable?.key ?? null : null)} className="mt-0.5" />}
@@ -125,7 +122,7 @@ function Reranking({ rerankers, saved }: { rerankers: Reranker[]; saved: Retriev
         <ChoiceList label="Reranking model">
           {listed.map((reranker) => (
             <ChoiceRow key={reranker.key} name={id} value={reranker.key} checked={current === reranker.key} disabled={reranker.status !== 'available'} onSelect={() => choose(reranker.key)} title={reranker.display_name}>
-              {(openModels || reranker.provider !== 'ollama') && <span>{tradeoffs[reranker.provider]}</span>}{' '}
+              {note(reranker) && <span>{note(reranker)}</span>}{' '}
               {reranker.status !== 'available' && <UnavailableReason profile={reranker} />}
             </ChoiceRow>
           ))}
