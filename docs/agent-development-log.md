@@ -1954,6 +1954,8 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
   - The impeccable finish reviewer returned **fix** with seven items:
     - Fixed: reranking now says its model is "separate from the model that answers"; the context figure says "tokens"; the Input, Output and Context figures sit in fixed columns; the rebuild estimate rounds tokens to two figures; DESIGN.md was updated by the impeccable documenter.
     - Declined, with reasons: renaming the embedding models' catalog display names is a cross-cutting change, left for the lead; a "pick this when" sentence per model would be an unsourced claim beyond OpenAI's own line.
+  - A fresh verdict pass scored six fixes resolved and the phone alignment partial, because rows wrapped differently. On a phone, Context now takes its own line in every row (`c980bd3`), and the last verdict pass scored it resolved: **ship**. After that, `npm run check` again passed 763 tests and the build passed.
+  - The first resumed verdict request never returned, so the verdict passes ran as fresh reviewers given the fix list.
 - **Real browser.** On the dev server, in Chromium:
   - From `/library`, the sidebar Settings opened `/library?settings=`.
   - Esc returned to `/library` with focus on Settings.
