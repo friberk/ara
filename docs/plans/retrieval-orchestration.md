@@ -36,6 +36,19 @@ E  = W − F − H                               (evidence ceiling)
 9. **Retry once.** If the model reports the evidence insufficient, retry with a lower prune bar, about twice the cap and section expansion, up to E. This adapts Self-Route (Li et al., EMNLP 2024 Industry), which escalates only when the model judges the evidence insufficient. Here the escalation is wider retrieval, not whole documents.
 10. **Observable.** Each answer records passage count, evidence tokens, pruned count, scores and whether it retried. "Details" and the context meter show them.
 
+## Several papers as built (ARA-088)
+
+ARA-088 implements steps 1, 2, 3, 6, 7 and the grouping of step 8 for several papers. Pruning (4), the 24-passage first pass (5), strongest-first-and-last order (8), the retry (9) and section summaries stay with ARA-094; packing keeps today's cap of 16 passages until then.
+
+- **Scope.** A chat holds up to 5 papers (the user's default for ARA-088), each pinned to the PDF that was active when it joined.
+- **Search.** One keyword and one vector search span the pinned PDFs, filtered per document, and each returns every paper's own top 30 (the existing `TOP_K`), so one long paper cannot fill the candidate list (per-document metadata filtering, LlamaIndex multi-document pattern). The any-word keyword fallback runs per paper. One query embedding per text serves every paper, since the library uses one embedding model (ARA-091); a paper without a ready index of that model is searched by keywords and the note says so.
+- **Sub-questions (step 1).** With several papers the planner runs even on a first question. For a comparison it returns one standalone sub-question per paper it needs (LlamaIndex Sub-Question Query Engine); each is searched only within its paper and fused with the shared searches. The planner's output allowance grows by 80 tokens per paper, twice a one-sentence question in its JSON object. The synthesis is the one answer call over the grouped evidence.
+- **Rerank head (step 3).** The reranker scores only its first candidates (40 for OpenAI Decisions), so the papers take turns in that head. Without reranking, fusion order compares passages across papers.
+- **Floors and routing (step 6).** Papers are taken in relevance order (their best candidate's rank). Each gets its first 2 candidates that fit, with its header; the first paper whose floor does not fit, and every less relevant paper, is left out, and the note says how many papers answered. The most relevant paper always keeps what fits. Relevance then shares the rest among the answering papers, then same-section neighbours (step 7) while the budget allows.
+- **Grouping (step 8).** Passages are grouped by paper in the chat's order under a short header, `Paper N: title (first author et al., year)`, with titles cut at 150 characters and a comparison's sub-question cut at 300; within a paper they follow page order. The system prompt lists the papers with the same bounded fields and asks a comparison to cite each paper's own passages. Paper summaries never enter prompts.
+- **Small windows.** Map-reduce per paper is not built: multi-paper chats refuse local models while open models are frozen (ARA-090), and hosted budgets fit five floors.
+- **Not measured.** As above, these follow published practice and the design, not measurements on the user's papers.
+
 ## Window sizes (all derived)
 
 | | Local 16K | 128K | 1M (GPT-5.6) |

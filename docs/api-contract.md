@@ -9,8 +9,8 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - UploadAccepted: paper_id, document_id, job_id.
 - JobStatus: id, kind, state (`queued`/`processing`/`paused`/`completed`/`failed`), stage, progress (0–100), attempts, generation, result (nullable), error_code/error_message (nullable), computed error (nullable safe code/message), available_at, created_at, updated_at, paper_id/paper_title (nullable), model_key/completed_bytes/total_bytes (nullable).
 - Summary: id, paper_id, document_id, model, reasoning_effort, content (Markdown string), citations (Citation[]), created_at.
-- Citation: chunk_id, document_id, page (1-based physical PDF page), excerpt. The source endpoint returns the complete stored chunk, bounded by ingestion chunk limits, so evidence later in a passage remains visible.
-- Chat: id, paper_id, document_id, title, created_at.
+- Citation: chunk_id, document_id, paper_id (nullable; filled when chat history is read, ARA-088), page (1-based physical PDF page), excerpt. The source endpoint returns the complete stored chunk, bounded by ingestion chunk limits, so evidence later in a passage remains visible.
+- Chat: id, paper_id (the first included paper; the chat's URL is `/papers/{paper_id}/chats/{id}`), papers (IncludedPaper[] by ordinal), title, title_source, created_at. IncludedPaper: paper_id, document_id (the PDF pinned when the paper joined), title, first_author, year, added_at (ARA-088, below).
 - Message: id, role (`user`/`assistant`), content, state (`completed`/`processing`/`interrupted`/`failed`), model (nullable), reasoning_effort (nullable), citations (Citation[]), created_at.
 - Model: key (catalog key), provider, model_id (runtime/provider reference), display_name, status (`configured`/`available`/`unavailable`), reasoning_efforts (string[]), reasoning_aliases (optional string-to-string mapping, defaults to `{}`), thinking (nullable typed native controls), supports_streaming, supports_structured_output, context_window, unavailable_reason/unavailable_code (nullable), installation (nullable Installation; hosted models use null).
 - Settings: default_model (catalog key), reasoning_effort.
@@ -24,7 +24,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - POST /documents multipart `{file,paper_id?,request_id}` → UploadAccepted.
 - GET /jobs → `{items:Job[]}`; GET /jobs/{id} → Job; POST /jobs/{id}/retry → Job.
 - POST /papers/{id}/summaries `{model,reasoning_effort,request_id}` → `{job_id,summary_id?}`; GET same → `{items:Summary[],blocked?}` (ARA-084, below).
-- POST /papers/{id}/chats `{title?}` → Chat; GET same → `{items:Chat[]}`.
+- POST /chats `{paper_ids, title?}` → 201 Chat; GET /papers/{id}/chats → `{items:Chat[]}` (chats that include the paper); GET /chats/{id} → ChatSummary. Papers are added and removed at /chats/{id}/papers (ARA-088, below).
 - GET /chats/{id}/messages → `{items:Message[]}`.
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
 - GET /features → `Features {open_models}`; GET /models → `{items:Model[]}`; GET/PUT /settings → Settings. Open models are experimental and off by default (ARA-090, below).
@@ -66,9 +66,9 @@ All additions are backward compatible. They support the chat-centred sidebar, th
   - Replayed request UUIDs never retitle.
   - An explicit title at creation, or a later rename, sets `manual`, and a manual title is never overwritten.
 - **GET /chats?paper_id=&limit=30&offset=** returns `{items: ChatSummary[]}`.
-  - `ChatSummary` is `Chat` plus `paper_title` (nullable), `last_activity_at` (latest message time, else `created_at`), `message_count` and `last_question_preview` (latest user message, at most 140 characters, nullable).
+  - `ChatSummary` is `Chat` plus `last_activity_at` (latest message time, else `created_at`), `message_count` and `last_question_preview` (latest user message, at most 140 characters, nullable). Its paper titles are in `papers` (ARA-088 removed `paper_title` and `document_id`).
   - Ordered by `last_activity_at` desc, then id. `limit` is 1–100, default 30.
-  - Unknown `paper_id` → empty list.
+  - `paper_id` lists every chat that includes the paper. Unknown `paper_id` → empty list.
 - **PATCH /chats/{id}** `{title}` (trimmed, 1–200 characters, not blank, extra fields forbidden) → Chat with `title_source=manual`.
   - Missing chat → 404 `CHAT_NOT_FOUND`.
 - **DELETE /chats/{id}** → 204, removing the chat and its messages.
@@ -276,7 +276,7 @@ A malformed packet gives no clues and never an error. The LLM metadata step keep
 - `GET /papers/{placeholder}` answers with the paper an attached or replaced upload joined. That paper's `id` differs, so the client redirects.
 
 `POST /uploads/{placeholder}/match {decision: "attach"|"discard"}`:
-- **`attach`** (Replace or Attach) moves the document to the library paper as its active PDF; earlier documents stay its versions. It also moves the placeholder's chats and summaries, deletes the placeholder and returns the library `Paper` (200).
+- **`attach`** (Replace or Attach) moves the document to the library paper as its active PDF; earlier documents stay its versions. It also moves the placeholder's chats (their `chat_papers` links; a chat that already includes the library paper keeps that paper's pinned PDF) and summaries, deletes the placeholder and returns the library `Paper` (200).
   - An unread document gets a fresh ingest job on that paper.
   - A ready document is indexed for that paper, and the automatic summary is queued once.
 - **`discard`** deletes the placeholder, its document (by cascade) and the stored original, and returns 204.
@@ -295,3 +295,15 @@ No migration. Supersedes the ARA-019 multi-host downloader.
 - `POST /papers/{id}/retrieve-fulltext` returns 409 `OPENALEX_API_KEY_REQUIRED` without a key.
 - New acquisition records are `{method: "provider_download", provider: "openalex", source: "content", work_id, retrieved_at, retrieval_job_id}`. Earlier records, with candidate URLs, versions and licenses, stay readable.
 - `FULLTEXT_ALLOWED_HOSTS` is removed; a stale value in `.env` is ignored.
+
+## Chats over several papers (ARA-088)
+
+Migration `0010_chat_papers` (head; `SCHEMA_REVISION`) replaces `chat_sessions.paper_id` and `document_id` with `chat_papers (chat_id, paper_id, document_id, ordinal, added_at)`: primary key `(chat_id, paper_id)`, unique `(chat_id, ordinal)`, chat and paper foreign keys `ON DELETE CASCADE`, and an index on each of `paper_id` and `document_id`. Every existing chat becomes a one-paper chat at ordinal 0 with the PDF it already used; messages and citation snapshots are not touched. The trigger `chat_papers_last_paper` deletes a chat when its last link is deleted, so deleting a paper still deletes the chats that were only about it, as the old cascade did. The downgrade restores both columns from each chat's lowest ordinal.
+
+- **`POST /chats`** `{paper_ids: UUID[] (1–5, distinct), title?}` → 201 `Chat`. Each paper pins its active PDF, which must be ready. Unknown paper → 404 `PAPER_NOT_FOUND`; a paper without a ready PDF → 409 `PAPER_NOT_READY` naming it; an empty, repeated or longer list → 422. Nothing is created on refusal. `POST /papers/{id}/chats` is removed.
+- **`POST /chats/{id}/papers`** `{paper_id}` → 200 `Chat`. The paper is appended with the PDF that is active at that moment; a later upload does not change what the chat reads. Adding an included paper changes nothing. Missing chat → 404 `CHAT_NOT_FOUND`; unknown paper → 404 `PAPER_NOT_FOUND`; a sixth paper → 409 `CHAT_PAPER_LIMIT`; no ready PDF → 409 `PAPER_NOT_READY`.
+- **`DELETE /chats/{id}/papers/{paper_id}`** → 200 `Chat`, whose `paper_id` is the chat's new first paper; the client moves to that paper's chat URL when the paper in its URL was removed. A paper not in the chat → 404 `CHAT_PAPER_NOT_FOUND`; the last paper → 409 `LAST_CHAT_PAPER`. Earlier answers keep their citations; `GET /chats/{id}/messages` names each cited document's paper in `Citation.paper_id`, including papers since removed.
+- **`GET /chats/{id}`** → `ChatSummary`, so a link from a paper the chat no longer covers can find its first paper. Missing → 404 `CHAT_NOT_FOUND`.
+- **Answers.** Retrieval searches every included paper's pinned PDF: one keyword and one vector search filtered per document, each paper's top 30, fused with RRF. With several papers the planner also runs on a first question and may return `sub_questions` (`{paper, question}`, paper numbered from 1 by ordinal), each searched only within its paper; `Message.retrieval.sub_questions` lists them. The reranker's head takes the papers in turns. Packing gives every paper a floor of two passages before relevance shares the rest; when not every floor fits, the most relevant papers answer and `retrieval.note` says so. Evidence is grouped under one `Paper N: title (first author et al., year)` header per paper, with its sub-question cut to 300 characters. The trace records `sub_questions`, per-list `paper` numbers and `papers` (passages per document). Citation validation accepts any pinned PDF of the chat and still rejects any other document (`UNGROUNDED_OUTPUT`).
+- **Local models.** A question to a local model in a chat over several papers → 409 `MULTI_PAPER_LOCAL` ("Chats over several papers need a hosted model…"); a replay still returns its stored answer. Open models are frozen (ARA-090).
+
