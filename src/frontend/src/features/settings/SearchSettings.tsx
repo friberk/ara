@@ -12,9 +12,11 @@ import { ChoiceList, ChoiceRow, SettingsSection } from './parts'
 
 function papers(count: number) { return count === 1 ? 'the one paper' : `all ${count.toLocaleString()} papers` }
 // An estimate reads as one: two significant figures, so 52,964 tokens is "about 53,000".
-function roughly(count: number) { return Number(count.toPrecision(2)).toLocaleString() }
-// OpenAI's rule of thumb for English text: a token is about three-quarters of a word.
-function words(tokens: number) { return roughly(tokens * 0.75) }
+function rounded(count: number) { return Number(count.toPrecision(2)) }
+function roughly(count: number) { return rounded(count).toLocaleString() }
+// OpenAI's rule of thumb for English text: a token is about three-quarters of a word. Words come from the rounded
+// token count shown beside them, so the two figures agree.
+function words(tokens: number) { return roughly(rounded(tokens) * 0.75) }
 /** A search index choice by its catalog label (its trade-off), else by the model's own name. */
 function choiceName(profile: EmbeddingProfile) { return profile.label ?? profile.display_name }
 function cost(estimate: ReindexEstimate) {
