@@ -1,0 +1,23 @@
+# Demo site (ARA-107). SITE_ADDRESS is the public hostname; Caddy obtains its certificate.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Uploads are capped at 25 MiB by the api; leave room for the multipart envelope.
+	request_body {
+		max_size 30MB
+	}
+
+	# Prefixes announced by Purdue University's AS17 (RIPEstat, 2026-10-10), which campus and
+	# VPN clients use, plus loopback for health checks on the server.
+	@outside_purdue not remote_ip 128.10.0.0/16 128.46.0.0/16 128.210.0.0/16 128.211.0.0/16 192.5.40.0/24 192.5.48.0/24 192.5.91.0/24 192.5.102.0/24 192.12.63.0/24 192.31.0.0/24 2607:ac80::/32 2001:18e8:800::/44 127.0.0.1/8 ::1
+
+	# route keeps this order: refuse, then proxy, then the single-page app.
+	route {
+		respond @outside_purdue "This demo is only available on the Purdue network or Purdue VPN." 403
+		reverse_proxy /api/* 127.0.0.1:8000
+		reverse_proxy /health/* 127.0.0.1:8000
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,7 +1,15 @@
 name: Verify research assistant
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+# A newer run on the same ref replaces an older one; main is never cancelled mid-deploy.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -28,8 +36,10 @@ jobs:
           npm ci
           npm run check
           npm run build
-      - name: Create synthetic paper fixture
-        run: uv run --with pymupdf==1.26.7 python tests/fixtures/create_pdf.py /tmp/ara-fixtures/research.pdf
+      - name: Create synthetic paper fixtures
+        run: |
+          uv run --with pymupdf==1.26.7 python tests/fixtures/create_pdf.py /tmp/ara-fixtures/research.pdf
+          uv run --with pymupdf==1.26.7 python tests/fixtures/create_pdf.py --second /tmp/ara-fixtures/second.pdf
       - name: Start deterministic browser stack
         run: docker compose -p ara-e2e -f compose.yaml -f compose.test.yaml -f compose.e2e.yaml up --build -d --wait
       - name: Check generated API contract
@@ -55,3 +65,32 @@ jobs:
             src/frontend/test-results
             src/frontend/playwright-report
           retention-days: 7
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Load the deploy key and the server's host key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Ship, rebuild and check health on the server
+        env:
+          DEPLOY_TARGET: ${{ secrets.DEPLOY_TARGET }}
+          SITE_HOST: ${{ vars.SITE_HOST }}
+        run: scripts/deploy.sh "$DEPLOY_TARGET"
+      - name: Clients outside Purdue are refused
+        env:
+          SITE_HOST: ${{ vars.SITE_HOST }}
+        run: test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$SITE_HOST/")" = 403

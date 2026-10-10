@@ -1,0 +1,48 @@
+# Demo deployment (ARA-107): image code without reload, and Caddy in front.
+# The server's .env sets COMPOSE_FILE=compose.yaml:compose.deploy.yaml and SITE_ADDRESS.
+# Commands call /opt/venv tools directly: `uv run` would install the project at runtime.
+services:
+  migrate:
+    volumes: !reset []
+    command: ["alembic", "upgrade", "head"]
+
+  storage-init:
+    volumes: !reset []
+    command: ["python", "-m", "app.core.storage_init"]
+
+  api:
+    volumes: !reset []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    volumes: !reset []
+    command: ["dramatiq", "app.jobs.actors", "--queues", "default", "--processes", "1", "--threads", "2"]
+
+  # Caddy serves the built bundle instead of the Vite dev server.
+  frontend:
+    profiles: ["dev"]
+
+  caddy:
+    image: ara-caddy:deploy
+    build:
+      context: .
+      dockerfile: docker/caddy.Dockerfile
+    # Host networking shows Caddy each client's real IPv4 or IPv6 address for the Purdue check;
+    # Docker's IPv6 proxy would otherwise present every IPv6 client as the bridge gateway.
+    network_mode: host
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS in .env}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: 256m
+    cpus: 1
+
+volumes:
+  caddy-data:
+  caddy-config:
