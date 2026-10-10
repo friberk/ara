@@ -22,7 +22,6 @@ from app.repositories.jobs import fence, now, retry_locked
 from app.repositories.papers import identity_locks, replace_authors
 from app.services.deletion import PAPER_DELETED, STOPPED, settle_deleted_locked
 from app.services.metadata import queue_lookup
-from app.services.pdf_removal import settle_removed_locked
 from app.services.upload_match import absorb, find_library_match, has_pdf, hold, note_doi_owner
 from app.services.uploads import MAX_UPLOAD_BYTES
 
@@ -366,10 +365,6 @@ async def run_ingest_job(resources, job_id, generation, lease_token, payload):
         document = await session.get(Document, document_id) if owner in locked else None
         if document is None:
             settle_deleted_locked(job)
-            return
-        if document.removed:
-            # Its PDF was removed while this ran (ARA-097); a chat keeps the emptied row.
-            settle_removed_locked(job)
             return
         attached = None
         if match is not None:

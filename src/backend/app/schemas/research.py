@@ -153,13 +153,15 @@ class DocumentDetail(BaseModel):
 class PdfRemovalPreview(BaseModel):
     """What removing the paper's PDF changes; reading it changes nothing (ARA-097)."""
 
-    # The paper's PDFs: the current one and earlier versions. All are removed.
-    pdfs: int
-    # Summaries of those PDFs; they are deleted.
+    # The paper's PDFs that no chat pins, the current one or earlier versions; they are deleted.
+    deleted_pdfs: int
+    # The paper's PDFs a chat pins; they stay whole, and those chats keep using them.
+    kept_pdfs: int
+    # Summaries of the deleted PDFs; they go with them.
     summaries: int
-    # Chats that use one of those PDFs; they stay readable and take no new questions.
+    # Chats that pin one of the paper's PDFs; they continue as they are.
     chats: list[ChatLink]
-    # Queued or running work on those PDFs; it stops.
+    # Queued or running work on the deleted PDFs; it stops.
     active_jobs: int
     # One of those chats is writing an answer now; removal waits for it (409 CHAT_BUSY).
     answering: bool

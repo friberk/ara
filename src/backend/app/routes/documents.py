@@ -9,7 +9,6 @@ from app.core.errors import AppError
 from app.integrations.storage import read_object
 from app.models.research import Document, DocumentChunk
 from app.schemas.research import Citation, DocumentDetail, UploadAccepted
-from app.services.pdf_removal import pdf_removed_error
 from app.services.uploads import MAX_UPLOAD_BYTES, upload
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -29,12 +28,9 @@ async def upload_pdf(
 
 
 async def stored_document(session, document_id: UUID) -> Document:
-    """A PDF that still has its file; a removed one answers 404 PDF_REMOVED (ARA-097)."""
     document = await session.get(Document, document_id)
     if document is None:
         raise AppError(404, "DOCUMENT_NOT_FOUND", "Document not found.")
-    if document.removed:
-        raise pdf_removed_error()
     return document
 
 
@@ -87,9 +83,6 @@ async def excerpt(document_id: UUID, chunk_id: UUID, request: Request):
             )
         )
         if chunk is None:
-            document = await session.get(Document, document_id)
-            if document is not None and document.removed:
-                raise pdf_removed_error()
             raise AppError(
                 404,
                 "CITATION_NOT_FOUND",

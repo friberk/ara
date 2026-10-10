@@ -106,11 +106,8 @@ async def deletion_preview(session, paper_ids: Sequence[UUID]) -> DeletionPrevie
         )
     ).all()
     found = [paper_id for paper_id, _ in papers]
-    # A PDF already removed from its paper (ARA-097) holds no file or text, so it is not counted.
     documents = (
-        await session.scalars(
-            select(Document.id).where(Document.paper_id.in_(found), ~Document.removed)
-        )
+        await session.scalars(select(Document.id).where(Document.paper_id.in_(found)))
     ).all()
     deleted, updated = await chat_effects(session, found)
     chats = [chat.id for chat in deleted + updated]

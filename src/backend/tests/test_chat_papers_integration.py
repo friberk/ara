@@ -44,8 +44,6 @@ async def test_given_two_ready_papers_when_creating_then_the_chat_covers_both_in
             "first_author": "Ada Researcher",
             "year": 2024,
             "added_at": chat["papers"][0]["added_at"],
-            # Its pinned PDF is still there (ARA-097).
-            "pdf_removed": False,
         }
         assert chat["title_source"] == "default" and "document_id" not in chat
         for paper in (first, second):

@@ -11,7 +11,6 @@ from app.models.research import Document
 from app.repositories.jobs import enqueue, job_statuses, now
 from app.schemas.jobs import CanaryInput, JobPage, JobRetryInput, JobStatus, ModelOperationInput
 from app.services.local_models import transition_job
-from app.services.pdf_removal import PDF_REMOVED
 
 
 def router(development: bool, *, open_models: bool = True) -> APIRouter:
@@ -119,12 +118,6 @@ def router(development: bool, *, open_models: bool = True) -> APIRouter:
                     "NEW_GENERATION_REQUEST_REQUIRED",
                     "Start a new summary request to avoid replaying uncertain paid inference.",
                 )
-            if job.kind == "ingest":
-                removed = await session.get(Document, UUID(job.payload["document_id"]))
-                if removed is not None and removed.removed:
-                    raise AppError(
-                        409, PDF_REMOVED, "This PDF was removed. Upload it again instead."
-                    )
             if job.error_code not in {
                 "JOB_EXECUTION_FAILED",
                 "LEASE_EXPIRED",
