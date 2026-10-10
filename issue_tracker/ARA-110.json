@@ -16,7 +16,8 @@
     "Given the codebase, when this lands, then PaperSummaryDialog and anything only it used are deleted, and README's citation example is updated.",
     "Given a pill in the paper row, when it is hovered or focused, then its corner × is named 'Remove <title> from this chat' (composer pills keep 'Remove <title>'), because it removes the paper from the whole chat rather than a mention from the question. Added after the user's approval: \"OK, add those to ARA-110\".",
     "Given a paper is removed from the chat through its pill, when the removal succeeds, then a toast 'Removed from this chat' offers Undo, and focus moves to the next pill (the previous one, else the pane) so keyboard users are not stranded.",
-    "Given Undo is pressed, when the paper is added back with POST /chats/{id}/papers, then its pill returns; if the re-add fails, then an error toast in plain words says the paper could not be put back in this chat. Known limit: Undo restores the paper's current PDF, not an older pinned version that its removal deleted."
+    "Given Undo is pressed, when the paper is added back with POST /chats/{id}/papers, then its pill returns; if the re-add fails, then an error toast in plain words says the paper could not be put back in this chat. Known limit: Undo restores the paper's current PDF, not an older pinned version that its removal deleted.",
+    "Given the paper row, when the chat column is narrow (desktop panel or 390px phone), then the row stays on one line: row pills cut titles at 16 characters (composer pills keep 28), as many pills show as fit their measured widths, and a '+N more papers' pill counts and opens the rest; at least one pill always shows, and the count follows resizes. Follow-up requested by the lead after seeing the row wrap onto three lines."
   ],
   "test_cases": [
     "Row hidden for one paper; shown with PaperPill for several; +N overflow list.",
@@ -34,9 +35,10 @@
   ],
   "commits": [
     "f70843c",
-    "e17a01c"
+    "e17a01c",
+    "ARA-110b one-line row (branch feat/ara-110b-one-line-row)"
   ],
   "pull_requests": [],
-  "verification": "Red then green with vitest: new tests for apaAuthorDate/sourceLabel/PaperPill/row/overflow/pill click/no dialog/remove label/toast/Undo/focus failed first, then passed. Final npm run check and npm run build results in docs/agent-development-log.md. Screenshots by Playwright against a Vite dev server with route-mocked API in the session scratchpad (ara110/).",
+  "verification": "Red then green with vitest: new tests for apaAuthorDate/sourceLabel/PaperPill/row/overflow/pill click/no dialog/remove label/toast/Undo/focus failed first, then passed. Final npm run check and npm run build results in docs/agent-development-log.md. Screenshots by Playwright against a Vite dev server with route-mocked API in the session scratchpad (ara110/). Follow-up ARA-110b: fitPills, row measured with ResizeObserver; npm run check 93 files 750 tests, build ok; screenshots oneline-*.png.",
   "updated_at": "2026-10-10"
 }
