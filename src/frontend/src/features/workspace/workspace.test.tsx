@@ -17,6 +17,7 @@ vi.mock('./PdfViewer', async () => {
           {highlight?.claim && <p>{`Supporting “${highlight.claim}”`}</p>}
           <p>{`Zoom ${zoom}${navigation ? `, asked for page ${navigation.page}` : ''}`}</p>
           <button type="button" onClick={() => onHighlight('highlighted')}>Report passage found</button>
+          <button type="button" onClick={() => onHighlight('region')}>Report region outlined</button>
           <button type="button" onClick={() => onHighlight('page-only')}>Report passage not found</button>
         </div>
       )
@@ -264,6 +265,16 @@ test('Given a citation, When the reader marks its passage, Then the outcome is a
   await user.click(await screen.findByRole('button', { name: 'Report passage found' }))
   expect(screen.getByText('Highlighted the cited passage on page 2.')).toHaveAttribute('role', 'status')
   expect(screen.queryByText('Couldn’t pinpoint the passage, so showing page 2.')).not.toBeInTheDocument()
+})
+
+test('Given the reader outlines the stored region instead of the text, Then it says so and does not claim a highlight', async () => {
+  mockApi({ 'GET /papers/p1': paper })
+  const { user } = renderApp('/papers/p1')
+  await user.click(await screen.findByRole('button', { name: 'Page 2' }))
+  await user.click(await screen.findByRole('button', { name: 'Report region outlined' }))
+  expect(screen.getByText('Outlined the cited region on page 2.')).toHaveAttribute('role', 'status')
+  expect(screen.getByText('Couldn’t find the exact text, so outlined the cited region on page 2.')).toBeInTheDocument()
+  expect(screen.queryByText('Highlighted the cited passage on page 2.')).not.toBeInTheDocument()
 })
 
 test('Given a chip that names its claim, When it asks for its source, Then the reader receives the claim with the citation', async () => {

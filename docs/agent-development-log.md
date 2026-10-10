@@ -959,3 +959,59 @@ Errors and corrections: the first red run of the rewritten Compose test used `as
 Verification: isolated backend `ara-oapdf-test` passed Ruff and 916 tests in 156.95 s (baseline 941 in 157.33 s; old downloader, discovery and attempt tests deleted, 39 content/lookup tests added). Frontend `npm run check` passed: strict tsc, ESLint and 506 tests in 69 files (25.03 s). `npm run build` passed. Fixture tests passed 25, infrastructure 15, and the OpenAPI contract was regenerated. `e2e/fulltext.spec.ts` was rewritten for content, limit-then-retry, spent allowance, unusable/unsafe links and the 390 px DOI fallback, but not run (shared fixed ports).
 
 Not verified: a live download with the user's key, the real redirect host and status, real 429 headers, per-download cost, and whether `content_urls`/`has_content` ever disagree with the content endpoint. No merge, rebase or push.
+
+## 2026-10-09 — ARA-089 obvious and robust citation highlights
+
+**Scope.** Frontend only, on `feat/ara-089-citation-highlight`, in `citation-region.ts`, `PdfViewer.tsx`, `PdfReader.tsx`, `pdf-viewer.css`, `index.css` and their tests. No backend change.
+
+**Decisions:**
+- **Fallback order** is text match, then the stored boxes, then page-only. The new outcome `'region'` reads "Outlined the cited region on page N." Its visible note says the exact text could not be found.
+- **Box conversion.** I checked the real conventions before writing the unit tests. For PDFs made with PyMuPDF (plain, CropBox, rotated 90/180/270), PyMuPDF block boxes are relative to the CropBox and are NOT rotated with the page. A rotated page therefore needs the rotation applied. Each point goes to PDF user space (`view[0] + x`, `view[3] - y`), then through pdf.js `viewport.convertToViewportPoint`, which handles rotation and offset. The result is stored as percentages of the page.
+- **Percentages mean zoom needs no re-measuring.** The outline is an absolutely positioned child of the page wrapper, so it stays aligned at any zoom.
+- **Context styling.** The earlier test "context lines carry no tint" was a deliberate decision about stripes on the 3,200-character chunk. I kept its intent (no background on context) and replaced the test. Context now gets a thin dotted underline, which is `text-decoration`, not a background.
+- **Strong highlight.** It uses the full `--evidence` tint plus a 2 px inset edge line. The new token `--evidence-edge` (oklch 0.58 0.13 75) measures 4.4:1 on white. Pages stay white paper in both themes, so the token has one value, as `--evidence` does.
+
+**Red → green (observed):**
+- `citation-region.test.ts` (7 tests) first failed with `Failed to resolve import "./citation-region"`. The next run failed with `TypeError: PageViewport is not a constructor`, because pdfjs-dist exports `PageViewport` as a type only. The test now uses a small replica of the scale-1 transform. The replica was checked against the real viewport in a scratch node run. It then went green.
+- `pdf-viewer-css.test.ts`: 4 new or changed tests failed, e.g. `expected '/* PDF reader (ARA-037). Pages stay w…' to match /\[data-citation-region\]…/`. They went green after the CSS and token change.
+- `PdfViewer.test.tsx` region block: 7 of 10 failed, e.g. `expected "vi.fn()" to be called with arguments: [ 'region' ]`. After implementing, 3 still failed, and each was fixed:
+  - `expected '10.000000000000005%' to be '10%'`, fixed by rounding percentages;
+  - a redraw test (`expected <div data-citation-region …> not to be <div …>`), fixed by keying outlines by jump nonce;
+  - `expected "vi.fn()" to be called 1 times, but got 2 times`. This was a test bug: the zoom test passed a new `highlight` object on each render, which restarts the jump. It now passes a stable one.
+- **Test-after.** The `workspace.test.tsx` test for the region copy was written after `PdfReader.tsx` was changed, so it passed immediately. It was not run red.
+
+**Errors and corrections:**
+- `npm run check` failed lint (`react-hooks/set-state-in-effect`) on my first clearing approach. I replaced it by hiding outlines whose nonce differs from the current jump.
+- `sed` with `|` in the replacement failed for the debug patch. I used a Python edit instead.
+- `nohup` could not detach under the harness. I started Vite as a plain background job and killed it at the end.
+
+**Visual verification** (Vite on port 5191, read-only against the user's dev API, Playwright Chromium, light and dark; screenshots are in the scratchpad and not committed):
+- **Highlight.** The strong sentences are a clearly visible amber with an edge line, and the context lines have a dotted underline. Both are readable on dense pages.
+- **Centring.** The passage centre was 0 px from the reader centre after settling on all 12 cold and warm clicks across the 3 papers. It is clamped when the passage is near the very top (page 1: -189 and -319 px). The ticket's claim that the reader scrolls only to the page did not reproduce. `markPage` already centred the first strong mark. What looked wrong in the screenshots was most likely the smooth scroll still moving: the offset reads about -170 to -330 px at 300 ms and 0 by 1.5 s.
+- **Box fallback.** I forced text matching to fail with a local, uncommitted toggle, since reverted. Stored boxes were outlined on pages 1, 2, 3, 7 and 15 of 3 papers, aligned with the text blocks. The paper "Attention Is All You Need" has no boxes on its chat citations (`bboxes: []`, older chunks), so those correctly stayed page-only. The other two papers' chats carry boxes on every citation (15 of 15 and 8 of 8).
+- **Clean and stable.** A second citation cleared the first (marks and outlines). After zooming twice, the outline and marks kept their page percentage (50.82 % and 59.44 % from the left), and the passage stayed in view (about 100 px off-centre).
+- **Real-PDF geometry.** PDFs made with PyMuPDF (plain, cropped, rotated 90/180/270, cropped and rotated) put the pdf.js text baseline inside the converted region in all 6 cases.
+
+**Verification:** `npm run check` passed with 73 files and 551 tests, and `npm run build` passed with the existing over-500 kB warning.
+
+**Open:**
+- No rotated PDF in the app.
+- Cited boxes sprawl across several blocks for a 3,200-character chunk, so the outline shows the whole chunk, not the claim's sentence. Only the first box is centred.
+- A citation spanning pages is text-matched on its first page only.
+
+**Fade-out (user request after the first round: "it stuck forever").**
+- **Behaviour.** A highlight pulses, holds for `HOLD_MS` (4 s), fades for `FADE_MS` (1.5 s), then is removed. The constants are in `highlight-lifetime.ts`.
+  - Marks, context underlines and outlines fade through CSS transitions, driven by `data-citation-fade="out"` on the reader. The transition is declared only in the fade state, so highlights still appear instantly.
+  - Under reduced motion the attribute is never set, and the highlight is removed after the same hold.
+  - At the end of the fade the same clean-up as a new citation runs. The request is marked `expired`, so a text layer redrawn by a zoom cannot bring the highlight back.
+  - A re-click stops the old timers first.
+  - Hovering a mark pauses the countdown, with the time left kept. Leaving resumes it. Arriving during the fade restores full strength and gives about 1 s once the pointer leaves. Outlines let the pointer through, so hovering one is a rectangle test on `pointermove`.
+- **Red first (fake timers).** 11 new `PdfViewer` tests failed on the real assertions: `expected null to be 'out'` and `expected [ …(3) ] to deeply equal []`. The first run before the constants file existed failed with `Failed to resolve import "./highlight-lifetime"`. They went green after the implementation.
+- **CSS.** The fade-state rule test failed first with `expected '' to match /background-color:\s*transparent/`.
+- **Corrections.** The new transparent-background fade rule tripped the older "context has no background" test. I narrowed that regex to "no non-transparent background". The Page stub in the test now takes `width` as a dependency to simulate a zoom redraw.
+- **Test flakiness.** One full `npm run check` under machine load showed 4 failed files (4 tests). I did not capture which. A re-run of the whole suite passed, with 73 files and 564 tests.
+- **Live check** (Vite on port 5191, read-only):
+  - **Hold:** at 2.5 s there were 5 strong and 8 context marks, with the full tint `oklch(0.93 0.13 96 / 0.75)`.
+  - **Fade:** at about 4.8 s the fade state was on, with the tint at about 0.26 alpha.
+  - **After:** at about 7 s no marks remained, and the screenshot shows a clean page except for the PDF's own link boxes.
+  - **Hover:** with the pointer on a mark for 8.8 s the highlight stayed. After the pointer left, the fade began about 3 s later and the highlight was gone by 6.5 s.

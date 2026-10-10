@@ -12,7 +12,8 @@ import type { Citation, Paper } from '@/api/types'
  */
 export type WorkspaceView = 'chat' | 'pdf' | 'details'
 export type SourceRequest = { citation: Citation; claim?: string; nonce: number }
-export type HighlightOutcome = 'highlighted' | 'page-only'
+/** 'region': the text was not found but the stored layout boxes were outlined; 'page-only': neither was possible. */
+export type HighlightOutcome = 'highlighted' | 'region' | 'page-only'
 
 export type WorkspaceContextValue = {
   paper: Paper
@@ -24,7 +25,7 @@ export type WorkspaceContextValue = {
   setReaderTab: (tab: 'pdf' | 'details') => void
   sourceRequest: SourceRequest | null
   showSource: (citation: Citation, claim?: string) => void
-  /** The reader reports whether the excerpt was found in the text layer, so the UI can say so. */
+  /** The reader reports whether the excerpt was found in the text layer (or its boxes outlined), so the UI can say so. */
   highlightOutcome: HighlightOutcome | null
   reportHighlight: (outcome: HighlightOutcome) => void
 }
