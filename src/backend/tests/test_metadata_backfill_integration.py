@@ -215,3 +215,57 @@ async def test_papers_with_nothing_to_refresh_are_left_alone(resources):
     assert await backfill(resources) == 0
     async with resources.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(BackgroundJob)) == 0
+
+
+async def test_startup_refreshes_each_existing_paper_once_and_fixes_a_junk_title(
+    resources, monkeypatch
+):
+    """Given a saved paper without a venue whose title the user edited, and an upload still
+    titled `paper.dvi`, when the API starts, then exactly one refresh is queued for each, spaced
+    out for the catalogs, and a second start queues nothing. Run against the fixture catalog,
+    the saved paper gains its venue and keeps its edited title, and the upload's lookup matches
+    by arXiv ID and ends with the record's title, venue and authors."""
+    from app.services.reindex import prepare_search
+
+    saved = await saved_before_venues(resources)
+    upload, parsed = await read_before_title_fixes(resources, monkeypatch)
+
+    await prepare_search(resources)
+    jobs = await metadata_jobs(resources)
+    assert sorted(job.payload["paper_id"] for job in jobs) == sorted([str(saved), str(upload)])
+    assert [job.payload["refresh"] for job in jobs] == ["backfill", "backfill"]
+    assert jobs[1].available_at - jobs[0].available_at >= timedelta(seconds=2)
+    await prepare_search(resources)
+    assert len(await metadata_jobs(resources)) == 2
+
+    upload_work = openalex_work(
+        work_id="W2900000001",
+        title=TITLE,
+        doi="10.48550/arxiv.1706.03762",
+        authors=("Seunghun Han", "Wook Shin"),
+        venue="USENIX Security Symposium",
+        year=2018,
+    )
+
+    def catalog(request):
+        if request.url.path == "/works/W4224987405":
+            return httpx.Response(200, json=openalex_work())
+        if "10.48550/arxiv.1706.03762" in request.url.params.get("filter", ""):
+            return httpx.Response(200, json={"results": [upload_work]})
+        return httpx.Response(200, json=NO_MATCH)
+
+    requests = []
+    await resources.http.aclose()
+    use(resources, providers(requests, openalex=catalog))
+    assert (await run_lookup(resources, saved)).result["matched_by"] == "record"
+    assert (await run_lookup(resources, upload)).result["matched_by"] == "arxiv"
+    assert len(parsed) == 1
+
+    paper = await detail(resources, saved)
+    assert (paper.venue, paper.year, paper.title) == (ICSE, 2022, "My reading title")
+    assert paper.metadata_provenance["title"] == {"source": "manual"}
+    fixed = await detail(resources, upload)
+    assert fixed.title == TITLE and fixed.metadata_provenance["title"]["source"] == "openalex"
+    assert fixed.venue == "USENIX Security Symposium" and fixed.year == 2018
+    assert fixed.authors == ["Seunghun Han", "Wook Shin"]
+    assert [(s.provider, s.external_id) for s in fixed.sources] == [("openalex", "W2900000001")]
