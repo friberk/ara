@@ -22,7 +22,7 @@
     "Frontend: FullTextAccess and SummaryCard states for automatic retrieval, automatic summary, failure and wait.",
     "Browser regression for the provider PDF journey, run at integration."
   ],
-  "status": "in_progress",
+  "status": "completed",
   "related_files": [
     "src/backend/app/repositories/fulltext.py",
     "src/backend/app/routes/fulltext.py",
@@ -58,6 +58,6 @@
     "ef8ccfdb8396674effa3d206c485217959367f59"
   ],
   "pull_requests": [],
-  "verification": "Implemented on feat/ara-084-auto-pdf from 1d789dc. Isolated backend (ara-autopdf-test): Ruff passed; 922 passed in 150.85s (baseline 905 passed in 147.36s). Frontend: strict tsc, ESLint and 489 Vitest tests passed (65 files, 19.57s); production build passed (existing chunk-size warning). OpenAPI contract regenerated with openapi-typescript. Each behaviour change was observed red first (assertions recorded in the journal). Read-only dev-stack evidence: four retrieval jobs, Semantic Scholar 429 on every lookup, two identical unsupported_source retries and one 'unavailable' result for a paper with no listed PDF. A canned-API visual check covered progress, failure, rate-limit (dark), mobile and summary states. The provider PDF Playwright spec was updated for automatic retrieval but not run here (shared fixed ports); browser regression runs at integration. No migration, merge or push. Not yet complete: after a download hands off to ReaderGate (ARA-086's file, left unchanged), its processing heading still reads 'PDF uploaded. Processing continues in the background.', which the fifth criterion excludes; the lead was notified to settle it with ARA-086 at integration.",
-  "updated_at": "2026-10-09"
+  "verification": "Implemented on feat/ara-084-auto-pdf from 1d789dc. Isolated backend (ara-autopdf-test): Ruff passed; 922 passed in 150.85s (baseline 905 passed in 147.36s). Frontend: strict tsc, ESLint and 489 Vitest tests passed (65 files, 19.57s); production build passed (existing chunk-size warning). OpenAPI contract regenerated with openapi-typescript. Each behaviour change was observed red first (assertions recorded in the journal). Read-only dev-stack evidence: four retrieval jobs, Semantic Scholar 429 on every lookup, two identical unsupported_source retries and one 'unavailable' result for a paper with no listed PDF. A canned-API visual check covered progress, failure, rate-limit (dark), mobile and summary states. The provider PDF Playwright spec was updated for automatic retrieval but not run here (shared fixed ports); browser regression runs at integration. No migration, merge or push. Not yet complete: after a download hands off to ReaderGate (ARA-086's file, left unchanged), its processing heading still reads 'PDF uploaded. Processing continues in the background.', which the fifth criterion excludes; the lead was notified to settle it with ARA-086 at integration. Lead closure on 2026-10-10 in integration at bbf480a: the remaining criterion is met. After a retrieved PDF hands off to the reader, ReaderGate shows 'Preparing the PDF', the same heading as an upload. A grep of src/ and e2e/ finds no 'PDF uploaded' or 'Processing continues in the background' text (ARA-086's ReaderGate rewrite removed it). OpenAlex PDF retrieval itself was verified live under ARA-087.",
+  "updated_at": "2026-10-10"
 }
