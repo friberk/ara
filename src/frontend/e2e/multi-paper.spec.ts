@@ -44,9 +44,15 @@ test('ARA-088 Given two ready papers, when one chat compares them, then each is 
   await page.getByRole('option', { name: new RegExp(`^${firstTitle} ${secondTitle}`) }).first().click()
   await expect(page).toHaveURL(chatUrl)
 
-  // Removing the second paper keeps the answer's citation to it.
-  await chips.getByRole('button', { name: secondTitle }).hover()
-  await chips.getByRole('button', { name: `Remove ${secondTitle}` }).click()
+  // Removing the second paper keeps the answer's citation to it. The × shows while the pill is hovered, which needs a
+  // pointer move onto it: the row can render under the mouse resting where the history option was clicked.
+  const remove = chips.getByRole('button', { name: `Remove ${secondTitle}` })
+  await expect(async () => {
+    await page.mouse.move(0, 0)
+    await chips.getByRole('button', { name: secondTitle, exact: true }).hover()
+    await expect(remove).toBeVisible({ timeout: 1_000 })
+  }).toPass()
+  await remove.click()
   // One paper left: the row goes away.
   await expect(chips).toHaveCount(0)
   await expect(page.getByRole('article', { name: 'Assistant message' }).last().getByRole('group', { name: 'Sources' }).getByRole('button', { name: /^Source, Analyst/ })).toBeVisible()

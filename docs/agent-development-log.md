@@ -2133,3 +2133,9 @@ Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean,
   - Cause: the test's 50 ms `ollama_pull_timeout_seconds` covers the whole attempt (`asyncio.timeout` in `run_model_job`), including the checks before the transfer starts. A slow runner used up the budget before the transfer request was sent.
   - Red: a 1 ms budget failed locally, here even before the job reached `settling`.
   - Green: a 2 s budget passes all 6 settlement tests, and Ruff is clean. Only the test changed. Open models stay frozen.
+- **Last CI failure.** The next run (38075940231, `ba9f782`) passed backend, frontend and contract, then failed 1 of 27 browser specs: multi-paper's "Remove Sparse Indexes…" click timed out after a hover.
+  - The trace showed the hover completing and the × never appearing.
+  - A retry loop of hovers still failed locally, which ruled out a plain race.
+  - A debug spec showed that hovering the pill on its own makes it `active` and renders the × on the same node, so there is no remount.
+  - The cause: in the spec, the chat row renders under the mouse resting where the history option was clicked. `pointerenter` needs pointer movement, and repeated `.hover()` calls at the same point never move it.
+  - Fix: move the mouse away before each hover attempt. The test passed 3 of 3 with `--repeat-each=3`. On a fresh stack the full suite ran 27 passed, 0 failed.
