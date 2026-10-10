@@ -240,9 +240,19 @@ async def test_a_deleted_paper_answers_404_everywhere_and_a_repeat_is_safe(resou
         listed = (await client.get("/api/v1/papers")).json()["items"]
         chats = (await client.get("/api/v1/chats")).json()["items"]
         chat = await client.get(f"/api/v1/chats/{seeded['chat']}")
+        # Every other read or write about the paper or its PDF answers 404 as well.
+        others = [
+            await client.get(f"/api/v1/papers/{paper}/summaries"),
+            await client.get(f"/api/v1/papers/{paper}/retrieval"),
+            await client.get(f"/api/v1/papers/{paper}/chats"),
+            await client.patch(f"/api/v1/papers/{paper}", json={"title": "Back again"}),
+            await client.post(f"/api/v1/papers/{paper}/metadata-lookup"),
+            await client.get(f"/api/v1/documents/{seeded['document']}/download"),
+        ]
     assert again.status_code == 404 and again.json()["code"] == "PAPER_NOT_FOUND"
     assert detail.status_code == 404 and fulltext.status_code == 404
     assert preview.status_code == 404
+    assert [response.status_code for response in others] == [404] * len(others)
     assert listed == [] and chats == []
     assert chat.status_code == 404
 
