@@ -17,7 +17,8 @@ type ReaderProps = {
  */
 export function ReaderPanel({ paper, ...documents }: ReaderProps) {
   return (
-    <section aria-label="PDF reader" className="h-full min-h-0">
+    // Focusable from script only: removing the PDF hands focus here when its menu disappears (ARA-097).
+    <section aria-label="PDF reader" tabIndex={-1} className="h-full min-h-0 outline-none">
       <ReaderDocuments paper={paper} {...documents} />
     </section>
   )

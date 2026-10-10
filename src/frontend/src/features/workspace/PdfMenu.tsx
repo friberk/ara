@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Download, EllipsisVertical, ExternalLink, FileUp, MessageSquareWarning, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -83,14 +83,17 @@ function effects(preview: PdfRemovalPreview): string[] {
  * Confirms removing the paper's PDF (ARA-097). It states what happens from the server's preview, keeps Cancel focused,
  * and waits while a conversation that uses the PDF is still answering.
  */
-function RemovePdfDialog({ paper, onClose }: { paper: Paper; onClose: () => void }) {
+function RemovePdfDialog({ paper, reader, onClose }: { paper: Paper; reader: HTMLElement | null; onClose: () => void }) {
   const listId = useId()
   const preview = usePdfRemovalPreview(paper.id, true)
   const removal = useRemovePdf(paper.id)
+  // Set before the dialog closes, which can happen before it renders again.
+  const removed = useRef(false)
   const data = preview.data
   return (
     <AlertDialog open onOpenChange={(open) => { if (!open && !removal.isPending) onClose() }}>
-      <AlertDialogContent className="sm:max-w-md">
+      {/* After a removal the menu that held focus goes with the PDF, so focus moves to the reader. */}
+      <AlertDialogContent className="sm:max-w-md" onCloseAutoFocus={(event) => { if (removed.current && reader) { event.preventDefault(); reader.focus() } }}>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove this PDF?</AlertDialogTitle>
           <AlertDialogDescription className="break-words">{paper.file_name ? `“${paper.file_name}” is deleted. This can’t be undone.` : 'The PDF is deleted. This can’t be undone.'}</AlertDialogDescription>
@@ -122,7 +125,7 @@ function RemovePdfDialog({ paper, onClose }: { paper: Paper; onClose: () => void
             onClick={(event) => {
               // The dialog stays open while removing, so a failure is shown where it happened.
               event.preventDefault()
-              removal.mutate(undefined, { onSuccess: () => { toast.success('PDF removed'); onClose() } })
+              removal.mutate(undefined, { onSuccess: () => { removed.current = true; toast.success('PDF removed'); onClose() } })
             }}
           >
             {removal.isPending ? 'Removing…' : 'Remove PDF'}
@@ -141,6 +144,9 @@ export function PdfMenu({ documentId, pages, managed }: { documentId: string; pa
   const [dialog, setDialog] = useState<'replace' | 'remove' | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [hint, setHint] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  // The reader around this menu, found while the menu is still there.
+  const [reader, setReader] = useState<HTMLElement | null>(null)
   const file = useDocument(documentId)
   return (
     <>
@@ -149,7 +155,7 @@ export function PdfMenu({ documentId, pages, managed }: { documentId: string; pa
         <Tooltip open={hint && !menuOpen} onOpenChange={setHint}>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" aria-label="PDF options"><EllipsisVertical aria-hidden="true" /></Button>
+              <Button ref={trigger} type="button" variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" aria-label="PDF options"><EllipsisVertical aria-hidden="true" /></Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom">PDF options</TooltipContent>
@@ -163,13 +169,13 @@ export function PdfMenu({ documentId, pages, managed }: { documentId: string; pa
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setDialog('replace')}><FileUp aria-hidden="true" />Replace PDF…</DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onSelect={() => setDialog('remove')}><Trash2 aria-hidden="true" />Remove PDF…</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onSelect={() => { setReader(trigger.current?.closest<HTMLElement>('section[aria-label="PDF reader"]') ?? null); setDialog('remove') }}><Trash2 aria-hidden="true" />Remove PDF…</DropdownMenuItem>
             </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
       {managed && dialog === 'replace' && <ReplacePdfDialog paper={managed} onClose={() => setDialog(null)} />}
-      {managed && dialog === 'remove' && <RemovePdfDialog paper={managed} onClose={() => setDialog(null)} />}
+      {managed && dialog === 'remove' && <RemovePdfDialog paper={managed} reader={reader} onClose={() => setDialog(null)} />}
     </>
   )
 }

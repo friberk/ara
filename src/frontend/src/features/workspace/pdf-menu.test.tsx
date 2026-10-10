@@ -95,6 +95,8 @@ test('Given Remove PDF…, When confirmed, Then the dialog says what happens, th
   expect(await screen.findByText('Attach the PDF to read, summarize and ask')).toBeVisible()
   expect(screen.getByText('PDF removed')).toBeVisible()
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  // The menu that held focus is gone with the PDF, so focus moves to the reader instead of the page's start.
+  await waitFor(() => expect(screen.getByRole('region', { name: 'PDF reader' })).toHaveFocus())
   expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual(['/papers/p1/pdf'])
 })
 
