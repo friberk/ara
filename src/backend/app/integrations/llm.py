@@ -74,6 +74,9 @@ def validate_selection(model: str, effort: str) -> Model:
         status="unavailable",
         reasoning_efforts=list(entry.reasoning_efforts),
         context_window=entry.window,
+        description=entry.description,
+        input_price_per_million=float(entry.input_price),
+        output_price_per_million=float(entry.output_price),
     )
 
 

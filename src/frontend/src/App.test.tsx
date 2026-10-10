@@ -18,7 +18,7 @@ test('Given the home route, Then the workspace navigation and the research compo
   const nav = screen.getByRole('navigation', { name: 'Workspace' })
   for (const name of ['New research', 'Library']) expect(within(nav).getByRole('link', { name })).toBeVisible()
   expect(within(nav).queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Settings' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Settings' })).toBeVisible()
   expect(screen.getByRole('heading', { name: 'What are you researching?' })).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Research topic' })).toBeVisible()
   // The composer autofocuses; from a fresh document focus the skip link is the first tab stop.
@@ -136,7 +136,7 @@ test('Given a recent chat, When deleted and confirmed, Then the chat is removed'
   await waitFor(() => expect(calls.some((call) => call.method === 'DELETE' && call.path === '/chats/c1')).toBe(true))
 })
 
-test('Given Settings > Appearance, When Dark is chosen, Then the dark tokens apply and the choice persists', async () => {
+test('Given Settings > General, When Dark is chosen, Then the dark tokens apply and the choice persists', async () => {
   mockApi({})
   const { user } = renderApp('/settings')
   const theme = await screen.findByRole('radiogroup', { name: 'Theme' })

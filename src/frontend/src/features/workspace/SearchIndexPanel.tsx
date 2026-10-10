@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
-import { UnavailableReason } from '@/components/retrieval/ProfileOptions'
+import { UnavailableReason } from '@/components/retrieval/UnavailableReason'
 import { isBuilding, useEmbeddingProfiles, usePaperRetrieval, useRebuildPaperRetrieval } from '@/hooks/queries/retrieval'
 
 type IndexView = 'ready' | 'building' | 'failed' | 'unavailable' | 'missing'

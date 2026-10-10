@@ -26,8 +26,8 @@ test('ARA-088 Given two ready papers, when one chat compares them, then each is 
 
   const answer = page.getByRole('article', { name: 'Assistant message' }).last()
   const sources = answer.getByRole('group', { name: 'Sources' })
-  await expect(sources.getByRole('button', { name: /^Source, Researcher 2024, pages? \d+/ })).toBeVisible({ timeout: 45_000 })
-  const secondChip = sources.getByRole('button', { name: /^Source, Analyst( \d{4})?, pages? \d+/ })
+  await expect(sources.getByRole('button', { name: /^Source, Researcher.*, pages? \d+/ })).toBeVisible({ timeout: 45_000 })
+  const secondChip = sources.getByRole('button', { name: /^Source, Analyst.*, pages? \d+/ })
   await expect(secondChip).toBeVisible()
 
   // The other paper's citation opens its PDF in a new reader tab; the first paper's tab stays open.
@@ -44,7 +44,9 @@ test('ARA-088 Given two ready papers, when one chat compares them, then each is 
   await expect(page).toHaveURL(chatUrl)
 
   // Removing the second paper keeps the answer's citation to it.
-  await chips.getByRole('button', { name: `Remove ${secondTitle} from this conversation` }).click()
-  await expect(chips.getByRole('listitem')).toHaveCount(1)
+  await chips.getByRole('button', { name: secondTitle }).hover()
+  await chips.getByRole('button', { name: `Remove ${secondTitle}` }).click()
+  // One paper left: the row goes away.
+  await expect(chips).toHaveCount(0)
   await expect(page.getByRole('article', { name: 'Assistant message' }).last().getByRole('group', { name: 'Sources' }).getByRole('button', { name: /^Source, Analyst/ })).toBeVisible()
 })

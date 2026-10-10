@@ -54,12 +54,12 @@ test('ARA-096 Given a chat over one paper, when a question mentions another, the
   await page.getByRole('option', { name: new RegExp(secondTitle) }).click()
   await expect(question.getByRole('group', { name: new RegExp(secondTitle) })).toBeVisible()
   // While drafting the paper is only a pill; deleting it changes nothing.
-  await expect(chips.getByRole('listitem')).toHaveCount(1)
+  await expect(chips).toHaveCount(0)
   // The first Backspace takes the space typed after the pill, the second the whole pill.
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')
   await expect(question.getByRole('group')).toHaveCount(0)
-  await expect(chips.getByRole('listitem')).toHaveCount(1)
+  await expect(chips).toHaveCount(0)
 
   await page.keyboard.type('@')
   await page.getByRole('option', { name: new RegExp(secondTitle) }).click()

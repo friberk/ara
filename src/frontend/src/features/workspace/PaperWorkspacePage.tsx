@@ -74,9 +74,16 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
     else if (readerPanel.current?.isCollapsed()) readerPanel.current.expand()
   }, [isMobile, paper.id, paper.active_document_id, readerPanel, setView])
 
+  const showPaper = useCallback((paperId: string) => {
+    setReaderTabs((current) => (current.some((tab) => tab.paperId === paperId) ? current : [...current, { paperId }]))
+    setActiveTab(paperId)
+    if (isMobile) setView('pdf')
+    else if (readerPanel.current?.isCollapsed()) readerPanel.current.expand()
+  }, [isMobile, readerPanel, setView])
+
   const context = useMemo<WorkspaceContextValue>(() => ({
-    paper, view, setView, sourceRequest, showSource, highlightOutcome, reportHighlight: setHighlightOutcome,
-  }), [paper, view, setView, sourceRequest, showSource, highlightOutcome])
+    paper, view, setView, sourceRequest, showSource, showPaper, highlightOutcome, reportHighlight: setHighlightOutcome,
+  }), [paper, view, setView, sourceRequest, showSource, showPaper, highlightOutcome])
 
   const documents = {
     tabs: readerTabs,
