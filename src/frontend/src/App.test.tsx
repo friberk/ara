@@ -60,6 +60,8 @@ test('Given library papers chosen in the composer, When a question is asked, The
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   const question = screen.getByRole('textbox', { name: 'Question about these papers' })
   expect(question).toHaveValue('')
+  // A paper chosen after typing @ hands the cursor back to the question.
+  await waitFor(() => expect(question).toHaveFocus())
   for (const name of ['Remove Traceable research systems', 'Remove Dense passage retrieval']) expect(screen.getByRole('button', { name })).toBeVisible()
   await waitFor(() => expect(screen.getByRole('button', { name: /^Model: GPT-5.6 Luna/ })).toBeEnabled())
   await user.type(question, 'Which datasets were used?')

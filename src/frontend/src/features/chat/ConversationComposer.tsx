@@ -31,6 +31,8 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
 }) {
   const { settings } = useGenerationSettings()
   const [picking, setPicking] = useState(false)
+  // Opened by typing @: the cursor returns to the question afterwards.
+  const [refocus, setRefocus] = useState<(() => void) | undefined>(undefined)
   const several = (papers?.selected.length ?? 1) > 1
   return (
     <Composer
@@ -46,10 +48,10 @@ export function ConversationComposer({ chatId, value, onValueChange, onSubmit, g
       busy={busy}
       onStop={onStop}
       header={papers?.header}
-      onMention={papers ? () => setPicking(true) : undefined}
+      onMention={papers ? (back) => { setRefocus(() => back); setPicking(true) } : undefined}
       leading={
         <>
-          {papers && <PaperPicker label="Add or remove papers" selected={papers.selected} onSelect={papers.onSelect} open={picking} onOpenChange={setPicking} disabled={gate.locked} />}
+          {papers && <PaperPicker label="Add or remove papers" selected={papers.selected} onSelect={papers.onSelect} open={picking} onOpenChange={setPicking} disabled={gate.locked} refocus={refocus && (() => { refocus(); setRefocus(undefined) })} />}
           {chatId && <ContextMeter chatId={chatId} settings={settings} />}
         </>
       }

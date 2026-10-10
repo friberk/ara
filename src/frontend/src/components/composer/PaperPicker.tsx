@@ -48,7 +48,7 @@ export function PaperPickerList({ onSelect, selected = [] }: { onSelect: (paper:
   )
 }
 
-export function PaperPicker({ onSelect, selected, disabled, open: controlled, onOpenChange, label = 'Ask about a library paper' }: {
+export function PaperPicker({ onSelect, selected, disabled, open: controlled, onOpenChange, label = 'Ask about a library paper', refocus }: {
   onSelect: (paper: Paper) => void
   /** Ids of the papers already chosen, shown as added. */
   selected?: readonly string[]
@@ -57,6 +57,8 @@ export function PaperPicker({ onSelect, selected, disabled, open: controlled, on
   open?: boolean
   onOpenChange?: (open: boolean) => void
   label?: string
+  /** Where focus goes when the picker closes; by default it returns to the @ button. */
+  refocus?: () => void
 }) {
   const [uncontrolled, setUncontrolled] = useState(false)
   const open = controlled ?? uncontrolled
@@ -71,7 +73,7 @@ export function PaperPicker({ onSelect, selected, disabled, open: controlled, on
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
-      <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] p-0">
+      <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] p-0" onCloseAutoFocus={refocus && ((event) => { event.preventDefault(); refocus() })}>
         <PaperPickerList selected={selected} onSelect={(paper) => { onSelect(paper); setOpen(false) }} />
       </PopoverContent>
     </Popover>

@@ -34,6 +34,8 @@ export default function HomePage() {
   const [papers, setPapers] = useState<Paper[]>([])
   const picker = useRef<HTMLInputElement>(null)
   const [picking, setPicking] = useState(false)
+  // Opened by typing @: the cursor returns to the composer afterwards.
+  const [refocus, setRefocus] = useState<(() => void) | undefined>(undefined)
   // A PDF chosen or dropped here uploads at once and opens its paper, where the same steps continue.
   const uploads = useUploads({
     onAccepted: (accepted) => {
@@ -91,7 +93,7 @@ export default function HomePage() {
           maxLength={asking ? 8000 : 300}
           submitDisabled={asking ? createChat.isPending || !generation.usableFor('chat') : false}
           header={asking && papers.map((item) => <PaperContextChip key={item.id} paper={item} removeLabel={several ? `Remove ${item.title ?? 'Untitled paper'}` : undefined} onRemove={() => toggle(item)} />)}
-          onMention={() => setPicking(true)}
+          onMention={(back) => { setRefocus(() => back); setPicking(true) }}
           leading={
             <>
               <DropdownMenu>
@@ -102,7 +104,7 @@ export default function HomePage() {
                   <DropdownMenuItem onSelect={() => picker.current?.click()}><FileUp aria-hidden="true" />Upload a PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <PaperPicker selected={papers.map((item) => item.id)} onSelect={toggle} open={picking} onOpenChange={setPicking} />
+              <PaperPicker selected={papers.map((item) => item.id)} onSelect={toggle} open={picking} onOpenChange={setPicking} refocus={refocus && (() => { refocus(); setRefocus(undefined) })} />
               {!asking && <ProviderSwitcher value={provider} onChange={setProvider} />}
             </>
           }

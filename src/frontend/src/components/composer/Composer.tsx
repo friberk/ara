@@ -26,8 +26,11 @@ export type ComposerProps = {
   trailing?: React.ReactNode
   /** One line under the composer: why it is disabled, or a quiet reminder. */
   footnote?: React.ReactNode
-  /** Typing @ at the start of a word calls this (to open the paper picker) instead of typing it. */
-  onMention?: () => void
+  /**
+   * Typing @ at the start of a word calls this (to open the paper picker) instead of typing it, with a function that
+   * puts the cursor back in the field once the choice is made.
+   */
+  onMention?: (refocus: () => void) => void
   maxLength?: number
   autoFocus?: boolean
   size?: 'default' | 'large'
@@ -67,7 +70,7 @@ export function Composer({ value, onValueChange, onSubmit, label, placeholder, s
             const before = field.value.slice(0, field.selectionStart ?? field.value.length)
             if (onMention && event.key === '@' && !event.nativeEvent.isComposing && (!before || /\s$/.test(before))) {
               event.preventDefault()
-              onMention()
+              onMention(() => textarea.current?.focus())
               return
             }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
