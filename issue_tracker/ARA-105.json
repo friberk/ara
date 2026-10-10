@@ -1,0 +1,34 @@
+{
+  "id": "ARA-105",
+  "title": "Failed section summaries retry at startup, at most three times",
+  "type": "bug",
+  "priority": "P2",
+  "description": "Found by the ARA-100 agent: a section_summaries job that fails after its three in-run attempts stays failed for good. queue_section_summaries treats any existing job row for that reading as done, and the manual retry refuses it (409 NEW_GENERATION_REQUEST_REQUIRED) to avoid replaying paid inference. Retrieval works without section summaries, but that PDF never gets them. The user decided on 2026-10-10: \"Yes, do the capped retry for section summaries\". The lead proposed retrying at the next restart, capped at three extra paid attempts per reading.",
+  "dependencies": [
+    "ARA-094",
+    "ARA-100"
+  ],
+  "acceptance_criteria": [
+    "Given a ready, active PDF whose current reading has only failed section-summary jobs and no stored section summaries, when the API starts (backfill_section_summaries), then the failed job is revived once, with fresh attempts and a new generation and outbox event, using the current saved default model and effort, and its revival count goes up by one.",
+    "Given a reading whose section-summary job has already been revived three times, when the API starts again, then nothing is queued and no paid call is made.",
+    "Given the saved default can't summarize (summary_blocker), when the API starts, then the failed job is not revived and its revival count is unchanged.",
+    "Given two API processes starting at once, when both run the backfill, then a failed job is revived at most once (row locks; the state change removes it from the selection).",
+    "Given a reading that already has section summaries, or a queued or processing job, when the API starts, then nothing changes, as before."
+  ],
+  "test_cases": [
+    "Integration: failed job revived on backfill; revivals counter increments; payload model and effort follow the current default.",
+    "Integration: revivals == 3 means not revived.",
+    "Integration: blocked default means not revived and the counter is unchanged.",
+    "Integration: concurrent backfills revive once.",
+    "Existing section summary tests stay green."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/services/section_summaries.py",
+    "src/backend/app/repositories/jobs.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10 from the user's decision. Branch feat/ara-105-section-summary-retry.",
+  "updated_at": "2026-10-10"
+}
