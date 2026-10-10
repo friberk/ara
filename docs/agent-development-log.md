@@ -1292,3 +1292,80 @@ The design doc is updated.
   - No live OpenAI calls were made.
   - The UI has had no visual check.
   - Name detection is literal: a paraphrased title or an author mentioned without a year is not a named paper.
+
+## 2026-10-10 - ARA-094 relevance-driven evidence, section summaries (ARA-079) and one wider retry
+
+An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` from `d02a988`, testing only in its own `ara-evidence-test` Compose project. The user's `ara` and `ara-live` stacks were not touched. Design: `docs/plans/retrieval-orchestration.md`, steps 2–5 and 8–11, now recorded under "Evidence as built".
+
+**Not measured.** Every threshold below follows published practice or is marked as a design choice. None is measured on the user's papers: the user decided against a check set.
+
+**Decisions:**
+- **Prune (step 4).** After reranking, candidates scoring below 0.5 × the best score are dropped, and so are unscored ones (past the reranker's head of 40, or a failed call). Nothing is padded (Jin et al., ICLR 2025).
+  - The first two candidates always remain, and each named paper keeps its first two.
+  - Without reranker scores nothing is pruned, because fusion ranks are not relevance judgements.
+  - The 0.5 is my design choice: it is the relevance predicate's own boundary when the top passage scores 1.0.
+- **First pass (step 5).** At most 24 passages and min(16K, E) tokens (OpenAI file search: up to 20 chunks within 16K; Anthropic Contextual Retrieval: rerank to 20). `MAX_PASSAGES` (16) is deleted, not kept behind a flag. Floors and routing derive from the cap, so up to 12 papers answer. The reservation ceiling is the costliest 24 passages or summaries, within 16K.
+- **Order (step 9).** Paper groups go strongest first, second strongest last, weakest in the middle (Lost in the Middle; Jin et al.; LlamaIndex LongContextReorder). Pages stay in order within a paper, so a one-paper chat keeps page order.
+- **Classification and expansion (steps 1 and 8).** The planner schema gains `question_type` (lookup, broad, comparative), after LlamaIndex RouterQueryEngine and Adaptive-RAG (NAACL 2024).
+  - Selected chunks grow small-to-big, one step on each side at a time, each paper within an equal share of the budget.
+  - A lookup takes the neighbours; a broad question and the retry take the whole section.
+  - The first question of a one-paper chat is still not planned (unchanged, to avoid a call and its latency), so it counts as a lookup.
+- **Section summaries (ARA-079).**
+  - Migration `0011_section_summaries` adds `section_summaries` (cascading from `document_sections`, so a new reading drops them) and `section_summary_embeddings`. `SCHEMA_REVISION` moved.
+  - Each top-level body section with at least two passages gets one summary of at most 100 words (near RAPTOR's 131-token average; the 100 is mine). A durable `section_summaries` job writes them with the saved default model and effort, as ARA-084 does: no other model, and nothing when `summary_blocker` refuses.
+  - The job is queued where chunks are persisted, so new readings and late library matches get one, and by a startup backfill for ready active PDFs of the current chunk set. Each reading is queued at most once, in any state.
+  - Each summary must cite its section's passages and is validated against them; a reply that does not is skipped. Usage is stored per summary, and the job result has `usage` and `cost_usd`.
+  - An interrupted paid call is never repeated, and retry is refused with `NEW_GENERATION_REQUEST_REQUIRED`.
+  - Summaries are embedded with the library model at the end of the job, by the index job of a new library model, and pruned with the chunks.
+- **How summaries are cited.** Summaries are searched beside chunks for every question (RAPTOR's collapsed tree, which beat chunk-only retrieval on QASPER).
+  - I did not limit them to broad questions: a first question is not planned, and broad questions such as "list the limitations" are most often first questions.
+  - In the prompt a summary reads `Section summary · <section> · p. <pages>` with its source chunks' handles inside it, and it has no handle of its own (prompt version 5 says so).
+  - Its source chunks become citable, even when not sent as passages. They are read only from the chat's pinned PDFs and current chunk sets.
+  - Every citation therefore stays a real chunk and page of that paper, and validation is unchanged and strict.
+- **Retry (step 10, adapting Self-Route, EMNLP 2024).**
+  - *Trigger.* An `insufficient` first answer, provided wider retrieval adds passages. The retry uses a bar of 0.25, 48 passages and whole sections, up to E, from the same candidate pool, so there are no new searches or reranking calls.
+  - *Streaming.* The producer now maps handles itself. The stream emits `widening`, the consumer drops the first attempt, and only the final answer is saved. A request UUID replay returns it without generating.
+  - *Cost.* The retry is reserved on the daily ledger; a spent budget keeps the first answer. The first call's usage is `retrieval.billed.first_answer`, priced under answers.
+- **Small windows (step 7).**
+  - *Trigger.* A comparison, or the retry, over several papers whose selection at its own target (16K; 32K for the retry) exceeds E.
+  - *Reading.* The server emits `mapping` and reads each paper in its own call within W; handles run on across papers. It then streams the answer from the notes, citing only handles the notes cite.
+  - *Cost.* Each call is reserved and recorded in `billed.map`.
+  - Every hosted window is 1M, so only a synthetic 16K entry exercises this.
+- **Observability (step 11).** `RetrievalSummary` gains `pruned`, `evidence_tokens`, `summaries_used`, `question_type`, `retried` and `map_reduce`. The trace adds `pass`, `prune {ratio, top, bar, pruned}`, `selected_scores`, `summaries` and `first_pass`. Details shows the tokens, summaries used, passages left out, the widened search and per-paper reading. Activity names the job.
+
+**Red → green (observed):**
+- **Baseline.** 1080 passed in 226.88 s.
+- **Prune and caps.** 11 failed with `No module named 'app.rag.selection'` and `EvidenceResult.__init__() got an unexpected keyword argument 'scores'`. The thirty-paper test then failed with `cannot import name 'MAX_PASSAGES'`; it now asserts 12 answering papers.
+- **Ordering.** `['A', 'A', 'B', 'B', 'C', 'C'] == ['C', 'C', 'B', 'B', 'A', 'A']`; the old chat-order test was rewritten on purpose. A second test failed with `['A', 'B', 'C', 'D'] == ['D', 'A', 'C', 'B']`.
+- **Expansion and classification.** `pack_evidence() got an unexpected keyword argument 'reach'` (3 tests). The planner tests failed 5 times (`'QueryPlan' object has no attribute 'question_type'`, a schema without `question_type`, `'fallback' == 'model'`). Then `retrieve_evidence() got an unexpected keyword argument 'question_type'`. The chat wiring test passed at first run because I had wired it first; deleting the line reproduced `'lookup' == 'broad'`.
+- **Retry.** 5 failed (`assert 1 == 2` calls, `KeyError: 'retried'`, reservations `assert (1 == 1 and 1 == 2)`).
+- **Map-reduce.** `assert (0 == 2)` and `KeyError: 'map_reduce'`.
+  - My fixture cited only paper 1, which I fixed.
+  - The retry-at-16K test showed `widen()` compared packs only at E, so a small window never retried. It now also counts the retry's own target when several papers are in reach.
+  - ARA-088's shrunk-budget test failed with `not enough values to unpack`: map calls hit its stream-only fixture. It now expects five per-paper reads; this is an intended change.
+- **Section summaries.**
+  - The migration failed with `relation "section_summaries" does not exist`, and readiness failed with `'unavailable' == 'ok'` until I migrated my test database.
+  - The service failed with `No module named 'app.services.section_summaries'`.
+  - The backfill failed with `0 == 2` because my seed used a non-current chunk set; the test was corrected.
+  - The 7 wiring tests failed, starting with the hook rejecting `resources`. ARA-070's hook test then needed its fake hook to accept that argument.
+  - Packing failed with `cannot import name 'citable'`.
+  - Retrieval failed with `KeyError: 'summary-vector'` and with no completed answer.
+  - The first implementation raised `UnmappedInstanceError` because it read a column attribute through an instance; it is now read from the class.
+  - The rules test failed, and so did the ceiling test (`259 <= 208`).
+  - The scoping test passed at first run; removing the scope filter reproduced a foreign chunk becoming citable.
+- **Frontend.**
+  - *Initial red.* `Unable to find … Searching more widely…`, `expected [ …(5) ] to deeply equal [ …(8) ]`, `… to include 'Read each paper…'` and `'section summaries' to be 'Section summaries for search'`.
+  - *After regenerating `generated.ts`.* tsc required the new fields in a test fixture. `sse.test.ts` failed because zod defaults added fields to a fixture that lacked them; the fixture now carries what the server always sends.
+
+**Verification:**
+- **Backend.** `test-stack.py test`: 1134 passed in 234.34 s with Ruff clean, and again after the final refactor: 1134 passed in 241.37 s, Ruff clean (baseline 1080).
+- **Frontend.** `npm run check` passed with 603 tests in 77 files, and `npm run build` passed with the existing chunk-size warning.
+- **Contract.** `generated.ts` was regenerated from the flag-on `app.openapi()`; it differs only by the new fields and job kind.
+
+**Agent process notes.** The full suite runs in the same project as focused runs, so I ran nothing else during it. Sources were checked by read-only fetches: RAPTOR's collapsed tree, QASPER and 131-token summaries; Adaptive-RAG's NAACL 2024 classifier; LlamaIndex's RouterQueryEngine and LongContextReorder pages.
+
+**Not verified:**
+- No Playwright run and no live OpenAI call.
+- No visual browser check.
+- Section summaries were not generated for real papers, so their cost on the user's library is unknown. The order of magnitude is one paper summary per PDF.
+- ARA-079's original local small-model case is not exercised while open models are frozen.
