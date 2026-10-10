@@ -2079,3 +2079,31 @@ Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean,
 ### 2026-10-10 — Lead: conflict markers left in the journal by the ARA-109/110 merge, fixed
 
 `main` had moved to `a33bda7` (the ARA-107 deploy work, merged by another session), so merging `feat/ux-feedback-round` conflicted in this journal. My command piped `git merge` through `tail`, which hid the merge's failure, so the archive edit and the commit ran anyway. `453ee82` concluded the merge with conflict markers in this file; no other file had any. This commit resolves them by keeping both sides in order. From now on I check the merge status before anything follows it.
+
+## 2026-10-10 - ARA-109c Library and search in the user's words
+
+- Prompt: the user drafted new text for Library and search, and the lead polished it. The user's edits during the round included "Delete ', even when they use different words.' part". The final approved text:
+  - Explainer: "When you ask about your papers, search looks for the passages that match your question, by its meaning and by its words. Reordering can then sort those passages by how well they answer it. The model that writes the answer reads the top passages in the order they appear in each paper, and cites the page each one comes from."
+  - Search index: "For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready."
+  - Reordering by relevance: "After search, a second model reads the passages most likely to answer your question and reorders them by how well they answer it. The model that writes the answer then works from the top of that order, so it cites stronger evidence. Adds about 2 to 3 seconds and $0.004 to each question. When off, the answer works from the top of search's own order." The secondary line "Runs on OpenAI GPT-6 Luna, separate from the model that answers." stays.
+  - Paper details: "When you upload a PDF, its title, authors, year, venue and abstract are first read from the PDF itself. When the paper is found in the catalog you choose here, its record completes and improves what was read from the PDF. If it isn't found there, or the catalog doesn't answer, the other one is tried. Details you edited are never replaced."
+  - The search index options and the rebuild dialog are titled by the model's own name, so "Higher quality" and "Lower cost" go, along with `EmbeddingProfile.label`.
+- **Claims checked against the code first.** Three in the draft did not hold, and the lead and user changed them.
+  - "By its exact words" became "by its words". Keyword search uses Postgres full-text with the English config (`app/rag/retrievers.py:138`, `websearch_to_tsquery("english", …)`), which stems words and drops stop words.
+  - The draft and the polish said the answer works "from that order". `app/rag/packing.py:242-252` sends the chosen passages grouped by paper, in page order within each paper. Papers are ordered strongest at both ends, so "in the order they appear in each paper" holds even when papers come in reranked order. This holds with reordering on or off, so page order is stated in the explainer.
+  - "Works from the top of that order" (and "the top of search's own order" when off) is accurate: the reranker decides which passages are kept and the model receives those; it doesn't set the order the model reads them in.
+  - Checked true:
+    - The PDF parser reads title, authors, year and venue from XMP and the abstract by regex (`app/jobs/pdf_parser.py:277-311`).
+    - The catalog record replaces or fills those values.
+    - The other catalog is tried.
+    - Edited details are kept.
+    - Switching the index reads every paper again, and each paper keeps its index until the new one is ready.
+- **Red first.**
+  - Backend: three tests failed on the label that was still present: "'label' not in" the dataclass fields, the published schema and the route response. After the label was removed from the catalog, the schema and the route, the catalog, contract, route, rerank and flag tests passed (89) with Ruff clean. `generated.ts` was regenerated from the production, flag-on schema, and its diff only removes `label`.
+  - Frontend: the Search index and Paper details assertions failed 3 before the change, then the explainer and Reordering assertions failed 3 before theirs. The settings and flag tests then passed (73).
+  - I removed one older assertion, "no 'embed' in the Search index help", because the user's text now explains "with an embedding model" in context. The now-unused candidate count in the reordering text went too.
+- **Screenshots.** `r5-desktop-light-library.png`, `r5-desktop-light-library-end.png` and `r5-mobile-light-library.png` are in the session scratchpad (`ara109/`). They use the same method as before, without the label field.
+- **Verification.**
+  - Full backend suite at `d801c7c`: 1228 passed in 274 s, Ruff clean.
+  - `npm run check`: 766 passed in 94 files.
+  - `npm run build`: passed.

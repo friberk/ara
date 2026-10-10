@@ -6,8 +6,8 @@ import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
 const luna: Model = { kind: 'chat', key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'available', reasoning_efforts: ['low'], supports_streaming: true, supports_structured_output: true, context_window: 1_050_000 }
-const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13, description: 'OpenAI’s most capable search model, in English and other languages.', label: 'Higher quality' }
-const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02, description: 'A smaller model: cheaper to index, less capable than the large one.', label: 'Lower cost' }
+const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13, description: 'OpenAI’s most capable search model, in English and other languages.' }
+const small: EmbeddingProfile = { ...openai, key: 'openai-3-small', model_id: 'text-embedding-3-small', display_name: 'OpenAI text-embedding-3-small', dimensions: 1536, price_per_million: 0.02, description: 'A smaller model: cheaper to index, less capable than the large one.' }
 const qwen4b: EmbeddingProfile = { key: 'qwen3-embed-4b', provider: 'ollama', model_id: 'qwen3-embedding:4b', display_name: 'Qwen3 Embedding 4B', dimensions: 2560, status: 'unavailable', unavailable_reason: 'Download Qwen3 Embedding 4B in Settings', local_model_key: 'qwen3-embedding-4b', price_per_million: 0 }
 const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: 'qwen3-embedding:8b', display_name: 'Qwen3 Embedding 8B', dimensions: 4096, unavailable_reason: 'Download Qwen3 Embedding 8B in Settings', local_model_key: 'qwen3-embedding-8b' }
 const profiles = { items: [openai, small, qwen4b, qwen8b], default_profile: openai.key }
@@ -25,13 +25,12 @@ test('Given four search index models with OpenAI large saved, Then Library and s
   const section = await screen.findByRole('region', { name: 'Search index' })
   const choices = await within(section).findByRole('radiogroup', { name: 'Search index model' })
   expect(within(choices).getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual(['openai-3-large', 'openai-3-small', 'qwen3-embed-4b', 'qwen3-embed-8b'])
-  // Each choice leads with its trade-off; the model's own name follows as secondary text.
-  expect(within(choices).getByRole('radio', { name: 'Higher quality' })).toBeChecked()
-  expect(within(choices).getByRole('radio', { name: 'Higher quality' })).toHaveAccessibleDescription('OpenAI text-embedding-3-large OpenAI’s most capable search model, in English and other languages. Indexing costs $0.13 per million tokens, about 750,000 words.')
-  expect(within(choices).getByRole('radio', { name: 'Lower cost' })).toHaveAccessibleDescription('OpenAI text-embedding-3-small A smaller model: cheaper to index, less capable than the large one. Indexing costs $0.02 per million tokens, about 750,000 words.')
-  expect(within(choices).getByText('OpenAI text-embedding-3-small')).toHaveClass('text-xs')
-  expect(within(section).getByText(/Switching models reads every paper again in the background, and each paper keeps its current index until its new one is ready\./)).toBeVisible()
-  expect(within(section).queryByText(/embed/i, { selector: 'p' })).not.toBeInTheDocument()
+  // Each choice is titled by the model's own name, as on the Models page (ARA-109c).
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toBeChecked()
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toHaveAccessibleDescription('OpenAI’s most capable search model, in English and other languages. Indexing costs $0.13 per million tokens, about 750,000 words.')
+  expect(within(choices).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toHaveAccessibleDescription('A smaller model: cheaper to index, less capable than the large one. Indexing costs $0.02 per million tokens, about 750,000 words.')
+  expect(within(section).queryByText(/Higher quality|Lower cost/)).not.toBeInTheDocument()
+  expect(section).toHaveAccessibleDescription('For each paper, ara builds a semantic search index with an embedding model. It finds the parts of the paper related to the meaning of your question. Switching models reads every paper again in the background, and each paper keeps its current index until the new one is ready.')
 })
 
 test('Given Qwen 4B is not downloaded, Then its reason links to Open models and choosing it still asks first', async () => {
@@ -52,10 +51,10 @@ test('Given a new search index model, When it is chosen, Then a dialog says what
   const { calls } = mockApi({ ...openModels, ...base, 'GET /retrieval/settings': stored, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/?settings=library')
   const section = await screen.findByRole('region', { name: 'Search index' })
-  await user.click(await within(section).findByRole('radio', { name: 'Lower cost' }))
+  await user.click(await within(section).findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Rebuild the search index?' })
-  expect(await within(dialog).findByText('Switching the search index to “Lower cost” reads all 12 papers in your library again in the background: about 480,000 tokens, roughly 360,000 words.')).toBeVisible()
-  expect(within(dialog).getByText('Model: OpenAI text-embedding-3-small')).toBeVisible()
+  expect(await within(dialog).findByText('Switching the search index to “OpenAI text-embedding-3-small” reads all 12 papers in your library again in the background: about 480,000 tokens, roughly 360,000 words.')).toBeVisible()
+  expect(within(dialog).queryByText(/^Model:/)).not.toBeInTheDocument()
   expect(within(dialog).getByText('Estimated cost: less than $0.01.')).toBeVisible()
   expect(within(dialog).getByText('Questions keep working while it runs: each paper keeps its current index until its new one is ready.')).toBeVisible()
   expect(puts(calls)).toEqual([])
@@ -63,18 +62,18 @@ test('Given a new search index model, When it is chosen, Then a dialog says what
   await waitFor(() => expect(puts(calls)).toEqual([{ embedding_profile: 'openai-3-small', reranker: 'qwen3-rerank-0.6b' }]))
   expect(calls.find((call) => call.path === '/retrieval/reindex-estimate')?.url.searchParams.get('profile')).toBe('openai-3-small')
   expect(await within(section).findByText('Rebuilding in the background')).toBeVisible()
-  expect(within(section).getByRole('radio', { name: 'Lower cost' })).toBeChecked()
+  expect(within(section).getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).toBeChecked()
 })
 
 test('Given the rebuild dialog, When Cancel is pressed, Then nothing is saved and the saved model stays chosen', async () => {
   const { calls } = mockApi({ ...base, 'GET /retrieval/settings': saved, 'PUT /retrieval/settings': ({ body }) => json(body) })
   const { user } = renderApp('/?settings=library')
-  await user.click(await screen.findByRole('radio', { name: 'Lower cost' }))
+  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
   await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   expect(puts(calls)).toEqual([])
-  expect(screen.getByRole('radio', { name: 'Higher quality' })).toBeChecked()
-  expect(screen.getByRole('radio', { name: 'Lower cost' })).not.toBeChecked()
+  expect(screen.getByRole('radio', { name: 'OpenAI text-embedding-3-large' })).toBeChecked()
+  expect(screen.getByRole('radio', { name: 'OpenAI text-embedding-3-small' })).not.toBeChecked()
   expect(screen.getByRole('dialog', { name: 'Settings' })).toBeVisible()
 })
 
@@ -82,7 +81,7 @@ test('Given an estimate, When the rebuild dialog opens, Then the words come from
   // 13,449 tokens reads "about 13,000"; three-quarters of that is 9,750, so "roughly 9,800 words", never 10,000 from the raw count.
   mockApi({ ...base, 'GET /retrieval/reindex-estimate': { ...estimate, papers: 2, tokens: 13_449 }, 'GET /retrieval/settings': saved })
   const { user } = renderApp('/?settings=library')
-  await user.click(await screen.findByRole('radio', { name: 'Lower cost' }))
+  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Rebuild the search index?' })
   expect(await within(dialog).findByText(/about 13,000 tokens, roughly 9,800 words\.$/)).toBeVisible()
 })
@@ -90,9 +89,9 @@ test('Given an estimate, When the rebuild dialog opens, Then the words come from
 test('Given an empty library, When a new model is chosen, Then the dialog says there is nothing to rebuild yet', async () => {
   mockApi({ ...base, 'GET /retrieval/reindex-estimate': { ...estimate, papers: 0, tokens: 0, estimated_cost_usd: 0 }, 'GET /retrieval/settings': saved })
   const { user } = renderApp('/?settings=library')
-  await user.click(await screen.findByRole('radio', { name: 'Lower cost' }))
+  await user.click(await screen.findByRole('radio', { name: 'OpenAI text-embedding-3-small' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Switch the search index model?' })
-  expect(await within(dialog).findByText('Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with “Lower cost”.')).toBeVisible()
+  expect(await within(dialog).findByText('Your library has no papers yet, so there is nothing to rebuild. New papers will be indexed with “OpenAI text-embedding-3-small”.')).toBeVisible()
   expect(within(dialog).getByRole('button', { name: 'Switch model' })).toBeEnabled()
 })
 
@@ -108,7 +107,7 @@ test('Given one hosted reranker turned on, Then Reordering by relevance is a swi
   const section = await screen.findByRole('region', { name: 'Reordering by relevance' })
   const toggle = await within(section).findByRole('switch', { name: 'Reordering by relevance' })
   expect(toggle).toBeChecked()
-  expect(section).toHaveAccessibleDescription('After search, a second model reads the 40 best matches and moves the passages that best answer your question to the top, so the answer cites stronger evidence. Adds about 2 to 3 seconds and $0.004 to each question. When off, the answer uses the passages in the order search found them, with no extra time or cost.')
+  expect(section).toHaveAccessibleDescription('After search, a second model reads the passages most likely to answer your question and reorders them by how well they answer it. The model that writes the answer then works from the top of that order, so it cites stronger evidence. Adds about 2 to 3 seconds and $0.004 to each question. When off, the answer works from the top of search’s own order.')
   expect(within(section).getByText('Runs on OpenAI GPT-6 Luna, separate from the model that answers.')).toHaveClass('text-xs')
   expect(within(section).queryByRole('radiogroup')).not.toBeInTheDocument()
   expect(within(section).queryByText('gpt-6-luna')).not.toBeInTheDocument()
@@ -177,11 +176,11 @@ test('Given Library and search, Then a plain explainer leads, each setting is ti
   mockApi({ ...hostedOnly, 'GET /retrieval/settings': saved, 'GET /metadata/settings': { source: 'openalex' } })
   renderApp('/?settings=library')
   const panel = await screen.findByRole('tabpanel', { name: 'Library and search' })
-  expect(within(panel).getByText('When you ask about your papers, search finds the passages that match your question’s words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from.')).toBeVisible()
+  expect(within(panel).getByText('When you ask about your papers, search looks for the passages that match your question, by its meaning and by its words. Reordering can then sort those passages by how well they answer it. The model that writes the answer reads the top passages in the order they appear in each paper, and cites the page each one comes from.')).toBeVisible()
   await within(panel).findByRole('switch', { name: 'Reordering by relevance' })
   const regions = within(panel).getAllByRole('region')
   expect(regions.map((region) => region.getAttribute('aria-label') ?? document.getElementById(region.getAttribute('aria-labelledby') ?? '')?.textContent)).toEqual(['Search index', 'Reordering by relevance', 'Paper details'])
   for (const region of regions) expect(region).toHaveAccessibleDescription(/\w{3,}.*\./)
-  expect(regions[0]).toHaveAccessibleDescription(/^Meaning search: /)
-  expect(regions[2]).toHaveAccessibleDescription(/^Separate from answering: /)
+  expect(regions[0]).toHaveAccessibleDescription(/^For each paper, ara builds a semantic search index/)
+  expect(regions[2]).toHaveAccessibleDescription(/^When you upload a PDF, its title, authors, year, venue and abstract are first read from the PDF itself\./)
 })

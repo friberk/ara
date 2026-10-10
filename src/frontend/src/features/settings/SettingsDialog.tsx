@@ -30,9 +30,13 @@ function OpenModelSettings() {
   return <div className="pt-1"><LocalModels models={models.data.items} defaultModel={saved.data?.default_model} /></div>
 }
 
-/** How answers find their passages, in plain words; each setting below names its step. Checked against docs/plans/retrieval-orchestration.md. */
+/**
+ * How answers find their passages, in plain words; each setting below names its step. Checked against the code:
+ * keyword search stems English words (rag/retrievers.py), and packing sends the chosen passages in page order within
+ * each paper (rag/packing.py), with or without reordering.
+ */
 function LibraryExplainer() {
-  return <p className="max-w-prose pt-1 pb-6 text-sm text-pretty">When you ask about your papers, search finds the passages that match your question’s words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from.</p>
+  return <p className="max-w-prose pt-1 pb-6 text-sm text-pretty">When you ask about your papers, search looks for the passages that match your question, by its meaning and by its words. Reordering can then sort those passages by how well they answer it. The model that writes the answer reads the top passages in the order they appear in each paper, and cites the page each one comes from.</p>
 }
 
 function Panel({ category }: { category: SettingsCategory }) {

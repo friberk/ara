@@ -59,7 +59,7 @@ async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(r
     assert items[OPENAI]["price_per_million"] == 0.13
     assert items[OPENAI]["description"].startswith("OpenAI’s most capable search model")
     assert items[SMALL]["description"].startswith("A smaller model")
-    assert (items[OPENAI]["label"], items[SMALL]["label"]) == ("Higher quality", "Lower cost")
+    assert "label" not in items[OPENAI]
     rerankers = {item["key"]: item for item in page["rerankers"]}
     assert rerankers["openai-gpt-6-luna"]["description"].startswith("Adds about 2 to 3 seconds")
     assert rerankers["openai-gpt-6-luna"]["price_per_million"] == 0.1
@@ -75,7 +75,6 @@ async def test_given_no_providers_when_listing_profiles_then_reasons_are_plain(r
         "local_model_key": "qwen3-embedding-4b",
         "price_per_million": 0.0,
         "description": None,
-        "label": None,
     }
     resources.settings.openai_api_key = SecretStr("http-fixture-only")
     items = (await client.get("/api/v1/retrieval/profiles")).json()["items"]

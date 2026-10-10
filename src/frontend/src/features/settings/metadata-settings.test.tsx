@@ -14,8 +14,7 @@ test('Given no saved choice, Then Library and search shows OpenAlex as where pap
   expect(within(choices).getByRole('radio', { name: 'Semantic Scholar' })).not.toBeChecked()
   expect(within(choices).getByRole('radio', { name: 'OpenAlex' })).toHaveAccessibleDescription('A free, open catalog of research from every field, run by the nonprofit OurResearch.')
   expect(within(choices).getByRole('radio', { name: 'Semantic Scholar' })).toHaveAccessibleDescription('A free research catalog run by the Allen Institute for AI.')
-  expect(within(section).getByText(/Details you edited are never replaced\./)).toBeVisible()
-  expect(within(section).getByText(/If a paper’s details come back wrong, try the other catalog\./)).toBeVisible()
+  expect(section).toHaveAccessibleDescription('When you upload a PDF, its title, authors, year, venue and abstract are first read from the PDF itself. When the paper is found in the catalog you choose here, its record completes and improves what was read from the PDF. If it isn’t found there, or the catalog doesn’t answer, the other one is tried. Details you edited are never replaced.')
 })
 
 test('Given OpenAlex, When Semantic Scholar is picked, Then the choice is saved at once and stays chosen', async () => {
