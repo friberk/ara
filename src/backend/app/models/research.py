@@ -17,6 +17,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -55,6 +56,10 @@ class PaperSource(Base):
     metadata_snapshot: Mapped[dict] = mapped_column(JSONB)
 
 
+# A PDF removed from its paper while a chat pins it keeps an emptied row under this key (ARA-097).
+REMOVED_PDF_PREFIX = "removed/"
+
+
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
@@ -82,6 +87,11 @@ class Document(Base):
         ForeignKey("papers.id", ondelete="SET NULL"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @hybrid_property
+    def removed(self) -> bool:
+        """The PDF was removed (services/pdf_removal.py): no file, text or index is left."""
+        return self.object_key.startswith(REMOVED_PDF_PREFIX)
 
 
 class UploadMatch(Base):

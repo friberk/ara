@@ -136,6 +136,35 @@ class DeletedPapers(BaseModel):
     missing: list[UUID]
 
 
+class DocumentDetail(BaseModel):
+    """One PDF's file facts, for the reader's PDF menu (ARA-097)."""
+
+    id: UUID
+    paper_id: UUID
+    file_name: str
+    page_count: int | None
+    byte_size: int
+    status: Literal["uploading", "processing", "ready", "failed"]
+    # How a retrieved PDF was acquired (ARA-087); null for an upload.
+    acquisition: dict | None
+    created_at: datetime
+
+
+class PdfRemovalPreview(BaseModel):
+    """What removing the paper's PDF changes; reading it changes nothing (ARA-097)."""
+
+    # The paper's PDFs: the current one and earlier versions. All are removed.
+    pdfs: int
+    # Summaries of those PDFs; they are deleted.
+    summaries: int
+    # Chats that use one of those PDFs; they stay readable and take no new questions.
+    chats: list[ChatLink]
+    # Queued or running work on those PDFs; it stops.
+    active_jobs: int
+    # One of those chats is writing an answer now; removal waits for it (409 CHAT_BUSY).
+    answering: bool
+
+
 class MatchDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # attach also replaces the library paper's PDF; discard removes the upload.

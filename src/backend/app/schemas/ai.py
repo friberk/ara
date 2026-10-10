@@ -193,6 +193,9 @@ class IncludedPaper(BaseModel):
     first_author: str | None
     year: int | None
     added_at: datetime
+    # The pinned PDF was removed from its paper (ARA-097): earlier answers still read, but the
+    # chat takes no new questions.
+    pdf_removed: bool = False
 
 
 class Chat(BaseModel):

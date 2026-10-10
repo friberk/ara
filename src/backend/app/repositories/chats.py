@@ -21,7 +21,8 @@ def preview(text: str | None, limit: int = PREVIEW_LIMIT) -> str | None:
 
 
 async def included_papers(session, chat_ids: Sequence[UUID]) -> dict[UUID, list[IncludedPaper]]:
-    """Each chat's papers by ordinal, with what a chip needs to name them (ARA-088)."""
+    """Each chat's papers by ordinal, with what a chip needs to name them (ARA-088) and whether
+    the pinned PDF was removed (ARA-097)."""
     first_author = (
         select(PaperAuthor.name)
         .where(PaperAuthor.paper_id == Paper.id)
@@ -30,13 +31,14 @@ async def included_papers(session, chat_ids: Sequence[UUID]) -> dict[UUID, list[
         .scalar_subquery()
     )
     rows = await session.execute(
-        select(ChatPaper, Paper.title, Paper.year, first_author)
+        select(ChatPaper, Paper.title, Paper.year, first_author, Document.removed)
         .join(Paper, Paper.id == ChatPaper.paper_id)
+        .join(Document, Document.id == ChatPaper.document_id)
         .where(ChatPaper.chat_id.in_(list(chat_ids)))
         .order_by(ChatPaper.chat_id, ChatPaper.ordinal)
     )
     found: dict[UUID, list[IncludedPaper]] = {chat_id: [] for chat_id in chat_ids}
-    for link, title, year, author in rows:
+    for link, title, year, author, removed in rows:
         found[link.chat_id].append(
             IncludedPaper(
                 paper_id=link.paper_id,
@@ -45,6 +47,7 @@ async def included_papers(session, chat_ids: Sequence[UUID]) -> dict[UUID, list[
                 first_author=author,
                 year=year,
                 added_at=link.added_at,
+                pdf_removed=removed,
             )
         )
     return found
