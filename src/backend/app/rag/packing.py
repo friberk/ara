@@ -3,7 +3,7 @@
 Several papers (ARA-088) follow docs/plans/retrieval-orchestration.md, steps 6 and 7: papers
 the question names come first, then each paper in relevance order gets a floor of FLOOR
 passages while floors fit, and relevance shares the rest; the others add nothing to this turn.
-Passages are grouped under a short paper header.
+Passages are grouped under a short paper header, the strongest groups at both ends (step 9).
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -69,6 +69,14 @@ def render_evidence(passages: Sequence[Passage], headers: Mapping[str, str] | No
     return SEPARATOR.join(blocks)
 
 
+def ends_first(ranked: Sequence[str]) -> list[str]:
+    """Strongest first, second strongest last, the weakest in the middle: models use the start
+    and end of a long context best (Liu et al., "Lost in the Middle", TACL 2024), and reordering
+    retrieved passages this way helps long-context RAG (Jin et al., ICLR 2025). LlamaIndex's
+    LongContextReorder places nodes the same way."""
+    return [*ranked[::2], *reversed(ranked[1::2])]
+
+
 def pack_evidence(
     nodes: Sequence[NodeWithScore],
     *,
@@ -87,7 +95,8 @@ def pack_evidence(
     every paper after it, is left out. The first paper always keeps whatever of its floor fits.
     A passage that does not fit is skipped whole, never truncated. Passages and headers are
     costed with the widest handle and their separator, so the rendered evidence stays within
-    `budget`. With `headers`, groups follow their order (the chat's order).
+    `budget`. With `headers`, each paper's passages form one group in page order, and the groups
+    are ordered by their best candidate's rank with the strongest at both ends.
     """
     widest = f"S{max_passages}"
     separator = counter.count(SEPARATOR)
@@ -148,7 +157,9 @@ def pack_evidence(
     for key in list(chosen):
         for neighbour in (neighbours or {}).get(key, ()):
             add(neighbour)
-    groups = {document: rank for rank, document in enumerate(headers)}
+    # Groups open and close with the strongest papers (step 9); pages stay in order within each.
+    strength = list(dict.fromkeys(item.node.metadata["document_id"] for item in nodes))
+    groups = {document: rank for rank, document in enumerate(ends_first(strength))}
     ordered = sorted(
         chosen.values(),
         key=lambda item: (groups.get(str(item.document_id), 0), item.page, item.ordinal),

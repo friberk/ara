@@ -84,16 +84,18 @@ def test_given_room_for_less_than_one_floor_when_packing_then_the_best_paper_sti
     assert papers_of(passages) == ["B"]
 
 
-def test_given_several_papers_when_rendering_then_groups_follow_chat_order_within_budget():
+def test_given_several_papers_when_rendering_then_the_strongest_groups_open_and_close():
+    """Relevance C, then A, then B: C opens the evidence, A closes it and B sits in the middle
+    (Jin et al., ICLR 2025; Lost in the Middle). Pages stay in order within each paper."""
     from app.rag.packing import pack_evidence, render_evidence
 
     ranked = [hit("C", 5), hit("A", 3), hit("C", 1), hit("A", 0), hit("B", 2), hit("B", 7)]
     passages = pack_evidence(ranked, budget=100_000, counter=COUNTER, headers=HEADERS)
-    assert papers_of(passages) == ["A", "A", "B", "B", "C", "C"]
-    assert [p.page for p in passages] == [1, 4, 3, 8, 2, 6]
+    assert papers_of(passages) == ["C", "C", "B", "B", "A", "A"]
+    assert [p.page for p in passages] == [2, 6, 3, 8, 1, 4]
     assert [p.handle for p in passages] == [f"S{n}" for n in range(1, 7)]
     rendered = render_evidence(passages, HEADERS)
-    first, second, third = (HEADERS[str(PAPERS[name])] for name in "ABC")
+    first, second, third = (HEADERS[str(PAPERS[name])] for name in "CBA")
     assert rendered.index(first) < rendered.index("[S1]") < rendered.index(second)
     assert rendered.index(second) < rendered.index("[S3]") < rendered.index(third)
     for budget in (0, 120, 300, 700, 1500):
@@ -134,3 +136,13 @@ def test_given_a_paper_with_one_candidate_when_packing_then_it_is_skipped_and_th
     ranked = [hit("A", 0), hit("B", 0), hit("C", 0), hit("A", 1), hit("C", 1)]
     passages = pack_evidence(ranked, budget=100_000, counter=COUNTER, headers=HEADERS)
     assert sorted(set(papers_of(passages))) == ["A", "C"]
+
+
+def test_given_four_papers_when_ordering_then_strength_alternates_from_both_ends():
+    """Relevance D, B, A, C: the strongest first, the second strongest last, the weakest in the
+    middle, as LlamaIndex's LongContextReorder places nodes."""
+    from app.rag.packing import pack_evidence
+
+    ranked = [hit(name, n) for n in range(2) for name in "DBAC"]
+    passages = pack_evidence(ranked, budget=100_000, counter=COUNTER, headers=HEADERS)
+    assert list(dict.fromkeys(papers_of(passages))) == ["D", "A", "C", "B"]
