@@ -96,6 +96,8 @@ class PaperPatch(BaseModel):
     year: int | None = Field(default=None, ge=1500, le=2100)
     abstract: str | None = Field(default=None, max_length=20000)
     doi: str | None = Field(default=None, max_length=300)
+    # Kept in metadata_provenance.venue as {source: manual, value}; papers have no venue column.
+    venue: str | None = Field(default=None, max_length=300)
 
 
 class PaperIds(BaseModel):

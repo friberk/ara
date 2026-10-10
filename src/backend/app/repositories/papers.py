@@ -153,11 +153,21 @@ async def paper_detail(session, paper_id: UUID, *, follow: bool = True) -> Paper
     if status == "uploading":
         status = "processing"
     snapshots = [SearchResult.model_validate(x.metadata_snapshot) for x in sources]
-    # The venue lives in the provider record its provenance names, else any record (ARA-086).
-    venue_source = (paper.metadata_provenance.get("venue") or {}).get("source")
-    venue = next(
-        (x.venue for x in sorted(snapshots, key=lambda x: x.provider != venue_source) if x.venue),
-        None,
+    # The venue lives in the provider record its provenance names, else any record (ARA-086);
+    # a venue the user edited lives in its provenance entry (ARA-095).
+    venue_origin = paper.metadata_provenance.get("venue") or {}
+    venue_source = venue_origin.get("source")
+    venue = (
+        venue_origin.get("value")
+        if venue_source == "manual"
+        else next(
+            (
+                x.venue
+                for x in sorted(snapshots, key=lambda x: x.provider != venue_source)
+                if x.venue
+            ),
+            None,
+        )
     )
     return PaperDetail(
         id=paper.id,
@@ -197,13 +207,15 @@ async def patch_paper(session, paper_id: UUID, patch: PaperPatch) -> PaperDetail
         raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
     provenance = dict(paper.metadata_provenance)
     for field, value in updates.items():
+        provenance[field] = {"source": "manual"}
         if field == "authors":
             await replace_authors(session, paper.id, value or [])
+        elif field == "venue":
+            provenance[field]["value"] = (value.strip() or None) if value else None
         else:
             setattr(paper, field, value)
             if field == "doi":
                 paper.normalized_doi = value
-        provenance[field] = {"source": "manual"}
     paper.metadata_provenance = provenance
     paper.updated_at = func.now()
     await session.flush()

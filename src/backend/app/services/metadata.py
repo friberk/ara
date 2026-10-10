@@ -179,6 +179,72 @@ async def queue_lookup(
     )
 
 
+async def queue_refresh(session, paper_id: UUID) -> BackgroundJob:
+    """Look a paper up again at the user's request, at any time (ARA-095).
+
+    It needs a DOI or a provider record. A lookup already queued or running is returned rather
+    than repeated, so repeated clicks ask no provider twice. Clues are read when the job runs,
+    so edits made meanwhile count.
+    """
+    paper = await session.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
+    if paper is None:
+        raise AppError(404, "PAPER_NOT_FOUND", "Paper not found.")
+    running = await session.scalar(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.kind == "metadata",
+            BackgroundJob.payload["paper_id"].astext == str(paper.id),
+            BackgroundJob.state.in_(("queued", "processing")),
+        )
+        .order_by(BackgroundJob.created_at.desc())
+        .limit(1)
+    )
+    if running is not None:
+        return running
+    linked = await session.scalar(
+        select(PaperSource.id).where(PaperSource.paper_id == paper.id).limit(1)
+    )
+    if not paper.normalized_doi and linked is None:
+        raise AppError(409, "LOOKUP_UNAVAILABLE", "Add the paper's DOI to look up its details.")
+    return await enqueue(
+        session,
+        kind="metadata",
+        payload={
+            "paper_id": str(paper.id),
+            "document_id": str(paper.active_document_id) if paper.active_document_id else None,
+            "refresh": True,
+        },
+    )
+
+
+async def refresh_clues(session, paper: Paper) -> tuple[Clues, dict[str, str], bool]:
+    """The paper's current details as clues, its saved records, and whether its DOI is manual."""
+    from app.models.research import PaperAuthor
+
+    authors = (
+        await session.scalars(
+            select(PaperAuthor.name)
+            .where(PaperAuthor.paper_id == paper.id)
+            .order_by(PaperAuthor.ordinal)
+            .limit(20)
+        )
+    ).all()
+    records = dict(
+        (
+            await session.execute(
+                select(PaperSource.provider, PaperSource.external_id).where(
+                    PaperSource.paper_id == paper.id
+                )
+            )
+        ).all()
+    )
+    manual_doi = (paper.metadata_provenance.get("doi") or {}).get("source") == "manual"
+    clues = Clues(
+        title=paper.title, authors=list(authors), year=paper.year, doi=paper.normalized_doi
+    )
+    return clues, records, manual_doi
+
+
 def rank(candidate: SearchResult, clues: Clues) -> tuple[float, bool]:
     venue, wanted = words(candidate.venue), words(clues.venue)
     agrees = bool(venue and wanted and (venue in wanted or wanted in venue))
@@ -186,11 +252,25 @@ def rank(candidate: SearchResult, clues: Clues) -> tuple[float, bool]:
 
 
 async def find(
-    search: AcademicSearch, provider: str, clues: Clues, first_pages: str
+    search: AcademicSearch,
+    provider: str,
+    clues: Clues,
+    first_pages: str,
+    *,
+    record: str | None = None,
+    trust_doi: bool = False,
 ) -> tuple[SearchResult, str] | None:
+    """`record` is the paper's saved record at this provider, read again first; `trust_doi`
+    accepts a DOI the user entered without checking it against the printed title (ARA-095)."""
+    if record:
+        try:
+            return await search.canonical(provider, record), "record"
+        except AppError as error:
+            if error.code not in {"PAPER_NOT_FOUND", "INVALID_PAPER_ID"}:
+                raise
     if clues.doi:
         found = await search.by_doi(provider, clues.doi)
-        if found and acceptable(found, clues, first_pages, by="doi"):
+        if found and (trust_doi or acceptable(found, clues, first_pages, by="doi")):
             return found, "doi"
     if clues.arxiv_id:
         found = await search.by_arxiv(provider, clues.arxiv_id)
@@ -246,7 +326,16 @@ def unavailable(failures: list[AppError]) -> tuple[str, str]:
 
 
 async def apply(
-    resources, job_id, generation, token, paper_id, found: SearchResult, by: str, *, new_paper=False
+    resources,
+    job_id,
+    generation,
+    token,
+    paper_id,
+    found: SearchResult,
+    by: str,
+    *,
+    new_paper=False,
+    refresh=False,
 ):
     doi = normalized_doi(found.doi)
     async with resources.sessions() as session, session.begin():
@@ -270,7 +359,9 @@ async def apply(
             settle_deleted_locked(job)
             return
         result = {"outcome": "matched", "provider": found.provider, "matched_by": by}
-        result |= await merge(session, paper, found, doi, by=by, new_paper=new_paper)
+        result |= await merge(
+            session, paper, found, doi, by=by, new_paper=new_paper, refresh=refresh
+        )
         job.state, job.stage, job.progress, job.result = "completed", "completed", 100, result
         job.error_code = job.error_message = None
         job.lease_token = job.lease_expires_at = None
@@ -278,12 +369,20 @@ async def apply(
 
 
 async def merge(
-    session, paper: Paper, found: SearchResult, doi: str | None, *, by="title", new_paper=False
+    session,
+    paper: Paper,
+    found: SearchResult,
+    doi: str | None,
+    *,
+    by="title",
+    new_paper=False,
+    refresh=False,
 ) -> dict:
     """Write provider values over local ones; link the record unless another paper owns it.
 
     A new upload whose record another library paper owns asks to join that paper instead of
-    staying a duplicate (ARA-086); nothing is written to it meanwhile.
+    staying a duplicate (ARA-086); nothing is written to it meanwhile. A refresh ("Look up
+    again") also replaces earlier provider values; manual ones always stay (ARA-095).
     """
     source = await session.scalar(
         select(PaperSource).where(
@@ -319,7 +418,11 @@ async def merge(
 
     def replaceable(name: str) -> bool:
         current = provenance.get(name)
-        return not isinstance(current, dict) or current.get("source") in LOCAL_SOURCES
+        if not isinstance(current, dict):
+            return True
+        if refresh:
+            return current.get("source") != "manual"
+        return current.get("source") in LOCAL_SOURCES
 
     updated = []
     if found.title and replaceable("title"):
@@ -368,6 +471,7 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
     paper_id = payload_uuid(payload, "paper_id")
     document_id = payload_uuid(payload, "document_id")
     clues = Clues.from_payload(payload.get("clues"))
+    refresh = payload.get("refresh") is True
     async with resources.sessions() as session, session.begin():
         started = await session.scalar(
             update(BackgroundJob)
@@ -377,13 +481,17 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
         )
         if started is None:
             return
-        if paper_id is not None and await session.get(Paper, paper_id) is None:
+        paper = await session.get(Paper, paper_id) if paper_id is not None else None
+        if paper_id is not None and paper is None:
             # The paper was deleted before its lookup ran (ARA-095); no provider is asked.
             job = await session.scalar(
                 select(BackgroundJob).where(*fence(job_id, generation, token)).with_for_update()
             )
             settle_deleted_locked(job)
             return
+        records, trust_doi = {}, False
+        if refresh and paper is not None:
+            clues, records, trust_doi = await refresh_clues(session, paper)
         attempts = started
         selected = await metadata_source(session)
         pages = (
@@ -406,7 +514,14 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
         async with asyncio.timeout(LOOKUP_DEADLINE_SECONDS):
             for provider in (selected, *(item for item in SOURCES if item != selected)):
                 try:
-                    found = await find(search, provider, clues, first_pages)
+                    found = await find(
+                        search,
+                        provider,
+                        clues,
+                        first_pages,
+                        record=records.get(provider),
+                        trust_doi=trust_doi,
+                    )
                 except AppError as error:
                     failures.append(error)
                     continue
@@ -424,6 +539,7 @@ async def run_metadata_job(resources, job_id, generation, token, payload) -> Non
             paper_id,
             *found,
             new_paper=bool(payload.get("new_paper")),
+            refresh=refresh,
         )
     elif failures and not answered:
         await settle(

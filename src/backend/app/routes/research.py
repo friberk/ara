@@ -8,7 +8,9 @@ from app.integrations.academic import AcademicSearch
 from app.integrations.openalex_content import api_key
 from app.models.research import Paper
 from app.repositories.fulltext import enqueue_automatic
+from app.repositories.jobs import job_statuses
 from app.repositories.papers import mark_saved, paper_detail, patch_paper, save_canonical
+from app.schemas.jobs import JobStatus
 from app.schemas.research import (
     DeletedPapers,
     DeletionPreview,
@@ -21,6 +23,7 @@ from app.schemas.research import (
     SearchPage,
 )
 from app.services.deletion import delete_papers, deletion_preview
+from app.services.metadata import queue_refresh
 from app.services.upload_match import library_papers
 
 router = APIRouter(prefix="/api/v1", tags=["research"])
@@ -89,6 +92,14 @@ async def detail(paper_id: UUID, request: Request):
 async def edit(paper_id: UUID, body: PaperPatch, request: Request):
     async with request.app.state.resources.sessions() as session, session.begin():
         return await patch_paper(session, paper_id, body)
+
+
+@router.post("/papers/{paper_id}/metadata-lookup", response_model=JobStatus, status_code=202)
+async def look_up_again(paper_id: UUID, request: Request):
+    """Look the paper up again in the metadata source; edited fields stay (ARA-095)."""
+    async with request.app.state.resources.sessions() as session, session.begin():
+        job = await queue_refresh(session, paper_id)
+        return (await job_statuses(session, [job]))[0]
 
 
 @router.get("/papers/{paper_id}/deletion-preview", response_model=DeletionPreview)
