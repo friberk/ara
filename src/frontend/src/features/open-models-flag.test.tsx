@@ -93,7 +93,7 @@ test('Given open models off, When the composer model menu opens, Then only hoste
   const { user } = mountSwitcher()
   await user.click(await screen.findByRole('button', { name: /^Model: GPT-5.6 Luna/ }))
   expect(screen.getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([`${luna.display_name}${luna.model_id}`])
-  expect(screen.getByRole('menuitem', { name: 'Model settings' })).toHaveAttribute('href', '/settings')
+  expect(screen.queryByRole('menuitem', { name: 'Model settings' })).not.toBeInTheDocument()
 })
 
 test('Given a saved local default with open models off, Then the composer reports it and never switches to a paid model', async () => {

@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import type { GenerationSettings } from '@/api/types'
+import { Progress } from '@/components/ui/progress'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { useChatUsage } from '@/hooks/queries/usage'
 import { cn } from '@/lib/utils'
@@ -69,24 +70,32 @@ export function ContextMeter({ chatId, settings }: { chatId: string; settings: G
       <PopoverContent
         side="top" align="start" sideOffset={6}
         aria-labelledby={titleId}
-        className="w-64 gap-2.5 p-3 text-left tabular"
+        className="w-64 gap-2.5 p-3 text-left text-sm tabular"
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
         onInteractOutside={(event) => { if (button.current?.contains(event.target as Node)) event.preventDefault() }}
       >
         <p id={titleId} className="sr-only">Context and cost</p>
-        <div className="grid gap-0.5">
-          <span className="text-xs text-muted-foreground">Context</span>
-          <span className="font-medium">{formatTokens(context.used_tokens ?? 0)} / {formatTokens(context.input_budget)} tokens · {percent}%</span>
-          {context.window !== context.input_budget && <span className="text-xs text-muted-foreground">Model window {formatTokens(context.window)} tokens</span>}
-        </div>
-        <div className="grid gap-1 border-t pt-2.5">
-          <span className="font-medium">{free ? 'Local model · $0.00' : `${formatUsd(cost.total)} this chat`}</span>
+        <section className="grid gap-1.5">
+          <h3 className="text-sm font-medium">Context</h3>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-muted-foreground">{formatTokens(context.used_tokens ?? 0)} of {formatTokens(context.input_budget)} tokens</span>
+            <span className={cn('font-medium', percent >= 90 && 'text-destructive')}>{percent}%</span>
+          </div>
+          <Progress value={Math.round(fraction * 100)} aria-label="Context used" className={cn(percent >= 90 && '[&>[data-slot=progress-indicator]]:bg-destructive')} />
+        </section>
+        <section className="grid gap-1.5 border-t pt-2.5">
+          <h3 className="text-sm font-medium">Cost</h3>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-muted-foreground">Total</span>
+            <span className="font-medium">{free ? '$0.00' : formatUsd(cost.total)}</span>
+          </div>
+          {free && <p className="text-xs text-muted-foreground">Local model, no charge</p>}
           {!free && visible.map(([key, label]) => (
             <div key={key} className="flex justify-between gap-3 text-xs text-muted-foreground"><span>{label}</span><span>{formatUsd(cost[key])}</span></div>
           ))}
-          {cost.unrecorded_turns > 0 && <span className="text-xs text-muted-foreground">{cost.unrecorded_turns === 1 ? '1 earlier answer was' : `${cost.unrecorded_turns} earlier answers were`} not tracked.</span>}
-        </div>
+          {cost.unrecorded_turns > 0 && <p className="text-xs text-muted-foreground">{cost.unrecorded_turns === 1 ? '1 earlier answer was' : `${cost.unrecorded_turns} earlier answers were`} not tracked.</p>}
+        </section>
       </PopoverContent>
     </Popover>
   )
