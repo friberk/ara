@@ -169,10 +169,6 @@ class EvidenceResult:
         )
         return self.counter.count(render_evidence(chosen, self.headers))
 
-    def answering(self) -> list[str]:
-        """The documents of the last packing, in evidence order."""
-        return list(dict.fromkeys(str(item.document_id) for item in self.passages))
-
     def target_papers(self) -> list[str]:
         """The papers the pass's selection reaches at its own target, in evidence order: those a
         per-paper reading answers from when they do not all fit E."""
