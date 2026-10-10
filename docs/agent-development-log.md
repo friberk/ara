@@ -1889,7 +1889,6 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
 - **Corrected error.** The first `npm run check` failed one test: `App.test.tsx` opened the sidebar Theme menu. The test's behaviour (Dark applies and persists) is kept and now drives Settings > Appearance; it passes 8/8 and the full check passes.
 - **Result.** `npm run check`: 90 files, 722 tests passed, exit 0. `npm run build`: exit 0. Commit `794daed`.
 
-<<<<<<< HEAD
 ## 2026-10-10 - ARA-107 Purdue-only demo deployment, private GitHub repository and CI that deploys main
 
 - Prompts:
@@ -1936,7 +1935,7 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
   - My first run stopped at the upload because the script did not click "Replace PDF". That was a script error, not an app error.
 - **Restart, reboot and clean state.** One paper survived `docker compose restart` and a server reboot, after which the services came back on their own. At the user's request ("don't forget to reset the DB. We will deliver at a clean state"), the Postgres, Redis and MinIO volumes were removed and recreated; Caddy's certificate volumes were kept. The API then listed 0 papers and 0 chats.
 - **API keys.** The user asked whether GitHub Secrets hold the API keys. They don't: GitHub holds only the deploy SSH key, host keys and target. The provider keys live only in the server's `/opt/ara/.env` (mode 600), and `deploy.sh` never syncs or prints it.
-=======
+
 ## 2026-10-10 - ARA-110 Chat paper row uses the composer's pills; citations read Han et al., 2018, p. 2
 
 - Prompt: the user said the papers on top of the chat were the previous design and not consistent with the editor pills, that hovering them showed a "Show summary" modal which should go, and that the citation chips "Han 2018 · p. 2" had a middle dot, "an obvious AI-ism". They chose: the row only for chats over more than one paper, using the composer's `PaperPill`; APA 7 chips "Han et al., 2018, p. 2" in multi-paper chats ("p. 2" in single-paper chats); a pill click opens that paper's PDF in a reader tab. The lead added, with the user's approval ("OK, add those to ARA-110"): the row ×, which removes a paper from the whole chat, is named "Remove <title> from this chat", and a removal offers an Undo toast.
@@ -2072,8 +2071,11 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
   - Backend catalog and route tests: 73 passed.
   - A confirming screenshot round (`r4-*`) covers Library and search at desktop light and at 390px, and the rebuild confirmation.
 
->>>>>>> feat/ux-feedback-round
 
 ### 2026-10-10 — Lead: ARA-109 and ARA-110 merged into main (a33bda7)
 
 Before the merge, at integration `5a70c0b`: backend 1228 passed with Ruff clean, and `generated.ts` matched the production, flag-on OpenAPI. The final ARA-109 commit (word estimate from the rounded token count) was merged afterwards, and the frontend then passed `npm run check` 766/766 and `npm run build`. Neither ticket has a migration. The Playwright specs remain unrun.
+
+### 2026-10-10 — Lead: conflict markers left in the journal by the ARA-109/110 merge, fixed
+
+`main` had moved to `a33bda7` (the ARA-107 deploy work, merged by another session), so merging `feat/ux-feedback-round` conflicted in this journal. My command piped `git merge` through `tail`, which hid the merge's failure, so the archive edit and the commit ran anyway. `453ee82` concluded the merge with conflict markers in this file; no other file had any. This commit resolves them by keeping both sides in order. From now on I check the merge status before anything follows it.
