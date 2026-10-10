@@ -20,6 +20,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { DetailsPanel } from './DetailsPanel'
 import { JoinedRedirect } from './JoinedRedirect'
 import { PaperStatusBadge } from './PaperStatusBadge'
+import type { ReaderTab } from './ReaderDocuments'
 import { MobilePdfView, ReaderPanel } from './ReaderPanel'
 import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type WorkspaceContextValue, type WorkspaceView } from './workspace-context'
 
@@ -43,8 +44,9 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   const [readerTab, setReaderTab] = useState<'pdf' | 'details'>('pdf')
   const [sourceRequest, setSourceRequest] = useState<SourceRequest | null>(null)
   const [highlightOutcome, setHighlightOutcome] = useState<HighlightOutcome | null>(null)
-  // A citation from an earlier upload shows that PDF until the reader goes back to the current one.
-  const [earlierDocumentId, setEarlierDocumentId] = useState<string | null>(null)
+  // The open PDFs: this paper's (an earlier upload while a citation asks for it) and other papers a chat cites (ARA-088).
+  const [readerTabs, setReaderTabs] = useState<ReaderTab[]>([{ paperId: paper.id }])
+  const [activeTab, setActiveTab] = useState(paper.id)
   const [readerCollapsed, setReaderCollapsed] = useState(false)
   const readerPanel = usePanelRef()
   const layout = useDefaultLayout({ id: 'paper-workspace', panelIds: ['reader', 'conversation'] })
@@ -61,18 +63,34 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   const showSource = useCallback((citation: Citation, claim?: string) => {
     setSourceRequest((previous) => ({ citation, claim, nonce: (previous?.nonce ?? 0) + 1 }))
     setHighlightOutcome(null)
-    setEarlierDocumentId(citation.document_id === paper.active_document_id ? null : citation.document_id)
+    // Another paper's citation opens that paper in its own tab, or focuses the tab it already has.
+    const paperId = citation.paper_id ?? paper.id
+    const documentId = paperId === paper.id && citation.document_id === paper.active_document_id ? undefined : citation.document_id
+    setReaderTabs((current) => current.some((tab) => tab.paperId === paperId) ? current.map((tab) => (tab.paperId === paperId ? { paperId, documentId } : tab)) : [...current, { paperId, documentId }])
+    setActiveTab(paperId)
     setReaderTab('pdf')
     if (isMobile) setView('pdf')
     else if (readerPanel.current?.isCollapsed()) readerPanel.current.expand()
-  }, [isMobile, paper.active_document_id, readerPanel, setView])
+  }, [isMobile, paper.id, paper.active_document_id, readerPanel, setView])
 
   const context = useMemo<WorkspaceContextValue>(() => ({
     paper, view, setView, readerTab, setReaderTab, sourceRequest, showSource, highlightOutcome, reportHighlight: setHighlightOutcome,
   }), [paper, view, setView, readerTab, sourceRequest, showSource, highlightOutcome])
 
-  const documentId = earlierDocumentId ?? (paper.document_status === 'ready' ? paper.active_document_id : null)
-  const showCurrent = () => setEarlierDocumentId(null)
+  const documents = {
+    tabs: readerTabs,
+    active: activeTab,
+    onActivate: setActiveTab,
+    onClose: (paperId: string) => {
+      if (readerTabs.length < 2) return
+      const index = readerTabs.findIndex((tab) => tab.paperId === paperId)
+      const rest = readerTabs.filter((tab) => tab.paperId !== paperId)
+      setReaderTabs(rest)
+      if (paperId === activeTab) setActiveTab(rest[Math.min(index, rest.length - 1)]!.paperId)
+    },
+    // Back to the paper's current PDF from an earlier version a citation opened.
+    onShowCurrent: (paperId: string) => setReaderTabs((current) => current.map((tab) => (tab.paperId === paperId ? { paperId } : tab))),
+  }
   const conversation = <ConversationPane paper={paper} chatId={chatId} />
 
   return (
@@ -103,7 +121,7 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
           {/* All three stay mounted so a streaming answer or the reading position survives switching tabs. */}
           <TabsContent value="chat" forceMount hidden={view !== 'chat'} tabIndex={-1} className="flex min-h-0 flex-col">{conversation}</TabsContent>
           <TabsContent value="pdf" forceMount hidden={view !== 'pdf'} tabIndex={-1} className="min-h-0 border-t">
-            <MobilePdfView paper={paper} documentId={documentId} onShowCurrent={showCurrent} />
+            <MobilePdfView paper={paper} {...documents} />
           </TabsContent>
           <TabsContent value="details" forceMount hidden={view !== 'details'} className="min-h-0 border-t"><DetailsPanel paper={paper} onOpenPdf={() => setView('pdf')} /></TabsContent>
         </Tabs>
@@ -112,7 +130,7 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
           <ResizablePanel id="reader" panelRef={readerPanel} defaultSize="50%" minSize="30%" collapsible collapsedSize="0%" onResize={(size) => setReaderCollapsed(size.asPercentage < 0.5)}>
             {/* A collapsed reader keeps its state but leaves the tab order and the accessibility tree. */}
             <div className="h-full" inert={readerCollapsed}>
-              <ReaderPanel paper={paper} documentId={documentId} onShowCurrent={showCurrent} />
+              <ReaderPanel paper={paper} {...documents} />
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle className="data-[separator=active]:bg-ring data-[separator=hover]:bg-ring/60" />

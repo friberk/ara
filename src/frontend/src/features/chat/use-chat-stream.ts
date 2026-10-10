@@ -20,7 +20,7 @@ const stages: ReadonlySet<string> = new Set<RetrievalStage>(['waiting', 'plannin
  * Stop keeps the partial answer, unmounting aborts, and the saved history replaces local drafts once persisted.
  * A supplied request_id (a queued question) replays the stored answer if the same question is ever sent twice.
  */
-export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
+export function useChatStream(chat: Pick<Chat, 'id' | 'papers'>) {
   const client = useQueryClient()
   const [streaming, setStreaming] = useState(false)
   const [draft, setDraft] = useState<Message | null>(null)
@@ -68,7 +68,8 @@ export function useChatStream(chat: Pick<Chat, 'id' | 'document_id'>) {
         if (event.event === 'message.status' && stages.has(event.data.stage)) setStage(event.data.stage as RetrievalStage)
         if (event.event === 'message.delta') setDraft((previous) => previous ? { ...previous, content: previous.content + event.data.text } : answer('stream', event.data.text))
         if (event.event === 'message.completed') {
-          if (event.data.citations.some((citation) => citation.document_id !== chat.document_id)) throw new Error('The response included a source outside this document.')
+          const documents = new Set(chat.papers.map((paper) => paper.document_id))
+          if (event.data.citations.some((citation) => !documents.has(citation.document_id))) throw new Error(`The response included a source outside ${chat.papers.length > 1 ? 'these papers' : 'this document'}.`)
           terminal = true
           completed = true
           setDraft(event.data)

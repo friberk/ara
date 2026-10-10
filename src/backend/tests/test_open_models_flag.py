@@ -168,7 +168,7 @@ async def test_given_saved_local_default_when_flag_off_then_it_is_unavailable_ne
         assert summary.status_code == 409 and summary.json()["code"] == DISABLED
         page = (await client.get(f"/api/v1/papers/{paper_id}/summaries")).json()
         assert page["blocked"]["code"] == DISABLED and page["blocked"]["model"] == LOCAL_CHAT
-        chat = await client.post(f"/api/v1/papers/{paper_id}/chats", json={})
+        chat = await client.post("/api/v1/chats", json={"paper_ids": [str(paper_id)]})
         chat_id = chat.json()["id"]
         answer = await client.post(
             f"/api/v1/chats/{chat_id}/messages/stream",
@@ -283,8 +283,7 @@ async def test_given_ready_local_index_when_flag_off_then_answers_search_by_keyw
     )
     result = await pipeline.retrieve_evidence(
         resources,
-        document_id=document_id,
-        chunk_set=CHUNK_SET,
+        scopes=[pipeline.Scope(document_id, CHUNK_SET)],
         preferred_profile=preferred,
         queries=["BM25 recall dense retrieval"],
         question="How does BM25 recall compare?",
@@ -302,16 +301,15 @@ async def test_given_ready_local_index_when_flag_off_then_answers_search_by_keyw
 async def test_given_saved_local_reranker_when_flag_off_then_answers_are_not_reranked(
     resources, monkeypatch
 ):
-    from app.models.research import ChatSession
     from app.schemas.ai import ChatInput
     from app.services import chat
     from tests.support.answers import use_hosted
+    from tests.support.chats import chat_with
 
     paper_id, document_id, _ = await seed_structured(resources)
     await store(resources, "retrieval", {"embedding_profile": OPENAI, "reranker": LOCAL_RERANKER})
     async with resources.sessions() as session, session.begin():
-        conversation = ChatSession(paper_id=paper_id, document_id=document_id, title="Q")
-        session.add(conversation)
+        conversation = await chat_with(session, (paper_id, document_id), title="Q")
         await session.flush()
     use_hosted(monkeypatch, resources, [], lambda body: "Unused.")
     prepared = await chat.prepare(

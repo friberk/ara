@@ -105,7 +105,7 @@ test('Given a GFM table, Then it renders as a table the reader can scroll sidewa
 })
 
 test('Given markers for cited chunks, Then page chips appear in the sentence that cites them', () => {
-  renderWithProviders(<Markdown documentId={documentId} citations={[first, second]} content={`Attention replaces recurrence [source:${first.chunk_id}].\n\nIt trains faster [source:${second.chunk_id}][source:${second.chunk_id}].`} />)
+  renderWithProviders(<Markdown documents={new Set([documentId])} citations={[first, second]} content={`Attention replaces recurrence [source:${first.chunk_id}].\n\nIt trains faster [source:${second.chunk_id}][source:${second.chunk_id}].`} />)
   const recurrence = screen.getByText(/Attention replaces/)
   expect(within(recurrence).getByRole('button', { name: 'Source, page 3' })).toHaveTextContent('p. 3')
   expect(within(recurrence).queryByRole('button', { name: 'Source, page 7' })).toBeNull()
@@ -116,12 +116,12 @@ test('Given markers for cited chunks, Then page chips appear in the sentence tha
 test('Given two passages from one page cited together, Then each gets its own inline chip (ARA-075)', () => {
   const results = { ...cite('dddddddd-0000-4000-8000-000000000004', 7), section: 'Results > Open-domain QA' }
   const ablation = { ...cite('eeeeeeee-0000-4000-8000-000000000005', 7), section: 'Results > Ablation' }
-  renderWithProviders(<Markdown documentId={documentId} citations={[results, ablation]} content={`Recall rose [source:${results.chunk_id}][source:${ablation.chunk_id}].`} />)
+  renderWithProviders(<Markdown documents={new Set([documentId])} citations={[results, ablation]} content={`Recall rose [source:${results.chunk_id}][source:${ablation.chunk_id}].`} />)
   expect(screen.getAllByRole('button').map((chip) => chip.getAttribute('aria-label'))).toEqual(['Source, page 7, Open-domain QA', 'Source, page 7, Ablation'])
 })
 
 test('Given unknown or other-document markers, Then they render nothing', () => {
-  const { container } = renderWithProviders(<Markdown documentId={documentId} citations={[first, elsewhere]} content={`Claim one [source:${elsewhere.chunk_id}]. Claim two [source:99999999-9999-4999-8999-999999999999].`} />)
+  const { container } = renderWithProviders(<Markdown documents={new Set([documentId])} citations={[first, elsewhere]} content={`Claim one [source:${elsewhere.chunk_id}]. Claim two [source:99999999-9999-4999-8999-999999999999].`} />)
   expect(screen.getByText('Claim one. Claim two.')).toBeVisible()
   expect(screen.queryByRole('button')).toBeNull()
   expect(container).not.toHaveTextContent('[source:')
@@ -129,7 +129,7 @@ test('Given unknown or other-document markers, Then they render nothing', () => 
 
 test('Given an inline chip, When the reader activates it, Then onCitation receives that citation and the claim it stands after', async () => {
   const onCitation = vi.fn()
-  const { user } = renderWithProviders(<Markdown documentId={documentId} citations={[first, second]} onCitation={onCitation} content={`First point. The **model** trains faster [source:${second.chunk_id}].`} />)
+  const { user } = renderWithProviders(<Markdown documents={new Set([documentId])} citations={[first, second]} onCitation={onCitation} content={`First point. The **model** trains faster [source:${second.chunk_id}].`} />)
   await user.click(screen.getByRole('button', { name: 'Source, page 7' }))
   expect(onCitation).toHaveBeenCalledWith(second, 'The model trains faster')
   expect(screen.queryByRole('dialog')).toBeNull()
@@ -137,7 +137,7 @@ test('Given an inline chip, When the reader activates it, Then onCitation receiv
 
 // Test-after: written once remark-citations grouped chips (its plugin tests came first); checks the rendered span.
 test('Given a chip after the last word of a sentence, Then the word, the chip and the full stop cannot be split across lines', () => {
-  renderWithProviders(<Markdown documentId={documentId} citations={[second]} content={`It trains faster than recurrent or convolutional approaches. [source:${second.chunk_id}]`} />)
+  renderWithProviders(<Markdown documents={new Set([documentId])} citations={[second]} content={`It trains faster than recurrent or convolutional approaches. [source:${second.chunk_id}]`} />)
   const group = screen.getByRole('button', { name: 'Source, page 7' }).parentElement
   expect(group).toHaveClass('whitespace-nowrap')
   expect(group).toHaveTextContent(/^approaches\.\s*p\. 7$/)

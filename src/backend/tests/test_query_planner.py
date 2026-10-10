@@ -1,6 +1,7 @@
 """Follow-up questions become standalone search queries before retrieval (ARA-077)."""
 
 import json
+import re
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -126,7 +127,12 @@ async def test_given_follow_up_on_hosted_chat_when_planning_then_sol_names_the_s
     assert body["model"] == "gpt-5.6-sol" and body["reasoning"] == {"effort": "high"}
     schema = body["text"]["format"]["schema"]
     assert schema["properties"]["search_queries"]["maxItems"] == 3
-    assert schema["required"] == ["standalone_question", "search_queries", "needs_paper_evidence"]
+    assert schema["required"] == [
+        "standalone_question",
+        "search_queries",
+        "needs_paper_evidence",
+        "sub_questions",
+    ]
     sent = json.dumps(body["input"])
     # The summary and the last two turns, with citations rendered as page references.
     assert "compare retrieval methods" in sent
@@ -359,3 +365,102 @@ def test_given_a_short_summary_when_prompting_the_planner_then_recent_turns_use_
     summary = "## User goals\n\n- BM25."
     prompt = planner_prompt(counter, 3000, turns, summary, "And then?")[-1].content
     assert "BM25" in prompt and "Earliest question?" in prompt and "Latest question?" in prompt
+
+
+@pytest.mark.integration
+async def test_given_two_papers_and_a_comparison_when_planning_then_each_paper_gets_a_sub_question(
+    resources, monkeypatch
+):
+    """Several papers plan even a first question; sub-questions keep listed papers once each."""
+    from app.services import memory
+    from app.services.context import PaperHeader
+
+    papers = [
+        PaperHeader(title="Sparse Retrieval", authors=["Ada Researcher", "Ben"], year=2024),
+        PaperHeader(title="Dense Passage Retrieval", authors=["Vlad K"], year=2020),
+    ]
+    asks = [
+        {"paper": 2, "question": "What recall does BM25 reach in DPR?"},
+        {"paper": 7, "question": "Which paper is this?"},
+        {"paper": 1, "question": "What recall does BM25 reach in Sparse Retrieval?"},
+        {"paper": 2, "question": "A second question for paper 2?"},
+    ]
+    requests = hosted_responses(
+        monkeypatch,
+        resources,
+        lambda body: plan_output(standalone_question="Compare BM25 recall", sub_questions=asks),
+    )
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=[],
+        memory_summary=None,
+        question="How does BM25 recall compare?",
+        papers=papers,
+    )
+    assert plan.source == "model"
+    assert plan.sub_questions == (
+        (1, "What recall does BM25 reach in DPR?"),
+        (0, "What recall does BM25 reach in Sparse Retrieval?"),
+    )
+    (body,) = requests
+    assert "Paper 1: Sparse Retrieval (Ada Researcher et al., 2024)" in body["instructions"]
+    assert "Paper 2: Dense Passage Retrieval (Vlad K, 2020)" in body["instructions"]
+    assert "about several research papers" in body["instructions"]
+    assert body["max_output_tokens"] == 300 + 2 * 80 + 1024
+
+
+@pytest.mark.integration
+async def test_given_one_paper_when_the_planner_returns_sub_questions_then_they_are_ignored(
+    resources, monkeypatch
+):
+    from app.services import memory
+
+    hosted_responses(
+        monkeypatch,
+        resources,
+        lambda body: plan_output(sub_questions=[{"paper": 1, "question": "Only one paper?"}]),
+    )
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=rag_history(),
+        memory_summary=None,
+        question=FOLLOW_UP,
+    )
+    assert plan.source == "model" and plan.sub_questions == ()
+
+
+@pytest.mark.integration
+async def test_given_many_papers_when_planning_then_the_list_is_bounded_named_first_and_five_asked(
+    resources, monkeypatch
+):
+    """Any number of papers: the planner sees at most 20 of them, the named ones first, and a
+    comparison gets at most five sub-questions (Open Notebook's Ask plans up to five searches)."""
+    from app.services import memory
+    from app.services.context import PaperHeader
+
+    papers = [PaperHeader(f"Study {n}", [f"Author {n}"], 2020) for n in range(25)]
+    asks = [{"paper": n, "question": f"What does study {n - 1} report?"} for n in range(1, 9)]
+    requests = hosted_responses(
+        monkeypatch, resources, lambda body: plan_output(sub_questions=asks)
+    )
+    plan = await memory.plan_query(
+        resources,
+        model="gpt-5.6-luna",
+        effort="low",
+        history=[],
+        memory_summary=None,
+        question="How does Study 22 compare with the others?",
+        papers=papers,
+        named=[22],
+    )
+    assert len(plan.sub_questions) == 5
+    (body,) = requests
+    listed = re.findall(r"^Paper (\d+): ", body["instructions"], re.M)
+    assert len(listed) == 20 and listed[0] == "23"
+    assert "5 more papers" in body["instructions"]
+    assert body["text"]["format"]["schema"]["properties"]["sub_questions"]["maxItems"] == 5
+    assert body["max_output_tokens"] == 300 + 5 * 80 + 1024

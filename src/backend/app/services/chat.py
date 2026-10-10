@@ -31,6 +31,7 @@ from app.integrations.model_catalog import local_spec
 from app.integrations.open_models import offered_reranker
 from app.models.research import (
     ChatMessage,
+    ChatPaper,
     ChatSession,
     Document,
     ModelConfiguration,
@@ -44,18 +45,21 @@ from app.rag.citations import (
     passage_citations,
 )
 from app.rag.indexing import default_profile
-from app.rag.pipeline import evidence_ceiling, retrieve_evidence
+from app.rag.pipeline import Scope, evidence_ceiling, retrieve_evidence
+from app.repositories.chats import with_cited_papers
 from app.repositories.jobs import now
 from app.repositories.local_models import use_held
 from app.schemas.ai import Message
 from app.schemas.retrieval import RetrievalSettings
 from app.services import memory
+from app.services.chat_papers import named_papers, pinned
 from app.services.context import (
     INSTRUCTIONS_VERSION,
     RECALL_SHARE,
     SUMMARY_SHARE,
     PaperHeader,
     assemble_answer_prompt,
+    paper_label,
 )
 from app.services.memory import AnswerMemory, QueryPlan
 
@@ -136,13 +140,10 @@ async def replayed(session, chat_id: UUID, body) -> tuple[ChatSession, ChatMessa
     return chat, replay
 
 
-async def paper_header(session, paper: Paper) -> PaperHeader:
-    authors = await session.scalars(
-        select(PaperAuthor.name)
-        .where(PaperAuthor.paper_id == paper.id)
-        .order_by(PaperAuthor.ordinal)
-    )
-    return PaperHeader(title=paper.title, authors=list(authors), year=paper.year)
+MULTI_PAPER_LOCAL = (
+    "Chats over several papers need a hosted model. Choose a hosted model, or remove papers "
+    "to ask a local model."
+)
 
 
 @dataclass
@@ -152,21 +153,62 @@ class Prepared:
     assistant: ChatMessage
     replay: bool
     question: str = ""
-    document_id: UUID | None = None
-    chunk_set: str | None = None
+    # The chat's papers in order, each with its pinned PDF and that PDF's chunk set.
+    scopes: list[Scope] = field(default_factory=list)
     retrieval_profile: str | None = None
     reranker: str | None = None
-    paper: PaperHeader | None = None
+    papers: list[PaperHeader] = field(default_factory=list)
     history: list[ChatMessage] = field(default_factory=list)
     limits: ContextProfile | None = None
     evidence_budget: int = 0
 
 
+async def chat_scopes(session, chat_id: UUID) -> tuple[list[Scope], list[PaperHeader]]:
+    """The chat's papers with their pinned PDFs, which must be ready and indexed by chunks.
+
+    Two queries for any number of papers: the links with their PDFs and papers, then authors.
+    """
+    rows = (
+        await session.execute(
+            select(ChatPaper, Document, Paper)
+            .join(Document, Document.id == ChatPaper.document_id)
+            .join(Paper, Paper.id == ChatPaper.paper_id)
+            .where(ChatPaper.chat_id == chat_id)
+            .order_by(ChatPaper.ordinal)
+        )
+    ).all()
+    authors: dict[UUID, list[str]] = {}
+    for paper_id, name in await session.execute(
+        select(PaperAuthor.paper_id, PaperAuthor.name)
+        .where(PaperAuthor.paper_id.in_([paper.id for _, _, paper in rows]))
+        .order_by(PaperAuthor.paper_id, PaperAuthor.ordinal)
+    ):
+        authors.setdefault(paper_id, []).append(name)
+    scopes, headers = [], []
+    for number, (_, document, paper) in enumerate(rows, start=1):
+        if document.status != "ready" or document.chunk_set is None:
+            raise HTTPException(
+                409,
+                "This paper is being prepared for the new search. Try again in a minute."
+                if document.status == "ready"
+                else "The selected document is not ready",
+            )
+        header = PaperHeader(title=paper.title, authors=authors.get(paper.id, []), year=paper.year)
+        label = f"Paper {number}: {paper_label(header)}" if len(rows) > 1 else ""
+        scopes.append(Scope(document.id, document.chunk_set, label))
+        headers.append(header)
+    return scopes, headers
+
+
 async def prepare(resources, chat_id: UUID, body) -> Prepared:
     async with resources.sessions() as session, session.begin():
         _, replay = await replayed(session, chat_id, body)
+        several = len(await pinned(session, chat_id)) > 1
     if replay is not None:
         return Prepared(replay, replay=True)
+    # Open models are frozen (ARA-090), so multi-paper evidence is built for hosted models only.
+    if several and local_spec(body.model):
+        raise LLMError("MULTI_PAPER_LOCAL", MULTI_PAPER_LOCAL, 409)
     # Local validation calls the runtime, so it never runs while the chat row is locked.
     selection = await validate_model_available(resources, body.model, body.reasoning_effort)
     configuration = await generation_configuration(resources, body.model, body.reasoning_effort)
@@ -183,14 +225,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             )
         ):
             raise HTTPException(409, "Another answer is already processing in this chat")
-        document = await session.get(Document, chat.document_id)
-        if document is None or document.status != "ready" or document.chunk_set is None:
-            raise HTTPException(
-                409,
-                "This paper is being prepared for the new search. Try again in a minute."
-                if document is not None and document.status == "ready"
-                else "The selected document is not ready",
-            )
+        scopes, headers = await chat_scopes(session, chat_id)
         history = list(
             (
                 await session.scalars(
@@ -200,8 +235,6 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
                 )
             ).all()
         )
-        paper = await session.get(Paper, chat.paper_id)
-        header = await paper_header(session, paper)
         profile = await default_profile(session)
         stored = await session.get(ModelConfiguration, "retrieval")
         reranker = RetrievalSettings.from_stored(stored.value if stored else None).reranker
@@ -209,7 +242,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
         # Sizing without evidence raises CONTEXT_LIMIT (413) before anything is stored.
         sizing = assemble_answer_prompt(
             profile=limits,
-            paper=header,
+            papers=headers,
             history=history,
             memory_summary=None,
             recalled=[],
@@ -217,7 +250,7 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             question=body.content,
             retrieved_for=None,
         )
-        ceiling = await evidence_ceiling(session, document.id, document.chunk_set, limits.counter)
+        ceiling = await evidence_ceiling(session, scopes, limits.counter)
         await reserve(resources, body.model, prompt_bound(limits, sizing, ceiling, body.content))
         await memory.defer_compaction(session, chat_id)
         user = ChatMessage(
@@ -256,11 +289,10 @@ async def prepare(resources, chat_id: UUID, body) -> Prepared:
             assistant,
             replay=False,
             question=body.content,
-            document_id=chat.document_id,
-            chunk_set=document.chunk_set,
+            scopes=scopes,
             retrieval_profile=profile,
             reranker=reranker,
-            paper=header,
+            papers=headers,
             history=history,
             limits=limits,
             evidence_budget=sizing.allocation.evidence,
@@ -291,7 +323,19 @@ async def plan_for_answer(resources, prepared: Prepared, remembered: AnswerMemor
         history=remembered.history,
         memory_summary=remembered.summary[1] if remembered.summary else None,
         question=prepared.question,
+        papers=prepared.papers,
+        named=named_papers(prepared.question, prepared.papers) if len(prepared.papers) > 1 else (),
     )
+
+
+def kept_papers(prepared: Prepared, plan: QueryPlan) -> list[int]:
+    """Papers this answer always keeps: those the question or its standalone form names, and
+    the targets of a comparison's sub-questions (ARA-088)."""
+    if len(prepared.papers) < 2:
+        return []
+    asked = f"{prepared.question}\n{plan.standalone_question}"
+    targets = [index for index, _ in plan.sub_questions]
+    return sorted({*named_papers(asked, prepared.papers), *targets})
 
 
 async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory, plan, evidence):
@@ -300,7 +344,7 @@ async def recalled_turns(resources, prepared: Prepared, remembered: AnswerMemory
         return []
     window = assemble_answer_prompt(
         profile=prepared.limits,
-        paper=prepared.paper,
+        papers=prepared.papers,
         history=remembered.history,
         memory_summary=remembered.summary,
         recalled=[],
@@ -343,13 +387,16 @@ async def save(
         message.content, message.state = content, state
         message.lease_expires_at = now() + LEASE if state == "processing" else None
         if citations is not None:
-            message.citations = [item.model_dump(mode="json") for item in citations]
+            message.citations = [
+                item.model_dump(mode="json", exclude={"paper_id"}) for item in citations
+            ]
         if usage is not None:
             message.usage = usage
         if grounding is not None:
             message.grounding = grounding
         await session.flush()
-        return Message.model_validate(message).model_dump(mode="json")
+        (saved,) = await with_cited_papers(session, [Message.model_validate(message)])
+        return saved.model_dump(mode="json")
 
 
 async def record_evidence(resources, message_id, evidence, usage, planner=None) -> None:
@@ -369,13 +416,13 @@ async def record_evidence(resources, message_id, evidence, usage, planner=None) 
         message.lease_expires_at = now() + LEASE
 
 
-def grounded(content: str, transducer: HandleTransducer, passages, document_id: UUID):
+def grounded(content: str, transducer: HandleTransducer, passages, document_ids: set[UUID]):
     """Canonical content, its citations and grounding; unsupported citations fail."""
     try:
         if transducer.unknown:
             raise ValueError("The answer cited a handle that was not supplied.")
         content = normalize_source_markers(content)
-        citations = passage_citations(content, passages, document_id)
+        citations = passage_citations(content, passages, document_ids)
     except ValueError:
         raise LLMError(
             "UNGROUNDED_OUTPUT", "The answer cited unavailable source evidence."
@@ -474,21 +521,22 @@ async def stream_answer(
             await queue.put(("status", "retrieving"))
             evidence = await retrieve_evidence(
                 resources,
-                document_id=prepared.document_id,
-                chunk_set=prepared.chunk_set,
+                scopes=prepared.scopes,
                 preferred_profile=prepared.retrieval_profile,
                 queries=plan.search_queries,
                 question=plan.standalone_question,
                 budget=prepared.evidence_budget,
                 counter=prepared.limits.counter,
                 reranker=prepared.reranker,
+                sub_questions=plan.sub_questions,
+                kept=kept_papers(prepared, plan),
                 on_stage=lambda stage: queue.put(("status", stage)),
             )
             if plan.standalone_question != prepared.question:
                 evidence.summary.standalone_query = plan.standalone_question
             assembled = assemble_answer_prompt(
                 profile=prepared.limits,
-                paper=prepared.paper,
+                papers=prepared.papers,
                 history=remembered.history,
                 memory_summary=remembered.summary,
                 recalled=await recalled_turns(resources, prepared, remembered, plan, evidence),
@@ -555,7 +603,10 @@ async def stream_answer(
             content += tail
             yield event("message.delta", {"text": tail})
         content, citations, grounding = grounded(
-            content, transducer, evidence.passages, prepared.document_id
+            content,
+            transducer,
+            evidence.passages,
+            {scope.document_id for scope in prepared.scopes},
         )
         final = await save(
             resources,

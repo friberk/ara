@@ -9,6 +9,8 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.services.health import SCHEMA_REVISION
+
 PAPER = "INSERT INTO papers (id, title, metadata_provenance) VALUES (:id, 'P', '{}')"
 DOCUMENT = (
     "INSERT INTO documents (id, paper_id, status, object_key, sha256, original_filename, "
@@ -175,7 +177,7 @@ async def test_given_prefixed_rows_when_upgrading_then_valid_rows_move_and_downg
         await alembic("upgrade", "head")
         async with engine.connect() as connection:
             assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0009_upload_match_tables"
+                SCHEMA_REVISION
             )
             assert await connection.scalar(text("SELECT count(*) FROM upload_matches")) == 1
     finally:

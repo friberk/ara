@@ -5,7 +5,9 @@ import { peekQuestion } from '@/lib/pending-questions'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const readyPaper = { id: 'p1', title: 'Traceable research systems', authors: ['Ada Researcher'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
-const chat = { id: 'c1', paper_id: 'p1', document_id: 'd1', title: 'Which datasets were used?', title_source: 'auto', created_at: '2026-10-08T10:00:00Z', paper_title: readyPaper.title, last_activity_at: '2026-10-08T12:00:00Z', message_count: 2, last_question_preview: 'Which datasets were used?' }
+const otherPaper = { ...readyPaper, id: 'p2', title: 'Dense passage retrieval', authors: ['Vladimir Karpukhin'], year: 2020, active_document_id: 'd2' }
+const included = (paper: typeof readyPaper) => ({ paper_id: paper.id, document_id: paper.active_document_id, title: paper.title, first_author: paper.authors[0], year: paper.year, added_at: '2026-10-08T10:00:00Z' })
+const chat = { id: 'c1', paper_id: 'p1', papers: [included(readyPaper)], title: 'Which datasets were used?', title_source: 'auto', created_at: '2026-10-08T10:00:00Z', last_activity_at: '2026-10-08T12:00:00Z', message_count: 2, last_question_preview: 'Which datasets were used?' }
 const search = { id: 's1', provider: 'openalex', query: 'graph transformers', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T11:00:00Z' }
 afterEach(() => vi.unstubAllGlobals())
 
@@ -41,22 +43,31 @@ test('Given an empty composer, Then Search papers stays disabled and Shift+Enter
   expect(input).toHaveValue('first\nsecond')
 })
 
-test('Given a library paper chosen in the composer, When a question is asked, Then a chat opens with the question queued once', async () => {
+test('Given library papers chosen in the composer, When a question is asked, Then one chat over them opens at its first paper with the question queued once', async () => {
   const { calls } = mockApi({
-    'GET /papers': { items: [readyPaper] },
+    'GET /papers': { items: [readyPaper, otherPaper] },
     'GET /papers/p1': readyPaper,
     'GET /models': { items: [luna] },
     'GET /settings': { default_model: luna.key, reasoning_effort: 'low' },
-    'POST /papers/p1/chats': { id: 'c9', paper_id: 'p1', document_id: 'd1', title: 'Paper discussion', created_at: '2026-10-08T12:00:00Z' },
+    'POST /chats': { id: 'c9', paper_id: 'p1', papers: [included(readyPaper), included(otherPaper)], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T12:00:00Z' },
   })
   const { user } = renderApp('/')
   await user.click(screen.getByRole('button', { name: 'Ask about a library paper' }))
   await user.click(await screen.findByRole('option', { name: /Traceable research systems/ }))
-  const question = screen.getByRole('textbox', { name: 'Question about this paper' })
+  expect(screen.getByRole('textbox', { name: 'Question about this paper' })).toBeVisible()
+  // Typing @ opens the same picker for a second paper.
+  await user.type(screen.getByRole('textbox', { name: 'Question about this paper' }), '@')
+  await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
+  const question = screen.getByRole('textbox', { name: 'Question about these papers' })
+  expect(question).toHaveValue('')
+  // A paper chosen after typing @ hands the cursor back to the question.
+  await waitFor(() => expect(question).toHaveFocus())
+  for (const name of ['Remove Traceable research systems', 'Remove Dense passage retrieval']) expect(screen.getByRole('button', { name })).toBeVisible()
   await waitFor(() => expect(screen.getByRole('button', { name: /^Model: GPT-5.6 Luna/ })).toBeEnabled())
   await user.type(question, 'Which datasets were used?')
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
-  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/papers/p1/chats')).toBe(true))
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/chats')).toBe(true))
+  expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] })
   expect(peekQuestion('c9')).toMatchObject({ content: 'Which datasets were used?', settings: { model: luna.key, reasoning_effort: 'low' } })
   expect(peekQuestion('c9')?.request_id).toMatch(/^[0-9a-f-]{36}$/)
 })

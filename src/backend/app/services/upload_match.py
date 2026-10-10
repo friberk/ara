@@ -32,7 +32,6 @@ from sqlalchemy.dialects.postgresql import insert
 from app.core.errors import AppError
 from app.integrations.academic import normalized_doi
 from app.models.research import (
-    ChatSession,
     Document,
     Paper,
     PaperAuthor,
@@ -43,6 +42,7 @@ from app.models.research import (
 from app.repositories.jobs import enqueue
 from app.repositories.papers import identity_locks
 from app.schemas.research import SearchResult
+from app.services.chat_papers import move_paper
 from app.services.metadata import Clues, acceptable, title_score
 
 logger = logging.getLogger(__name__)
@@ -160,10 +160,12 @@ async def absorb(session, *, placeholder_id: UUID, library: Paper, document: Doc
     document.paper_id = library.id
     library.active_document_id = document.id
     library.updated_at = func.now()
-    for model in (ChatSession, PaperSummary):
-        await session.execute(
-            update(model).where(model.paper_id == placeholder_id).values(paper_id=library.id)
-        )
+    await move_paper(session, placeholder_id, library.id)
+    await session.execute(
+        update(PaperSummary)
+        .where(PaperSummary.paper_id == placeholder_id)
+        .values(paper_id=library.id)
+    )
     await session.flush()
     # Deleting the placeholder also deletes its pending match.
     await session.execute(delete(Paper).where(Paper.id == placeholder_id))

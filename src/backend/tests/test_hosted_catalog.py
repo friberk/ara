@@ -160,7 +160,7 @@ def test_given_synthetic_windows_when_assembling_answers_then_history_scales_and
     history = prompt_pieces(profile.counter, 400)
     result = assemble_answer_prompt(
         profile=profile,
-        paper=PaperHeader("Title", ["Ada"], 2024),
+        papers=[PaperHeader("Title", ["Ada"], 2024)],
         history=history,
         memory_summary=(1, "word " * 20_000),
         recalled=[("old question " * 200, "old answer " * 200)] * 60,

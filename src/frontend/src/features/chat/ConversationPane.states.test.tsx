@@ -3,7 +3,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { queueQuestion } from '@/lib/pending-questions'
 import { json, mockApi, noContent } from '@/test/fetch-routes'
-import { ask, assistantMessage, chatRow, citation, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
+import { ask, assistantMessage, chatRow, citation, included, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -18,18 +18,6 @@ function hangingStream(onAbort: () => void) {
     return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
   }
 }
-
-test('Given a server without GET /chats, Then the older per-paper list still opens the conversation', async () => {
-  mockApi({
-    ...settings,
-    'GET /chats': () => json({ code: 'NOT_FOUND', message: 'Not Found' }, 404),
-    'GET /papers/p1/chats': { items: [{ id: 'c1', paper_id: 'p1', document_id: 'd1', title: 'Older server chat', created_at: '2026-10-08T10:00:00Z' }] },
-    'GET /chats/c1/messages': { items: [userMessage('u1', 'Saved on an older server')] },
-  })
-  mount('/papers/p1/chats/c1')
-  expect(await screen.findByText('Saved on an older server')).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Older server chat' })).toBeVisible()
-})
 
 test('Given the provider fails mid-answer, Then its reason is shown inline and the answer is marked failed', async () => {
   let failed = false
@@ -139,7 +127,7 @@ test('Given a queued question for a paper whose PDF is processing, Then it waits
 })
 
 test('Given a chat on an earlier PDF, Then the footnote says which PDF its answers use', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { document_id: 'd0' })] } })
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { papers: [included(paper, { document_id: 'd0' })] })] } })
   mount('/papers/p1/chats/c1')
   expect(await screen.findByText('This conversation uses an earlier PDF of this paper.')).toBeVisible()
 })

@@ -10,6 +10,7 @@ from sqlalchemy import func, select, text, update
 
 from app.models.research import ChatMessage, ChatSession, Document, DocumentChunk, Paper
 from app.repositories.jobs import enqueue, now
+from tests.support.chats import chat_with
 
 pytestmark = pytest.mark.integration
 
@@ -73,25 +74,14 @@ async def test_given_chats_on_two_papers_when_listing_then_latest_activity_order
     start = now()
     long_question = "Which   results\nsupport the claim? " + "detail " * 40
     async with resources.sessions() as session, session.begin():
-        old = ChatSession(
-            paper_id=first_paper,
-            document_id=first_document,
-            title="Old",
-            created_at=start - timedelta(hours=3),
+        first, second = (first_paper, first_document), (second_paper, second_document)
+        old = await chat_with(session, first, title="Old", created_at=start - timedelta(hours=3))
+        empty = await chat_with(
+            session, first, title="Empty", created_at=start - timedelta(minutes=20)
         )
-        empty = ChatSession(
-            paper_id=first_paper,
-            document_id=first_document,
-            title="Empty",
-            created_at=start - timedelta(minutes=20),
+        recent = await chat_with(
+            session, second, title="Recent", created_at=start - timedelta(hours=1)
         )
-        recent = ChatSession(
-            paper_id=second_paper,
-            document_id=second_document,
-            title="Recent",
-            created_at=start - timedelta(hours=1),
-        )
-        session.add_all([old, empty, recent])
         await session.flush()
 
         def message(chat, role, content, minutes_ago):
@@ -123,18 +113,18 @@ async def test_given_chats_on_two_papers_when_listing_then_latest_activity_order
         assert set(old_item) == {
             "id",
             "paper_id",
-            "document_id",
+            "papers",
             "title",
             "title_source",
             "created_at",
-            "paper_title",
             "last_activity_at",
             "message_count",
             "last_question_preview",
         }
-        assert recent_item["paper_title"] is None and recent_item["message_count"] == 1
+        assert recent_item["papers"][0]["title"] is None and recent_item["message_count"] == 1
         assert recent_item["last_question_preview"] == "Short question?"
-        assert old_item["paper_title"] == "Attention paper" and old_item["message_count"] == 4
+        assert old_item["papers"][0]["title"] == "Attention paper"
+        assert old_item["message_count"] == 4
         preview = old_item["last_question_preview"]
         assert len(preview) <= 140 and preview.endswith("…")
         assert preview.startswith("Which results support the claim? detail detail")
@@ -179,11 +169,13 @@ async def test_given_default_chat_when_questions_are_posted_then_only_first_ques
             return chat.title, chat.title_source
 
     async with client_for(resources) as client:
-        created = await client.post(f"/api/v1/papers/{paper_id}/chats", json={})
+        created = await client.post("/api/v1/chats", json={"paper_ids": [str(paper_id)]})
         assert created.status_code == 201, created.text
         chat = created.json()
         assert chat["title"] == "Paper discussion" and chat["title_source"] == "default"
-        named = await client.post(f"/api/v1/papers/{paper_id}/chats", json={"title": "My notes"})
+        named = await client.post(
+            "/api/v1/chats", json={"paper_ids": [str(paper_id)], "title": "My notes"}
+        )
         assert named.status_code == 201 and named.json()["title_source"] == "manual"
 
         question = "  What accuracy did the blue condition reach in the main experiment, and why?  "
@@ -218,7 +210,7 @@ async def test_given_default_chat_when_questions_are_posted_then_only_first_ques
         assert await stored(named.json()["id"]) == ("My notes", "manual")
 
         # A failed preparation rolls the title back with the user message.
-        pending = (await client.post(f"/api/v1/papers/{paper_id}/chats", json={})).json()
+        pending = (await client.post("/api/v1/chats", json={"paper_ids": [str(paper_id)]})).json()
         resources.settings.llm_daily_budget_usd = 0
         with pytest.raises(LLMError):
             await ask(pending["id"], "Is this question over budget?")
@@ -252,7 +244,9 @@ async def test_given_processing_answer_when_deleting_chat_then_busy_until_lease_
     paper_id, _ = await ready_paper(resources, "Deletable paper")
     resources.settings.openai_api_key = SecretStr("fixture")
     async with client_for(resources) as client:
-        chat_id = (await client.post(f"/api/v1/papers/{paper_id}/chats", json={})).json()["id"]
+        chat_id = (await client.post("/api/v1/chats", json={"paper_ids": [str(paper_id)]})).json()[
+            "id"
+        ]
         prepared = await prepare(
             resources, chat_id, ChatInput(content="Still answering?", request_id=uuid4())
         )

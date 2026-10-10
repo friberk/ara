@@ -12,6 +12,7 @@ export const queryKeys = {
   chats: {
     all: ['chats'] as const,
     list: (filters: { paperId?: string | null; limit?: number }) => ['chats', 'list', filters] as const,
+    detail: (id: string) => ['chats', 'detail', id] as const,
   },
   messages: (chatId: string) => ['messages', chatId] as const,
   // The prefix refreshes every model the meter has shown for the chat; the full key adds the selection.

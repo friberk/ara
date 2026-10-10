@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { api, json, query } from '@/api/client'
 import type { Collection, Paper, PaperPatch, SavePaper, SearchHit, SearchPage } from '@/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -18,14 +18,25 @@ export function usePapers(filter = '', options: { pageSize?: number; enabled?: b
 }
 
 /** One paper; polls while its PDF is processing so readiness appears without a reload. */
-export function usePaper(id: string | undefined) {
-  return useQuery({
+export function paperQuery(id: string | undefined) {
+  return {
     queryKey: queryKeys.papers.detail(id ?? ''),
-    queryFn: ({ signal }) => api<Paper>(`/papers/${encodeURIComponent(id ?? '')}`, { signal }),
+    queryFn: ({ signal }: { signal: AbortSignal }) => api<Paper>(`/papers/${encodeURIComponent(id ?? '')}`, { signal }),
     enabled: !!id,
     // An upload waiting for a library-match choice is not being read, so it is not polled (ARA-086).
-    refetchInterval: (current) => current.state.data?.document_status === 'processing' && !current.state.data.upload_match ? 1500 : false,
-  })
+    refetchInterval: (current: { state: { data?: Paper } }) => current.state.data?.document_status === 'processing' && !current.state.data.upload_match ? 1500 : false,
+  }
+}
+
+export function usePaper(id: string | undefined) {
+  return useQuery(paperQuery(id))
+}
+
+const loadedPapers = (results: { data?: Paper }[]) => results.flatMap((result) => (result.data ? [result.data] : []))
+
+/** The loaded papers among several, such as those an answer cites (ARA-088). */
+export function usePaperList(ids: readonly string[]) {
+  return useQueries({ queries: ids.map((id) => paperQuery(id)), combine: loadedPapers })
 }
 
 const normalizeDoi = (doi: string | null | undefined) => doi?.trim().toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '') || null

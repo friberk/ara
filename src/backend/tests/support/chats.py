@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 
-from app.models.research import ChatMessage, ChatSession
+from app.models.research import ChatMessage, ChatPaper, ChatSession
 from tests.support.papers import seed_paper
 
 
@@ -16,13 +16,28 @@ class Turn:
     answer: UUID
 
 
+async def chat_with(session, *papers: tuple[UUID, UUID], **fields) -> ChatSession:
+    """A chat over (paper_id, pinned document_id) pairs, in order, flushed in `session`."""
+    chat = ChatSession(**fields)
+    session.add(chat)
+    # Without ORM relationships, the chat row must exist before its paper links.
+    await session.flush()
+    session.add_all(
+        ChatPaper(chat_id=chat.id, paper_id=paper_id, document_id=document_id, ordinal=ordinal)
+        for ordinal, (paper_id, document_id) in enumerate(papers)
+    )
+    await session.flush()
+    return chat
+
+
+async def new_chat(resources, *papers: tuple[UUID, UUID], title="Discussion") -> UUID:
+    async with resources.sessions() as session, session.begin():
+        return (await chat_with(session, *papers, title=title)).id
+
+
 async def seed_chat(resources, **paper_options) -> tuple[UUID, UUID, UUID]:
     paper_id, document_id = await seed_paper(resources, **paper_options)
-    async with resources.sessions() as session, session.begin():
-        chat = ChatSession(paper_id=paper_id, document_id=document_id, title="Discussion")
-        session.add(chat)
-        await session.flush()
-        return paper_id, document_id, chat.id
+    return paper_id, document_id, await new_chat(resources, (paper_id, document_id))
 
 
 async def add_turns(resources, chat_id: UUID, turns, *, model="gpt-5.6-luna") -> list[Turn]:

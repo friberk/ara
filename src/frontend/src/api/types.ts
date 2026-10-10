@@ -69,3 +69,5 @@ export type MetadataSource = MetadataSettings['source']
 export type UploadMatch = Schemas['UploadMatch']
 export type PaperLink = Schemas['PaperLink']
 export type MatchDecision = Schemas['MatchDecision']['decision']
+// Chats over several library papers (ARA-088, docs/api-contract.md).
+export type IncludedPaper = Schemas['IncludedPaper']

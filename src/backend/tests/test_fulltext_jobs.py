@@ -18,10 +18,11 @@ from test_fulltext_integration import app_client
 
 from app.integrations.openalex_content import ContentDownloader
 from app.models.jobs import BackgroundJob
-from app.models.research import ChatSession, Document, DocumentUploadRequest
+from app.models.research import ChatPaper, Document, DocumentUploadRequest
 from app.repositories.jobs import claim, now
 from app.repositories.papers import save_canonical
 from app.schemas.research import SearchResult
+from tests.support.chats import chat_with
 
 KEY = "fixture-openalex-key"
 SIGNED = (
@@ -291,8 +292,7 @@ async def test_existing_ready_pdf_skips_network_and_preserves_history(resources,
     async with resources.sessions() as session, session.begin():
         document = await session.get(Document, accepted.document_id)
         document.status = "ready"
-        chat = ChatSession(paper_id=paper_id, document_id=document.id)
-        session.add(chat)
+        chat = await chat_with(session, (paper_id, document.id))
         await session.flush()
         chat_id = chat.id
     args = await enqueue_and_claim(resources, paper_id)
@@ -301,7 +301,8 @@ async def test_existing_ready_pdf_skips_network_and_preserves_history(resources,
     assert job.state == "completed" and job.result["outcome"] == "already_attached"
     assert requests == []
     async with resources.sessions() as session:
-        assert (await session.get(ChatSession, chat_id)).document_id == accepted.document_id
+        link = await session.scalar(select(ChatPaper).where(ChatPaper.chat_id == chat_id))
+        assert link.document_id == accepted.document_id
 
 
 async def test_manual_upload_supersedes_download(resources, original_pdf):

@@ -6,8 +6,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from app.models.research import ChatMessage, ChatSession, GenerationReservation
+from app.models.research import ChatMessage, GenerationReservation
 from tests.support.answers import ask, first_handle, named, use_hosted
+from tests.support.chats import chat_with
 from tests.support.evidence import seed_structured
 from tests.support.models import hosted_responses
 
@@ -35,8 +36,7 @@ async def chat_with_history(resources) -> object:
     paper_id, document_id, _ = await seed_structured(resources, profile=None)
     earlier = now() - timedelta(minutes=5)
     async with resources.sessions() as session, session.begin():
-        chat = ChatSession(paper_id=paper_id, document_id=document_id, title="Discussion")
-        session.add(chat)
+        chat = await chat_with(session, (paper_id, document_id), title="Discussion")
         await session.flush()
         session.add_all(
             [

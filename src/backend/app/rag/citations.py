@@ -5,7 +5,7 @@ markers (ARA-073). The transducer maps handles while text streams and never emit
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from uuid import UUID
 
 from app.rag.packing import Passage
@@ -123,11 +123,12 @@ def normalize_source_markers(content: str) -> str:
 
 
 def passage_citations(
-    content: str, passages: Sequence[Passage], document_id: UUID
+    content: str, passages: Sequence[Passage], document_ids: Collection[UUID]
 ) -> list[Citation]:
-    """Citations in first-cited order; any source outside the supplied passages is an error."""
+    """Citations in first-cited order; any source outside the supplied passages of the chat's
+    documents (one per included paper, ARA-088) is an error."""
     content = normalize_source_markers(content)
-    supplied = {str(item.chunk_id): item for item in passages if item.document_id == document_id}
+    supplied = {str(item.chunk_id): item for item in passages if item.document_id in document_ids}
     citations, seen = [], set()
     for identifier in SOURCE.findall(content):
         if identifier not in supplied:
@@ -139,7 +140,7 @@ def passage_citations(
         citations.append(
             Citation(
                 chunk_id=item.chunk_id,
-                document_id=document_id,
+                document_id=item.document_id,
                 page=item.page,
                 page_end=item.page_end,
                 section=item.section or None,

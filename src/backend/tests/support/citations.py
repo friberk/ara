@@ -18,4 +18,4 @@ def validate_citations(content, chunks, document_id):
         )
         for index, chunk in enumerate(chunks, start=1)
     ]
-    return passage_citations(content, passages, document_id)
+    return passage_citations(content, passages, {document_id})

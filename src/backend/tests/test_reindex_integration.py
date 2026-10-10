@@ -244,10 +244,11 @@ async def test_given_a_paper_awaiting_reindexing_when_asking_then_the_error_says
 ):
     from fastapi import HTTPException
 
-    from app.models.research import ChatSession, Document
+    from app.models.research import Document
     from app.schemas.ai import ChatInput
     from app.services import chat
     from tests.support.answers import use_hosted
+    from tests.support.chats import chat_with
 
     use_hosted(monkeypatch, resources, [], lambda body: "unused")
     [waiting] = await ready_documents(resources, [None])
@@ -258,10 +259,9 @@ async def test_given_a_paper_awaiting_reindexing_when_asking_then_the_error_says
     ):
         async with resources.sessions() as session, session.begin():
             document = await session.get(Document, document_id)
-            discussion = ChatSession(
-                paper_id=document.paper_id, document_id=document_id, title="Discussion"
+            discussion = await chat_with(
+                session, (document.paper_id, document_id), title="Discussion"
             )
-            session.add(discussion)
         body = ChatInput(content="What is new?", request_id=uuid4())
         with pytest.raises(HTTPException) as refused:
             await chat.prepare(resources, discussion.id, body)

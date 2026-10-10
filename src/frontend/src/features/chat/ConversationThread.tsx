@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { ChatSummary, GenerationSettings, Paper, RetrievalStage } from '@/api/types'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { restoreChatSettings } from '@/components/composer/reasoning'
@@ -14,6 +14,8 @@ import { AssistantMessage, PendingAnswer, UserMessage } from './Messages'
 import { canAsk, questionGate } from './question-gate'
 import { SuggestedQuestions } from './SuggestedQuestions'
 import { ThreadLayout } from './ThreadLayout'
+import { useChatSources } from './chat-sources'
+import type { PaperSelection } from './ConversationComposer'
 import { useChatStream } from './use-chat-stream'
 import { useFollowBottom } from './use-follow-bottom'
 
@@ -29,13 +31,17 @@ function HistorySkeleton() {
   )
 }
 
-/** One saved conversation: summary first, then the thread, with the composer docked below. */
-export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSummary }) {
+/**
+ * One saved conversation: summary first, then the thread, with the composer docked below. A chat over several papers
+ * shows each paper's summary from its chip instead (ARA-088).
+ */
+export function ConversationThread({ paper, chat, papers }: { paper: Paper; chat: ChatSummary; papers?: PaperSelection }) {
   const generation = useGenerationSettings()
   const stream = useChatStream(chat)
   const memory = useChatMemory(chat.id).data?.memory
   const [text, setText] = useState('')
-  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper) })
+  const local = generation.models.find((model) => model.key === generation.settings.model)?.provider === 'ollama'
+  const gate = questionGate(paper, { usable: generation.usableFor('chat'), loading: generation.loading, pdfComing: usePdfComing(paper), localForSeveral: local && chat.papers.length > 1 })
   const loaded = stream.history.isSuccess
   const ready = canAsk(gate) && loaded && !stream.busy
 
@@ -47,6 +53,9 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
   const question = pending && asked <= pending.baseline ? pending.text : null
   const unsavedDraft = draft && !saved.some((message) => message.id === draft.id) ? draft : null
   const empty = loaded && !rows.length && !question && !unsavedDraft && !stream.streaming && !peekQuestion(chat.id)
+  const cited = useMemo(() => [...saved, ...(draft ? [draft] : [])].flatMap((message) => message.citations), [saved, draft])
+  const sources = useChatSources(chat.papers, cited)
+  const several = chat.papers.length > 1
   const { scrollRef, onScroll, away, scrolled, stick, toLatest } = useFollowBottom(`${rows.length}:${question ?? ''}:${draft?.id ?? ''}:${draft?.content.length ?? 0}:${draft?.state ?? ''}`)
 
   function ask(content: string, settings: GenerationSettings = generation.settings, requestId?: string) {
@@ -83,7 +92,7 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
 
   const note = stream.processing && !stream.streaming
     ? 'An answer is still being written. It appears here when it finishes.'
-    : chat.document_id !== paper.active_document_id ? 'This conversation uses an earlier PDF of this paper.'
+    : chat.papers.some((item) => item.paper_id === paper.id && item.document_id !== paper.active_document_id) ? 'This conversation uses an earlier PDF of this paper.'
     : memory ? <MemoryNote memory={memory} /> : null
 
   return (
@@ -104,18 +113,19 @@ export function ConversationThread({ paper, chat }: { paper: Paper; chat: ChatSu
           busy={stream.busy}
           onStop={stream.streaming ? stream.stop : undefined}
           note={note}
+          papers={papers}
         />
       }
     >
-      <SummaryCard paper={paper} />
+      {!several && <SummaryCard paper={paper} />}
       {stream.history.isPending && <HistorySkeleton />}
       <ErrorNotice error={stream.history.error} retry={() => void stream.history.refetch()} />
       {empty && ready && <SuggestedQuestions onSelect={ask} />}
       {rows.map((message) => message.role === 'user'
         ? <UserMessage key={message.id} content={message.content} />
-        : <AssistantMessage key={message.id} message={message} documentId={chat.document_id} progress={message.id === draft?.id ? progress : null} />)}
+        : <AssistantMessage key={message.id} message={message} sources={sources} progress={message.id === draft?.id ? progress : null} />)}
       {question && <UserMessage content={question} />}
-      {unsavedDraft && <AssistantMessage message={unsavedDraft} documentId={chat.document_id} progress={progress} />}
+      {unsavedDraft && <AssistantMessage message={unsavedDraft} sources={sources} progress={progress} />}
       {stream.streaming && !draft && <PendingAnswer />}
       <ErrorNotice error={stream.error} />
       <p role="status" className="sr-only">{stream.streaming ? progress ?? 'Assistant is responding.' : stream.outcome ? announcements[stream.outcome] : ''}</p>

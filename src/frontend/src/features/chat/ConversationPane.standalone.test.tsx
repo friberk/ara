@@ -9,7 +9,7 @@ import { ConversationPane } from '.'
 // Outside the paper workspace (no WorkspaceContext) with the real content module.
 const models = ['luna', 'terra'].map((name) => ({ key: `gpt-5.6-${name}`, provider: 'openai', model_id: `gpt-5.6-${name}`, display_name: name === 'luna' ? 'Luna' : 'Terra', status: 'available', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }))
 const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: ['A. Author'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
-const chat = { id: 'stored-chat', paper_id: 'p1', document_id: 'd1', title: 'Earlier discussion', title_source: 'manual', created_at: '2026-10-08T00:00:00Z', paper_title: paper.title, last_activity_at: '2026-10-08T00:00:00Z', message_count: 2, last_question_preview: 'What is saved?' }
+const chat = { id: 'stored-chat', paper_id: 'p1', papers: [{ paper_id: 'p1', document_id: 'd1', title: paper.title, first_author: 'A. Author', year: 2024, added_at: '2026-10-08T00:00:00Z' }], title: 'Earlier discussion', title_source: 'manual', created_at: '2026-10-08T00:00:00Z', last_activity_at: '2026-10-08T00:00:00Z', message_count: 2, last_question_preview: 'What is saved?' }
 afterEach(() => vi.unstubAllGlobals())
 
 test('Given a stored Luna answer and a Terra default, When the chat opens, Then the composer adopts Luna and the answer keeps its stored Luna and low reasoning', async () => {
