@@ -46,7 +46,11 @@ async def test_given_one_hosted_capability_change_when_listing_then_other_models
     async def local_models(resources):
         return []
 
+    async def hosted_default(resources):
+        return ai.Defaults()
+
     monkeypatch.setattr(ai, "list_local_models", local_models)
+    monkeypatch.setattr(ai, "saved_defaults", hosted_default)
     resources = SimpleNamespace(settings=Settings(_env_file=None))
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(resources=resources)))
     page = await models(request)

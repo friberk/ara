@@ -10,6 +10,9 @@ from app.core.errors import AppError
 from app.integrations.model_catalog import local_spec
 from app.integrations.ollama import OllamaRuntime
 
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = pytest.mark.open_models
+
 KEY = "ifm-k2-horizon-7b"
 MALFORMED = [
     ("tags", "models", None),

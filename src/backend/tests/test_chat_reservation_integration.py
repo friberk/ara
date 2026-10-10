@@ -97,6 +97,7 @@ async def test_given_hosted_question_when_preparing_then_the_reservation_bounds_
     assert tokens < budget // 3
 
 
+@pytest.mark.open_models
 async def test_given_local_question_when_preparing_then_nothing_is_reserved(resources, reserved):
     from tests.test_ai_integration import local_fixture, paper_fixture
 

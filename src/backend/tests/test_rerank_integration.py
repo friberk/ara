@@ -376,6 +376,7 @@ async def rerankers(client):
     return {item["key"]: item for item in response.json()["rerankers"]}
 
 
+@pytest.mark.open_models
 async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_to_enable_them(
     resources, client
 ):
@@ -404,6 +405,7 @@ async def test_given_no_providers_when_listing_profiles_then_rerankers_say_how_t
     }
 
 
+@pytest.mark.open_models
 async def test_given_key_and_verified_install_when_listing_profiles_then_rerankers_are_available(
     resources, client
 ):
@@ -416,6 +418,7 @@ async def test_given_key_and_verified_install_when_listing_profiles_then_reranke
     ]
 
 
+@pytest.mark.open_models
 async def test_given_downloading_reranker_when_listing_profiles_then_its_progress_is_the_reason(
     resources, client
 ):

@@ -160,6 +160,7 @@ async def test_given_turns_without_records_when_reading_usage_then_they_are_coun
     assert body["context"]["used_tokens"] is None  # the latest turn recorded no context
 
 
+@pytest.mark.open_models
 async def test_given_a_local_chat_when_reading_usage_then_it_costs_nothing_and_says_local(
     resources, client
 ):
@@ -179,6 +180,7 @@ async def test_given_a_local_chat_when_reading_usage_then_it_costs_nothing_and_s
     assert body["context"]["used_tokens"] == 1_900
 
 
+@pytest.mark.open_models
 async def test_given_a_model_switch_when_reading_usage_then_the_budget_follows_the_model(
     resources, client
 ):

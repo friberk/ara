@@ -35,7 +35,10 @@ packages = ["app"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-markers = ["integration: requires explicitly configured real PostgreSQL, Redis, MinIO"]
+markers = [
+    "integration: requires explicitly configured real PostgreSQL, Redis, MinIO",
+    "open_models: runs with EXPERIMENTAL_OPEN_MODELS on (ARA-090)",
+]
 [tool.ruff]
 target-version = "py313"
 line-length = 100

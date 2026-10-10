@@ -88,6 +88,7 @@ async def index(resources, document_id, profile) -> RetrievalIndex | None:
         )
 
 
+@pytest.mark.open_models
 async def test_given_papers_following_the_default_when_it_changes_then_each_is_queued_once(
     resources, client
 ):
@@ -110,6 +111,7 @@ async def test_given_papers_following_the_default_when_it_changes_then_each_is_q
     assert len(await embed_jobs(resources)) == 1
 
 
+@pytest.mark.open_models
 async def test_given_uninstalled_default_when_its_model_verifies_then_papers_are_queued(
     resources, client, monkeypatch
 ):

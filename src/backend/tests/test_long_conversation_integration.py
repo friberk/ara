@@ -118,6 +118,7 @@ async def conversation(resources, chat_id):
         return [(message.role, message.content, message.state) for message in rows]
 
 
+@pytest.mark.open_models
 async def test_given_forty_local_turns_when_asking_about_turn_two_then_memory_carries_it(
     resources, monkeypatch, embeddings
 ):

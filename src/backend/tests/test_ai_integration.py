@@ -115,6 +115,7 @@ def within_local_budget(resources, spec, requests):
     )
 
 
+@pytest.mark.open_models
 async def test_given_local_chat_when_answering_then_provenance_citations_and_uuid_replay(
     resources,
 ):
@@ -163,6 +164,7 @@ async def test_given_local_chat_when_answering_then_provenance_citations_and_uui
     assert (await chat.prepare(resources, chat_id, body)).replay and len(requests) == 1
 
 
+@pytest.mark.open_models
 async def test_given_local_full_paper_when_summarizing_then_every_section_is_reduced_under_context(
     resources,
 ):
@@ -213,6 +215,7 @@ async def test_given_local_full_paper_when_summarizing_then_every_section_is_red
     assert within_local_budget(resources, spec, requests)
 
 
+@pytest.mark.open_models
 async def test_given_busy_local_summary_when_worker_runs_then_job_does_not_fail_or_spend_attempt(
     resources,
 ):
@@ -247,6 +250,7 @@ async def test_given_busy_local_summary_when_worker_runs_then_job_does_not_fail_
         await release_use(resources.sessions, use)
 
 
+@pytest.mark.open_models
 async def test_given_local_default_when_extracting_metadata_then_no_hosted_key_needed(
     resources,
 ):
@@ -295,6 +299,7 @@ async def test_given_local_default_when_extracting_metadata_then_no_hosted_key_n
         assert await session.scalar(select(func.count()).select_from(GenerationReservation)) == 0
 
 
+@pytest.mark.open_models
 async def test_given_runtime_503_when_local_summary_starts_then_rejection_clears_inflight(
     resources,
 ):
@@ -368,6 +373,7 @@ def cited_markers(prompt: str) -> str:
 
 
 @pytest.mark.parametrize("busy_kind", ["slot", "http"])
+@pytest.mark.open_models
 async def test_given_completed_reduction_when_later_group_busy_then_resume_skips_completed_group(
     resources,
     monkeypatch,
@@ -435,6 +441,7 @@ async def test_given_completed_reduction_when_later_group_busy_then_resume_skips
 
 
 @pytest.mark.parametrize("compression", ["short", "ignores_bound"])
+@pytest.mark.open_models
 async def test_given_long_valid_map_outputs_when_reducing_then_bounded_compression_keeps_sections(
     resources,
     compression,
@@ -521,6 +528,7 @@ def sent_handles(request) -> list[str]:
     return re.findall(r"^\[(S\d+)\] ", request["messages"][-1]["content"], re.M)
 
 
+@pytest.mark.open_models
 async def test_given_prose_evidence_when_answering_locally_then_tokens_fit_more_than_bytes(
     resources,
 ):
@@ -545,6 +553,7 @@ async def test_given_prose_evidence_when_answering_locally_then_tokens_fit_more_
     assert within_local_budget(resources, spec, requests)
 
 
+@pytest.mark.open_models
 async def test_given_more_evidence_than_local_budget_when_answering_then_request_still_fits(
     resources,
 ):
@@ -570,6 +579,7 @@ async def test_given_more_evidence_than_local_budget_when_answering_then_request
 
 
 @pytest.mark.parametrize(("words", "whole"), [(2000, True), (12000, False)])
+@pytest.mark.open_models
 async def test_given_local_metadata_evidence_when_extracting_then_real_tokens_bound_it(
     resources, words, whole
 ):
@@ -1095,6 +1105,7 @@ async def test_given_asgi_level_cancellation_when_disconnected_then_database_ret
     assert existing.assistant.state == "interrupted" and len(calls) == 1
 
 
+@pytest.mark.open_models
 async def test_given_completed_summary_when_weights_deleted_then_provenance_survives(
     resources, monkeypatch
 ):
@@ -1132,6 +1143,7 @@ async def test_given_completed_summary_when_weights_deleted_then_provenance_surv
     assert len(requests) == 1
 
 
+@pytest.mark.open_models
 async def test_given_checkpointed_summary_when_effective_settings_change_then_no_mixed_generation(
     resources, monkeypatch
 ):
@@ -1161,6 +1173,7 @@ async def test_given_checkpointed_summary_when_effective_settings_change_then_no
     assert len(requests) == 1
 
 
+@pytest.mark.open_models
 async def test_given_legacy_summary_checkpoint_without_provenance_then_no_configuration_is_invented(
     resources,
 ):

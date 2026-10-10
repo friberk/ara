@@ -13,7 +13,8 @@ from app.models.research import ChatMessage, ChatSession
 from tests.support.answers import CONNECTED, named, parse
 from tests.test_ai_integration import local_fixture, paper_fixture
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 def question(spec) -> dict:

@@ -6,6 +6,16 @@ import pytest
 from sqlalchemy import delete
 
 
+@pytest.fixture(autouse=True)
+def open_models_flag(request, monkeypatch):
+    """Open models are off by default (ARA-090); tests marked `open_models` run with them on.
+
+    Settings read the environment, so this covers the `resources` fixture and direct Settings().
+    """
+    enabled = request.node.get_closest_marker("open_models") is not None
+    monkeypatch.setenv("EXPERIMENTAL_OPEN_MODELS", "true" if enabled else "false")
+
+
 @pytest.fixture
 async def resources():
     if os.environ.get("ARA_INTEGRATION") != "1":

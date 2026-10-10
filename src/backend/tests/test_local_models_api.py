@@ -5,7 +5,8 @@ import pytest
 
 from app.main import create_app
 
-pytestmark = pytest.mark.integration
+# Open-model tests run with EXPERIMENTAL_OPEN_MODELS on (ARA-090).
+pytestmark = [pytest.mark.integration, pytest.mark.open_models]
 
 
 def client_for(resources):

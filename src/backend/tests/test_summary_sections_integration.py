@@ -122,6 +122,7 @@ async def local_sections_job(resources):
     return spec, requests, job
 
 
+@pytest.mark.open_models
 async def test_given_sections_when_summarizing_locally_then_batches_keep_whole_sections_in_budget(
     resources,
 ):
@@ -141,6 +142,7 @@ async def test_given_sections_when_summarizing_locally_then_batches_keep_whole_s
     assert len(summary.citations) == 9
 
 
+@pytest.mark.open_models
 async def test_given_section_summaries_when_reducing_then_prompt_shows_handles_not_uuids(
     resources,
 ):
@@ -158,6 +160,7 @@ async def test_given_section_summaries_when_reducing_then_prompt_shows_handles_n
     assert len(summary.citations) == 9
 
 
+@pytest.mark.open_models
 async def test_given_restart_before_reduction_when_resumed_then_handles_name_the_same_passages(
     resources, monkeypatch
 ):
@@ -202,6 +205,7 @@ async def test_given_restart_before_reduction_when_resumed_then_handles_name_the
 # Two 2,100-token passages, [S1] and [S2], each in its own map batch: [S2] belongs to the
 # other map batch, and [S3] names no passage of the paper.
 @pytest.mark.parametrize(("phase", "handle"), [("map", "[S2]"), ("reduction", "[S3]")])
+@pytest.mark.open_models
 async def test_given_unsupplied_handle_when_summarizing_then_ungrounded_and_nothing_checkpointed(
     resources, phase, handle
 ):
@@ -229,6 +233,7 @@ async def test_given_unsupplied_handle_when_summarizing_then_ungrounded_and_noth
     assert len(requests) == count
 
 
+@pytest.mark.open_models
 async def test_given_reduction_citing_a_real_handle_it_was_not_shown_then_ungrounded(resources):
     from tests.test_ai_integration import local_fixture, summary_job_fixture
     from tests.test_citation_markers_integration import generation_fixture

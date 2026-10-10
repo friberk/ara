@@ -145,6 +145,7 @@ async def test_reingesting_a_ready_document_never_starts_a_summary(resources, or
     assert await summary_jobs(resources) == []
 
 
+@pytest.mark.open_models
 async def test_a_local_default_that_is_not_ready_starts_nothing_paid(resources, original_pdf):
     """Given a hosted key but a saved local default without weights, when the PDF becomes
     ready, then nothing starts (no hosted fallback) and the reason is reported."""
@@ -157,6 +158,7 @@ async def test_a_local_default_that_is_not_ready_starts_nothing_paid(resources, 
     assert reason["model"] == "ifm-k2-horizon-7b" and reason["message"]
 
 
+@pytest.mark.open_models
 async def test_a_ready_local_default_summarizes_locally(resources, original_pdf):
     from test_ai_integration import local_fixture
 
