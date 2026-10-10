@@ -33,13 +33,14 @@
     "src/backend/tests/test_upload_match_tables_integration.py",
     "src/backend/tests/test_fulltext_migration.py",
     "src/backend/tests/test_library_embedding_migration.py",
-    "docs/api-contract.md"
+    "docs/api-contract.md",
+    "src/backend/alembic.ini"
   ],
   "commits": [
     "1cd0c9a",
     "3d911c5"
   ],
   "pull_requests": [],
-  "verification": "Completed 2026-10-09 in the isolated ara-match-test project. Red first: the migration test failed with 'Extra items in the left set: upload_matches, paper_redirects'; 7 integration tests failed with \"ImportError: cannot import name 'UploadMatch'\" / \"'Document' object has no attribute 'doi_owner_paper_id'\"; the two head-pin tests failed with \"assert '0008_library_embeddings' == '0009_upload_match_tables'\". Green: full backend suite 1005 passed; frontend check 574 tests passed; build succeeded; regenerated generated.ts from app.openapi() is identical to the committed file. No live-data migration run; the migration was exercised on an isolated database only.",
+  "verification": "Completed 2026-10-09 in the isolated ara-match-test project. Red first: the migration test failed with 'Extra items in the left set: upload_matches, paper_redirects'; 7 integration tests failed with \"ImportError: cannot import name 'UploadMatch'\" / \"'Document' object has no attribute 'doi_owner_paper_id'\"; the two head-pin tests failed with \"assert '0008_library_embeddings' == '0009_upload_match_tables'\". Green: full backend suite 1005 passed; frontend check 574 tests passed; build succeeded; regenerated generated.ts from app.openapi() is identical to the committed file. No live-data migration run; the migration was exercised on an isolated database only. Alembic path_separator = os added; the full suite then reported 1005 passed with no warnings.",
   "updated_at": "2026-10-09"
 }
