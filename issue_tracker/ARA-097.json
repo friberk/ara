@@ -1,0 +1,46 @@
+{
+  "id": "ARA-097",
+  "title": "Paper workspace without tabs: the reader owns the PDF, paper details move behind an \u24d8 sheet",
+  "type": "improvement",
+  "priority": "P1",
+  "description": "User feedback on 2026-10-10: \"When I click on the paper, there shouldn't be two tabs as PDF and Details. There shouldn't be tabs either. First of all remove the search index part. This kind of detailed info should go to modal that opens after clicking circled i icon somewhere ... This also includes the 'Metadata sources' thing. Then the current 'Replace the PDF' or 'Upload the PDF' part should be responsible for displaying the PDF. We should also have controls for deleting the PDF so that user can replace it by deleting and reuploading. Overall, we will improve the UX around that part. Use your Impeccable design skills for that.\"\nDesign (lead, using the impeccable skill, Operate mode, DESIGN.md 'Category Standard, Played Straight'):\n(1) No tabs on desktop. The left panel is always the reader: the PDF when one is attached, otherwise the PDF states (OpenAlex retrieval, DOI fallback, upload, processing steps, failure).\n(2) A circled \u24d8 icon button labelled 'Paper details' sits beside the title and status badge in the workspace header. It opens a shadcn Sheet: right side on desktop, about 440px wide, overlaying the chat so the PDF stays visible, as Google Drive's \u24d8 does; a full-height bottom sheet on mobile. The sheet's sections, in this order:\n- title, PaperCitation and the full author list;\n- actions: Edit details and Look up again (ARA-095), plus DOI and provider record links;\n- the abstract, clamped with Show more;\n- identifiers in mono with copy buttons;\n- 'Where this information came from' (the former Metadata sources), as a compact field-to-source list;\n- an 'Advanced' disclosure holding the former Search index section (status, model, passage count, Rebuild);\n- a final destructive 'Delete paper' action (ARA-095).\n(3) The reader toolbar gains a PDF menu. Its non-interactive header shows the file name, pages, size and source (Uploaded, or Downloaded from OpenAlex). Its items are Open original, Download, Replace PDF\u2026 (the upload dialog; earlier answers keep citing the PDF they used) and Remove PDF\u2026 (destructive, behind an AlertDialog). Remove returns the reader to its upload state, so the user can delete and re-upload.\n(4) Mobile segments become Chat | PDF only.\n(5) Defects found during the design review, fixed here:\n- at 390px, chat answer text overflows the viewport horizontally;\n- the sticky chat-paper chip row lets scrolled message text show through behind it; it needs an opaque background and a hairline when stuck.",
+  "dependencies": [
+    "ARA-086",
+    "ARA-087",
+    "ARA-088",
+    "ARA-095"
+  ],
+  "acceptance_criteria": [
+    "Given a paper workspace on desktop, when it opens, then there are no PDF/Details tabs. The left panel shows the PDF, or, without one, the PDF states (retrieval progress, OpenAlex DOI fallback, upload, processing steps, failure with retry), with the abstract below.",
+    "Given the workspace header, when the user activates the \u24d8 'Paper details' button (mouse, keyboard or touch), then a sheet opens with the title, citation, authors, actions (Edit details, Look up again, links), abstract, identifiers with copy, 'Where this information came from', an Advanced disclosure containing the search index status and Rebuild, and Delete paper. It closes with Esc, the close button or an outside click, and returns focus to the \u24d8 button.",
+    "Given a paper with a PDF, when the user opens the reader's PDF menu, then it shows file name, pages, size and source, and offers Open original, Download, Replace PDF\u2026 and Remove PDF\u2026.",
+    "Given Remove PDF\u2026, when the user confirms in the AlertDialog (which states what happens to the reader, summaries and earlier answers), then the PDF is detached and deleted with durable storage cleanup (ARA-095's job). The reader returns to the upload state, earlier answers keep their quoted passages, and chats pinned to that PDF stay readable.",
+    "Given Replace PDF\u2026, when a new PDF is uploaded, then it becomes the active PDF with today's semantics: earlier answers keep citing the PDF they used.",
+    "Given mobile (390px), when the workspace opens, then the segments are Chat | PDF, \u24d8 opens the details as a bottom sheet, and no chat content overflows horizontally.",
+    "Given a chat scrolled under the sticky paper-chip row, when it is stuck, then the row has an opaque background and a hairline, and no text shows through.",
+    "Given DESIGN.md and PRODUCT.md, when the change lands, then their workspace descriptions (tabs, Details) match the new layout."
+  ],
+  "test_cases": [
+    "Component: no tabs; reader states; \u24d8 sheet sections, focus return and Esc; the PDF menu header and items; Remove PDF confirmation copy and state change; Replace flow.",
+    "Backend: remove the active PDF, with document deletion, storage cleanup, chats' pinned PDF handling, and summaries and citation snapshots kept readable.",
+    "Responsive: 390px with no horizontal overflow; Chat | PDF segments; bottom sheet.",
+    "Visual check in light and dark on the user's test copy, run by the lead."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/frontend/src/features/workspace/PaperWorkspacePage.tsx",
+    "src/frontend/src/features/workspace/ReaderPanel.tsx",
+    "src/frontend/src/features/workspace/ReaderGate.tsx",
+    "src/frontend/src/features/workspace/DetailsPanel.tsx",
+    "src/frontend/src/features/workspace/MetadataSources.tsx",
+    "src/frontend/src/features/workspace/SearchIndexPanel.tsx",
+    "src/frontend/src/features/workspace/PdfToolbar.tsx",
+    "src/frontend/src/components/shell/shell-header.tsx",
+    "DESIGN.md",
+    "PRODUCT.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Planned on 2026-10-10; starts after ARA-095 merges, because it reuses paper deletion, metadata editing and storage cleanup. Branch feat/ara-097-workspace-redesign.",
+  "updated_at": "2026-10-10"
+}

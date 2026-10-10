@@ -1322,3 +1322,9 @@ The design doc is updated.
 - mentions of papers already in the chat only focus the question;
 - structured mention IDs replace literal "@Surname Year" matching.
 The user chose TipTap (with its Mention extension) over Lexical or a hand-built contenteditable. The work went to an Opus agent.
+
+**Workspace redesign (ARA-097).**
+- **The request.** The user asked to remove the PDF/Details tabs and the Search index from the main view, to put detailed paper information (including Metadata sources) behind a circled-i control, and to make the PDF area own display, replacement and deletion of the PDF.
+- **The design.** The lead designed it with the impeccable skill (Operate mode, the "Category Standard" design system). The ⓘ opens a Google Drive-style details sheet that keeps the PDF visible; the section order is in the ticket. The reader toolbar gains a PDF menu with file facts and Open, Download, Replace and Remove. Mobile becomes Chat | PDF.
+- **Defects added.** The screenshots showed two more defects, now in the ticket: horizontal overflow of chat answers at 390px, and the sticky paper-chip row showing text through it.
+- **Sequencing.** ARA-097 starts after ARA-095 lands, because it reuses deletion, editing and storage cleanup.
