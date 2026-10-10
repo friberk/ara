@@ -1726,3 +1726,7 @@ The user rejected ARA-097's details sheet: "You should have the title author lis
 **Not verified:**
 - The updated `e2e/workspace.spec.ts` was type-checked but not run.
 - The other-paper reader tab was not seen in a browser: the test copy has no chat that cites a second paper from another paper's workspace. It is covered by the unit test.
+
+### 2026-10-10 — Lead: Library test collided with the sidebar paper menu (ARA-103)
+
+After ARA-101 merged (`58ae56b`), `library-manage.test.tsx` failed once with "Found multiple elements with the role \"button\" and name \"Actions for “Attention is all you need”\"". ARA-103 gave each sidebar Papers row the same `PaperActions` menu and label as the Library row. Whenever the sidebar's papers query resolved before the Library's, the test's screen-wide query found both buttons. The test's `rowActions` helper now looks inside `main`. Three full-file runs then passed 7/7. The same file's "link to a deleted paper" test failed in two whole-file runs while the machine's load average was about 15 to 17, with several agents running suites. It then passed 5/5 alone and 3/3 in whole-file runs, so I'm treating it as load-sensitive, not broken. It gets rechecked in the final quiet full run.
