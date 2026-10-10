@@ -44,15 +44,17 @@ test('E2E-04 Given ready text, when summarized, then a stored grounded summary a
   await page.goto(`/papers/${paper.id}`)
   const summary = page.getByRole('article', { name: 'Paper summary' })
   const generate = summary.getByRole('button', { name: 'Generate summary', exact: true })
-  const toggle = summary.getByRole('button', { name: /^(Show full summary|Collapse summary)$/ })
-  // The fixture paper is shared across runs: the first run generates, later runs show the stored summary.
-  await expect(generate.or(toggle)).toBeVisible()
-  if (await generate.isVisible()) {
-    await generate.click()
-    // A summary that just finished opens in full, with its page sources.
-    await expect(summary.getByRole('button', { name: 'Collapse summary' })).toBeVisible({ timeout: 45_000 })
-    await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()
-  }
+  const regenerate = summary.getByRole('button', { name: 'Regenerate summary', exact: true })
+  // The fixture paper is shared across runs: the first run generates, later runs regenerate from the heading icon.
+  await expect(generate.or(regenerate)).toBeVisible()
+  const stored = async () => (await (await request.get(`/api/v1/papers/${paper.id}/summaries`)).json()).items.length
+  const before = await stored()
+  if (await generate.isVisible()) await generate.click()
+  else await regenerate.click()
+  await expect.poll(stored, { timeout: 45_000 }).toBeGreaterThan(before)
+  // A summary that just finished opens in full, with its page sources.
+  await expect(summary.getByRole('button', { name: 'Collapse summary' })).toBeVisible({ timeout: 45_000 })
+  await expect(summary.getByRole('button', { name: citationChip }).first()).toBeVisible()
   await expect(summary).toContainText('Orion-12', { timeout: 45_000 })
 
   await page.reload()
