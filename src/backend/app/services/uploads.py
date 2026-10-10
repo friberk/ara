@@ -138,6 +138,19 @@ async def ingest_pdf_bytes(
                 )
             if guard and paper:
                 paper.active_document_id = existing.id
+            revived = False
+            if binding is None and not guard and existing.status == "ready":
+                # A PDF kept for older chats after Remove PDF, or an earlier version, uploaded
+                # again becomes its paper's current PDF; from the home page only when the paper
+                # has none (ARA-097).
+                owner = paper or await session.scalar(
+                    select(Paper).where(Paper.id == existing.paper_id).with_for_update()
+                )
+                revived = owner.active_document_id != existing.id and (
+                    paper is not None or owner.active_document_id is None
+                )
+                if revived:
+                    owner.active_document_id = existing.id
             if binding is None:
                 session.add(DocumentUploadRequest(request_id=request_id, document_id=existing.id))
             job = await session.get(BackgroundJob, existing.ingest_job_id)
@@ -148,7 +161,9 @@ async def ingest_pdf_bytes(
                 or job.error_code not in {"STORAGE_UPLOAD_FAILED", "STORAGE_OBJECT_MISSING"}
             ):
                 # A new request for bytes already stored opens that paper; a replay is not new.
-                return references(existing).model_copy(update={"duplicate": binding is None})
+                return references(existing).model_copy(
+                    update={"duplicate": binding is None and not revived}
+                )
             # Same bytes can resume an interrupted upload using the retained object key.
             existing.status, existing.warnings = "uploading", []
             job.state, job.stage, job.progress = "queued", "queued", 0

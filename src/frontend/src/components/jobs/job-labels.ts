@@ -33,5 +33,5 @@ export function jobStageLabel(job: Pick<Job, 'state' | 'stage'>) {
   return stageLabels[job.stage] ?? (job.stage ? job.stage.replaceAll('_', ' ') : stageLabels[job.state] ?? job.state)
 }
 export const isActiveJob = (job: Pick<Job, 'state'>) => job.state === 'queued' || job.state === 'processing' || job.state === 'paused'
-/** Work its paper's deletion stopped (ARA-095): settled, but not a failure to fix. */
-export const isCancelledJob = (job: Pick<Job, 'state' | 'error'>) => job.state === 'failed' && job.error?.code === 'PAPER_DELETED'
+/** Work its paper's deletion (ARA-095) or its PDF's removal (ARA-097) stopped: settled, but not a failure to fix. */
+export const isCancelledJob = (job: Pick<Job, 'state' | 'error'>) => job.state === 'failed' && (job.error?.code === 'PAPER_DELETED' || job.error?.code === 'PDF_REMOVED')

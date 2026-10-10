@@ -4,7 +4,7 @@ import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
 vi.mock('./PdfViewer', () => ({ default: ({ documentId }: { documentId: string }) => <p>{`Showing ${documentId}`}</p> }))
-// jsdom has no layout, so the split handle would swallow tab clicks; move it away, as workspace.test does.
+// jsdom has no layout, so the split handle would swallow clicks; move it away, as workspace.test does.
 const boundingRect = HTMLElement.prototype.getBoundingClientRect
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -21,7 +21,7 @@ const pending = { id: 'p-new', title: null, authors: [], year: null, abstract: n
 test('Given an upload that matches a library paper with a PDF, Then the reader asks to replace it and Replace opens that paper', async () => {
   const { calls } = mockApi({ 'GET /papers/p-new': pending, 'GET /papers/p-lib': { ...library, active_document_id: 'd-new', document_status: 'processing' }, 'POST /uploads/p-new/match': () => json({ ...library, active_document_id: 'd-new', document_status: 'processing' }) })
   const { user } = renderApp('/papers/p-new')
-  const reader = await screen.findByRole('tabpanel', { name: 'PDF' }, firstLoad)
+  const reader = await screen.findByRole('region', { name: 'PDF reader' }, firstLoad)
   expect(await within(reader).findByText(`This PDF matches “${library.title}” in your library.`)).toBeVisible()
   expect(within(reader).getByText('It already has a PDF. Replace it with this one?')).toBeVisible()
   expect(within(reader).queryByRole('heading', { name: 'Preparing the PDF' })).not.toBeInTheDocument()
@@ -59,15 +59,6 @@ test('Given an upload that ingestion attached to a library paper, When its old l
   expect(await screen.findByText(`This PDF matched “${library.title}” in your library, so it was added there.`)).toBeVisible()
 })
 
-test('Given a PDF uploaded into a paper whose DOI belongs to another paper, Then Details says so plainly with a link', async () => {
-  mockApi({ 'GET /papers/p1': { ...library, id: 'p1', title: 'My notes', pdf_doi_owner: { paper_id: 'p-lib', title: library.title } } })
-  const { user } = renderApp('/papers/p1')
-  await user.click(await screen.findByRole('tab', { name: 'Details' }))
-  const details = screen.getByRole('tabpanel', { name: 'Details' })
-  expect(within(details).getByText(`This PDF’s DOI belongs to “${library.title}” in your library.`)).toBeVisible()
-  expect(within(details).getByRole('link', { name: 'Open that paper' })).toHaveAttribute('href', '/papers/p-lib')
-})
-
 const saved = { ...library, id: 'p2', title: 'Saved paper', document_status: 'metadata_only', active_document_id: null, doi: '10.5555/saved' }
 const retrieving = { paper_id: 'p2', availability: 'open_copy_reported', locations: [], retrieval_job: { id: 'r1', kind: 'fulltext', state: 'processing', stage: 'fetching_pdf', progress: 40, result: null }, document_id: null, ingest_job_id: null, attempts: [], source_host: 'arxiv.org' }
 
@@ -77,7 +68,7 @@ test('Given a PDF being retrieved automatically, Then the badge, the composer an
   expect(await screen.findByText('Getting PDF')).toBeVisible()
   expect(screen.queryByText('PDF needed')).not.toBeInTheDocument()
   expect(await screen.findByText('You can ask questions once the PDF is ready.')).toBeVisible()
-  const reader = screen.getByRole('tabpanel', { name: 'PDF' })
+  const reader = screen.getByRole('region', { name: 'PDF reader' })
   expect(within(reader).queryByText('Attach the PDF to read, summarize and ask')).not.toBeInTheDocument()
   expect(within(reader).getByRole('button', { name: 'Upload your own copy instead' })).toBeVisible()
   expect(within(reader).getByLabelText('PDF file')).toBeInTheDocument()
@@ -86,7 +77,7 @@ test('Given a PDF being retrieved automatically, Then the badge, the composer an
 test('Given no retrieval running, Then upload stays the primary way to add the PDF', async () => {
   mockApi({ 'GET /papers/p2': saved, 'GET /papers/p2/fulltext': { ...retrieving, retrieval_job: { ...retrieving.retrieval_job, state: 'failed', result: { outcome: 'not_found' } } } })
   renderApp('/papers/p2')
-  const reader = await screen.findByRole('tabpanel', { name: 'PDF' })
+  const reader = await screen.findByRole('region', { name: 'PDF reader' })
   expect(await within(reader).findByText('Attach the PDF to read, summarize and ask')).toBeVisible()
   expect(screen.getByText('PDF needed')).toBeVisible()
   expect(await screen.findByText('Attach a PDF to ask questions about this paper.')).toBeVisible()

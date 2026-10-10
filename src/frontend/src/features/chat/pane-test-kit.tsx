@@ -33,7 +33,7 @@ export function sse(frames: [string, unknown][]) {
   return new Response(frames.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
 }
 export function workspaceValue(): WorkspaceContextValue {
-  return { paper, view: 'chat', setView: vi.fn(), readerTab: 'pdf', setReaderTab: vi.fn(), sourceRequest: null, showSource: vi.fn(), highlightOutcome: null, reportHighlight: vi.fn() }
+  return { paper, view: 'chat', setView: vi.fn(), sourceRequest: null, showSource: vi.fn(), highlightOutcome: null, reportHighlight: vi.fn() }
 }
 
 /** `others` are the papers the route may switch to (by :paperId), as the workspace would load them. */

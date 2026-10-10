@@ -13,25 +13,27 @@ import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { ShellHeader } from '@/components/shell/shell-header'
 import { MatchDecision } from '@/components/upload/MatchDecision'
 import { ConversationPane } from '@/features/chat'
-import { PaperActions } from '@/features/library/PaperActions'
 import { paperName } from '@/features/research/paper-format'
 import { usePaper } from '@/hooks/queries/papers'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { DetailsPanel } from './DetailsPanel'
 import { JoinedRedirect } from './JoinedRedirect'
 import { PaperStatusBadge } from './PaperStatusBadge'
 import type { ReaderTab } from './ReaderDocuments'
-import { MobilePdfView, ReaderPanel } from './ReaderPanel'
+import { PaperDetailsSheet } from './PaperDetailsSheet'
+import { ReaderPanel } from './ReaderPanel'
 import { WorkspaceContext, type HighlightOutcome, type SourceRequest, type WorkspaceContextValue, type WorkspaceView } from './workspace-context'
 
-const views: WorkspaceView[] = ['chat', 'pdf', 'details']
+// Narrow screens show the conversation or the reader; an old ?view=details link opens the conversation.
+const views: WorkspaceView[] = ['chat', 'pdf']
 const parseView = (value: string | null): WorkspaceView => views.find((view) => view === value) ?? 'chat'
 
-function PaperTitle({ paper }: { paper: Paper }) {
+/** The paper's name and PDF status, with ⓘ for its details beside them (ARA-097). */
+function PaperTitle({ paper, onDeleted }: { paper: Paper; onDeleted: () => void }) {
   return (
     <>
       <h1 className="min-w-0 truncate text-sm font-medium md:text-base">{paperName(paper)}</h1>
       <PaperStatusBadge paper={paper} className="shrink-0" />
+      <PaperDetailsSheet paper={paper} onDeleted={onDeleted} />
     </>
   )
 }
@@ -42,7 +44,6 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const view = parseView(searchParams.get('view'))
-  const [readerTab, setReaderTab] = useState<'pdf' | 'details'>('pdf')
   const [sourceRequest, setSourceRequest] = useState<SourceRequest | null>(null)
   const [highlightOutcome, setHighlightOutcome] = useState<HighlightOutcome | null>(null)
   // The open PDFs: this paper's (an earlier upload while a citation asks for it) and other papers a chat cites (ARA-088).
@@ -69,14 +70,13 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
     const documentId = paperId === paper.id && citation.document_id === paper.active_document_id ? undefined : citation.document_id
     setReaderTabs((current) => current.some((tab) => tab.paperId === paperId) ? current.map((tab) => (tab.paperId === paperId ? { paperId, documentId } : tab)) : [...current, { paperId, documentId }])
     setActiveTab(paperId)
-    setReaderTab('pdf')
     if (isMobile) setView('pdf')
     else if (readerPanel.current?.isCollapsed()) readerPanel.current.expand()
   }, [isMobile, paper.id, paper.active_document_id, readerPanel, setView])
 
   const context = useMemo<WorkspaceContextValue>(() => ({
-    paper, view, setView, readerTab, setReaderTab, sourceRequest, showSource, highlightOutcome, reportHighlight: setHighlightOutcome,
-  }), [paper, view, setView, readerTab, sourceRequest, showSource, highlightOutcome])
+    paper, view, setView, sourceRequest, showSource, highlightOutcome, reportHighlight: setHighlightOutcome,
+  }), [paper, view, setView, sourceRequest, showSource, highlightOutcome])
 
   const documents = {
     tabs: readerTabs,
@@ -97,21 +97,17 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
   return (
     <WorkspaceContext.Provider value={context}>
       <ShellHeader>
-        <PaperTitle paper={paper} />
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {!isMobile && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={readerCollapsed ? 'Show reader' : 'Hide reader'} onClick={() => (readerCollapsed ? readerPanel.current?.expand() : readerPanel.current?.collapse())}>
-                  {readerCollapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{readerCollapsed ? 'Show reader' : 'Hide reader'}</TooltipContent>
-            </Tooltip>
-          )}
-          {/* Edit, look up and delete, as on the paper's Library row (ARA-095). */}
-          <PaperActions paper={paper} onDeleted={() => navigate('/library', { replace: true })} />
-        </div>
+        <PaperTitle paper={paper} onDeleted={() => navigate('/library', { replace: true })} />
+        {!isMobile && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="ml-auto shrink-0 text-muted-foreground" aria-label={readerCollapsed ? 'Show reader' : 'Hide reader'} onClick={() => (readerCollapsed ? readerPanel.current?.expand() : readerPanel.current?.collapse())}>
+                {readerCollapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{readerCollapsed ? 'Show reader' : 'Hide reader'}</TooltipContent>
+          </Tooltip>
+        )}
       </ShellHeader>
       {paper.upload_match && paper.document_status === 'ready' && <MatchDecision paper={{ ...paper, upload_match: paper.upload_match }} variant="banner" />}
       {isMobile ? (
@@ -120,15 +116,13 @@ function Workspace({ paper, chatId }: { paper: Paper; chatId?: string }) {
             <TabsList className="w-full">
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="pdf">PDF</TabsTrigger>
-              <TabsTrigger value="details">Details</TabsTrigger>
             </TabsList>
           </div>
-          {/* All three stay mounted so a streaming answer or the reading position survives switching tabs. */}
+          {/* Both stay mounted so a streaming answer or the reading position survives switching. */}
           <TabsContent value="chat" forceMount hidden={view !== 'chat'} tabIndex={-1} className="flex min-h-0 flex-col">{conversation}</TabsContent>
           <TabsContent value="pdf" forceMount hidden={view !== 'pdf'} tabIndex={-1} className="min-h-0 border-t">
-            <MobilePdfView paper={paper} {...documents} />
+            <ReaderPanel paper={paper} {...documents} />
           </TabsContent>
-          <TabsContent value="details" forceMount hidden={view !== 'details'} className="min-h-0 border-t"><DetailsPanel paper={paper} onOpenPdf={() => setView('pdf')} /></TabsContent>
         </Tabs>
       ) : (
         <ResizablePanelGroup id="paper-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="min-h-0 flex-1 border-t">

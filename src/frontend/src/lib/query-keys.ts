@@ -27,6 +27,9 @@ export const queryKeys = {
     detail: (id: string) => ['jobs', 'detail', id] as const,
   },
   citation: (documentId: string, chunkId: string) => ['citation', documentId, chunkId] as const,
+  documents: { all: ['documents'] as const, detail: (id: string) => ['documents', id] as const },
+  // Like the deletion preview, outside the papers prefix and read afresh each time (ARA-097).
+  pdfRemovalPreview: (paperId: string) => ['pdf-removal-preview', paperId] as const,
   features: ['features'] as const,
   models: ['models'] as const,
   settings: ['settings'] as const,

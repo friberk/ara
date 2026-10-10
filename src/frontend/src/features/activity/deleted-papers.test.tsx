@@ -30,3 +30,14 @@ test('Given the cleanup of deleted papers failed, Then Activity names it and it 
   await user.click(within(row).getByRole('button', { name: 'Retry cleanup' }))
   await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/jobs/j2/retry')).toBe(true))
 })
+
+test('Given work stopped because its PDF was removed, Then Activity shows it as cancelled, not failed (ARA-097)', async () => {
+  const removed = { ...base, id: 'j3', kind: 'summary', state: 'failed', stage: 'failed', progress: 40, error_code: 'PDF_REMOVED', error: { code: 'PDF_REMOVED', message: 'Stopped because the PDF was removed.' }, result: { outcome: 'pdf_removed' }, paper_id: 'p1', paper_title: 'Attention is all you need' }
+  mockApi({ 'GET /jobs': { items: [removed] } })
+  const { user } = renderApp('/activity')
+  const row = (await screen.findByRole('heading', { name: 'Paper summary' })).closest('li') as HTMLElement
+  expect(within(row).getByText('Cancelled')).toBeVisible()
+  expect(within(row).getByText('Stopped because the PDF was removed.')).not.toHaveClass('text-destructive')
+  await user.click(screen.getByRole('radio', { name: 'Failed' }))
+  expect(await screen.findByRole('heading', { name: 'No failed jobs' })).toBeVisible()
+})

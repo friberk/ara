@@ -29,7 +29,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id,mentions?}` → SSE. `mentions` (PaperMention[], default `[]`) names the papers the question mentions with pills (ARA-096, below).
 - GET /features → `Features {open_models}`; GET /models → `{items:Model[]}`; GET/PUT /settings → Settings. Open models are experimental and off by default (ARA-090, below).
   - The defaults are `{default_model, reasoning_effort}`. A stored row or PUT body that still carries `memory_model` (ARA-077) is accepted and the field ignored; it is never returned. Follow-up planning and conversation summaries use the chat's own model and the effort active in that turn (ARA-083).
-- GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
+- GET /documents/{id} → DocumentDetail (ARA-097); GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
 
 ## PDF retrieval and access information (ARA-019)
 
@@ -378,3 +378,22 @@ The composer is a TipTap editor in which a paper mentioned with @ is an atomic p
 - **History.** The question's mentions are stored in its `chat_messages.configuration` (`{"mentions": [...]}`) and returned as `Message.mentions`; the client renders them as pills. Questions saved before ARA-096 have none and render as plain text.
 - **Answers.** `message.completed` citations keep `paper_id`, so a client can accept a citation to a paper that the question itself brought into the chat.
 
+## Removing a paper's PDF (ARA-097)
+
+No migration. Older conversations continue as they are: a chat pins the PDF it asks about (`chat_papers.document_id`, ARA-088), and a pinned PDF is never emptied or moved.
+
+**Endpoints.**
+- `GET /papers/{id}/pdf/removal-preview` → `PdfRemovalPreview`: `deleted_pdfs` (the paper's PDFs no chat pins, current or earlier; they are deleted), `kept_pdfs` (those a chat pins; they stay whole), `summaries` (of the deleted PDFs), `chats` (`{id,title}[]` that pin one of the paper's PDFs; they continue as they are), `active_jobs` (queued or running work on the deleted PDFs) and `answering` (one of those chats is writing an answer now). Reading it changes nothing. Unknown paper → 404 `PAPER_NOT_FOUND`.
+- `DELETE /papers/{id}/pdf` → 204. It sets the paper's `active_document_id` to null, so the paper reads `metadata_only`, the reader returns to upload and new conversations need a new PDF. Then it deletes the paper's PDFs that no chat pins (below). A repeat changes nothing (204). Unknown paper → 404 `PAPER_NOT_FOUND`. While a chat that pins one of the paper's PDFs has an answer with a live lease → 409 `CHAT_BUSY` ("Wait for the current answer to finish before removing the PDF."), after expired answers are marked interrupted.
+- `GET /documents/{id}` → `DocumentDetail`: `id`, `paper_id`, `file_name`, `page_count`, `byte_size`, `status`, `acquisition` (null for an upload; `{provider: "openalex", …}` for a retrieved copy) and `created_at`. The reader's PDF menu reads it. Unknown → 404 `DOCUMENT_NOT_FOUND`.
+
+**What stays.** A PDF a chat pins stays whole: its row, pages, sections, passages, embeddings, indexes, section summaries, summaries and stored file. Those chats read, cite and take new questions as before; their citations open that PDF in a reader tab. The paper's summary card shows its summaries with the "Earlier PDF" badge.
+
+**Deleting detached PDFs** (`services/pdf_removal.delete_detached`). A PDF that is no paper's `active_document_id` and that no chat pins is deleted in the caller's transaction:
+- its summaries first (they have no cascade), then the row, whose pages, sections, passages, embeddings, indexes, section summaries (ARA-079), upload requests and upload matches go by cascade;
+- its `queued` or `processing` jobs (payload `document_id`) fail with `PDF_REMOVED`, "Stopped because the PDF was removed.", no lease and `result {outcome: "pdf_removed"}`; rows a worker holds are skipped (`SKIP LOCKED`);
+- one `storage_cleanup` job (ARA-095's `queue_storage_cleanup`) removes the stored files.
+It runs after `DELETE /papers/{id}/pdf` (for all the paper's PDFs), `DELETE /chats/{id}` (for the PDFs the chat pinned) and `DELETE /chats/{id}/papers/{paper_id}` (for that paper's pinned PDF). A paper's current PDF is never deleted this way; deleting the paper (ARA-095) removes all of its PDFs.
+- Locks: the `pdf:<sha256>` identity locks of the candidates (and `upload_match:<paper>` for a removal) come before the chats, then the paper, as elsewhere.
+
+**Uploading a kept PDF again.** A new upload whose bytes match a ready PDF of the target paper that is not its current PDF makes that PDF current again, with nothing re-read, and answers `duplicate: false` with the PDF's completed ingest job. Without a target paper (the home page), this happens only when the PDF's paper has no current PDF. A PDF that was deleted uploads as a new PDF.

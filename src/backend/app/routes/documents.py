@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.core.errors import AppError
 from app.integrations.storage import read_object
 from app.models.research import Document, DocumentChunk
-from app.schemas.research import Citation, UploadAccepted
+from app.schemas.research import Citation, DocumentDetail, UploadAccepted
 from app.services.uploads import MAX_UPLOAD_BYTES, upload
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -27,14 +27,35 @@ async def upload_pdf(
         await file.close()
 
 
+async def stored_document(session, document_id: UUID) -> Document:
+    document = await session.get(Document, document_id)
+    if document is None:
+        raise AppError(404, "DOCUMENT_NOT_FOUND", "Document not found.")
+    return document
+
+
+@router.get("/{document_id}", response_model=DocumentDetail)
+async def facts(document_id: UUID, request: Request):
+    """The file facts the reader's PDF menu shows (ARA-097)."""
+    async with request.app.state.resources.sessions() as session:
+        document = await stored_document(session, document_id)
+        return DocumentDetail(
+            id=document.id,
+            paper_id=document.paper_id,
+            file_name=document.original_filename,
+            page_count=document.page_count,
+            byte_size=document.byte_size,
+            status=document.status,
+            acquisition=document.acquisition,
+            created_at=document.created_at,
+        )
+
+
 @router.get("/{document_id}/download")
 async def download(document_id: UUID, request: Request):
     resources = request.app.state.resources
     async with resources.sessions() as session:
-        document = await session.get(Document, document_id)
-        if document is None:
-            raise AppError(404, "DOCUMENT_NOT_FOUND", "Document not found.")
-        key = document.object_key
+        key = (await stored_document(session, document_id)).object_key
     try:
         data = await resources.storage_call(
             read_object, resources.storage, resources.settings.minio_bucket, key, MAX_UPLOAD_BYTES

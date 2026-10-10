@@ -24,8 +24,6 @@ type ReaderDocumentsProps = {
   onActivate: (paperId: string) => void
   onClose: (paperId: string) => void
   onShowCurrent: (paperId: string) => void
-  /** Where the active PDF's toolbar goes; without one it gets its own row above the PDF. */
-  toolbarSlot?: HTMLElement | null
 }
 
 function useTabPaper(workspace: Paper, paperId: string) {
@@ -55,7 +53,8 @@ function ReaderDocument({ workspace, tab, active, toolbarSlot, onShowCurrent }: 
   return (
     <div hidden={!active} className="h-full min-h-0">
       {paper ? <PdfReader paper={paper} documentId={documentId} controls={controls} onShowCurrent={onShowCurrent} /> : <PagesSkeleton />}
-      {active && documentId && toolbarSlot && createPortal(<PdfToolbar controls={controls} documentId={documentId} />, toolbarSlot)}
+      {/* Only the workspace paper's current PDF can be replaced or removed here; other PDFs open or download. */}
+      {active && documentId && toolbarSlot && createPortal(<PdfToolbar controls={controls} documentId={documentId} managed={paper?.id === workspace.id && documentId === paper.active_document_id ? paper : undefined} />, toolbarSlot)}
     </div>
   )
 }
@@ -64,8 +63,8 @@ function ReaderDocument({ workspace, tab, active, toolbarSlot, onShowCurrent }: 
  * The reader's open PDFs. Each keeps its reading position while another is shown; a tab strip appears once a second
  * paper is open (or the workspace's own one was closed), and any tab but the last can be closed.
  */
-export function ReaderDocuments({ paper, tabs, active, onActivate, onClose, onShowCurrent, toolbarSlot }: ReaderDocumentsProps) {
-  const [ownSlot, setOwnSlot] = useState<HTMLDivElement | null>(null)
+export function ReaderDocuments({ paper, tabs, active, onActivate, onClose, onShowCurrent }: ReaderDocumentsProps) {
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
   const strip = tabs.length > 1 || tabs[0]?.paperId !== paper.id
   const current = tabs.some((tab) => tab.paperId === active) ? active : tabs[0]?.paperId
   return (
@@ -78,10 +77,11 @@ export function ReaderDocuments({ paper, tabs, active, onActivate, onClose, onSh
           </TabsList>
         </Tabs>
       )}
-      {toolbarSlot === undefined && <div ref={setOwnSlot} className="flex min-h-11 shrink-0 items-center justify-center border-b px-2 py-1.5 empty:hidden" />}
+      {/* The active PDF's controls; empty, and so hidden, while the reader shows a way to get the PDF. */}
+      <div ref={setToolbarSlot} className="flex min-h-11 shrink-0 items-center border-b px-2 py-1.5 empty:hidden" />
       <div className="min-h-0 flex-1">
         {tabs.map((tab) => (
-          <ReaderDocument key={tab.paperId} workspace={paper} tab={tab} active={tab.paperId === current} toolbarSlot={toolbarSlot === undefined ? ownSlot : toolbarSlot} onShowCurrent={() => onShowCurrent(tab.paperId)} />
+          <ReaderDocument key={tab.paperId} workspace={paper} tab={tab} active={tab.paperId === current} toolbarSlot={toolbarSlot} onShowCurrent={() => onShowCurrent(tab.paperId)} />
         ))}
       </div>
     </div>

@@ -1,9 +1,9 @@
-// Paper "Search index" panel in Details (ARA-075, ARA-091): the library model, this paper's index state and rebuilds.
+// Paper "Search index" under Advanced in the ⓘ sheet (ARA-075, ARA-091, ARA-097): the library model, this paper's index state and rebuilds.
 import { act, screen, waitFor, within } from '@testing-library/react'
 import type { EmbeddingProfile, Paper, PaperRetrieval, RetrievalIndex } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { renderWithProviders } from '@/test/render'
-import { DetailsPanel } from './DetailsPanel'
+import { SearchIndexPanel } from './SearchIndexPanel'
 
 const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: ['A. Author'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'doc-1', metadata_provenance: {} }
 const openai: EmbeddingProfile = { key: 'openai-3-large', provider: 'openai', model_id: 'text-embedding-3-large', display_name: 'OpenAI text-embedding-3-large', dimensions: 3072, status: 'available', unavailable_reason: null, local_model_key: null, price_per_million: 0.13 }
@@ -18,26 +18,19 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 // Local model tests run with open models on, as the server reports them (ARA-090).
 const openModels = { 'GET /features': { open_models: true } }
 
-function mount(value: Paper = paper) { return renderWithProviders(<DetailsPanel paper={value} onOpenPdf={() => {}} />) }
+function mount(value: Paper = paper) { return renderWithProviders(<SearchIndexPanel paperId={value.id} />) }
 async function expand(user: ReturnType<typeof mount>['user']) {
-  await user.click(screen.getByRole('button', { name: /^Search index/ }))
-  return screen.getByRole('region', { name: /^Search index/ })
+  await user.click(screen.getByRole('button', { name: 'Advanced' }))
+  return screen.getByRole('region', { name: 'Search index' })
 }
 
-test('Given a ready paper, Then Details ends with a collapsed advanced Search index that loads nothing until opened', () => {
+test('Given a ready paper, Then Advanced is collapsed and loads nothing until opened', () => {
   const { calls } = mockApi({ 'GET /retrieval/profiles': profiles, 'GET /papers/p1/retrieval': retrieval() })
   mount()
-  const trigger = screen.getByRole('button', { name: /^Search index/ })
+  const trigger = screen.getByRole('button', { name: 'Advanced' })
   expect(trigger).toHaveAttribute('aria-expanded', 'false')
-  expect(within(trigger).getByText('Advanced')).toHaveClass('text-muted-foreground')
   expect(screen.queryByText(/Searching with/)).not.toBeInTheDocument()
   expect(calls.some((call) => call.path.includes('retrieval'))).toBe(false)
-})
-
-test('Given a metadata-only paper, Then there is no Search index to show', () => {
-  mockApi({})
-  mount({ ...paper, document_status: 'metadata_only', active_document_id: null })
-  expect(screen.queryByRole('button', { name: /^Search index/ })).not.toBeInTheDocument()
 })
 
 test('Given a ready index on the default model, When expanded, Then it names the model, its state and the counts', async () => {

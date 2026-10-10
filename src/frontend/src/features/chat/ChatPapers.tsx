@@ -50,7 +50,8 @@ export function ChatPapers({ papers, onRemove, removing }: { papers: IncludedPap
   const hidden = papers.length - VISIBLE_PAPER_CHIPS
   return (
     <>
-      <ul aria-label="Papers in this conversation" className="flex flex-wrap gap-1.5 px-4 pb-2">
+      {/* Opaque, so the thread scrolling beneath never shows through; the thread draws the hairline (ARA-097). */}
+      <ul aria-label="Papers in this conversation" className="flex flex-wrap gap-1.5 bg-background px-4 pb-2">
         {papers.slice(0, VISIBLE_PAPER_CHIPS).map((paper) => (
           <li key={paper.paper_id} className="flex max-w-full min-w-0">
             <span className="inline-flex max-w-[18rem] min-w-0 items-center rounded-lg border bg-muted/60 text-sm">
