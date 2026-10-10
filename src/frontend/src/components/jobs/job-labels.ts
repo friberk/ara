@@ -1,6 +1,5 @@
 import type { Job } from '@/api/types'
 
-export const jobKindLabels: Record<string, string> = { fulltext: 'PDF retrieval', ingest: 'PDF processing', metadata: 'Paper details lookup', summary: 'Paper summary', storage_cleanup: 'Deleted PDF cleanup', model_download: 'Model download', model_delete: 'Model weights deletion', section_summaries: 'Section summaries for search' }
 const stageLabels: Record<string, string> = {
   queued: 'Waiting to start',
   processing: 'Reading the PDF',
@@ -26,12 +25,9 @@ const stageLabels: Record<string, string> = {
   failed: 'Failed',
 }
 
-export function jobKindLabel(kind: string) { return jobKindLabels[kind] ?? kind.replaceAll('_', ' ') }
 export function jobStageLabel(job: Pick<Job, 'state' | 'stage'>) {
   if (job.state === 'completed') return 'Completed'
   if (job.state === 'failed') return 'Processing failed'
   return stageLabels[job.stage] ?? (job.stage ? job.stage.replaceAll('_', ' ') : stageLabels[job.state] ?? job.state)
 }
 export const isActiveJob = (job: Pick<Job, 'state'>) => job.state === 'queued' || job.state === 'processing' || job.state === 'paused'
-/** Work its paper's deletion (ARA-095) or its PDF's removal (ARA-097) stopped: settled, but not a failure to fix. */
-export const isCancelledJob = (job: Pick<Job, 'state' | 'error'>) => job.state === 'failed' && (job.error?.code === 'PAPER_DELETED' || job.error?.code === 'PDF_REMOVED')

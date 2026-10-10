@@ -21,6 +21,7 @@ Locks are taken in the order the rest of the app uses: identity locks, then chat
 from collections.abc import Sequence
 from uuid import UUID
 
+from minio.error import S3Error
 from sqlalchemy import delete, exists, func, or_, select
 
 from app.core.errors import AppError
@@ -293,6 +294,16 @@ async def queue_storage_cleanup(
     )
 
 
+def refused(error: Exception) -> bool:
+    """Storage answered with a client error other than a timeout or throttle."""
+    status = getattr(getattr(error, "response", None), "status", None)
+    return (
+        isinstance(error, S3Error)
+        and isinstance(status, int)
+        and (400 <= status < 500 and status not in {408, 429})
+    )
+
+
 async def run_storage_cleanup_job(resources, job_id, generation, token, payload) -> None:
     """Remove deleted papers' stored PDFs. Removing a missing object succeeds, so a repeat is a
     no-op; an object a live document still names is kept."""
@@ -316,12 +327,20 @@ async def run_storage_cleanup_job(resources, job_id, generation, token, payload)
                 await resources.storage_call(
                     resources.storage.remove_object, resources.settings.minio_bucket, key
                 )
-    except Exception:
+    except Exception as error:
         async with resources.sessions() as session, session.begin():
             job = await session.scalar(
                 select(BackgroundJob).where(*fence(job_id, generation, token)).with_for_update()
             )
-            if job is not None:
+            if job is not None and refused(error):
+                # Retrying cannot fix a refused request (credentials, bucket), so recovery
+                # does not revive it either.
+                job.state, job.stage = "failed", "failed"
+                job.error_code = "STORAGE_REJECTED"
+                job.error_message = "Storage refused to remove the deleted PDFs."
+                job.lease_token = job.lease_expires_at = None
+                job.updated_at = now()
+            elif job is not None:
                 retry_locked(
                     session,
                     job,

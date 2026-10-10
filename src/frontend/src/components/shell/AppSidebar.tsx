@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, Library, Search, Settings, SquarePen } from 'lucide-react'
+import { Library, Search, Settings, SquarePen } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
@@ -50,7 +50,6 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const close = () => { if (isMobile) setOpenMobile(false) }
   const links = [
     { to: '/library', label: 'Library', icon: Library },
-    { to: '/activity', label: 'Activity', icon: Activity },
   ]
   return (
     <Sidebar collapsible="icon">

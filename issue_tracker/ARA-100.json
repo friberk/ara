@@ -21,7 +21,7 @@
     "Backend: failed storage_cleanup is re-queued at startup or recovery, idempotently.",
     "Contextual retry surfaces still work: reader retry, summary failure, Look up again."
   ],
-  "status": "planned",
+  "status": "done",
   "related_files": [
     "src/frontend/src/features/activity/ActivityPage.tsx",
     "src/frontend/src/App.tsx",
@@ -32,8 +32,11 @@
     "src/backend/app/services/deletion.py",
     "src/backend/app/services/reindex.py"
   ],
-  "commits": [],
+  "commits": [
+    "204ef6f feat(shell): remove the Activity page",
+    "d4b9786 feat(jobs): revive failed storage cleanups through recovery"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's decision. Branch feat/ara-100-remove-activity.",
+  "verification": "2026-10-10. Red first: shell/App tests 4 failed, 21 passed before removal; storage-cleanup recovery tests ImportError, then 3 failed, 2 passed (two vacuous) before the revival code. Green: 5 recovery tests pass; the test for a cleanup queued by pdf_removal.delete_detached passed on first run (the mechanism is generic), so it has no red. Backend full suite via scripts/test-stack.py (project ara-activity-test): 1197 passed before merging ARA-097, 1215 passed after (278 s). Frontend npm run check after the last merge: 92 files, 724 tests passed; npm run build succeeds; eslint and tsc clean. Earlier full runs showed load-flaky findBy failures (6, then 2) that passed when rerun. ruff check clean; ruff format --check lists only app/jobs/development_worker.py and tests/test_pdf_parser_structured.py, which this ticket did not touch. Playwright specs edited, not run. Section-summary jobs get three attempts but no later automatic retry (reported to the lead).",
   "updated_at": "2026-10-10"
 }

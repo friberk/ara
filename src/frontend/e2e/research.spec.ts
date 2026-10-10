@@ -57,7 +57,7 @@ test('Mobile shell stays usable at 390px with the sidebar, skip link and no hori
   await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeHidden()
-  for (const path of ['/', '/library', '/activity', '/settings']) {
+  for (const path of ['/', '/library', '/settings']) {
     await page.goto(path)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal scroll on ${path}`).toBeTruthy()

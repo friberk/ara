@@ -11,7 +11,7 @@ The interface is a chat-centred workspace built with shadcn components, using th
   - Each row's menu can **Edit details** (title, authors, year, venue, DOI, abstract), **Look up details again**, or **Delete** the paper. In a paper's workspace, Edit details is in the paper header and Look up again and Delete are behind its **ⓘ**.
   - Tick several rows, or Select all, to delete them together.
   - Deleting asks first. The dialog lists what goes: the PDFs with their text and search index, summaries, and conversations about only those papers. Conversations that also cover other papers keep them, and their earlier answers stay readable. The button names what it does, such as "Delete 3 papers".
-  - Deletion waits while a conversation is still writing an answer. Background work for a deleted paper stops and shows as Cancelled in Activity, and the stored PDFs are removed by a background cleanup that retries if storage is down.
+  - Deletion waits while a conversation is still writing an answer. Background work for a deleted paper stops, and the stored PDFs are removed by a background cleanup. If storage is down the cleanup retries with backoff, and recovery queues it again every ten minutes (at most 48 times) once its attempts run out, so no page needs to offer a retry. A refused request, such as bad credentials, is not queued again.
   - An old link to a deleted paper opens the Library with a short note.
 - **Upload.**
   - Choose or drop a PDF (up to 25 MB) on the home page, in the library or in a paper. The upload starts at once and shows its real progress.
@@ -135,7 +135,7 @@ docker compose exec api python -m app.services.reindex
 
 Open (local) models are the Ollama runtime with its IFM K2 Horizon and Qwen chat models, the Qwen3 embedding models and the Qwen3 reranker. They are experimental, and their development is frozen as of 2026-10-09 (ARA-090). Their code and tests stay, and the tests run with the flag on, but nothing new is built on them unless the freeze is lifted.
 
-They are off by default. The app then offers only hosted OpenAI chat, embedding and reranking; Settings has no Local models section; Activity shows no model jobs; and `docker compose up --build` starts neither `ollama` nor `model-worker`. To turn them on, add both lines to `.env` and restart:
+They are off by default. The app then offers only hosted OpenAI chat, embedding and reranking; Settings has no Local models section; and `docker compose up --build` starts neither `ollama` nor `model-worker`. To turn them on, add both lines to `.env` and restart:
 
 ```bash
 EXPERIMENTAL_OPEN_MODELS=true
@@ -177,7 +177,7 @@ Open **Settings → Local models** to download an exact curated Q4_K_M artifact:
 | Qwen3 Embedding 8B | `qwen3-embedding:8b-q4_K_M` | 4,676,805,193 |
 | Qwen3 Reranker 0.6B (Q8_0) | `fanyx/Qwen3-Reranker-0.6B-Q8_0:latest` | 639,152,466 |
 
-Downloads continue when you leave Settings or close the browser. Activity links back to the model controls. Pause remains pending while the runtime settles its transfer and checkpoints; **Paused** appears after acknowledgment. A manually paused job stays paused across restart. Resume uses retained partial files when the registry supports ranges. Bytes may decrease after a restart if the runtime reports an earlier durable checkpoint. A finished transfer must also pass artifact, streaming and structured-output verification before selection becomes available. Download completion does not change your selection or saved default.
+Downloads continue when you leave Settings or close the browser. Pause remains pending while the runtime settles its transfer and checkpoints; **Paused** appears after acknowledgment. A manually paused job stays paused across restart. Resume uses retained partial files when the registry supports ranges. Bytes may decrease after a restart if the runtime reports an earlier durable checkpoint. A finished transfer must also pass artifact, streaming and structured-output verification before selection becomes available. Download completion does not change your selection or saved default.
 
 Installed models prepare automatically after a runtime, capability-schema or context change. **Preparing model** runs in the background using retained weights; leave Settings and return later. Selection becomes available after the check succeeds, with your saved model and reasoning preference preserved. Failed operations offer **Retry download**, **Retry preparation** or **Retry deletion**. If previously installed weights disappeared, **Download** starts a new transfer only when you request it. **Delete weights** confirms removal and preserves conversations, summaries and the saved default. Generation with a deleted default stays blocked until you reinstall it or choose another model. The app never switches a local request to a paid provider. Shared blobs and retained partial files mean deletion does not promise to reclaim the full catalog size. `OLLAMA_NOPRUNE=true` retains partials for recovery; the app does not perform broad orphan cleanup.
 
