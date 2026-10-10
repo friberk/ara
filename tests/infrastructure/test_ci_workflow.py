@@ -48,6 +48,15 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("create_pdf.py /tmp/ara-fixtures/research.pdf", commands)
         self.assertIn("create_pdf.py --second /tmp/ara-fixtures/second.pdf", commands)
 
+    def test_containers_can_write_the_bind_mounted_source_before_any_stack_starts(self):
+        # The runner owns the checkout; the images run as other users (backend uid 10001, node),
+        # and ruff and pytest write caches into /app ("Permission denied" in the first run).
+        commands = [step.get("run", "") for step in self.jobs["verify"]["steps"]]
+        opened = [i for i, run in enumerate(commands) if "chmod -R a+rwX src" in run]
+        stacks = [i for i, run in enumerate(commands) if "test-stack.py" in run or "compose" in run]
+        self.assertTrue(opened)
+        self.assertLess(opened[0], min(stacks))
+
     def test_deploy_waits_for_verify_and_only_runs_for_main(self):
         deploy = self.jobs["deploy"]
         self.assertEqual(deploy["needs"], "verify")

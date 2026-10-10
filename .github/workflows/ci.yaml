@@ -26,6 +26,10 @@ jobs:
           version: '0.10.8'
       - name: Bootstrap private test configuration
         run: python3 scripts/bootstrap.py
+      # The runner owns the checkout, but the images run as other users (backend uid 10001, node)
+      # and write caches into the bind-mounted source.
+      - name: Let container users write the bind-mounted source
+        run: chmod -R a+rwX src
       - name: Backend and real-service integration
         run: python3 scripts/test-stack.py test
       - name: Infrastructure acceptance checks
