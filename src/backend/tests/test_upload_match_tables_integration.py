@@ -2,6 +2,8 @@
 
 import pytest
 from sqlalchemy import delete
+from support.front_matter import toolchain_pdf
+from test_metadata_enrichment_integration import ingested
 from test_upload_match_integration import (
     DOI_TITLE,
     WITH_DOI,
@@ -11,8 +13,6 @@ from test_upload_match_integration import (
     library_paper,
     pending_upload,
 )
-from support.front_matter import toolchain_pdf
-from test_metadata_enrichment_integration import ingested
 
 pytestmark = pytest.mark.integration
 

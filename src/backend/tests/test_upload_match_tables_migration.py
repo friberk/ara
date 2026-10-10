@@ -18,7 +18,7 @@ DOCUMENT = (
 SETTING = "INSERT INTO model_configurations (key, value) VALUES (:key, CAST(:value AS jsonb))"
 
 
-async def test_given_prefixed_rows_when_upgrading_from_0008_then_valid_rows_move_and_downgrade_restores(
+async def test_given_prefixed_rows_when_upgrading_then_valid_rows_move_and_downgrade_restores(
     resources,
 ):
     """Valid rows move, orphans and malformed rows are dropped, and a downgrade restores them."""
@@ -130,15 +130,22 @@ async def test_given_prefixed_rows_when_upgrading_from_0008_then_valid_rows_move
             assert [tuple(row) for row in redirects] == [(moved, library)]
             owners = (
                 await connection.execute(
-                    text("SELECT id, doi_owner_paper_id FROM documents WHERE doi_owner_paper_id IS NOT NULL")
+                    text(
+                        "SELECT id, doi_owner_paper_id FROM documents "
+                        "WHERE doi_owner_paper_id IS NOT NULL"
+                    )
                 )
             ).all()
             assert [tuple(row) for row in owners] == [(owned, owner)]
             leftover = (
-                await connection.execute(
-                    text("SELECT key FROM model_configurations ORDER BY key")
+                (
+                    await connection.execute(
+                        text("SELECT key FROM model_configurations ORDER BY key")
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert leftover == ["retrieval"]
 
         await alembic("downgrade", "0008_library_embeddings")
@@ -152,9 +159,7 @@ async def test_given_prefixed_rows_when_upgrading_from_0008_then_valid_rows_move
             restored = {
                 key: value
                 for key, value in (
-                    await connection.execute(
-                        text("SELECT key, value FROM model_configurations")
-                    )
+                    await connection.execute(text("SELECT key, value FROM model_configurations"))
                 ).all()
             }
             assert restored == {

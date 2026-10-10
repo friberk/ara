@@ -77,6 +77,41 @@ class Document(Base):
     acquisition: Mapped[dict | None] = mapped_column(JSONB)
     parser: Mapped[str | None] = mapped_column(String(40))
     chunk_set: Mapped[str | None] = mapped_column(String(80))
+    # An upload into a chosen paper whose DOI another paper owns (ARA-092).
+    doi_owner_paper_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("papers.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UploadMatch(Base):
+    """An upload held for the user's choice because it is a library paper (ARA-086, ARA-092)."""
+
+    __tablename__ = "upload_matches"
+    __table_args__ = (
+        CheckConstraint("matched_by IN ('doi','arxiv','title')", name="upload_match_matched_by"),
+        CheckConstraint("found_by IN ('ingest','lookup')", name="upload_match_found_by"),
+    )
+    placeholder_paper_id: Mapped[UUID] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True
+    )
+    library_paper_id: Mapped[UUID] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    matched_by: Mapped[str] = mapped_column(String(10))
+    found_by: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PaperRedirect(Base):
+    """Where a retired placeholder's upload went. The old ID names no paper any more."""
+
+    __tablename__ = "paper_redirects"
+    old_paper_id: Mapped[UUID] = mapped_column(primary_key=True)
+    paper_id: Mapped[UUID] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
