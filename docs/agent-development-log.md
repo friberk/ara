@@ -1363,3 +1363,12 @@ An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in it
   - It passed alone twice (7 s each). A second full run passed with 1116 in 252.80 s and Ruff clean.
   - I take it as a timing failure under load, since about 46 test containers were running on the machine; I did not investigate further.
 - **Not verified:** that a re-ingest sees the queued backfill and queues no second lookup. This follows from `queue_lookup`'s existing check of earlier jobs for the document, but no test covers it. The refresh has also not run against the user's library or live catalogs.
+
+**Follow-up after the merge (same day).** The lead merged ARA-095 at `5001423` (merge `1e30b1b`), before the refresh commits, so the automatic refresh appeared to be missing. It is in `f32965d`, `3791436` and `52494fa` on this branch.
+- **New test.** I added one test that drives the refresh through `prepare_search`:
+  - the first start queues exactly one refresh for each existing paper, spaced out;
+  - a second start queues nothing;
+  - against the fixture catalog, the saved paper gains its venue and keeps its edited title;
+  - the `paper.dvi` upload, matched by arXiv ID, ends with the record's title (provenance `openalex`), venue and authors.
+- **Red, then green.** Against the merged code (`metadata.py`, `reindex.py` and `ingestion.py` restored from `5001423` for the run) it failed with `assert [] == ['4a84882b-…', …]`: startup queued nothing. On the branch head all 7 refresh tests passed.
+- **Verification.** Full backend 1117 passed in 254.17 s, Ruff clean. The frontend is unchanged since its 611-test check.

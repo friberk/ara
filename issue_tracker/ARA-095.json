@@ -19,14 +19,14 @@
     "Given a paper, when the user edits its details from the workspace or from its Library row, then title, authors, year, venue, DOI and abstract are editable. Manual edits keep winning over automatic lookups.",
     "Given a paper with a DOI or provider record, when the user chooses 'Look up again' at any time, then the configured metadata source refreshes non-manual fields, with the existing rate-limit behaviour.",
     "Given a request for a paper that was deleted, when the API or UI loads it, then it answers 404 or redirects to the Library with a short note, never a crash.",
-    "Given papers saved or read before ARA-086 stored venues, when the app next starts, then each library paper with a provider record or a read PDF is refreshed once: a record is read again by its ID, an upload without one has its stored PDF read again by the child-process parser and is looked up with those clues. Missing and PDF-read values are filled, manual edits stay, rate limits wait and retry, and later starts queue nothing. Look up again takes the same path for one paper."
+    "Given papers saved or read before ARA-086 stored venues, when the API starts, then the startup machinery queues exactly one refresh for each library paper with a provider record or a read PDF, spaced 3 s apart, and records that in model_configurations so a later start queues nothing. A saved paper reads its record again by ID and gains its venue and missing values; an upload without a record has its stored PDF read again by the child-process parser and is looked up with those clues, so a paper.dvi title ends as the matched record's title. Manual edits stay, a 429 waits for Retry-After and retries, and duplicate deliveries are fenced. Look up again takes the same path for one paper."
   ],
   "test_cases": [
     "Backend: deletion cascade (documents, chunks, embeddings, summaries, chats, chat_papers trigger, upload matches, redirects); storage cleanup job; idempotency; in-flight job settlement.",
     "Backend: PATCH with venue; Look up again respecting manual provenance.",
     "Frontend: delete from workspace and library row, bulk delete, confirmation copy with counts, Library edit, deleted-paper 404 handling.",
     "A browser spec for delete and edit, run at integration.",
-    "Backend: one-time refresh fills a venue from a provider record, fixes a junk title from the re-read PDF (also via Look up again), leaves manual fields, is queued once across concurrent and later startups, and waits on 429 then finishes without parsing again."
+    "Backend: startup (prepare_search) queues exactly one refresh per existing paper and none on a second start; the saved paper gains its venue and keeps its edited title; a paper.dvi upload matched by the fixture catalog ends with the record's title; a junk title is also fixed from the re-read PDF when nothing matches (and via Look up again); manual fields stay; concurrent startups queue once; a 429 waits and finishes without parsing again."
   ],
   "status": "completed",
   "related_files": [
@@ -85,9 +85,11 @@
     "a8f4191",
     "5001423",
     "f32965d",
-    "3791436"
+    "3791436",
+    "52494fa",
+    "99cddff"
   ],
   "pull_requests": [],
-  "verification": "Implemented 2026-10-10 on feat/ara-095-library-delete-edit in isolated Compose project ara-delete-test. Backend: python3 scripts/test-stack.py test --project-name ara-delete-test -> Ruff 'All checks passed!', 1116 passed in 252.80 s (baseline before the branch's code: 1080 passed in 227.60 s). The run before it had 1 failed, 1115 passed: the real Redis worker canary timed out at 30 s; it passed alone twice and in the next full run. New backend tests: 8 deletion API, 6 storage cleanup, 10 in-flight job, 6 metadata editing, 6 one-time refresh. Frontend: npm run check -> typecheck and lint clean, 611 tests in 79 files passed (baseline 599 in 77); npm run build passed with the existing chunk-size warning. generated.ts regenerated from the open-models-on app.openapi(); the only removed line is the old 'delete?: never' of /papers/{paper_id}. Visual check of Library, dialogs, edit dialog, workspace Details and Activity in light, dark and 390 px against a seeded test database and Vite (no horizontal overflow). Not run: the Playwright spec e2e/library-manage.spec.ts (type-checked on its own only); live OpenAlex or Semantic Scholar lookups; the one-time refresh on the user's library; real concurrent deletion races (the skip-locked path is simulated by deleting the paper with plain SQL). This record and the journal entry are committed after 3791436.",
+  "verification": "Implemented 2026-10-10 on feat/ara-095-library-delete-edit in isolated Compose project ara-delete-test. Backend: python3 scripts/test-stack.py test --project-name ara-delete-test -> Ruff 'All checks passed!', 1117 passed in 254.17 s (baseline before the branch's code: 1080 passed in 227.60 s). An earlier run had 1 failed, 1115 passed: the real Redis worker canary timed out at 30 s; it passed alone twice and in the next full run. New backend tests: 8 deletion API, 6 storage cleanup, 10 in-flight job, 6 metadata editing, 7 one-time refresh. Frontend: npm run check -> typecheck and lint clean, 611 tests in 79 files passed (baseline 599 in 77); npm run build passed with the existing chunk-size warning. generated.ts regenerated from the open-models-on app.openapi(); the only removed line is the old 'delete?: never' of /papers/{paper_id}. Visual check of Library, dialogs, edit dialog, workspace Details and Activity in light, dark and 390 px against a seeded test database and Vite (no horizontal overflow). Not run: the Playwright spec e2e/library-manage.spec.ts (type-checked on its own only); live OpenAlex or Semantic Scholar lookups; the one-time refresh on the user's library; real concurrent deletion races (the skip-locked path is simulated by deleting the paper with plain SQL). This record and the journal entry are committed after 99cddff.",
   "updated_at": "2026-10-10"
 }
