@@ -260,7 +260,6 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!highlight) return
     const { citation, claim, nonce } = highlight
     request.current = { citation, claim, nonce, reported: false }
-    setRegions((current) => (current.list.length ? { nonce: 0, list: [] } : current))
     pendingPage.current = citation.page
     flushPendingPage()
     markPage(citation.page)
@@ -275,11 +274,13 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (root && outline) centreIn(root, outline)
   }, [regions])
 
+  // Outlines belong to the jump that drew them: a newer request hides them at once, before anything is redrawn.
+  const nonce = highlight?.nonce
   const byPage = useMemo(() => {
     const pages = new Map<number, Region[]>()
-    for (const region of regions.list) pages.set(region.page, [...(pages.get(region.page) ?? []), region])
+    for (const region of nonce === regions.nonce ? regions.list : []) pages.set(region.page, [...(pages.get(region.page) ?? []), region])
     return pages
-  }, [regions])
+  }, [regions, nonce])
 
   useEffect(() => () => window.cancelAnimationFrame(frame.current), [])
 
