@@ -27,6 +27,8 @@ class RerankerProfile:
     concurrency: int  # parallel scoring calls
     price_per_million_input: Decimal = Decimal("0")
     local_model_key: str | None = None
+    # What choosing it adds to each question, from the measurements below (ARA-109).
+    description: str | None = None
 
 
 RERANKERS: dict[str, RerankerProfile] = {
@@ -43,6 +45,7 @@ RERANKERS: dict[str, RerankerProfile] = {
             candidates=40,
             concurrency=8,
             price_per_million_input=Decimal("0.10"),
+            description="Adds about 2 to 3 seconds and $0.004 to each question.",
         ),
         # Measured 2026-10-09: 12 candidates in about 9 s on 4 CPUs, 12/12 probe pairs.
         RerankerProfile(
@@ -54,6 +57,7 @@ RERANKERS: dict[str, RerankerProfile] = {
             candidates=12,
             concurrency=1,
             local_model_key="qwen3-reranker-0.6b",
+            description="Private, but adds about 10 seconds to each question.",
         ),
     )
 }

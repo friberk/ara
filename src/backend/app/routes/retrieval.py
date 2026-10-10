@@ -66,6 +66,8 @@ async def profiles(request: Request):
                     unavailable_reason=reason,
                     local_model_key=local_key(settings, profile),
                     price_per_million=float(profile.price_per_million),
+                    description=profile.description,
+                    label=profile.label,
                 )
             )
         rerankers = []
@@ -80,6 +82,8 @@ async def profiles(request: Request):
                     unavailable_reason=reason,
                     local_model_key=local_key(settings, profile),
                     candidates=profile.candidates,
+                    price_per_million=float(profile.price_per_million_input),
+                    description=profile.description,
                 )
             )
         return EmbeddingProfilePage(items=items, default_profile=default, rerankers=rerankers)

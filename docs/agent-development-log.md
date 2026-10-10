@@ -1905,3 +1905,108 @@ ARA-105 went into `feat/ux-feedback-round` (`698ad00`; its ticket status set to 
 - **Change.** `lib/fit-pills.ts` greedily counts the pills that fit beside the "+N" pill. `ChatPapers` measures each pill's natural width (`shrink-0`), remembers it, assumes 160px for pills not yet shown, re-measures through a `ResizeObserver`, and shows 3 pills until the first measurement. Row pills use `maxChars={16}`; composer and history pills keep 28.
 - **Visual correction.** The first screenshot showed three pills squeezed on a phone because flex shrinking made the measured widths too small; the pills now keep their natural width and the count falls to one pill plus "+4" at 390px. Two rounds used.
 - **Results.** `npm run check`: 93 files, 750 tests passed, exit 0. `npm run build`: exit 0. Screenshots `oneline-desktop-light.png`, `oneline-mobile-dark.png`, `oneline-desktop-dark-three.png` in the scratchpad `ara110/`.
+
+## 2026-10-10 - ARA-109 Settings as a categorized dialog
+
+- Prompt: the user asked for settings "as pop up modal type of things grouped by the categories" like chatgpt.com and claude.ai. They found the page "very unpolished, full of AI-isms, and unclear" and did not know what "GPT-6 Luna" was for. The lead set the direction: a shadcn Dialog with categories, the category in the URL, plain copy, model purposes from OpenAI's pages, and the impeccable skill.
+- **Impeccable.**
+  - The context step ran once.
+  - The critique ran as two isolated sub-agents. The design review scored the old page 19/40 and found why the user asked about GPT-6 Luna: the reranker list had no visible label, so "OpenAI GPT-6 Luna" read as a third search model. The detector found nothing in the settings source. Its browser overlay found six shell and third-party findings, none of them in Settings.
+  - The critique's closing questions were not put to the user, because the lead's direction already settled scope, tone and what stays unchanged.
+- **Categories.** General (theme), Models (default model and reasoning), Library and search (paper details, search index, reranking) and, only with the flag on, Open models (the frozen `LocalModels` component, unchanged).
+  - The URL is `?settings=<category>` on the current route. Opening pushes one history entry, so Back closes the dialog; switching category replaces that entry. Esc and the close button return focus to the opener.
+  - `/settings` redirects to `/?settings=`, which shows General on desktop and the list on a phone. `/settings#local-models` redirects to Open models and keeps the hash, so the frozen component still focuses its heading.
+  - The sidebar item is now a button. The command palette has "Settings" (General) and "Model settings" (Models).
+  - Below 768px the dialog fills the screen: the category list first, then a panel with an "All settings" back button.
+- **Model purposes.** Each comes from its OpenAI model page, read with WebFetch on 2026-10-10:
+  - Sol: "Flagship model for complex professional work." (tagline: "GPT-5.6 flagship model for complex professional work")
+  - Terra: "Balances intelligence and cost." (tagline: "GPT-5.6 model that balances intelligence and cost")
+  - Luna: "Built for cost-sensitive, high-volume work." (tagline: "optimized for cost-sensitive workloads"; first sentence: "designed for cost-sensitive, high-volume workloads")
+  - text-embedding-3-large: "OpenAI's most capable search model, in English and other languages." (page: "our most capable embedding model for both english and non-english tasks")
+  - text-embedding-3-small: "A smaller model: cheaper to index, less capable than the large one." (tagline: "Small embedding model"; the comparison follows from the large model being "most capable")
+  - The GPT-6 Luna reranker line, "Adds about 2 to 3 seconds and $0.004 to each question.", is the catalog's own 2026-10-09 measurement, not the model page.
+  - All five pages were reachable. Local models have no description, and the UI says they run on the server with no per-token cost.
+- **Copy decisions.**
+  - Every setting is a heading, one sentence on what it changes and what happens when it changes, and its control.
+  - Internal words are gone from the text: "Metadata source" became "Paper details", "Search model" became "Search index", "Re-embed the whole library?" became "Rebuild the search index?", and "Rerank results" became a "Reranking" switch with a sentence on what it improves and a line on what it costs.
+  - The display names "OpenAI text-embedding-3-large/-small" stay. They are the catalog's names for the models and also appear in each paper's search index panel.
+  - Removed: the status pills ("Configured", "Available"), the mono model IDs, the "Streams answers and writes summaries" line repeated on every row (limits now show only when a model has one), and the footer about API keys.
+  - An unavailable hosted model says "Add an OpenAI API key to the server, then restart it." The phrase "Each chat can switch models" sits in the Default model description.
+  - There are no middle dots in the three categories everyone sees. The frozen open-models panel keeps its own copy, middle dots included, as directed.
+- **Deviations from the direction, with reasons.**
+  - The models API had no prices, so `Model` gained `input_price_per_million` and `output_price_per_million` (null for local models) beside `description`.
+  - The user's "GPT-6 Luna" is the reranker, and the embedding choice had no quality information. So the embedding and reranker catalogs gained a `description`, and `RerankerOut` gained its `price_per_million`. I told the lead before doing this and proceeded without a reply.
+  - Choices save as they are made, as the theme and the metadata source already did and as ChatGPT and Claude settings do. A dialog with categories would otherwise lose unsaved edits when switching category. Only the search index switch asks first, and Cancel restores the previous model.
+  - The other deviations:
+    - The stock shadcn `Switch` (`components/ui/switch.tsx`, fetched from the registry) was added for reranking and binary reasoning.
+    - `UnavailableReason` moved to its own file, which changed one import line in `SearchIndexPanel.tsx`.
+    - The dialog host lives in `App.tsx`, so `AppShell.tsx` is untouched.
+  - I merged `feat/ux-feedback-round` once I saw ARA-108 on it, and told the lead. The merge was needed before DESIGN.md could be updated without a conflict. It kept ARA-108's removal of the Theme control. ARA-108's two new footer tests now look for Settings as a button, and the README conflict on the theme sentence was resolved to "Settings → General or the ⌘K palette".
+- **Red first.**
+  - Backend: three hosted-catalog tests failed with `AttributeError: 'HostedModel' object has no attribute 'description'` and `'Model' object has no attribute 'description'`. Then three retrieval tests failed: `AttributeError` on `EmbeddingProfile.description`, a missing schema property, and `KeyError: 'description'`.
+  - Frontend: before the dialog existed, 69 failed and 25 passed (94) in nine files, mostly "Unable to find role=\"dialog\" and name \"Settings\"", the Settings button, and the new regions. Later, the description assertions failed 3 of 20, and the finish-review copy changes failed 4 of 27, each before its code.
+- **Errors corrected on the way.**
+  - The first green run left three failures. A shell test met two `banner` landmarks on `/library`. Two retrieval tests held a loading-state section that was then replaced by a new element; the Search index section is now one stable element from loading to loaded.
+  - The exact reranker shape in `test_rerank_integration.py` needed the two new fields.
+  - `ruff format --check` reports two unrelated files (`app/jobs/development_worker.py`, `tests/test_pdf_parser_structured.py`). They were already like that at the base and were left alone.
+- **Visual rounds.** These ran on my own Vite server on port 5241 against the read-only test copy on 8011. Every non-GET request was aborted. The test copy runs the backend from before this branch, so the capture script added the new catalog fields verbatim from this branch.
+  - Round 1 found "Max" wrapping alone onto a second line at 390px, and a heavy 2px focus ring on the category tabs. Six levels now form a 3x2 grid on a phone, and the ring is the design system's 3px at half strength.
+  - The impeccable finish reviewer returned **fix** with seven items:
+    - Fixed: reranking now says its model is "separate from the model that answers"; the context figure says "tokens"; the Input, Output and Context figures sit in fixed columns; the rebuild estimate rounds tokens to two figures; DESIGN.md was updated by the impeccable documenter.
+    - Declined, with reasons: renaming the embedding models' catalog display names is a cross-cutting change, left for the lead; a "pick this when" sentence per model would be an unsourced claim beyond OpenAI's own line.
+  - A fresh verdict pass scored six fixes resolved and the phone alignment partial, because rows wrapped differently. On a phone, Context now takes its own line in every row (`c980bd3`), and the last verdict pass scored it resolved: **ship**. After that, `npm run check` again passed 763 tests and the build passed.
+  - The first resumed verdict request never returned, so the verdict passes ran as fresh reviewers given the fix list.
+- **Real browser.** On the dev server, in Chromium:
+  - From `/library`, the sidebar Settings opened `/library?settings=`.
+  - Esc returned to `/library` with focus on Settings.
+  - Choosing Models gave `?settings=models`, and the browser's Back closed the dialog with focus on Settings.
+  - ⌘K "Model settings" opened Models, and the close button closed it.
+  - `/settings` landed on `/?settings=`.
+  - There were no console errors.
+- **Verification.**
+  - Backend: full suite 1227 passed in 279 s at `6734f0d`, Ruff check clean. The baseline at `a21b3f4` was 1221 passed and 1 failed, an ordering assertion in `test_metadata_backfill_integration.py` that passed in the final run.
+  - Frontend: `npm run check` gave 732 passed in 91 files before the merge and 763 in 94 after it. `npm run build` passed with the existing chunk-size warning; the dialog is its own 36 kB lazy chunk.
+  - `generated.ts` matches the production, flag-on `create_app(Settings()).openapi()`; its diff has only the new fields.
+  - The detector found nothing in the changed files.
+  - Not run: the Playwright specs, which were updated for the dialog but need the shared fixed-port stack. The Open models category was not screenshotted, because the test copy has the flag off.
+
+### 2026-10-10 - ARA-109 Library and search explains how answers find passages
+
+- Prompt: the user asked whether the new settings "will make the retrieval, search, reranker etc clear". The lead asked for:
+  - a plain explainer at the top of Library and search;
+  - each control tied to a step of it;
+  - the user's words in labels, with "embedding" only as a muted model name;
+  - plain labels for the search index options;
+  - "tokens" explained;
+  - Models saying that an open chat keeps its model.
+  The lead also approved the model price fields, the retrieval descriptions and save-on-change, and forwarded the finish reviewer's first verdict, which had reached the lead instead of me.
+- **Explainer.** "When you ask about your papers, search finds the passages that match your question's words and its meaning. Reordering by relevance can then put the passages that best answer it first. The answer is written from the top passages only, and cites the page each one comes from." I checked it against `docs/plans/retrieval-orchestration.md`:
+  - search is hybrid, keyword plus vector, fused;
+  - the reranker scores the first 40 candidates;
+  - without reranking, the fusion order is kept;
+  - every answer is built from retrieved passages and cites them.
+- **Sections, in the explainer's order.**
+  - Search index ("Meaning search: …"; switching reads every paper again in the background and each paper keeps its index until the new one is ready).
+  - Reordering by relevance (was Reranking). It says what it improves, what it adds per question (from the catalog), and that off means search order with no extra time or cost. The model name sits in a label-size line under the help.
+  - Paper details ("Separate from answering: …").
+  - Each section is described by its help text for screen readers.
+- **Labels.**
+  - The search index options read "Higher quality" and "Lower cost", with the model's own name as secondary text.
+  - Deviation, with reason: the label lives in the embedding catalog (`EmbeddingProfile.label`, exposed on `EmbeddingProfileOut`) rather than in frontend code. The lead also asked that the catalog stay the only source of names and text, with no model ids in the UI. `display_name` is unchanged, so each paper's search index panel is unchanged.
+  - The rebuild dialog names the label, puts "Model: OpenAI text-embedding-3-small" in label text, and gives the tokens in words ("about 53,000 tokens, roughly 40,000 words").
+- **Tokens.**
+  - The Models units note adds "A token is about three-quarters of a word." (OpenAI's rule of thumb).
+  - Search index rows read "per million tokens, about 750,000 words".
+- **Models.**
+  - "A chat that already has answers keeps the model it last used, and any chat can switch from the menu next to the send button." I verified this in code: `ConversationThread` adopts the latest answer's model as the composer's choice, which takes precedence over the saved default.
+  - A test-after check confirms it: with a chat's model adopted, changing the saved default leaves the selection on the chat's model. It passed on first run, as expected for existing behaviour.
+- **Red first.**
+  - Backend: three label tests failed (`AttributeError: 'EmbeddingProfile' object has no attribute 'label'`, the schema assertion, `KeyError: 'label'`), then passed with the retrieval contract, route, rerank and flag tests (58).
+  - Frontend: the settings folder ran 11 failed and 53 passed before the change (missing the "Higher quality" and "Lower cost" radios, the Reordering region and switch, the explainer, and the token sentence), then 72 passed with the flag file.
+- **Earlier finish-review items.** The 390px row shape was fixed in `c980bd3` and scored resolved. DESIGN.md was updated in `04a728f` and `15d7090`.
+- **Visual round.** One confirming round (`r3-*` in the scratchpad), same method as before, with the catalog labels added to the capture script. It shows:
+  - the explainer leading the panel;
+  - the labelled index rows with the model names under them;
+  - the reordering line under its help;
+  - the rebuild dialog in words.
+- **Verification.** `npm run check` passed 765 tests in 94 files, and `npm run build` passed. `generated.ts` was regenerated from the production, flag-on schema, adding only `label`. The full backend suite at `15d7090` passed 1228 in 269 s, with Ruff clean. `feat/ux-feedback-round` (`6de5f6a`, which has ARA-108 and ARA-110) was already merged in `35ce8c2`, with nothing newer to merge.

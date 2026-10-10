@@ -9,6 +9,7 @@ import { AraMark, AraWordmark } from '@/components/brand/AraBrand'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
 import { usePapers } from '@/hooks/queries/papers'
 import { PaperActions } from '@/features/library/PaperActions'
+import { useSettingsDialog } from '@/features/settings/settings-url'
 import { SidebarRecent } from './SidebarRecent'
 
 function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
@@ -45,6 +46,7 @@ function SidebarPapers({ onNavigate }: { onNavigate: () => void }) {
 export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const location = useLocation()
   const { isMobile, setOpenMobile, state } = useSidebar()
+  const settings = useSettingsDialog()
   const iconOnly = state === 'collapsed' && !isMobile
   const close = () => { if (isMobile) setOpenMobile(false) }
   const links = [
@@ -96,8 +98,8 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={location.pathname.startsWith('/settings')} tooltip="Settings">
-              <Link to="/settings" onClick={close}><Settings aria-hidden="true" /><span>Settings</span></Link>
+            <SidebarMenuButton isActive={settings.isOpen} tooltip="Settings" onClick={() => { settings.open(); close() }}>
+              <Settings aria-hidden="true" /><span>Settings</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

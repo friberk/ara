@@ -57,9 +57,17 @@ test('Mobile shell stays usable at 390px with the sidebar, skip link and no hori
   await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeHidden()
-  for (const path of ['/', '/library', '/settings']) {
+  for (const path of ['/', '/library']) {
     await page.goto(path)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal scroll on ${path}`).toBeTruthy()
   }
+  // Settings is a full-screen dialog on a phone (ARA-109): the category list, then a panel with a way back.
+  await page.goto('/settings')
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await settings.getByRole('tab', { name: 'Models' }).click()
+  await expect(settings.getByRole('heading', { name: 'Models' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no horizontal scroll in Settings').toBeTruthy()
+  await settings.getByRole('button', { name: 'All settings' }).click()
+  await expect(settings.getByRole('tablist', { name: 'Settings categories' })).toBeVisible()
 })

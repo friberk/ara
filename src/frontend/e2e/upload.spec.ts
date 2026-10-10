@@ -63,13 +63,13 @@ test('Given two new copies picked in the library, Then each row carries its own 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
-test('Given Settings, When Semantic Scholar is chosen as the metadata source, Then it stays chosen after a reload', async ({ page }) => {
-  await page.goto('/settings')
-  const section = page.getByRole('region', { name: 'Metadata source' })
-  await section.getByRole('radio', { name: 'Semantic Scholar' }).click()
-  await expect(section.getByText('Metadata source saved.')).toBeVisible()
+test('Given Settings, When Semantic Scholar is chosen for paper details, Then it stays chosen after a reload', async ({ page }) => {
+  await page.goto('/?settings=library')
+  const section = page.getByRole('region', { name: 'Paper details' })
+  await section.getByRole('radio', { name: 'Semantic Scholar' }).check()
+  await expect(section.getByText('Saved', { exact: true })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('region', { name: 'Metadata source' }).getByRole('radio', { name: 'Semantic Scholar' })).toHaveAttribute('aria-checked', 'true')
-  await page.getByRole('region', { name: 'Metadata source' }).getByRole('radio', { name: 'OpenAlex' }).click()
-  await expect(page.getByRole('region', { name: 'Metadata source' }).getByText('Metadata source saved.')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Paper details' }).getByRole('radio', { name: 'Semantic Scholar' })).toBeChecked()
+  await page.getByRole('region', { name: 'Paper details' }).getByRole('radio', { name: 'OpenAlex' }).check()
+  await expect(page.getByRole('region', { name: 'Paper details' }).getByText('Saved', { exact: true })).toBeVisible()
 })

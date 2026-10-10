@@ -13,7 +13,8 @@
     "Given the Models category, when it shows the hosted models, then each model states in one plain line what it is for, taken from OpenAI's own model page (the catalog's source URL) and stored in the hosted catalog. Each also shows its price per million input and output tokens and its context window in plain units. The default is clearly marked. The copy says that each chat can still switch models in the composer.",
     "Given any setting, when read, then its label and help text say in plain words what it changes and what happens when it changes (for example, re-embedding the library). There are no AI-isms: no middle-dot separators, no vague filler, no internal jargon (no 'profile', 'provider', 'embedding' without explanation).",
     "Given a 390px screen, when settings open, then the dialog is full-screen with a category list that drills into a panel with a back control, with no horizontal scroll. Desktop and mobile both work in light and dark.",
-    "Given the codebase, when this lands, then the old SettingsPage layout and anything used only by it are deleted, with no second implementation, and every link that pointed at the page opens the dialog. Existing settings behaviour is kept and tested (saving defaults, switching the embedding model with its confirmation, choosing the metadata source, the reranker, and local models with the flag on)."
+    "Given the codebase, when this lands, then the old SettingsPage layout and anything used only by it are deleted, with no second implementation, and every link that pointed at the page opens the dialog. Existing settings behaviour is kept and tested (saving defaults, switching the embedding model with its confirmation, choosing the metadata source, the reranker, and local models with the flag on).",
+    "Given Library and search, when opened, then a short plain explainer of how answers find their passages leads it. Each control is tied to a step of that explainer: Search index (meaning search), Reordering by relevance and Paper details. Each has help text on what it improves, what it costs and what off means, and the search index options lead with a plain label, the model's own name being secondary text (lead's brief after the user asked whether retrieval, search and reranking would be clear)."
   ],
   "test_cases": [
     "Opening from the sidebar, ⌘K and /settings shows the dialog with categories; Esc and Back close it and return focus.",
@@ -22,21 +23,52 @@
     "Library and search keeps the embedding switch confirmation, metadata source and reranker behaviour.",
     "Open models category exists only with the flag on.",
     "No '·' in the dialog; 390px drill-in navigation works.",
-    "Backend: hosted catalog entries carry a description; models API exposes it; generated.ts regenerated."
+    "Backend: hosted catalog entries carry a description; models API exposes it; generated.ts regenerated.",
+    "Library and search renders the explainer, sections in its order, and help text for each control; search index options are labelled Higher quality and Lower cost with the model name secondary; Reordering by relevance names its model only as secondary text; Models says a chat with answers keeps its model, and a composer test confirms it."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
-    "src/frontend/src/features/settings/SettingsPage.tsx",
-    "src/frontend/src/features/settings/MetadataSettingsSection.tsx",
-    "src/frontend/src/features/settings/RetrievalSettingsSection.tsx",
+    "src/frontend/src/features/settings/SettingsDialog.tsx",
+    "src/frontend/src/features/settings/settings-url.ts",
+    "src/frontend/src/features/settings/parts.tsx",
+    "src/frontend/src/features/settings/GeneralSettings.tsx",
+    "src/frontend/src/features/settings/ModelSettings.tsx",
+    "src/frontend/src/features/settings/PaperDetailsSettings.tsx",
+    "src/frontend/src/features/settings/SearchSettings.tsx",
     "src/frontend/src/features/settings/LocalModels.tsx",
+    "src/frontend/src/components/retrieval/UnavailableReason.tsx",
+    "src/frontend/src/components/ui/switch.tsx",
     "src/frontend/src/App.tsx",
     "src/frontend/src/components/shell/AppSidebar.tsx",
     "src/frontend/src/components/shell/CommandPalette.tsx",
-    "src/backend/app/integrations/hosted_catalog.py"
+    "src/frontend/src/api/generated.ts",
+    "src/backend/app/integrations/hosted_catalog.py",
+    "src/backend/app/integrations/embedding_catalog.py",
+    "src/backend/app/integrations/reranker_catalog.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/schemas/ai.py",
+    "src/backend/app/schemas/retrieval.py",
+    "src/backend/app/routes/retrieval.py",
+    "README.md",
+    "DESIGN.md"
   ],
-  "commits": [],
+  "commits": [
+    "a050439 feat(models): hosted models say what they are for and what they cost (ARA-109)",
+    "8b4bd58 feat(settings): settings open as a categorized dialog (ARA-109)",
+    "b697c43 feat(retrieval): search index models and rerankers say what they mean (ARA-109)",
+    "56cd2f2 fix(settings): six reasoning levels sit in a grid on phones; softer tab focus ring (ARA-109)",
+    "b547184 test(e2e): settings specs use the dialog and its categories (ARA-109)",
+    "5642424 docs(readme): settings is a categorized dialog (ARA-109)",
+    "6734f0d fix(settings): context in tokens, aligned model facts, plainer rerank and rebuild copy (ARA-109)",
+    "35ce8c2 merge(integration): bring in feat/ux-feedback-round with ARA-108's sidebar without Theme (ARA-109)",
+    "04a728f docs(design): the Settings dialog (ARA-109)",
+    "c980bd3 fix(settings): on a phone every model row puts context on its own line (ARA-109)",
+    "9e0bbea docs(tracker): ARA-109 finish review verdict and final checks (ARA-109)",
+    "914906d feat(retrieval): search index models carry a plain label for Settings (ARA-109)",
+    "027b867 feat(settings): Library and search explains how answers find passages (ARA-109)",
+    "15d7090 docs(design): Library and search explainer, labels and reordering (ARA-109)"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's request. Branch feat/ara-109-settings-dialog.",
+  "verification": "2026-10-10, branch feat/ara-109-settings-dialog. Red first. Backend: three new hosted-catalog tests failed with AttributeError ('HostedModel' object has no attribute 'description'; 'Model' object has no attribute 'description') before the code. Then two retrieval-catalog contract tests and the profiles route test failed: AttributeError on EmbeddingProfile.description, 'description' missing from the published EmbeddingProfileOut schema, and KeyError 'description'. Frontend: the rewritten settings tests and the new settings-dialog.test.tsx ran 69 failed and 25 passed (94) in 9 files before the dialog existed. The failures could not find the Settings dialog, the Settings button and the new regions (Default model, Search index, Reranking, Paper details). The catalog-description assertions then failed 3 of 20 before the UI showed them, and the finish-review copy fixes failed 4 of 27 before they were made. Green: full backend suite (scripts/test-stack.py, ara-settings-test) 1227 passed in 279 s at 6734f0d, with Ruff check clean. The baseline at a21b3f4 was 1221 passed and 1 failed, an ordering assertion in test_metadata_backfill_integration.py that passed in the final run. Frontend npm run check passed: strict tsc, ESLint and 763 tests in 94 files after merging feat/ux-feedback-round (732 in 91 files before the merge). npm run build passed with the existing chunk-size warning; SettingsDialog is its own 36 kB lazy chunk. generated.ts was regenerated from the production, flag-on create_app(Settings()).openapi(); its diff has only the new description and price fields. The impeccable detector found no findings in the changed files. Screenshots are in the session scratchpad (ara109/r2-*.png) for each category, light and dark, at 1440x900, plus the 390px list and drilled-in panels. The test copy runs the pre-change backend, so the capture script added the new catalog fields verbatim. The impeccable finish reviewer first returned fix with seven items. Five were applied and two declined with reasons: the embedding display-name rename is a cross-catalog follow-up, and per-model advice beyond OpenAI's own line would be unsourced. A fresh verdict pass scored six resolved and the phone alignment partial. That was fixed in c980bd3, and the last verdict pass scored it resolved: ship. After c980bd3, npm run check again passed 763 tests in 94 files, and npm run build passed. In a real browser (Chromium on the dev server), the sidebar opened /library?settings=; Esc and Back closed it with focus back on Settings; ⌘K Model settings opened Models; and /settings landed on /?settings=. Not run: the Playwright e2e specs, because the browser stack uses shared fixed ports. The Open models category was not captured in screenshots, since the test copy has the flag off; it is covered by unit tests. Library and search round, after the user asked whether retrieval would be clear: the catalog label tests failed first (AttributeError 'EmbeddingProfile' object has no attribute 'label', a missing schema property, KeyError 'label') and then passed. The settings tests failed 11 of 64 before the explainer, the labels and Reordering by relevance existed, then passed with the open-models flag tests (72 passed). Final run at 15d7090: full backend suite 1228 passed in 269 s, Ruff clean. npm run check passed 765 tests in 94 files, and npm run build passed. One confirming visual round (scratchpad ara109/r3-*.png) covers each category in light and dark at desktop, the 390px list, models and library panels, and the rebuild confirmation.",
   "updated_at": "2026-10-10"
 }

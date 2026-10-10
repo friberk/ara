@@ -1,4 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
+import type { UserEvent } from '@testing-library/user-event'
 import { renderApp } from '@/test/render'
 import { json, mockApi } from '@/test/fetch-routes'
 import type { Model, ModelInstallation } from '@/api/types'
@@ -13,6 +14,11 @@ const stale: Model = { ...local, unavailable_code: 'LOCAL_MODEL_REVALIDATION_REQ
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 // Local model tests run with open models on, as the server reports them (ARA-090).
 const openModels = { 'GET /features': { open_models: true } }
+// Downloads live in the Open models category of the Settings dialog; the default-model choice in Models (ARA-109).
+async function defaultModelChoice(user: UserEvent) {
+  await user.click(screen.getByRole('tab', { name: 'Models' }))
+  return within(await screen.findByRole('radiogroup', { name: 'Default model' })).findByRole('radio', { name: local.display_name })
+}
 
 test('Given the model settings anchor, When data arrives, Then the controls scroll into view and receive focus', async () => {
   const scroll = vi.spyOn(Element.prototype, 'scrollIntoView')
@@ -28,7 +34,7 @@ test('Given the model settings anchor, When data arrives, Then the controls scro
 test('Given verification in progress, When weights become ready, Then the persistent live status announces completion', async () => {
   let model: Model = { ...local, installation: { ...installation, state: 'verifying', weights_present: true, job_id: job.id } }
   mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
-  const { client } = renderApp('/settings')
+  const { client } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   const status = within(row).getByRole('status')
   expect(status).toHaveTextContent('Preparing model')
@@ -40,14 +46,14 @@ test('Given verification in progress, When weights become ready, Then the persis
 
 test('Given missing local weights, Then Settings exposes their identity, size and a download action', async () => {
   mockApi({ ...openModels, 'GET /models': { items: [luna, local] }, 'GET /settings': defaults })
-  renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   expect(await screen.findByRole('heading', { name: 'Local models' })).toBeVisible()
   const row = screen.getByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByText(local.model_id)).toBeVisible()
   expect(within(row).getByText(/5\.59 GB/)).toBeVisible()
   expect(within(row).getByRole('button', { name: `Download ${local.display_name}` })).toBeEnabled()
   expect(screen.getByText(/Downloads continue in the background/)).toBeVisible()
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeDisabled()
+  expect(await defaultModelChoice(user)).toBeDisabled()
 })
 
 test('Given an accepted download, When Settings is remounted, Then durable progress returns without another download', async () => {
@@ -56,12 +62,12 @@ test('Given an accepted download, When Settings is remounted, Then durable progr
     'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults,
     [`POST /models/${local.key}/download`]: () => { model = { ...local, installation: { ...installation, state: 'downloading', completed_bytes: 1398054725, job_id: job.id } }; return json(job, 202) },
   })
-  const first = renderApp('/settings')
+  const first = renderApp('/?settings=open-models')
   await first.user.click(await screen.findByRole('button', { name: `Download ${local.display_name}` }))
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   await waitFor(() => expect(within(row).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25'))
   first.unmount()
-  renderApp('/settings')
+  renderApp('/?settings=open-models')
   expect(await screen.findByRole('button', { name: `Pause ${local.display_name} download` })).toBeEnabled()
   expect(calls.filter((call) => call.method === 'POST' && call.path.endsWith('/download'))).toHaveLength(1)
   expect(calls.find((call) => call.method === 'POST')?.body).toEqual({ request_id: expect.any(String) })
@@ -75,7 +81,7 @@ test('Given a downloading model, When paused and resumed, Then each operation us
     [`POST /jobs/${job.id}/pause`]: () => { model = { ...model, installation: { ...installation, completed_bytes: 1000, job_id: job.id, state: 'paused' } }; return json({ ...job, state: 'paused', stage: 'paused' }, 202) },
     [`POST /jobs/${job.id}/resume`]: () => { model = { ...model, installation: { ...installation, completed_bytes: 1000, job_id: job.id, state: 'queued' } }; return json(job, 202) },
   })
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   await user.click(await screen.findByRole('button', { name: `Pause ${local.display_name} download` }))
   await user.click(await screen.findByRole('button', { name: `Resume ${local.display_name} download` }))
   expect(calls.filter((call) => call.method === 'POST').map((call) => call.path)).toEqual([`/jobs/${job.id}/pause`, `/jobs/${job.id}/resume`])
@@ -83,7 +89,7 @@ test('Given a downloading model, When paused and resumed, Then each operation us
 
 test('Given unknown transfer size, Then progress is indeterminate rather than an invented percentage', async () => {
   mockApi({ ...openModels, 'GET /models': { items: [{ ...local, installation: { ...installation, state: 'downloading', total_bytes: null, completed_bytes: 1024, job_id: job.id } }] }, 'GET /settings': defaults })
-  renderApp('/settings')
+  renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
   expect(within(row).getByText(/Size pending/)).toBeVisible()
@@ -91,11 +97,11 @@ test('Given unknown transfer size, Then progress is indeterminate rather than an
 
 test('Given transferred weights awaiting verification, Then model selection remains unavailable', async () => {
   mockApi({ ...openModels, 'GET /models': { items: [luna, { ...local, installation: { ...installation, state: 'verifying', weights_present: true, completed_bytes: installation.download_bytes, job_id: job.id } }] }, 'GET /settings': defaults })
-  renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByText('Preparing model')).toBeVisible()
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeDisabled()
   expect(within(row).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
+  expect(await defaultModelChoice(user)).toBeDisabled()
 })
 
 test('Given default local weights, When deletion is confirmed, Then Settings preserves the saved default', async () => {
@@ -105,14 +111,16 @@ test('Given default local weights, When deletion is confirmed, Then Settings pre
     'GET /models': () => json({ items: [luna, model] }), 'GET /settings': localDefaults,
     [`DELETE /models/${local.key}/installation`]: () => { model = local; return json({ ...job, kind: 'model_delete', state: 'completed' }, 202) },
   })
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   await user.click(await screen.findByRole('button', { name: `Delete ${local.display_name} weights` }))
   const dialog = await screen.findByRole('alertdialog')
   expect(dialog).toHaveTextContent(/saved default/)
   expect(dialog).toHaveTextContent(/conversations and summaries/)
   await user.click(within(dialog).getByRole('button', { name: 'Delete weights' }))
-  await waitFor(() => expect(screen.getByRole('radio', { name: local.display_name })).toBeChecked())
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeDisabled()
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+  const choice = await defaultModelChoice(user)
+  await waitFor(() => expect(choice).toBeChecked())
+  await waitFor(() => expect(choice).toBeDisabled())
   expect(calls.some((call) => call.method === 'PUT')).toBe(false)
   const deletion = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE')
   expect(new Headers(deletion?.[1]?.headers).get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/)
@@ -123,7 +131,7 @@ test('Given a failed download, When retry fails, Then its safe error is shown in
     'GET /models': { items: [luna, { ...local, installation: { ...installation, state: 'failed', job_id: job.id, error: { code: 'MODEL_DOWNLOAD_FAILED', message: 'Download stopped. Try again.' } } }] }, 'GET /settings': defaults,
     [`POST /jobs/${job.id}/retry`]: () => json({ code: 'MODEL_RUNTIME_UNAVAILABLE', message: 'Ollama is unavailable. Check its service and retry.' }, 503),
   })
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   await user.click(within(row).getByRole('button', { name: `Retry ${local.display_name} download` }))
   expect(await within(row).findByRole('alert')).toHaveTextContent(/Ollama is unavailable/)
@@ -133,17 +141,19 @@ test('Given installed weights requiring preparation, When Settings polls readine
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   let model = stale
   const { calls } = mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
-  const { client, unmount } = renderApp('/settings')
+  const { client, unmount, user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).queryByRole('button', { name: /Verify/ })).not.toBeInTheDocument()
   expect(within(row).getByText('Preparing model')).toBeVisible()
   expect(within(row).getByText(/automatically/i, { selector: 'p' })).toBeVisible()
   expect(within(row).queryByRole('progressbar')).not.toBeInTheDocument()
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeDisabled()
+  const choice = await defaultModelChoice(user)
+  expect(choice).toBeDisabled()
   model = { ...local, status: 'available', unavailable_reason: null, unavailable_code: null, installation: { ...installation, state: 'ready', weights_present: true } }
   await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
-  await waitFor(() => expect(screen.getByRole('radio', { name: local.display_name })).toBeEnabled())
-  expect(within(row).getByRole('status')).toHaveTextContent('Installed')
+  await waitFor(() => expect(choice).toBeEnabled())
+  await user.click(screen.getByRole('tab', { name: 'Open models' }))
+  expect(within(await screen.findByRole('region', { name: `Manage ${local.display_name}` })).getByRole('status')).toHaveTextContent('Installed')
   expect(calls.every((call) => call.method === 'GET')).toBe(true)
   unmount()
   client.clear()
@@ -152,7 +162,7 @@ test('Given installed weights requiring preparation, When Settings polls readine
 test('Given queued preparation of retained weights, Then Settings shows background readiness without download controls or byte progress', async () => {
   const verifyingInstallation: ModelInstallation = { ...installation, state: 'queued', weights_present: true, job_id: job.id, completed_bytes: installation.download_bytes, operation: 'verify' }
   mockApi({ ...openModels, 'GET /models': { items: [luna, { ...local, installation: verifyingInstallation }] }, 'GET /settings': defaults })
-  renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByText('Preparing model')).toBeVisible()
   expect(within(row).getByText(/Waiting to check model readiness/, { selector: 'p' })).toBeVisible()
@@ -161,13 +171,13 @@ test('Given queued preparation of retained weights, Then Settings shows backgrou
   expect(within(row).queryByRole('button', { name: /Verify|Retry/ })).not.toBeInTheDocument()
   expect(within(row).queryByRole('progressbar')).not.toBeInTheDocument()
   expect(within(row).queryByText(/ of .*GB/)).not.toBeInTheDocument()
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeDisabled()
+  expect(await defaultModelChoice(user)).toBeDisabled()
 })
 
 test('Given active verification, Then the live status announces preparation and the transfer bar is absent', async () => {
   const verifyingInstallation: ModelInstallation = { ...installation, state: 'verifying', weights_present: true, job_id: job.id, completed_bytes: installation.download_bytes, operation: 'verify' }
   mockApi({ ...openModels, 'GET /models': { items: [luna, { ...local, installation: verifyingInstallation }] }, 'GET /settings': defaults })
-  renderApp('/settings')
+  renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByRole('status')).toHaveTextContent('Preparing model')
   expect(within(row).getByText(/Checking model readiness/, { selector: 'p' })).toBeVisible()
@@ -179,7 +189,7 @@ test('Given queued preparation, When verification starts, Then the persistent li
   const preparingInstallation: ModelInstallation = { ...installation, state: 'queued', weights_present: true, job_id: job.id, operation: 'verify' }
   let model: Model = { ...local, installation: preparingInstallation }
   mockApi({ ...openModels, 'GET /models': () => json({ items: [luna, model] }), 'GET /settings': defaults })
-  const { client } = renderApp('/settings')
+  const { client } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   const status = within(row).getByRole('status')
   expect(status).toHaveTextContent('Waiting to check model readiness')
@@ -195,7 +205,7 @@ test('Given preparation failed, When retried, Then the recovery action names pre
     'GET /models': { items: [luna, { ...local, installation: failedInstallation }] }, 'GET /settings': defaults,
     [`POST /jobs/${job.id}/retry`]: { ...job, stage: 'verifying' },
   })
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByText('Preparation failed')).toBeVisible()
   expect(within(row).getByRole('alert')).toHaveTextContent('Model preparation failed')
@@ -210,7 +220,7 @@ test('Given verification found missing weights, When Download is chosen, Then a 
     'GET /models': { items: [luna, { ...local, installation: failedInstallation }] }, 'GET /settings': defaults,
     [`POST /models/${local.key}/download`]: { ...job, id: 'new-download-job' },
   })
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument()
   expect(within(row).getByRole('alert')).toHaveTextContent('Model weights are missing')
@@ -225,7 +235,7 @@ test('Given deletion failed, When retried, Then the recovery action names deleti
     'GET /models': { items: [luna, { ...local, installation: failedInstallation }] }, 'GET /settings': defaults,
     [`POST /jobs/${job.id}/retry`]: { ...job, kind: 'model_delete', stage: 'deleting' },
   })
-  const { user } = renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   const retry = within(row).getByRole('button', { name: `Retry ${local.display_name} deletion` })
   expect(retry).toHaveTextContent('Retry deletion')
@@ -235,10 +245,10 @@ test('Given deletion failed, When retried, Then the recovery action names deleti
 
 test('Given retained weights and an offline runtime, Then Settings explains the unavailable service without claiming preparation is running', async () => {
   mockApi({ ...openModels, 'GET /models': { items: [luna, { ...stale, unavailable_code: 'LOCAL_RUNTIME_UNAVAILABLE', unavailable_reason: 'The local model runtime is unavailable.' }] }, 'GET /settings': defaults })
-  renderApp('/settings')
+  const { user } = renderApp('/?settings=open-models')
   const row = await screen.findByRole('region', { name: `Manage ${local.display_name}` })
   expect(within(row).getByRole('alert')).toHaveTextContent('The local model runtime is unavailable')
   expect(within(row).queryByText('Preparing model')).not.toBeInTheDocument()
   expect(within(row).queryByRole('button', { name: /Verify/ })).not.toBeInTheDocument()
-  expect(screen.getByRole('radio', { name: local.display_name })).toBeDisabled()
+  expect(await defaultModelChoice(user)).toBeDisabled()
 })

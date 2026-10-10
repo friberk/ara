@@ -1242,6 +1242,10 @@ export interface components {
              * @default 0
              */
             price_per_million: number;
+            /** Description */
+            description?: string | null;
+            /** Label */
+            label?: string | null;
         };
         /** EmbeddingProfilePage */
         EmbeddingProfilePage: {
@@ -1587,6 +1591,12 @@ export interface components {
             supports_structured_output: boolean;
             /** Context Window */
             context_window: number;
+            /** Description */
+            description?: string | null;
+            /** Input Price Per Million */
+            input_price_per_million?: number | null;
+            /** Output Price Per Million */
+            output_price_per_million?: number | null;
         };
         /** ModelOperationInput */
         ModelOperationInput: {
@@ -1791,6 +1801,13 @@ export interface components {
             local_model_key?: string | null;
             /** Candidates */
             candidates: number;
+            /**
+             * Price Per Million
+             * @default 0
+             */
+            price_per_million: number;
+            /** Description */
+            description?: string | null;
         };
         /** RetrievalIndexOut */
         RetrievalIndexOut: {
