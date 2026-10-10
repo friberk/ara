@@ -10,7 +10,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - JobStatus: id, kind, state (`queued`/`processing`/`paused`/`completed`/`failed`), stage, progress (0–100), attempts, generation, result (nullable), error_code/error_message (nullable), computed error (nullable safe code/message), available_at, created_at, updated_at, paper_id/paper_title (nullable), model_key/completed_bytes/total_bytes (nullable).
 - Summary: id, paper_id, document_id, model, reasoning_effort, content (Markdown string), citations (Citation[]), created_at.
 - Citation: chunk_id, document_id, paper_id (nullable; filled when chat history is read, ARA-088), page (1-based physical PDF page), excerpt. The source endpoint returns the complete stored chunk, bounded by ingestion chunk limits, so evidence later in a passage remains visible.
-- Chat: id, paper_id (the first included paper; the chat's URL is `/papers/{paper_id}/chats/{id}`), papers (IncludedPaper[] by ordinal), title, title_source, created_at. IncludedPaper: paper_id, document_id (the PDF pinned when the paper joined), title, first_author, year, added_at (ARA-088, below).
+- Chat: id, paper_id (the first included paper; the chat's URL is `/papers/{paper_id}/chats/{id}`), papers (IncludedPaper[] by ordinal), title, title_source, created_at. IncludedPaper: paper_id, document_id (the PDF pinned when the paper joined), title, first_author, year, added_at, pdf_removed (ARA-088, ARA-097, below).
 - Message: id, role (`user`/`assistant`), content, state (`completed`/`processing`/`interrupted`/`failed`), model (nullable), reasoning_effort (nullable), citations (Citation[]), created_at.
 - Model: key (catalog key), provider, model_id (runtime/provider reference), display_name, status (`configured`/`available`/`unavailable`), reasoning_efforts (string[]), reasoning_aliases (optional string-to-string mapping, defaults to `{}`), thinking (nullable typed native controls), supports_streaming, supports_structured_output, context_window (required: a hosted model's native window from the hosted catalog, 1,050,000 for GPT-5.6; local models report their configured allocation), unavailable_reason/unavailable_code (nullable), installation (nullable Installation; hosted models use null).
 - Settings: default_model (catalog key), reasoning_effort.
@@ -29,7 +29,7 @@ JSON fields use snake_case. REST prefix `/api/v1`. UUID identifiers are strings;
 - POST /chats/{id}/messages/stream `{content,model,reasoning_effort,request_id}` → SSE.
 - GET /features → `Features {open_models}`; GET /models → `{items:Model[]}`; GET/PUT /settings → Settings. Open models are experimental and off by default (ARA-090, below).
   - The defaults are `{default_model, reasoning_effort}`. A stored row or PUT body that still carries `memory_model` (ARA-077) is accepted and the field ignored; it is never returned. Follow-up planning and conversation summaries use the chat's own model and the effort active in that turn (ARA-083).
-- GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation.
+- GET /documents/{id} → DocumentDetail (ARA-097); GET /documents/{id}/download → PDF; GET /documents/{id}/chunks/{chunk_id} → Citation. A removed PDF answers 404 `PDF_REMOVED` on all three.
 
 ## PDF retrieval and access information (ARA-019)
 
@@ -334,3 +334,23 @@ No migration. Deletion relies on the existing foreign keys and the `chat_papers_
 - `POST /papers/{id}/metadata-lookup` (no body) → 202 `JobStatus` of a `metadata` job with payload `{paper_id, document_id, refresh: true, clues}`. It needs a title, DOI or provider record, else 409 `LOOKUP_UNAVAILABLE`; unknown paper → 404. A lookup already queued or running for the paper is returned instead of a new one. `clues` carries the paper's earlier lookup clues, so an arXiv ID only the PDF had is kept.
 - A refresh reads the paper's current title, authors, year and DOI when it runs. For each source, chosen first, it reads the paper's saved record at that source (`matched_by: "record"`), else searches by DOI, arXiv ID and title as the upload lookup does. A DOI the user entered (`provenance.doi.source == "manual"`) is accepted without the printed-title check. It replaces provider and PDF values, never `manual` ones, and keeps the lookup's rate-limit wait and three attempts.
 
+## Removing a paper's PDF (ARA-097)
+
+No migration. `chat_papers.document_id` is NOT NULL with a plain foreign key (migration 0010) and `paper_summaries.document_id` has no cascade, so removal deletes summaries first and keeps an emptied row for a PDF a chat pins.
+
+**Endpoints.**
+- `GET /papers/{id}/pdf/removal-preview` → `PdfRemovalPreview`: `pdfs` (the paper's PDFs that are still there, current and earlier versions), `summaries` (of those PDFs), `chats` (`{id,title}[]` that pin one of them), `active_jobs` (queued or running work on them) and `answering` (one of those chats is writing an answer now). Reading it changes nothing. Unknown paper → 404 `PAPER_NOT_FOUND`.
+- `DELETE /papers/{id}/pdf` → 204. It removes every PDF of the paper and sets `active_document_id` to null, so the paper reads `metadata_only` and the reader returns to upload. A paper without a PDF is left as it is (204), so a repeat is safe. Unknown paper → 404 `PAPER_NOT_FOUND`. While a chat that pins one of the PDFs has an answer with a live lease → 409 `CHAT_BUSY` ("Wait for the current answer to finish before removing the PDF."), after expired answers are marked interrupted.
+- `GET /documents/{id}` → `DocumentDetail`: `id`, `paper_id`, `file_name`, `page_count`, `byte_size`, `status`, `acquisition` (null for an upload; `{provider: "openalex", …}` for a retrieved copy) and `created_at`. The reader's PDF menu reads it. Unknown → 404 `DOCUMENT_NOT_FOUND`; removed → 404 `PDF_REMOVED`.
+
+**One transaction.**
+- Locks: `upload_match:<paper>` and the PDFs' `pdf:<sha256>` identity locks, then the chats that pin the PDFs, then the paper.
+- Every `queued` or `processing` job whose payload names one of the PDFs (`document_id`: ingest, embed, summary, metadata) becomes `failed` with `PDF_REMOVED`, message "Stopped because the PDF was removed.", no lease and `result {outcome: "pdf_removed"}`. Rows a worker holds are skipped (`SKIP LOCKED`); an ingest that missed the removal finds the row removed at its final write and settles with `PDF_REMOVED`, writing nothing. A PDF retrieval for the paper is not stopped; its attachment guard sees the changed active PDF and gives way.
+- Summaries of the PDFs are deleted.
+- A PDF no chat pins is deleted; its pages, sections, passages, embeddings, indexes, upload requests and upload matches go by cascade.
+- A PDF a chat pins keeps its row, emptied: its pages, sections, passages, embeddings, indexes, upload requests and upload matches are deleted, `status` becomes `failed`, `warnings` says it was removed, `chunk_set` and `parser` are cleared, and `object_key` becomes `removed/<id>` (the marker `Document.removed` reads). Its `sha256` and `request_id` are replaced, so the same file uploads again as a new PDF.
+- One `storage_cleanup` job (payload `{object_keys, paper_titles}`, the original keys) is queued with its outbox event, as for paper deletion. Because the emptied rows no longer name the original keys, the job removes those objects too.
+
+**What stays readable.**
+- A chat that pinned a removed PDF keeps its messages and citation snapshots. `IncludedPaper.pdf_removed` is true for that paper, and `GET /chats/{id}/messages` still names the paper in `Citation.paper_id`. Its passages, file and facts answer 404 `PDF_REMOVED`. A new question is refused with 409, because the pinned PDF is not ready. The composer explains this, and a chat over several papers can drop that paper to ask again.
+- `POST /jobs/{id}/retry` refuses an ingest of a removed PDF with 409 `PDF_REMOVED`. The deletion preview no longer counts removed PDFs in `pdfs`, and deleting the paper later removes the emptied rows by cascade.

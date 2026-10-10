@@ -229,7 +229,7 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 ### Hierarchy
 - **Display** (600, 28px, tight tracking, balanced wrap): the home greeting above the composer ("What are you researching?"). Used once per screen at most.
 - **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library, Activity and Settings.
-- **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the details panel at 1.125rem.
+- **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the paper details sheet at 1.125rem.
 - **Reading** (400, 15.5px, 28px line): assistant answers, user messages and summaries. This is the conversation's reading voice, one step above the interface.
 - **Composer** (400, 15px, 24px line): text typed into the composer.
 - **Body** (400, 0.875rem, 24px line): abstracts (clamped to three lines with Show more), descriptions, links and menus. Long prose is capped near 70ch.
@@ -247,7 +247,7 @@ The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to 
 
 Content routes centre a single column at max-w-3xl (48rem). Home centres the display greeting, the composer and suggestion chips vertically, with a 28px gap and 12vh of extra bottom padding so the group sits slightly above centre. Search pins the composer to the bottom of the results column, like a chat thread. Search results and library entries are borderless rows with 24px and 20px vertical padding, divided by hairlines.
 
-The paper workspace is a resizable two-panel split separated by a grip handle. The reader takes 50% by default, at least 30%, and can collapse fully. The conversation keeps at least 35%. The reader has PDF and Details tabs. Below 768px the split becomes three tabs: Chat, PDF and Details. PDF pages are centred in a 16px gutter with 16px between pages.
+The paper workspace is a resizable two-panel split separated by a grip handle. The reader takes 50% by default, at least 30%, and can collapse fully. The conversation keeps at least 35%. The reader has no tabs: it shows the PDF, or, until the paper has one, the ways to get it (retrieval progress, the DOI link, upload, preparation steps, failure with retry) above the abstract. Its toolbar centres paging and zoom and ends with the PDF menu. The paper's details sit behind a circled-i button beside the title and status badge in the header. They open in a sheet: 440px wide from the right on desktop, overlaying the conversation so the PDF stays in view, and a full-height bottom sheet on phones. Below 768px the split becomes two segments, Chat and PDF. PDF pages are centred in a 16px gutter with 16px between pages.
 
 ## Elevation & Depth
 
@@ -298,8 +298,22 @@ Quiet, compact and monochrome.
 
 ### Navigation
 - **Sidebar:** 32px rows with an 8px corner on the sidebar ground. Hover and active states share the sidebar accent (quiet surface), and the active row adds medium weight. Group labels use muted text in sentence case. Recent items have overflow menus for rename, delete and remove.
-- **Mobile:** the sidebar opens as an offcanvas sheet from the header trigger. The paper workspace switches to Chat, PDF and Details tabs.
+- **Mobile:** the sidebar opens as an offcanvas sheet from the header trigger. The paper workspace switches between Chat and PDF segments, and the paper details rise as a bottom sheet.
 - **Tabs:** a segmented control on a muted track. The active segment is raised with a small shadow, and inactive labels sit at 60% foreground.
+
+### Paper details sheet
+The circled-i button (Lucide Info, a ghost icon button named "Paper details") opens a stock shadcn Sheet. Its header holds the title at 1.125rem semibold, the citation as running text (authors, year and the italic venue, which wraps rather than truncates) and the full author list. The body scrolls under the header, in this order:
+1. Edit details (the editor dialog) and Look up again, as outline buttons, with a one-line muted note that edited fields stay, then text links to the DOI and the catalog records.
+2. The abstract, clamped to three lines with Show more.
+3. Identifiers (DOI and catalog IDs) in Geist Mono, each with a copy button whose name says Copied.
+4. "Where this information came from", a two-column field and source list in muted and foreground text.
+5. Advanced, a Collapsible closed by default, holding the paper's search index (model, state, passages, Rebuild).
+6. After a hairline, a destructive Delete paper button that opens the deletion dialog.
+
+On desktop the overlay is transparent, so the PDF stays legible while a click outside still closes the sheet. Esc, the close button and an outside click close it, and focus returns to the circled-i button.
+
+### PDF menu
+The reader toolbar ends with a vertical-ellipsis button named "PDF options". Its dropdown starts with a non-interactive label: the file name, then pages and size in tabular figures, then the source ("Uploaded" or "Downloaded from OpenAlex"), in muted label text. Open original and Download follow. For the paper's current PDF the menu adds Replace PDF, which opens the upload in a dialog, and Remove PDF, a destructive item. Remove PDF opens an alert dialog that states what happens, from the server's preview, with Cancel focused. Earlier versions and other papers' PDFs only open or download.
 
 ### Status Badges
 Fully round, 20px tall, label size at regular weight, with a leading 12px icon. Ready, completed and available states use the green tints. Processing, running and interrupted use the amber tints. Failed uses the destructive tint, and metadata-only uses muted grey. The processing icon spins only when the user allows motion.
@@ -312,7 +326,7 @@ Reasoning choices come from the selected model's backend capabilities. Settings 
 Installed local models prepare automatically when runtime or capability checks become stale. Settings shows **Preparing model**, the current phase and background continuity; preparation has no transfer percentage or Pause button. Selection remains unavailable until the server confirms readiness, then enables through polling. Temporary unavailability preserves the saved model and reasoning effort. Activity calls verification-only work **Model preparation**, including its history. Failed preparation offers **Retry preparation** with retained weights, or an explicit **Download** if weights disappeared; failed transfer/deletion actions name their respective retries. Routine upgrades require no **Verify again** action.
 
 ### Conversation thread
-User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a muted meta line (copy, model name, reasoning level). While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.
+User turns are right-aligned quiet-surface bubbles (18px radius, at most 85% width). Assistant turns are unbubbled reading-size prose with inline citation chips, followed by a Sources row of chips and a muted meta line (copy, model name, reasoning level). An answer is a one-column grid at minmax(0, 1fr), so long links and identifiers wrap and wide tables and code scroll inside it rather than widening the thread. The paper chips above a multi-paper thread sit on an opaque row; while the thread is scrolled, a hairline divides it from the header and chips. While waiting, a muted "Preparing a response…" line pulses. A round floating button returns the user to the latest message.
 
 ### Evidence jump (signature interaction)
 Selecting a citation chip scrolls the PDF to the cited page and marks the supporting sentence in the text layer to the exact character, including sentences that start or end mid-line. The mark is centred vertically in the reader with a smooth scroll (instant under reduced motion). It is tinted with evidence yellow at a 55% mix and a 2px corner, then pulses once with a 4px yellow ring over 1.2s on `cubic-bezier(0.16, 1, 0.3, 1)`. The rest of the cited chunk stays untinted so only the evidence reads. In forced-colours mode the mark uses the system Highlight colour.
