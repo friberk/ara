@@ -1586,3 +1586,10 @@ An Opus agent built ARA-096 on `feat/ara-096-mention-pills` in the `mention-pill
   - history pills without the ×;
   - the chat-scope paper row in existing chats unchanged.
 - **Handover.** The ARA-096 agent was resumed for it.
+
+## 2026-10-10 - ARA-099 ara. wordmark
+
+- Prompt: wire the lead's outlined wordmark into the sidebar, favicon, title and docs.
+- Red first: two new shell tests (link named `ara.`, mark when collapsed) and `index-html.test.ts` failed with `Unable to find an accessible element with the role "link" and name "ara."` and a title mismatch. Green after `AraBrand.tsx`, the sidebar header, `public/favicon.svg` and `index.html`.
+- Visual error: the first screenshots showed the wordmark about 16px wide, because the shadcn menu button forces `size-4` on child svgs. Fixed with `h-[26px]! w-auto!`; a second round showed it crisp in light, dark, collapsed and at 390px. The first stub-API attempt rendered a blank page; running without stubs (502s) worked for the sidebar check.
+- Playwright MCP could not find Chrome, so screenshots used the project's own Playwright Chromium.

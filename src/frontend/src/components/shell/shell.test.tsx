@@ -128,3 +128,22 @@ test('Given papers in each PDF state, Then the palette rows show a state icon in
   expect(within(dialog).getByRole('option', { name: /Has a PDF/ })).toBeInTheDocument()
   expect(within(dialog).queryByText(/Ready to read|PDF needed|Processing failed/)).not.toBeInTheDocument()
 })
+
+test('Given the sidebar header, Then the ara. wordmark links home and no Research Assistant text remains', async () => {
+  mockApi({})
+  renderApp('/settings')
+  const home = screen.getByRole('link', { name: 'ara.' })
+  expect(home).toHaveAttribute('href', '/')
+  expect(home.querySelector('svg[data-brand="wordmark"]')).not.toBeNull()
+  expect(screen.queryByText('Research Assistant')).not.toBeInTheDocument()
+})
+
+test('Given the sidebar collapsed to icons, Then the header shows the a. mark under the name ara.', async () => {
+  mockApi({})
+  const { user } = renderApp('/settings')
+  await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Toggle Sidebar' }))
+  await waitFor(() => expect(document.querySelector('[data-slot="sidebar"][data-state="collapsed"]')).not.toBeNull())
+  const home = screen.getByRole('link', { name: 'ara.' })
+  expect(home.querySelector('svg[data-brand="mark"]')).not.toBeNull()
+  expect(home.querySelector('svg[data-brand="wordmark"]')).toBeNull()
+})
