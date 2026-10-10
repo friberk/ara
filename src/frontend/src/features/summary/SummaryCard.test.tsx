@@ -109,3 +109,49 @@ test('Given a PDF still processing, Then the summary card waits without offering
   expect(await within(card).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()
   expect(within(card).queryByRole('button', { name: /Attach PDF|Generate summary/ })).not.toBeInTheDocument()
 })
+
+test('Given a summary, Then a Regenerate summary icon sits by the heading, and without one there is none', async () => {
+  mockApi({ ...settings, 'GET /papers/p1/summaries': { items: [summary('s1', 'Stored summary.', '2026-10-08T12:00:00Z')] } })
+  const { unmount } = mount()
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  expect(await within(card).findByText('Stored summary.')).toBeInTheDocument()
+  expect(within(card).getByRole('button', { name: 'Regenerate summary' })).toBeEnabled()
+  unmount()
+  mockApi({ ...settings, 'GET /papers/p1/summaries': { items: [] } })
+  mount()
+  const empty = await screen.findByRole('article', { name: 'Paper summary' })
+  await within(empty).findByRole('button', { name: 'Generate summary' })
+  expect(within(empty).queryByRole('button', { name: 'Regenerate summary' })).not.toBeInTheDocument()
+})
+
+test('Given a summary, When Regenerate summary is clicked, Then a new summary is requested with the current settings and the current one stays visible', async () => {
+  const { calls } = mockApi({
+    ...settings,
+    'GET /papers/p1/summaries': { items: [summary('s1', 'Stored summary.', '2026-10-08T12:00:00Z')] },
+    'POST /papers/p1/summaries': { job_id: 'j3', summary_id: null },
+    'GET /jobs/j3': job('j3', 'processing', 'summarizing', 40),
+  })
+  const { user } = mount()
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  const regenerate = await within(card).findByRole('button', { name: 'Regenerate summary' })
+  await waitFor(() => expect(regenerate).toBeEnabled())
+  await user.click(regenerate)
+  expect(await within(card).findByRole('progressbar', { name: 'Summary progress' })).toBeVisible()
+  expect(within(card).getByText('Stored summary.')).toBeVisible()
+  const post = calls.find((call) => call.method === 'POST')
+  expect(post?.body).toMatchObject({ model: luna.key, reasoning_effort: 'low' })
+  expect((post?.body as { request_id: string }).request_id).toMatch(/^[0-9a-f-]{36}$/)
+})
+
+test('Given a summary job already running, Then Regenerate summary is disabled', async () => {
+  mockApi({
+    ...settings,
+    'GET /papers/p1/summaries': { items: [summary('s1', 'Stored summary.', '2026-10-08T12:00:00Z')] },
+    'GET /jobs': { items: [job('j4', 'processing', 'summarizing', 40)] },
+    'GET /jobs/j4': job('j4', 'processing', 'summarizing', 40),
+  })
+  mount()
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  expect(await within(card).findByRole('progressbar', { name: 'Summary progress' })).toBeVisible()
+  expect(within(card).getByRole('button', { name: 'Regenerate summary' })).toBeDisabled()
+})

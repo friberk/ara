@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, FileUp } from 'lucide-react'
+import { ChevronDown, FileUp, RefreshCw } from 'lucide-react'
 import type { Citation, Job, Paper } from '@/api/types'
 import { useGenerationSettings } from '@/components/composer/generation-settings-context'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { UploadDropzone } from '@/components/upload/UploadDropzone'
 import { Markdown, SourceList } from '@/features/content'
 import { useOptionalWorkspace } from '@/features/workspace/workspace-context'
@@ -95,6 +96,16 @@ export function SummaryCard({ paper, className }: { paper: Paper; className?: st
     <article aria-label="Paper summary" className={cn('rounded-2xl bg-muted/60 px-4 py-3.5 sm:px-5', className)}>
       <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1">
         <h2 className="text-sm font-semibold">Summary</h2>
+        {current && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button type="button" variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground" aria-label="Regenerate summary" disabled={!canGenerate} onClick={start}>
+                <RefreshCw aria-hidden="true" className={cn((activeJob || generate.isPending) && 'animate-spin motion-reduce:animate-none')} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Regenerate summary</TooltipContent>
+          </Tooltip>
+        )}
         {current && current.document_id !== paper.active_document_id && <Badge variant="outline" className="font-normal text-muted-foreground">Earlier PDF</Badge>}
       </div>
       {activeJob && <JobProgress jobId={activeJob} onSettled={settle} label="Summary progress" className="mt-3" />}
