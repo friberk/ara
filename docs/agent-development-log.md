@@ -1379,3 +1379,67 @@ An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in it
 - No live provider calls were made.
 - Real concurrent races were not run; the skip-locked path is simulated by deleting the paper with plain SQL.
 - Clicking a saved citation to a deleted paper opens the reader's error notice rather than a page; its excerpt still reads.
+
+## 2026-10-10 - ARA-097 workspace without tabs, the ⓘ details sheet and Remove PDF
+
+An Opus agent built it on `feat/ara-097-workspace-redesign` (from the ARA-095 merge, `1e30b1b`). Backend tests ran only in its own `ara-workspace-test` Compose project, and the browser check in a separate `ara-wsvisual-test` project, removed afterwards. The user's `ara` and `ara-live` stacks were not touched. Before any edit it ran the impeccable design context for `PaperWorkspacePage.tsx` and read the craft floor; after the UI work, the mechanical detector found nothing in the changed files. No migration was written, and no new dependency was added. `rag/*`, answer generation and the composer files of ARA-094 and ARA-096 were left alone. Small edits went into `ConversationThread.tsx` (the question gate), `Messages.tsx` (one class), `ThreadLayout.tsx`, `ChatPapers.tsx` and `ChatSwitcher.tsx`.
+
+**Decisions:**
+- **No tabs.** On desktop, the reader is a section named "PDF reader" that shows the PDF or the existing ReaderGate states. On narrow screens, the segments are Chat and PDF, and an old `?view=details` link opens Chat. `DetailsPanel.tsx`, `readerTab`/`setReaderTab` and `MobilePdfView` are deleted, not hidden.
+- **ⓘ sheet.** "Paper details" sits beside the title and badge, and ARA-095's ⋯ menu left the header; Library rows keep theirs. The sheet is a stock Sheet:
+  - right, 440px, on desktop, with a transparent overlay (a new `overlayClassName` prop on `SheetContent`), so the PDF stays legible;
+  - bottom, `100dvh − 2rem`, on mobile.
+  - Sections: citation (as running text, so a long venue wraps) and authors; Edit details (`EditDetailsDialog`) and Look up again (`LookupNotice` now takes the other actions as children), with DOI and record links; the abstract (`ClampedText`, extracted from `PaperCard`); identifiers in mono with copy; "Where this information came from" (`MetadataSources` as a field → source list); Advanced (`SearchIndexPanel`, now the Collapsible itself); then Delete paper (`DeletePapersDialog`).
+- **PDF menu.** The toolbar centres paging and zoom and ends with ⋮ "PDF options". The label shows the file name, pages · size and Uploaded or Downloaded from OpenAlex, from the new `GET /documents/{id}`. Open original and Download apply to any PDF; Replace PDF and Remove PDF apply only to the workspace paper's current one.
+  - Replace opens the existing `UploadDropzone` in a dialog and hands the new job to the reader through the router state the gate already reads.
+  - Remove uses an AlertDialog fed by `GET /papers/{id}/pdf/removal-preview`, with Cancel focused. It waits while a chat is answering, and focus moves to the reader after removal.
+- **Remove PDF without a migration.** `chat_papers.document_id` is NOT NULL with a plain foreign key (0010), and `paper_summaries.document_id` has no cascade. I asked the lead before coding, proposing to go ahead without a migration; no reply had arrived when I implemented it.
+  - `DELETE /papers/{id}/pdf` removes every PDF of the paper (current and earlier versions) and nulls `active_document_id`. It settles their jobs with `PDF_REMOVED` (skip-locked), deletes their summaries and queues ARA-095's `storage_cleanup` with the original keys.
+  - A PDF no chat pins is deleted by cascade.
+  - A pinned PDF keeps an emptied row: content rows deleted, `status` `failed`, `object_key` `removed/<id>` (`Document.removed`, a hybrid property), and new `sha256` and `request_id`, so the same file uploads again.
+  - Its chat stays readable (`IncludedPaper.pdf_removed`). `chat_scopes`' existing not-ready check refuses new questions, and the composer explains why. Passages, the file and the facts answer 404 `PDF_REMOVED`, and a job retry of its ingest is refused.
+  - An ingest that missed the fence finds the row removed and settles. The paper deletion preview no longer counts removed rows.
+- **Defects, real causes.**
+  - The assistant message is a `grid` whose implicit track grew to its widest unbreakable content. Measured at 390px against seeded long answers, the conversation region's `scrollWidth` was 1257 against a `clientWidth` of 390. The culprits were a 748px link, a 744px inline identifier, a 506px table and a code block; `overflow-wrap: break-word` does not lower min-content. `grid-cols-1` (minmax(0, 1fr)) brought it to 390, with the table and code scrolling inside the answer.
+  - The chip row is not sticky in CSS: it sits above the thread. The thread's 24px top mask faded scrolled text right under the transparent chips, so it looked as if it showed through. The chips are now `bg-background`, and the thread draws a hairline (always-present transparent `border-t`, `border-border` while scrolled) instead of the mask.
+
+**Red, then green:**
+- **Backend.**
+  - 13 new tests failed first (`assert 404 == 204` ×9, `{"code":"NOT_FOUND"…}`, `assert 404 == 200`, `KeyError: 'answering'`), then passed.
+  - The ingest guard went in before its test. Stubbing it out reproduced `('completed', None, None) == ('failed', 'PDF_REMOVED', None)`, and restoring it made all 14 pass.
+  - The full run then failed one existing test, `test_chat_papers_integration.py::…covers_both_in_order`, which pins `IncludedPaper`'s exact shape (`Left contains 1 more item: {'pdf_removed': False}`). That expectation was updated.
+- **Frontend, first round.** 42 failed: `Unable to find role="button" and name "Paper details"`, `… "PDF options"`, `… "Advanced"`, and `Unable to find role="region" and name "PDF reader"`. The reader-tabs and upload-match cases also timed out in that parallel run, though reader-tabs passed alone.
+- **Frontend, my own test mistakes after implementing.**
+  - The computed description is `Author et al. (2024),CHI`, because the nbsp at the span edge is dropped, so the matcher allows that.
+  - The Replace test raced the job hand-off (`Unable to find … Uploaded`).
+  - The title-edit test looked for the h1 behind the modal sheet.
+  - `home.test.tsx` still asked for the old tabpanel.
+- **Removed-PDF chat and reader.** 4 failed (the two gate reasons, `Unable to find role="heading" and name "This PDF was removed"`), then passed.
+- **Overflow and chip row.** 3 failed (`toHaveClass("grid-cols-1")`, `"bg-background"`, `"border-t data-scrolled:border-border"`), then passed.
+- **Visual-check fixes.**
+  - Venue: `not.toHaveClass("truncate")` failed, then passed.
+  - Tooltip: my first test, with user-event, passed before the fix, because jsdom delivered the click that cancels the tooltip timer. Rewritten with a raw pointermove and pointerdown, it failed (`found <div … tooltip`) and then passed.
+  - Focus after removal: `toHaveFocus()` failed twice; the second time, the success flag was read from a stale render. It passed with a ref.
+
+**Visual check.** I seeded two fixture PDFs through the API and wrote chats with long links, identifiers, a wide table, a code block and an eight-turn two-paper chat. They were served from an API on 8097 and Vite on 5197, and screenshotted with the project's Playwright library. The screenshots are in the session scratch directory, outside the repo.
+- **Round 1.** Desktop light and dark, and 390px light and dark: workspace, sheet, Advanced, PDF menu, Remove and Replace dialogs, mobile chat, PDF, menu and bottom sheet.
+  - Phone document and thread `scrollWidth` were both 390 after the overflow fix.
+  - Focus returned to ⓘ after Esc, the close button and an outside click.
+  - Found: the "PDF options" tooltip stayed over the open menu (the menu opens on pointerdown, so the click that cancels Radix's pending tooltip never lands), and the sheet truncated a long venue.
+- **Round 2.** Confirmed: no tooltip with the menu open, the venue wraps, and Remove PDF works end to end. After removal, the reader shows the upload state with "PDF needed" and the abstract, and the toast says "PDF removed". The two-paper chat says "A PDF this conversation used was removed. Remove that paper from the conversation to ask more.", and a citation into the removed PDF shows "This PDF was removed" with Add a PDF.
+  - Found: focus fell to `BODY` after removal. That was fixed by the test above but not re-checked in a browser, because the check was bounded to two rounds.
+
+**Process notes.**
+- `git rm DetailsPanel.tsx` was staged early, so the deletion landed in the backend commit `01bb063`.
+- The required `pdf_removed` field broke `recent-items.test.ts`'s fixture under `tsc`, which was updated. Other branches that build `IncludedPaper` fixtures by hand will need `pdf_removed: false` at merge.
+
+**Verification.**
+- **Backend.** `python3 scripts/test-stack.py test --project-name ara-workspace-test`: Ruff "All checks passed!", 1126 passed in 247.66 s (baseline before the branch: 1112 passed in 252.32 s).
+- **Frontend.** `npm run check`: typecheck and lint clean, 649 tests in 86 files (baseline 611 in 79 per ARA-095's entry). `npm run build` passed with the existing chunk-size warning.
+- **Contract.** `generated.ts` was regenerated from the flag-on `app.openapi()`; the diff only adds.
+
+**Not verified:**
+- The Playwright specs (`e2e/workspace.spec.ts`, `e2e/fulltext.spec.ts`) were updated and type-checked on their own, but not run.
+- There was no live OpenAlex download, and no real concurrent removal race; the missed-fence ingest path is simulated with SQL.
+- Focus after removal was checked in jsdom only.
+- A chat whose PDF was removed stays read-only, even after a new upload, rather than moving to the new PDF.
