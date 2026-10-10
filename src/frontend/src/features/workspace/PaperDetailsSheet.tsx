@@ -125,7 +125,7 @@ export function PaperDetailsSheet({ paper, onDeleted }: { paper: Paper; onDelete
       >
         <SheetHeader className="gap-1.5 border-b p-5 pr-12">
           <SheetTitle className="text-lg leading-snug font-semibold text-balance break-words">{paperName(paper)}</SheetTitle>
-          <SheetDescription asChild><div><PaperCitation paper={paper} className="text-sm" /></div></SheetDescription>
+          <SheetDescription asChild><div><PaperCitation paper={paper} wrap className="text-sm" /></div></SheetDescription>
           {authors && <p className="text-sm text-pretty">{authors}</p>}
         </SheetHeader>
         <div className="grid min-h-0 flex-1 content-start gap-7 overflow-y-auto overscroll-contain p-5">

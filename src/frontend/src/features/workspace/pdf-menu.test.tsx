@@ -1,5 +1,5 @@
 // The reader's PDF menu (ARA-097): what the file is, and opening, downloading, replacing or removing it.
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import type { Citation } from '@/api/types'
 import { json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
@@ -177,4 +177,18 @@ test('Given a citation to a PDF that was removed, When it is shown, Then the rea
   expect(within(reader).queryByRole('button', { name: 'PDF options' })).not.toBeInTheDocument()
   await user.click(within(reader).getByRole('button', { name: 'Back to current PDF' }))
   expect(await within(reader).findByText('Showing doc-1')).toBeVisible()
+})
+
+test('Given the PDF menu opened with the pointer, Then its tooltip does not stay over the menu', async () => {
+  mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-1': document })
+  renderApp('/papers/p1')
+  await screen.findByText('Showing doc-1')
+  // The menu opens on pointerdown; with it open the page takes no pointer events, so the click that would cancel the
+  // tooltip's 300 ms delay never reaches the button, and the tooltip used to open over the menu.
+  const trigger = screen.getByRole('button', { name: 'PDF options' })
+  fireEvent.pointerMove(trigger, { pointerType: 'mouse' })
+  fireEvent.pointerDown(trigger, { pointerType: 'mouse', button: 0 })
+  await screen.findByRole('menu')
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
 })

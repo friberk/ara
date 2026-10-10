@@ -139,11 +139,14 @@ function RemovePdfDialog({ paper, onClose }: { paper: Paper; onClose: () => void
  */
 export function PdfMenu({ documentId, pages, managed }: { documentId: string; pages: number | null; managed?: Paper }) {
   const [dialog, setDialog] = useState<'replace' | 'remove' | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [hint, setHint] = useState(false)
   const file = useDocument(documentId)
   return (
     <>
-      <DropdownMenu>
-        <Tooltip>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        {/* The menu opens on pointerdown, so the click that would cancel a pending tooltip never lands; keep it shut. */}
+        <Tooltip open={hint && !menuOpen} onOpenChange={setHint}>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" aria-label="PDF options"><EllipsisVertical aria-hidden="true" /></Button>

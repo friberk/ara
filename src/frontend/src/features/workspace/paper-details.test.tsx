@@ -211,3 +211,13 @@ test('Given a narrow screen, When ⓘ is pressed, Then the details open as a bot
   const sheet = await openDetails(user)
   expect(sheet).toHaveAttribute('data-side', 'bottom')
 })
+
+test('Given a long venue, Then the sheet shows it in full instead of truncating it', async () => {
+  const venue = 'Proceedings of the ACM Conference on Human Factors in Computing Systems'
+  mockApi({ 'GET /papers/p1': { ...paper, venue } })
+  const { user } = renderApp('/papers/p1')
+  const sheet = await openDetails(user)
+  const cite = within(sheet).getByText(venue)
+  expect(cite.tagName).toBe('CITE')
+  expect(cite).not.toHaveClass('truncate')
+})
