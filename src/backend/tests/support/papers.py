@@ -2,15 +2,16 @@
 
 from uuid import uuid4
 
-from app.models.research import Document, DocumentChunk, Paper
+from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
 
 CHUNK_SET = "layout-v1:fixture"
 OPENAI, QWEN = "openai-3-large", "qwen3-embed-4b"
+SMALL = "openai-3-small"
 
 
-async def seed_paper(resources, *, chunks=5, retrieval_profile=None):
+async def seed_paper(resources, *, chunks=5):
     async with resources.sessions() as session, session.begin():
-        paper = Paper(id=uuid4(), title="Sparse Retrieval", retrieval_profile=retrieval_profile)
+        paper = Paper(id=uuid4(), title="Sparse Retrieval")
         session.add(paper)
         await session.flush()
         document = Document(
@@ -45,3 +46,11 @@ async def seed_paper(resources, *, chunks=5, retrieval_profile=None):
                 )
             )
     return paper.id, document.id
+
+
+async def use_library_profile(resources, profile):
+    """Store the library-wide embedding model without queueing any work."""
+    async with resources.sessions() as session, session.begin():
+        await session.merge(
+            ModelConfiguration(key="retrieval", value={"embedding_profile": profile})
+        )

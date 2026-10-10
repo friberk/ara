@@ -8,7 +8,6 @@ A rebuild of a ready index embeds into a staging row (`<chunk set>#r`, vectors u
 
 import hashlib
 import time
-from typing import Literal
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -20,7 +19,7 @@ from app.integrations.embedding_catalog import DEFAULT_PROFILE, PROFILES, embedd
 from app.integrations.embeddings import create_embedder
 from app.models.jobs import BackgroundJob
 from app.models.local_models import ModelInstallation
-from app.models.research import Document, DocumentChunk, ModelConfiguration, Paper
+from app.models.research import Document, DocumentChunk, ModelConfiguration
 from app.models.retrieval import ChunkEmbedding, RetrievalIndex
 from app.repositories.jobs import continue_locked, enqueue, fence, now, payload_uuid
 
@@ -54,12 +53,6 @@ async def default_profile(session) -> str:
     except ValidationError:
         return DEFAULT_PROFILE
     return key if key in PROFILES else DEFAULT_PROFILE
-
-
-async def effective_profile(session, paper: Paper) -> tuple[str, Literal["default", "paper"]]:
-    if paper.retrieval_profile in PROFILES:
-        return paper.retrieval_profile, "paper"
-    return await default_profile(session), "default"
 
 
 async def profile_status(session, settings, profile) -> tuple[str, str | None]:
@@ -146,8 +139,35 @@ async def ensure_index(
     return target
 
 
+async def prune_other_models(session, document_id: UUID, keep: str) -> None:
+    """Drop the vectors and index rows of every other model once `keep` is the ready library model.
+
+    A model whose embed job is still queued or running is left alone; its own finish (or the
+    next reconcile) prunes it, so an in-flight job never writes into a deleted index.
+    """
+    rows = (
+        await session.execute(
+            select(RetrievalIndex.profile, BackgroundJob.state)
+            .outerjoin(BackgroundJob, BackgroundJob.id == RetrievalIndex.job_id)
+            .where(RetrievalIndex.document_id == document_id, RetrievalIndex.profile != keep)
+        )
+    ).all()
+    busy = {profile for profile, state in rows if state in {"queued", "processing"}}
+    kept = {keep, keep + REBUILD, *busy, *(profile + REBUILD for profile in busy)}
+    await session.execute(
+        delete(ChunkEmbedding).where(
+            ChunkEmbedding.document_id == document_id, ChunkEmbedding.profile.not_in(kept)
+        )
+    )
+    await session.execute(
+        delete(RetrievalIndex).where(
+            RetrievalIndex.document_id == document_id, RetrievalIndex.profile.not_in({keep, *busy})
+        )
+    )
+
+
 async def reconcile_document(session, document_id: UUID, available: set[str]) -> bool:
-    """Queue the effective profile's index when it is missing or was unavailable."""
+    """Queue the library model's index when it is missing or was unavailable, and prune others."""
     # Lock first, then look for a re-ingest, so concurrent runs queue each index once.
     document = await session.scalar(
         select(Document).where(Document.id == document_id).with_for_update()
@@ -165,7 +185,7 @@ async def reconcile_document(session, document_id: UUID, available: set[str]) ->
         .limit(1)
     ):
         return False
-    profile, _ = await effective_profile(session, await session.get(Paper, document.paper_id))
+    profile = await default_profile(session)
     if profile not in available:
         return False
     index = await session.scalar(
@@ -175,16 +195,17 @@ async def reconcile_document(session, document_id: UUID, available: set[str]) ->
             RetrievalIndex.chunk_set == document.chunk_set,
         )
     )
-    if index is not None and (
-        index.state == "ready" or (index.state == "failed" and index.error_code not in UNAVAILABLE)
-    ):
+    if index is not None and index.state == "ready":
+        await prune_other_models(session, document_id, profile)
+        return False
+    if index is not None and (index.state == "failed" and index.error_code not in UNAVAILABLE):
         return False  # Provider failures are rebuilt from the paper's Details, not on every boot.
     owner = index.job_id if index else None
     return (await ensure_index(session, document_id, profile)).job_id != owner
 
 
 async def reconcile_indexes(resources) -> int:
-    """Queue missing or unavailable indexes whose effective profile can embed now.
+    """Queue missing or unavailable indexes whose library model can embed now.
 
     Runs at API startup (a key arrives with a restart), after the default profile changes and
     after a local embedding model verifies. Returns the number of embed jobs queued.
@@ -373,6 +394,16 @@ class Run:
             serving.model_digest = installation.digest if installation else None
             serving.error_code = serving.error_message = None
             serving.updated_at = now()
+            current = await session.scalar(
+                select(Document.chunk_set).where(Document.id == self.document_id)
+            )
+            if (
+                not self.rebuild
+                and current == self.chunk_set
+                and self.profile == await default_profile(session)
+            ):
+                # The library model is ready for this document, so older models can go.
+                await prune_other_models(session, self.document_id, self.profile)
             complete_locked(job, {"index_id": str(serving.id), "embedded": embedded})
 
     async def settle_unavailable(self, error: AppError) -> None:
