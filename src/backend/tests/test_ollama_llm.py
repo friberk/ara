@@ -227,7 +227,7 @@ def test_given_local_model_when_budgeting_then_output_and_safety_are_reserved():
 
     resources = SimpleNamespace(settings=Settings(_env_file=None))
     assert model_limits(resources, "ifm-k2-horizon-7b") == (3072, 2048)
-    assert model_limits(resources, "gpt-5.6-luna") == (64000, 4000)
+    assert model_limits(resources, "gpt-5.6-luna") == (272_000, 4000)
     assert validate_selection("ifm-k2-horizon-7b", "default").provider == "ollama"
 
 

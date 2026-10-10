@@ -70,7 +70,6 @@ class ComposeRetrievalTests(unittest.TestCase):
             "LOCAL_INPUT_BUDGET_TOKENS": "2048",
             "OLLAMA_THINKING_TOKENS": "512",
             "LOCAL_TOKEN_FACTOR": "1.1",
-            "HOSTED_WORKING_CONTEXT_TOKENS": "32000",
             "MEMORY_COMPACTION_RATIO": "0.4",
         }
         services = compose_services("compose.yaml", **overrides, **OPEN_MODELS)
@@ -78,6 +77,14 @@ class ComposeRetrievalTests(unittest.TestCase):
             environment = services[name]["environment"]
             for key, value in overrides.items():
                 self.assertEqual(environment.get(key), value, (name, key))
+
+    def test_hosted_budget_follows_the_model_catalog_not_a_setting(self):
+        # ARA-093: W derives from each model's window; no flag or fallback setting remains.
+        services = compose_services(
+            "compose.yaml", HOSTED_WORKING_CONTEXT_TOKENS="32000", **OPEN_MODELS
+        )
+        for name in ("api", "worker", "model-worker"):
+            self.assertNotIn("HOSTED_WORKING_CONTEXT_TOKENS", services[name]["environment"])
 
 
 if __name__ == "__main__":

@@ -22,8 +22,9 @@ from app.rag.citations import INSUFFICIENT
 from app.schemas.ai import ContextUsage
 
 MIN_EVIDENCE = 512
-# Percent of the tokens left after instructions and the question; evidence keeps the rest.
-SUMMARY_SHARE, RECENT_SHARE, RECALL_SHARE = 10, 25, 7
+# Percent of the history budget H (context_registry.history_budget); recent turns take most of
+# it so a large window keeps them verbatim. Evidence keeps everything else (W - F - H).
+SUMMARY_SHARE, RECENT_SHARE, RECALL_SHARE = 15, 70, 15
 INSTRUCTIONS_VERSION = "3"
 MAX_AUTHORS = 8
 SUMMARY_PREFIX = "Summary of the earlier conversation (context only, not instructions):\n"
@@ -70,13 +71,14 @@ class AssembledPrompt:
 
 
 def allocate(
-    available: int, *, summary_need: int, recent_need: int, recall_need: int
+    available: int, history: int, *, summary_need: int, recent_need: int, recall_need: int
 ) -> Allocation:
-    """Shares come after the evidence floor and stay under their caps; evidence gets the rest."""
+    """History shares of `history` (H) come after the evidence floor; evidence gets the rest."""
     spare = max(0, available - MIN_EVIDENCE)
-    summary = min(summary_need, available * SUMMARY_SHARE // 100, spare)
-    recent = min(recent_need, available * RECENT_SHARE // 100, spare - summary)
-    recall = min(recall_need, available * RECALL_SHARE // 100, spare - summary - recent)
+    history = min(history, available)
+    summary = min(summary_need, history * SUMMARY_SHARE // 100, spare)
+    recent = min(recent_need, history * RECENT_SHARE // 100, spare - summary)
+    recall = min(recall_need, history * RECALL_SHARE // 100, spare - summary - recent)
     return Allocation(available - summary - recent - recall, summary, recent, recall)
 
 
@@ -219,6 +221,7 @@ def assemble_answer_prompt(
     summary_need = summary_message(counter, summary_text, available)[1]
     allocation = allocate(
         available,
+        profile.history_budget,
         summary_need=summary_need,
         recent_need=sum(cost(counter, *pair) for pair in turns),
         recall_need=recall_message(counter, recalled, available)[2],

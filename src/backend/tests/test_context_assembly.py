@@ -23,7 +23,7 @@ def local():
 def hosted():
     from app.integrations.context_registry import hosted_profile
 
-    return hosted_profile(SETTINGS, "gpt-5.6-luna")
+    return hosted_profile("gpt-5.6-luna", "low")
 
 
 def paper():
@@ -87,21 +87,24 @@ def sent_tokens(profile, result):
 def test_given_any_budget_when_allocating_then_shares_never_starve_evidence(available, need):
     from app.services.context import MIN_EVIDENCE, allocate
 
-    allocation = allocate(available, summary_need=need, recent_need=need, recall_need=need)
+    history = available // 4
+    allocation = allocate(available, history, summary_need=need, recent_need=need, recall_need=need)
     shares = allocation.summary + allocation.recent + allocation.recall
     assert allocation.evidence + shares == available
-    assert allocation.evidence >= 0.58 * available
+    # History never takes more than H, so evidence keeps at least W - F - H.
+    assert shares <= history
+    assert allocation.evidence >= available - history
     assert allocation.evidence >= min(available, MIN_EVIDENCE)
-    assert allocation.summary <= available * 0.10 and allocation.recent <= available * 0.25
-    assert allocation.recall <= available * 0.07
+    assert allocation.summary <= history * 0.15 and allocation.recent <= history * 0.70
+    assert allocation.recall <= history * 0.15
 
 
 def test_given_needs_below_caps_when_allocating_then_they_are_fully_granted():
     from app.services.context import allocate
 
-    allocation = allocate(5000, summary_need=400, recent_need=1200, recall_need=300)
-    assert (allocation.summary, allocation.recent, allocation.recall) == (400, 1200, 300)
-    assert allocation.evidence == 5000 - 1900
+    allocation = allocate(5000, 2000, summary_need=200, recent_need=1200, recall_need=300)
+    assert (allocation.summary, allocation.recent, allocation.recall) == (200, 1200, 300)
+    assert allocation.evidence == 5000 - 1700
 
 
 def test_given_cited_prior_answer_when_rendering_then_sources_become_page_references():

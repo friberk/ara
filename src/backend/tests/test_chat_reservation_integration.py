@@ -67,11 +67,10 @@ async def ledger_rows(resources) -> int:
 
 
 def counted(body) -> int:
-    from app.core.config import Settings
     from app.integrations.context_registry import hosted_profile
     from app.integrations.tokens import PromptMessage, count_messages
 
-    counter = hosted_profile(Settings(_env_file=None), body["model"]).counter
+    counter = hosted_profile(body["model"], "none").counter
     messages = [PromptMessage("system", body["instructions"])] + [
         PromptMessage("user" if item["role"] == "developer" else item["role"], item["content"])
         for item in body["input"]
@@ -91,9 +90,9 @@ async def test_given_hosted_question_when_preparing_then_the_reservation_bounds_
     _, events = await ask(resources, chat_id, "How does BM25 recall compare with dense vectors?")
     assert named(events, "message.completed")
     ((model, tokens),) = reserved
-    budget = hosted_profile(resources.settings, model).input_budget
+    budget = hosted_profile(model, "low").input_budget
     assert counted(calls[0]) <= tokens < budget
-    # The bound is realistic: well under a third of the 64k working window here.
+    # The bound is realistic: well under a third of the 272K working budget here.
     assert tokens < budget // 3
 
 
