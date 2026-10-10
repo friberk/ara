@@ -1221,3 +1221,9 @@ The design doc is updated.
 - **Fallback path.** An IEEE paper (W3163652268) ended `not_stored` without contacting any other host.
 - **Logs and UI.** Logs show the key only as `[REDACTED]`. Screenshots of both workspaces showed the intended copy.
 - **Cost.** One content download, about $0.01 of the user's free daily allowance.
+
+**User test stack on a copy of the dev library (2026-10-10).**
+- **What was copied.** At the user's request, the lead made read-only copies of the dev database (`pg_dump`) and the dev PDFs (3 objects via the MinIO client). They were restored into the isolated `ara-live` project, which runs `feat/ux-feedback-round` on ports 5181/8011. The user's OpenAI and OpenAlex keys were copied into the lead-only integration worktree's `.env`, without being printed.
+- **Migrations.** Migrations 0008 and 0009 ran on the real-data copy: 0007 → 0009, with 6 papers, 6 chats, 12 messages and 2 summaries preserved. This rehearses the eventual merge into main.
+- **Smoke check.** The existing chat rendered with its 37 citation chips, and the composer adopted the chat's model (ARA-083).
+- **Isolation.** The dev stack and its data were not touched. The copy contains private data and lives only in the session scratchpad, outside git.
