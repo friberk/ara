@@ -229,7 +229,7 @@ An achromatic shadcn neutral system with three narrow, role-locked exceptions: e
 ### Hierarchy
 - **Display** (600, 28px, tight tracking, balanced wrap): the home greeting above the composer ("What are you researching?"). Used once per screen at most.
 - **Headline** (600, 1.5rem, tight tracking): the page title on Search, Library, Activity and Settings.
-- **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the paper details sheet at 1.125rem.
+- **Title** (600, 17px, line-height 1.375, tight tracking): paper titles in search rows. Library rows use the same weight at 1rem, and the paper header above the PDF at 1.125rem.
 - **Reading** (400, 15.5px, 28px line): assistant answers, user messages and summaries. This is the conversation's reading voice, one step above the interface.
 - **Composer** (400, 15px, 24px line): text typed into the composer.
 - **Body** (400, 0.875rem, 24px line): abstracts (clamped to three lines with Show more), descriptions, links and menus. Long prose is capped near 70ch.
@@ -255,7 +255,7 @@ The shell is the shadcn sidebar layout. On desktop a 16rem sidebar collapses to 
 
 Content routes centre a single column at max-w-3xl (48rem). Home centres the display greeting, the composer and suggestion chips vertically, with a 28px gap and 12vh of extra bottom padding so the group sits slightly above centre. Search pins the composer to the bottom of the results column, like a chat thread. Search results and library entries are borderless rows with 24px and 20px vertical padding, divided by hairlines.
 
-The paper workspace is a resizable two-panel split separated by a grip handle. The reader takes 50% by default, at least 30%, and can collapse fully. The conversation keeps at least 35%. The reader has no tabs: it shows the PDF, or, until the paper has one, the ways to get it (retrieval progress, the DOI link, upload, preparation steps, failure with retry) above the abstract. Its toolbar centres paging and zoom and ends with the PDF menu. The paper's details sit behind a circled-i button beside the title and status badge in the header. They open in a sheet: 440px wide from the right on desktop, overlaying the conversation so the PDF stays in view, and a full-height bottom sheet on phones. Below 768px the split becomes two segments, Chat and PDF. PDF pages are centred in a 16px gutter with 16px between pages.
+The paper workspace is a resizable two-panel split separated by a grip handle. The reader takes 50% by default, at least 30%, and can collapse fully. The conversation keeps at least 35%. The reader has no tabs: the paper header (its bibliography) leads, then the PDF, or, until the paper has one, the ways to get it (retrieval progress, the DOI link, upload, preparation steps, failure with retry). Its toolbar centres paging and zoom and ends with the PDF menu. The top bar keeps the paper's title, because the reader can be hidden. Below 768px the split becomes two segments, Chat and PDF. PDF pages are centred in a 16px gutter with 16px between pages.
 
 ## Elevation & Depth
 
@@ -306,19 +306,14 @@ Quiet, compact and monochrome.
 
 ### Navigation
 - **Sidebar:** 32px rows with an 8px corner on the sidebar ground. Hover and active states share the sidebar accent (quiet surface), and the active row adds medium weight. Group labels use muted text in sentence case. Recent items have overflow menus for rename, delete and remove.
-- **Mobile:** the sidebar opens as an offcanvas sheet from the header trigger. The paper workspace switches between Chat and PDF segments, and the paper details rise as a bottom sheet.
+- **Mobile:** the sidebar opens as an offcanvas sheet from the header trigger. The paper workspace switches between Chat and PDF segments.
 - **Tabs:** a segmented control on a muted track. The active segment is raised with a small shadow, and inactive labels sit at 60% foreground.
 
-### Paper details sheet
-The circled-i button (Lucide Info, a ghost icon button named "Paper details") opens a stock shadcn Sheet. Its header holds the title at 1.125rem semibold, the citation as running text (authors, year and the italic venue, which wraps rather than truncates) and the full author list. The body scrolls under the header, in this order:
-1. Edit details (the editor dialog) and Look up again, as outline buttons, with a one-line muted note that edited fields stay, then text links to the DOI and the catalog records.
-2. The abstract, clamped to three lines with Show more.
-3. Identifiers (DOI and catalog IDs) in Geist Mono, each with a copy button whose name says Copied.
-4. "Where this information came from", a two-column field and source list in muted and foreground text.
-5. Advanced, a Collapsible closed by default, holding the paper's search index (model, state, passages, Rebuild).
-6. After a hairline, a destructive Delete paper button that opens the deletion dialog.
+### Paper header
+The reader opens with the paper's bibliography, laid out as a reading header on the paper ground with a hairline below it: the title at 1.125rem semibold, every author, then the year and the italic venue as running text, the DOI and catalog record links, and the abstract clamped to three lines with Show more. A field the paper lacks is left out; a missing abstract says so in muted text. Above a PDF the header is the first thing in the viewer's scroll column, so it scrolls away with page 1 while the controls bar stays pinned; above the ways to get a PDF it leads them. In a reader tab for another paper it describes that paper. Edit details (a ghost button whose label becomes screen-reader text in a reader narrower than 28rem) and the circled-i sit at the title's top right.
 
-On desktop the overlay is transparent, so the PDF stays legible while a click outside still closes the sheet. Esc, the close button and an outside click close it, and focus returns to the circled-i button.
+### Sources and search index
+The circled-i (Lucide Info, a ghost icon button named "Sources and search index") opens a stock centred Dialog that holds only what lies behind the bibliography: where each field came from with Look up again, the identifiers in Geist Mono with copy buttons, the search index, and, for the workspace's own paper, a destructive Delete paper after a hairline. Esc and the close button return focus to the circled-i; on a phone the dialog fits the screen and scrolls inside.
 
 ### PDF menu
 The reader toolbar ends with a vertical-ellipsis button named "PDF options". Its dropdown starts with a non-interactive label: the file name, then pages and size in tabular figures, then the source ("Uploaded" or "Downloaded from OpenAlex"), in muted label text. Open original and Download follow. For the paper's current PDF the menu adds Replace PDF, which opens the upload in a dialog, and Remove PDF, a destructive item. Remove PDF opens an alert dialog that states what happens, from the server's preview, with Cancel focused: the reader returns to upload, existing conversations keep using the PDF and new questions need a new PDF, and only what no conversation uses is deleted. Earlier versions and other papers' PDFs only open or download. A chat on an earlier PDF reads it in a reader tab under a "Showing an earlier PDF version" banner, whose button returns to the current PDF or, when the paper has none, offers to add one.

@@ -1,9 +1,9 @@
 {
   "id": "ARA-101",
-  "title": "Paper metadata above the PDF; ⓘ keeps only provenance and search details",
+  "title": "Paper metadata above the PDF; \u24d8 keeps only provenance and search details",
   "type": "improvement",
   "priority": "P1",
-  "description": "User feedback on 2026-10-10, after ARA-097 merged: \"ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff.\" ARA-097 put every detail, bibliography included, in a side sheet behind ⓘ. This ticket moves the bibliography back onto the page above the PDF, as the old Details tab showed it, and turns ⓘ into a small modal for the behind-the-scenes details only. ARA-097's tabless reader, PDF menu and Remove PDF behaviour stay.",
+  "description": "User feedback on 2026-10-10, after ARA-097 merged: \"ARA-097 ended with a bad design. I didn't like how that i icon pops up from the left. Basically You should have the title author list venue abstract. etc all kinds of metadata we have on top of the PDF viewer part. Just similar to before. But somewhere we should maintain a i icon that will list Where this information came from, search index etc irrelevant detail stuff.\" ARA-097 put every detail, bibliography included, in a side sheet behind \u24d8. This ticket moves the bibliography back onto the page above the PDF, as the old Details tab showed it, and turns \u24d8 into a small modal for the behind-the-scenes details only. ARA-097's tabless reader, PDF menu and Remove PDF behaviour stay.",
   "dependencies": [
     "ARA-097",
     "ARA-098"
@@ -13,7 +13,7 @@
     "Given a long PDF, when the user reads it, then the header doesn't permanently take reading space. It scrolls away with the document, or collapses to a compact row, and comes back at the top. Page tracking, citation jumps and highlights, zoom and fit-width keep working.",
     "Given a paper without a ready PDF, when the reader shows its ways to get one, then the same header sits above them, and the abstract is not shown twice.",
     "Given reader tabs for other papers (multi-paper chats), when a tab is active, then the header describes that tab's paper.",
-    "Given the ⓘ button in the paper header, when it is pressed, then a centred modal dialog (not a side sheet) lists only the behind-the-scenes details: where each field came from with Look up again, catalog identifiers, and the search index. Esc and close return focus to ⓘ. Delete paper… stays reachable from the workspace.",
+    "Given the \u24d8 button in the paper header, when it is pressed, then a centred modal dialog (not a side sheet) lists only the behind-the-scenes details: where each field came from with Look up again, catalog identifiers, and the search index. Esc and close return focus to \u24d8. Delete paper\u2026 stays reachable from the workspace.",
     "Given a 390px screen, when the PDF segment shows, then the header fits with no horizontal scroll, and the dialog fits the screen.",
     "Given the codebase, when this lands, then PaperDetailsSheet and anything used only by it are deleted, with no second implementation."
   ],
@@ -21,21 +21,43 @@
     "Header renders the bibliography for a full and a sparse paper; abstract clamps and expands.",
     "Header follows the active reader tab.",
     "No-PDF state shows the header once and no duplicate abstract.",
-    "ⓘ opens a dialog with sources, Look up again, identifiers and the search index, and none of the bibliography; focus returns.",
+    "\u24d8 opens a dialog with sources, Look up again, identifiers and the search index, and none of the bibliography; focus returns.",
     "Citation jump still scrolls to and highlights the passage with the header present.",
     "Visual check: desktop light and dark, 390px."
   ],
-  "status": "planned",
+  "status": "completed",
   "related_files": [
-    "src/frontend/src/features/workspace/PaperWorkspacePage.tsx",
-    "src/frontend/src/features/workspace/ReaderPanel.tsx",
-    "src/frontend/src/features/workspace/ReaderDocuments.tsx",
-    "src/frontend/src/features/workspace/ReaderGate.tsx",
+    "DESIGN.md",
+    "PRODUCT.md",
+    "README.md",
+    "docs/agent-development-log.md",
+    "issue_tracker/ARA-101.json",
+    "src/frontend/e2e/workspace.spec.ts",
+    "src/frontend/src/components/shell/shell.test.tsx",
+    "src/frontend/src/components/ui/sheet.tsx",
+    "src/frontend/src/features/open-models-flag.test.tsx",
+    "src/frontend/src/features/workspace/LookupNotice.tsx",
+    "src/frontend/src/features/workspace/MetadataSources.tsx",
     "src/frontend/src/features/workspace/PaperDetailsSheet.tsx",
-    "src/frontend/src/features/workspace/PdfViewer.tsx"
+    "src/frontend/src/features/workspace/PaperHeader.tsx",
+    "src/frontend/src/features/workspace/PaperSourcesDialog.tsx",
+    "src/frontend/src/features/workspace/PaperWorkspacePage.tsx",
+    "src/frontend/src/features/workspace/PdfReader.tsx",
+    "src/frontend/src/features/workspace/PdfViewer.test.tsx",
+    "src/frontend/src/features/workspace/PdfViewer.tsx",
+    "src/frontend/src/features/workspace/ReaderGate.tsx",
+    "src/frontend/src/features/workspace/SearchIndexPanel.tsx",
+    "src/frontend/src/features/workspace/paper-details.test.tsx",
+    "src/frontend/src/features/workspace/paper-header.test.tsx",
+    "src/frontend/src/features/workspace/search-index.test.tsx",
+    "src/frontend/src/features/workspace/workspace.test.tsx"
   ],
-  "commits": [],
+  "commits": [
+    "7a983de",
+    "4fe991e",
+    "a915653"
+  ],
   "pull_requests": [],
-  "verification": "Planned on 2026-10-10 from the user's feedback on ARA-097. Branch feat/ara-101-paper-header.",
+  "verification": "Implemented 2026-10-10 on feat/ara-101-paper-header from feat/ux-feedback-round (32528d0). Frontend only. npm run check -> typecheck and lint clean, 690 tests in 91 files; npm run build passed with the existing chunk-size warning. New: paper-header.test.tsx (14 tests: full and sparse bibliography, abstract clamp, top bar keeps the title, no-PDF header with one abstract, header follows the active reader tab, \u24d8 dialog contents and no bibliography, focus return on Esc and close, copy DOI, Look up again, Edit details, Delete paper, no Delete for another paper's tab, DOI-owner note, narrow header) and a PdfViewer test for a citation jump below the header. Scroll design: the header is the first child of PdfViewer's scroll column (offsets are rect-relative, page tracking probes 30% down, zoom anchoring is page-relative), so it scrolls away while the controls bar stays. Visual check (two rounds) against the test copy's API on 8011 through Vite on 5198, read-only (no non-GET request): desktop light and dark, 390 px light and dark; no horizontal overflow (PDF region 592/592 desktop, 390/390 phone), the phone dialog 358x697 within 390x844; round 1 found the Edit details label squeezing the title at 390 px (fixed with a container query); round 2 confirmed it, focus returning to \u24d8, and a citation jump to page 7 highlighted in view with zoom and fit-width keeping the page. Not run: the updated e2e/workspace.spec.ts (type-checked only). The other-paper tab was not seen in a browser (no such chat on the test copy); a unit test covers it. This record and the journal are committed after the commits listed.",
   "updated_at": "2026-10-10"
 }
