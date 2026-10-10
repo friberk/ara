@@ -1501,3 +1501,26 @@ An Opus agent built ARA-094 with ARA-079 folded in, on `feat/ara-094-evidence` f
   - they answer broad questions under retrieval-always, as in RAPTOR, LlamaIndex hierarchical retrieval and GraphRAG global search.
 - **A gap the lead found.** Reading `rag/packing.py`, the lead saw that a summary's unselected source chunks received handles without their text being sent. Grounding was indirect: claim → summary → passage.
 - **The user's choice.** The user chose "summaries route, passages ground": send the summary's key source passages as real evidence and strip markers to unsent chunks. The ARA-094 agent was resumed for it.
+
+**Summaries route, passages ground: implemented (2026-10-10, ARA-094 agent).**
+- **Merge.** At the lead's request I merged `feat/ux-feedback-round` into `feat/ara-094-evidence`. The branch was an ancestor, so it fast-forwarded to `54144ca` (ARA-095 and the lead's `continue_upload` fix included), with no merge commit.
+- **The user's choice.** A selected section summary now brings up to `MAX_SUMMARY_SOURCES` = 4 of the passages it cites as ordinary evidence, with their own handles and full text. This is RAPTOR's tree traversal: from a selected summary node to its top children.
+  - *Source order.* Best reranker score first, then the order the summary cites them.
+  - *Bounds.* Sources are added after floors and right after their summary in the relevance fill. They stay within the paper's equal share and the pass's caps.
+  - *The 4.* A design choice. RAPTOR's summaries average 5.7 children on QASPER (6.7 overall), and a summary with its passages stays within a fifth of the 24-passage first pass.
+- **No handle without its text.**
+  - Markers to passages that were not sent are stripped.
+  - `citable()` is now only the passages sent whole, so the old cite-only handles are gone, and citing an unsent passage fails as an unknown handle (`UNGROUNDED_OUTPUT`).
+  - The rules say to cite only passages shown in full (prompt version 6).
+  - The retry and map-reduce pack the same way.
+- **Red → green.**
+  - *Rewritten summary tests: 5 failed.*
+    - `['summary', 'text'] == ['summary', …, 'text', 'text']` (no sources sent);
+    - `cannot import name 'MAX_SUMMARY_SOURCES'`;
+    - a summary whose sources did not fit kept a cite-only `S1` (`[Passage(… S1 …)] == []`);
+    - `assert (4 < 4)` (sources ignored the paper's share);
+    - the rules text.
+  - *Tests written after the change, proven red on the old code.* I restored the previous `packing.py` and `pipeline.py` from HEAD and ran these four; all failed, and the new code was then put back. The four were the validation test (`DID NOT RAISE LLMError`), the cap test (a handle's passage text was not in the evidence), the retry test (source texts not sent) and the integration test where only the summary matches the search (`'We index every passage … Okapi weighting.' in 'Paper passages: …'` was false). That last test checks that every cited passage's text was in the prompt, on its real page.
+  - *Green.* 180 passed across the retrieval and chat suites; Ruff flagged one long line, since fixed.
+- **Verification.** The full backend after the merge: 1180 passed in 252.84 s, Ruff clean. The frontend did not change, so it was not re-run.
+- **Not verified.** No live OpenAI call, no Playwright run. The cap of 4 is not measured on the user's papers.

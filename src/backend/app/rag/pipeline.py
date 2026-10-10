@@ -159,6 +159,7 @@ class EvidenceResult:
             kept=self.kept,
             reach=self.reach,
             sources=self.sources,
+            scores=self.scores,
             **{"max_passages": self.evidence_pass.max_passages, **options},
         )
 

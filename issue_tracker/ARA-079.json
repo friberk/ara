@@ -29,15 +29,18 @@
     "src/backend/app/routes/jobs.py",
     "src/backend/tests/test_section_summaries_integration.py",
     "src/backend/tests/test_section_summary_migration.py",
-    "src/backend/tests/support/sections.py"
+    "src/backend/tests/support/sections.py",
+    "src/backend/app/rag/selection.py"
   ],
   "commits": [
     "9883f94",
     "624f26a",
     "016a653",
-    "71f1372"
+    "71f1372",
+    "0d4d013",
+    "3b80bb4"
   ],
   "pull_requests": [],
-  "verification": "Deferred (P2) on 2026-10-09: not implemented on feat/rag-context. Live local answers fit 8-9 passages within the 3,072-token budget; broad questions on long papers remain the open case. On 2026-10-10 it was folded into ARA-094 (retrieval orchestration design); implemented there. Implemented in ARA-094 on 2026-10-10 (hosted models; open models stay frozen): migration 0011_section_summaries; one summary of at most 100 words per top-level body section with at least two passages, written once per reading by a durable section_summaries job with the saved default model and effort (no other model; nothing when summary_blocker refuses), validated against the section's own passages, usage per summary and total cost in the job result; embedded with the library-wide model, re-embedded and pruned with the chunks; existing ready PDFs backfilled once at startup. Summaries are searched beside chunks (keyword and vector) for every question; in an answer a summary has no handle and shows its source chunks' handles, so every citation resolves to a real chunk and page of that paper (sources read only from the chat's pinned PDFs). Tests: 21 cases in test_section_summaries_integration.py plus the migration test. Not measured on the user's papers; no live OpenAI call; the local small-model case of the original criterion is not exercised while open models are frozen.",
+  "verification": "Deferred (P2) on 2026-10-09: not implemented on feat/rag-context. Live local answers fit 8-9 passages within the 3,072-token budget; broad questions on long papers remain the open case. On 2026-10-10 it was folded into ARA-094 (retrieval orchestration design); implemented there. Implemented in ARA-094 on 2026-10-10 (hosted models; open models stay frozen): migration 0011_section_summaries; one summary of at most 100 words per top-level body section with at least two passages, written once per reading by a durable section_summaries job with the saved default model and effort (no other model; nothing when summary_blocker refuses), validated against the section's own passages, usage per summary and total cost in the job result; embedded with the library-wide model, re-embedded and pruned with the chunks; existing ready PDFs backfilled once at startup. Summaries are searched beside chunks (keyword and vector) for every question; in an answer a summary has no handle and shows its source chunks' handles, so every citation resolves to a real chunk and page of that paper (sources read only from the chat's pinned PDFs). Tests: 21 cases in test_section_summaries_integration.py plus the migration test. Not measured on the user's papers; no live OpenAI call; the local small-model case of the original criterion is not exercised while open models are frozen. Follow-up on 2026-10-10, the user's choice 'summaries route, passages ground' (0d4d013): a selected summary brings up to 4 of its cited passages (best reranker score, then citation order; RAPTOR tree traversal) as real evidence with handles and full text, within its paper's share and the first-pass caps; markers to unsent passages are stripped, only sent passages are citable (prompt version 6), and the retry and map-reduce use the same packing. Full backend after merging feat/ux-feedback-round (54144ca): 1180 passed in 252.84 s, Ruff clean. Frontend unchanged.",
   "updated_at": "2026-10-10"
 }

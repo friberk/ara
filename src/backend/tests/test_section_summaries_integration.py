@@ -655,3 +655,42 @@ async def test_given_summaries_when_reserving_then_the_ceiling_covers_every_item
         ceiling = await evidence_ceiling(session, scopes, counter)
     assert result.summary.summaries_used == 2
     assert counter.count(render_evidence(result.passages, result.headers)) <= ceiling
+
+
+async def test_given_a_summary_that_routes_when_answering_then_its_passages_ground_the_citations(
+    resources, monkeypatch
+):
+    """Summaries route, passages ground (the user's choice, 2026-10-10): the search finds only
+    the summary, yet every handle the answer cites belongs to a passage whose text was sent."""
+    from app.models.research import DocumentChunk
+    from tests.support.answers import ask, named, use_hosted
+    from tests.support.chats import new_chat
+
+    hosted(resources)
+    paper_id, document_id, chunks = await seed_sections(resources)
+    method = [*chunks[("2 Method",)], *chunks[("2 Method", "2.1 Dense baseline")]]
+    sentence = "The method section explains the retrieval architecture"
+    await write_summary(resources, document_id, ["2 Method"], sentence, method)
+    chat_id = await new_chat(resources, (paper_id, document_id))
+    calls = []
+
+    def answer(body):
+        prompt = body["input"][-1]["content"]
+        summary = prompt[prompt.index("Section summary · 2 Method") :].split("\n")[1]
+        return "The architecture is described " + "".join(
+            f"[{handle}]" for handle in re.findall(r"\[(S\d+)\]", summary)
+        )
+
+    use_hosted(monkeypatch, resources, calls, answer)
+    prepared, events = await ask(resources, chat_id, "Summarize the retrieval architecture.")
+    (completed,) = named(events, "message.completed")
+    prompt = calls[0]["input"][-1]["content"]
+    assert completed["retrieval"]["summaries_used"] == 1
+    assert len(completed["citations"]) == 4
+    async with resources.sessions() as session:
+        for citation in completed["citations"]:
+            chunk = await session.get(DocumentChunk, UUID(citation["chunk_id"]))
+            # The cited passage's own text was in the prompt, on its real page.
+            assert chunk.id in method and chunk.text in prompt
+            assert citation["page"] == chunk.page
+    assert completed["context"]["input_tokens"] <= completed["context"]["input_budget"]

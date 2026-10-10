@@ -23,6 +23,13 @@ FIRST_PASS_TOKENS = 16_000
 # relevance probability at 1.0 this is the predicate's own decision boundary, 0.5. A design
 # choice; not measured.
 PRUNE_RATIO = 0.5
+# Summaries route, passages ground (ARA-079, the user's choice on 2026-10-10): a selected section
+# summary brings its best-scored cited passages as evidence, as RAPTOR's tree traversal descends
+# from a selected summary node to its top children (Sarthi et al., ICLR 2024). RAPTOR's summaries
+# average 5.7 children on QASPER (6.7 overall); up to 4 keeps most of a typical section's cited
+# passages while a summary and its passages stay within a fifth of the first pass's 24. A design
+# choice; not measured.
+MAX_SUMMARY_SOURCES = 4
 # Step 10, the single wider retry (adapting Self-Route, Li et al., EMNLP 2024): half the bar and
 # about twice the passages, up to the evidence ceiling E.
 RETRY_PRUNE_RATIO = PRUNE_RATIO / 2
