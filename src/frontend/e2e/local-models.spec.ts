@@ -133,15 +133,16 @@ test('E2E-12 Given verified local weights, when summarizing and asking a paper, 
   expect((await (await request.get('/api/v1/settings')).json()).reasoning_effort).toBe('low')
   await page.goto(`/papers/${paper.id}`)
   const summary = page.getByRole('article', { name: 'Paper summary' })
-  const versions = summary.getByRole('button', { name: /^Version \d+ of \d+$/ })
-  await expect(summary.getByRole('button', { name: 'Generate summary', exact: true }).or(versions)).toBeVisible()
-  const before = await versions.isVisible() ? Number((await versions.innerText()).match(/of (\d+)/)?.[1]) : 0
-  if (before) {
-    await versions.click()
-    await page.getByRole('menuitem', { name: 'Generate summary', exact: true }).click()
-  } else await summary.getByRole('button', { name: 'Generate summary', exact: true }).click()
-  await expect(summary.getByRole('button', { name: `Version ${before + 1} of ${before + 1}` })).toBeVisible({ timeout: 45_000 })
-  await expect(summary).toContainText('Orion-12')
+  const generate = summary.getByRole('button', { name: 'Generate summary', exact: true })
+  const regenerate = summary.getByRole('button', { name: 'Regenerate summary', exact: true })
+  await expect(generate.or(regenerate)).toBeVisible()
+  // A shared fixture paper may already hold a summary from an earlier run, so the check waits for a new stored one.
+  const stored = async () => (await (await request.get(`/api/v1/papers/${paper.id}/summaries`)).json()).items.length
+  const before = await stored()
+  if (await generate.isVisible()) await generate.click()
+  else await regenerate.click()
+  await expect.poll(stored, { timeout: 45_000 }).toBeGreaterThan(before)
+  await expect(summary).toContainText('Orion-12', { timeout: 45_000 })
   const summaries = await (await request.get(`/api/v1/papers/${paper.id}/summaries`)).json()
   expect(summaries.items[0].model).toBe(modelKey)
   expect(summaries.items[0].reasoning_effort).toBe('low')
