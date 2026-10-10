@@ -106,18 +106,6 @@ test('Given a saved local default with open models off, Then the composer report
   expect(screen.getByRole('status', { name: 'Selection' })).toHaveTextContent(`${savedLocal.key}/default`)
 })
 
-test('Given open models off, When Activity lists jobs, Then local model work and copy stay out of view', async () => {
-  const base = { attempts: 1, generation: 1, result: null, error_code: null, error_message: null, error: null, progress: 0, available_at: '2026-10-08T10:00:00Z', created_at: '2026-10-08T10:00:00Z', updated_at: '2026-10-08T10:05:00Z' }
-  mockApi({
-    ...off, 'GET /models': { items: [luna] },
-    'GET /jobs': { items: [{ ...base, id: 'j1', kind: 'model_download', state: 'queued', stage: 'queued', model_key: local.key }, { ...base, id: 'j2', kind: 'summary', state: 'completed', stage: 'completed', progress: 100, paper_id: 'p2', paper_title: 'Attention is all you need' }] },
-  })
-  renderApp('/activity')
-  expect(await screen.findByRole('heading', { name: 'Paper summary' })).toBeVisible()
-  expect(screen.queryByRole('heading', { name: 'Model download' })).not.toBeInTheDocument()
-  expect(screen.queryByText(/model downloads/)).not.toBeInTheDocument()
-})
-
 test('Given a local library search model with open models off, Then Details explains keyword search', async () => {
   const reason = 'Open models are turned off on this server. This paper is searched by keywords until you choose a hosted search model.'
   const paper: Paper = { id: 'p1', title: 'Evidence based research', authors: [], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'doc-1', metadata_provenance: {} }

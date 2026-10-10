@@ -8,7 +8,6 @@ import HomePage from '@/features/research/HomePage'
 
 const SearchPage = lazy(() => import('@/features/research/SearchPage'))
 const LibraryPage = lazy(() => import('@/features/library/LibraryPage'))
-const ActivityPage = lazy(() => import('@/features/activity/ActivityPage'))
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'))
 const PaperWorkspacePage = lazy(() => import('@/features/workspace/PaperWorkspacePage'))
 
@@ -21,8 +20,6 @@ export default function App() {
             <Route index element={<HomePage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="library" element={<LibraryPage />} />
-            <Route path="activity" element={<ActivityPage />} />
-            <Route path="jobs" element={<Navigate to="/activity" replace />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="papers/:paperId" element={<PaperWorkspacePage />} />
             <Route path="papers/:paperId/chats/:chatId" element={<PaperWorkspacePage />} />

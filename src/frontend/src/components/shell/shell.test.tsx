@@ -25,10 +25,19 @@ test('Given the current route, Then its navigation item is marked active', async
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('data-active', 'true')
 })
 
-test('Given /jobs from an old link, Then it redirects to Activity', async () => {
+test.each(['/jobs', '/activity'])('Given %s from an old link, Then it redirects home and no Activity entry exists', async (path) => {
   mockApi({})
-  renderApp('/jobs')
-  await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name: 'Activity' })).toHaveAttribute('data-active', 'true'))
+  renderApp(path)
+  expect(await screen.findByRole('heading', { name: 'What are you researching?' })).toBeVisible()
+  expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument()
+})
+
+test('Given the palette is open, Then it offers no activity action', async () => {
+  mockApi({})
+  const { user } = renderApp('/')
+  await user.keyboard('{Control>}k{/Control}')
+  expect(await screen.findByRole('option', { name: 'Open library' })).toBeVisible()
+  expect(screen.queryByRole('option', { name: /activity/i })).not.toBeInTheDocument()
 })
 
 test('Given a recent search, When removed from history, Then it is deleted and the list refreshes', async () => {

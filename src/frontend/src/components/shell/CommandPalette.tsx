@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Activity, Library, MessageSquare, Moon, Settings, SquarePen, Sun, Upload } from 'lucide-react'
+import { Library, MessageSquare, Moon, Settings, SquarePen, Sun, Upload } from 'lucide-react'
 import { useTheme } from '@/components/theme/theme-context'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command'
 import { PdfStateIcon } from '@/components/paper/PdfStateIcon'
@@ -26,7 +26,6 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
             <CommandItem onSelect={() => go('/')}><SquarePen aria-hidden="true" />New research</CommandItem>
             <CommandItem onSelect={() => go('/library#upload')}><Upload aria-hidden="true" />Upload a PDF</CommandItem>
             <CommandItem onSelect={() => go('/library')}><Library aria-hidden="true" />Open library</CommandItem>
-            <CommandItem onSelect={() => go('/activity')}><Activity aria-hidden="true" />Open activity</CommandItem>
             <CommandItem onSelect={() => go('/settings')}><Settings aria-hidden="true" />Model settings</CommandItem>
             <CommandItem onSelect={() => { setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'); onOpenChange(false) }}>
               {resolvedTheme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}

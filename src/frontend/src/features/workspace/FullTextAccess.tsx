@@ -7,7 +7,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ErrorNotice } from '@/components/feedback/ErrorNotice'
 import { automaticFullTextKey, useAutomaticFullText, useFullText, useRetrieveFullText } from '@/hooks/queries/fulltext'
 import { doiLink } from '@/features/research/paper-format'
-import { useNow } from '@/features/activity/relative-time'
+import { useNow } from '@/hooks/use-now'
 import { retrievalFailure, retrievalProgress, retryWait, waitText } from './fulltext-copy'
 
 function RetrievalProgress({ label }: { label: string }) {
