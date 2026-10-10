@@ -1246,3 +1246,36 @@ The design doc is updated.
 **Verification:** Backend 1045 passed in 211.5 s with Ruff clean (baseline 1021 collected). Frontend `npm run check`: 597 tests in 77 files; `npm run build` passed with the existing chunk-size warning. Fixture unittests: 26 OK. `generated.ts` was regenerated from the flag-on `app.openapi()`.
 
 **Not verified:** the Playwright journey `e2e/multi-paper.spec.ts` (not run; it needs `create_pdf.py --second`), live OpenAI calls, and a visual check in a browser. The floors, routing and sub-questions follow the design and published practice but are not measured on the user's papers.
+
+**ARA-088 merge and scope correction (2026-10-10, same agent).**
+- **Merge of ARA-093.** The lead asked for `feat/ux-feedback-round` (`874db2a`) to be merged into this branch, as a one-time exception to the no-merge rule (`e8fe675`). There were two conflicts:
+  - `services/context.py`: ARA-093's history shares of H (15/70/15) were kept together with this branch's `INSTRUCTIONS_VERSION` "4".
+  - The journal: ARA-093's entries and the lead's no-cap note were kept, with this section last.
+  `memory.py` merged cleanly: ARA-093's planner room from H, alongside this branch's sub-questions. One ARA-093 test, `test_hosted_catalog.py`, called `assemble_answer_prompt(paper=…)` and failed with `TypeError … unexpected keyword argument 'paper'`; it now passes `papers=[…]`. After the merge: backend 1072 passed, frontend 597. The regenerated `generated.ts` was identical to the merged file. Budgets now come from ARA-093's profile (W up to the 272K tier, H = min(32K, 25% W)); this branch hardcodes neither.
+- **The user's correction.** There is no limit on papers per chat. The 5 was the lead's carry-over from the frozen local budget, and the user expected unlimited. Design for any N:
+  - **Search.** Search stays one filtered query per list. Each list holds at most `TOP_K` = 30 passages and each paper at most max(2, ⌈30/N⌉), so the pool and the statements do not grow with N.
+  - **Batched reads.** Admission reads papers, PDFs and authors in two queries; ready indexes are read with one window query, and opening fallbacks with one.
+  - **Kept papers.** Papers the question names (full title, or "Surname Year" as chips show) and sub-question targets are kept and answer first. Named papers without a sub-question share one search.
+  - **Floors.** Other papers need a whole floor, and at most 16/2 = 8 answer.
+  - **Planner.** It lists at most 20 papers, named first, and keeps at most five sub-questions. Open Notebook's Ask strategy says "you can add up to five searches" (`open_notebook/graphs/ask.py`; fetched and read for this). The 20 is a derived design choice, not measured.
+  - **System prompt.** It states only the number of papers; evidence headers name the answering ones.
+  - **UI.** The picker has no limit. Chips beyond three collapse into "+N more", a list with summary and remove buttons, in the chat and in the composers. The reader tab strip scrolls.
+- **Red, then green:**
+  - The API tests failed with `List should have at most 5 items after validation, not 6` (422) and `409 == 200`.
+  - Retrievers failed with `assert 12 == 4` (per-paper top k, unbounded) and `4 == 2`.
+  - Packing failed with `pack_evidence() got an unexpected keyword argument 'kept'`.
+  - The instruction test failed with `assert (4971 - 219) <= 1`: 300 papers listed against 3.
+  - The planner failed with `plan_query() got an unexpected keyword argument 'named'`.
+  - The 30-paper statement counts failed with `assert 19 == 73` (retrieval) and `29 == 110` (admission), and the planner list with `assert (30 <= 20)`.
+  - After the implementation, the 30-paper answer test failed with `assert 14 <= (16 // 2)`. Papers with a single candidate had been admitted with one passage each. They now need a whole floor, unless named. A later unit test showed that a one-candidate paper stopped admission for every paper after it (`['A'] == ['A', 'C']`); it is now skipped.
+  - The existing `test_given_no_ready_index…` caught a regression of mine: `profile None == None` let every paper count as vector-searched (`'built' in 'Searched by keywords because the search model is unavailable…'`). A `DISTINCT ON` that SQLAlchemy reported deprecated became a window query.
+  - My keyword test query matched only one passage per paper; it now uses a word with several matches.
+  - The comparative answer test's assertion that titles appear in the system prompt now checks the evidence headers instead.
+  - Frontend: the picker allowed a sixth paper only after the change (`not.toHaveAttribute aria-disabled`). `PaperChips` was missing (`Element type is invalid`). The 15-paper chat listed 15 chips instead of 4.
+- **Process error.** Running `ruff format app tests` reformatted two unrelated files (`development_worker.py`, `test_pdf_parser_structured.py`); both were restored from the index.
+- **Verification.** Backend 1080 passed in 218.3 s with Ruff clean. Frontend `npm run check` passed with 599 tests in 77 files, and `npm run build` passed. Fixture unittests: 26 OK.
+- **Not verified:**
+  - The Playwright journey has not been run.
+  - No live OpenAI calls were made.
+  - The UI has had no visual check.
+  - Name detection is literal: a paraphrased title or an author mentioned without a year is not a named paper.
