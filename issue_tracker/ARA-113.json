@@ -39,7 +39,9 @@
     "scripts/demo/clips/index.mjs",
     "docs/reference.md"
   ],
-  "commits": [],
+  "commits": [
+    "a83e5d3"
+  ],
   "pull_requests": [],
   "verification": "Red first: lib/timeline.test.mjs failed on a missing module, then 17 of 18 against stubs, then passed; the overlay shortest=1 fix and the per-stretch minimum window were each added as failing tests first; npm test now passes 19. A synthetic testsrc2 clip through clipFilter matched outputDuration (25.96 s against 25.944 s), and its burned-in timestamps matched mapTime within one output frame. A full rehearsal on ara-demo exposed six script faults (link names, empty-state rerun, an ambiguous Summary heading, picker names starting 'PDF attached', loose palette matching, badge flicker), each fixed and re-recorded. The final take from --reset hit one more race (a regenerated summary replacing its text under the chip click); after the fix, clips 5-9 were re-recorded into the same run. Master: 1920x1080 H.264, 25 fps, 280.2 s, silent AAC, 31 MB; contact sheets every 7 s and single frames checked every card, clip, fade and badge. The dev stack still has 6 papers and 6 chats.",
   "updated_at": "2026-10-10"
