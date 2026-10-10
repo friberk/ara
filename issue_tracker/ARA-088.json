@@ -25,14 +25,17 @@
     "Given EXPERIMENTAL_OPEN_MODELS is off, when multi-paper chats are used, then only hosted models apply; with the flag on, multi-paper chats are unavailable to local models while open models stay frozen.",
     "Given an answer citing several papers, when it renders, then each citation names its paper and page.",
     "Given a citation to a paper other than the one in the reader, when it is clicked, then the reader opens that paper's PDF in a new tab (or focuses its existing tab) at the cited passage; the user can switch between tabs and close any tab except the last.",
-    "Given a multi-paper chat, when it is opened or linked from any of its papers, then its URL is /papers/{first paper in the chat's list}/chats/{chatId}."
+    "Given a multi-paper chat, when it is opened or linked from any of its papers, then its URL is /papers/{first paper in the chat's list}/chats/{chatId}.",
+    "Given any multi-paper question on a hosted model, when the prompt is assembled, then it goes through the existing budgeted assembly (assemble_answer_prompt or its successor). Instructions, question and history shares keep their caps, and the evidence budget is split across papers with a per-paper floor, so the request never exceeds the hosted working budget (HOSTED_WORKING_CONTEXT_TOKENS).",
+    "Given five papers, a long conversation and a comparative question, when every planner, sub-question and synthesis call is assembled, then none raises CONTEXT_LIMIT. Paper summaries and headers enter prompts only as bounded short headers, never as full summaries."
   ],
   "test_cases": [
     "Migration upgrade/backfill test from 0007 with existing chats.",
     "Retrieval across documents with per-paper quotas and mixed embedding profiles.",
     "Citation validation across chat documents; foreign documents rejected.",
     "Frontend: multi-select picker, paper chips, cross-paper citation reader switch, chat listed under each paper.",
-    "Browser journey comparing two papers."
+    "Browser journey comparing two papers.",
+    "Budget test: five papers, a long history at the compaction limit and a comparative question; every assembled call stays within the input budget, with a per-paper evidence floor."
   ],
   "status": "planned",
   "related_files": [
