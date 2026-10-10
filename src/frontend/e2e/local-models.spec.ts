@@ -1,8 +1,10 @@
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 const modelKey = 'ifm-k2-horizon-7b'
 const modelName = 'IFM K2 Horizon 7B'
+// Downloads live in Settings > Open models and the default-model choice in Settings > Models (ARA-109).
+const tab = (page: Page, name: 'Models' | 'Open models') => page.getByRole('dialog', { name: 'Settings' }).getByRole('tab', { name, exact: true }).click()
 
 async function readyPaper(request: APIRequestContext) {
   const saved = await request.post('/api/v1/papers', { data: { provider: 'openalex', external_id: 'W123456789' } })
@@ -53,24 +55,30 @@ test.afterEach(async ({ request }) => {
 })
 
 test('E2E-09 Given missing weights, when downloading and leaving the browser page, then durable progress completes independently', async ({ page, context, request }) => {
-  await page.goto('/settings')
+  await page.goto('/?settings=models')
   await expect(page.getByRole('radio', { name: modelName, exact: true })).toBeDisabled()
+  await tab(page, 'Open models')
   await page.getByRole('button', { name: `Download ${modelName}`, exact: true }).click()
   await expect.poll(async () => (await installation(request))?.completed_bytes).toBeGreaterThan(0)
+  await page.keyboard.press('Escape')
   await page.getByRole('link', { name: 'Library', exact: true }).click()
   await expect(page).toHaveURL(/\/library$/)
   await page.close()
   const returning = await context.newPage()
+  // An old link to the section still lands on the downloads.
   await returning.goto('/settings#local-models')
   await expect(returning.getByRole('region', { name: `Manage ${modelName}` })).toBeVisible()
-  await expect(returning.getByRole('radio', { name: modelName, exact: true })).toBeEnabled({ timeout: 45_000 })
+  await expect(returning.getByRole('button', { name: `Delete ${modelName} weights`, exact: true })).toBeVisible({ timeout: 45_000 })
+  await tab(returning, 'Models')
+  await expect(returning.getByRole('radio', { name: modelName, exact: true })).toBeEnabled()
   await returning.reload()
+  await tab(returning, 'Open models')
   await expect(returning.getByRole('button', { name: `Delete ${modelName} weights`, exact: true })).toBeVisible()
   expect((await (await request.get('/api/v1/settings')).json()).default_model).toBe('gpt-5.6-luna')
 })
 
 test('E2E-10 Given an active download, when paused and reloaded, then progress stays paused until resume', async ({ page, request }) => {
-  await page.goto('/settings')
+  await page.goto('/?settings=open-models')
   await page.getByRole('button', { name: `Download ${modelName}`, exact: true }).click()
   await expect.poll(async () => (await installation(request))?.state).toBe('downloading')
   await page.getByRole('button', { name: `Pause ${modelName} download`, exact: true }).click()
@@ -80,22 +88,28 @@ test('E2E-10 Given an active download, when paused and reloaded, then progress s
   await expect(page.getByRole('button', { name: `Resume ${modelName} download`, exact: true })).toBeVisible()
   expect((await installation(request)).completed_bytes).toBe(bytes)
   await page.getByRole('button', { name: `Resume ${modelName} download`, exact: true }).click()
-  await expect(page.getByRole('radio', { name: modelName, exact: true })).toBeEnabled({ timeout: 45_000 })
+  await expect(page.getByRole('button', { name: `Delete ${modelName} weights`, exact: true })).toBeVisible({ timeout: 45_000 })
+  await tab(page, 'Models')
+  await expect(page.getByRole('radio', { name: modelName, exact: true })).toBeEnabled()
 })
 
 test('E2E-11 Given a local default, when its weights are deleted, then the saved default survives and generation stays blocked', async ({ page, request }) => {
   const paper = await readyPaper(request)
-  await page.goto('/settings')
+  await page.goto('/?settings=open-models')
   await page.getByRole('button', { name: `Download ${modelName}`, exact: true }).click()
+  await expect(page.getByRole('button', { name: `Delete ${modelName} weights`, exact: true })).toBeVisible({ timeout: 45_000 })
+  await tab(page, 'Models')
   const choice = page.getByRole('radio', { name: modelName, exact: true })
-  await expect(choice).toBeEnabled({ timeout: 45_000 })
+  await expect(choice).toBeEnabled()
   await choice.check()
-  await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-  await expect(page.getByText('Model defaults saved.')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Default model' }).getByText('Saved', { exact: true })).toBeVisible()
+  await tab(page, 'Open models')
   await page.getByRole('button', { name: `Delete ${modelName} weights`, exact: true }).click()
   const dialog = page.getByRole('alertdialog')
   await expect(dialog).toContainText('saved default')
   await dialog.getByRole('button', { name: 'Delete weights', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await tab(page, 'Models')
   await expect(choice).toBeDisabled()
   await expect(choice).toBeChecked()
   await page.reload()
@@ -113,18 +127,19 @@ test('E2E-11 Given a local default, when its weights are deleted, then the saved
 
 test('E2E-12 Given verified local weights, when summarizing and asking a paper, then grounded responses persist with the local model', async ({ page, request }) => {
   const paper = await readyPaper(request)
-  await page.goto('/settings')
+  await page.goto('/?settings=open-models')
   await page.getByRole('button', { name: `Download ${modelName}`, exact: true }).click()
+  await expect(page.getByRole('button', { name: `Delete ${modelName} weights`, exact: true })).toBeVisible({ timeout: 45_000 })
+  await tab(page, 'Models')
   const choice = page.getByRole('radio', { name: modelName, exact: true })
-  await expect(choice).toBeEnabled({ timeout: 45_000 })
+  await expect(choice).toBeEnabled()
   await choice.check()
-  const efforts = page.getByRole('radiogroup', { name: 'Reasoning effort' })
+  const efforts = page.getByRole('radiogroup', { name: 'Reasoning' })
   for (const name of ['None', 'Low', 'Medium', 'High']) await expect(efforts.getByRole('radio', { name, exact: true })).toBeVisible()
   await expect(efforts.getByRole('radio', { name: 'On', exact: true })).toHaveCount(0)
-  await expect(efforts.getByRole('radio', { name: 'Model default', exact: true })).toHaveCount(0)
+  await expect(efforts.getByRole('radio', { name: 'Runtime preset', exact: true })).toHaveCount(0)
   await efforts.getByRole('radio', { name: 'Low', exact: true }).click()
-  await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-  await expect(page.getByText('Model defaults saved.')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Reasoning' }).getByText('Saved', { exact: true })).toBeVisible()
   expect((await (await request.get('/api/v1/settings')).json()).reasoning_effort).toBe('low')
   await page.goto(`/papers/${paper.id}`)
   const summary = page.getByRole('article', { name: 'Paper summary' })
