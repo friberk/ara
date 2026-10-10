@@ -1069,3 +1069,11 @@ After the first round, the lead fast-forwarded the branch to the integration bra
 **Crossed messages.** The lead's resume message ("library matching not yet implemented") was sent before the report above. The branch had not been reset, and matching, the retrieval wording and the saved-default LLM test were already on it (`9b53e7b`, `5ed5c8b`, `e7567a7`, `238104f`, `0df528e`).
 - **One further change.** The composer for a paper whose PDF is being read used to say "Questions open when the PDF finishes processing." It now uses the same words as during retrieval: "You can ask questions once the PDF is ready." (`2c7dde4`).
 - **Red, then green.** The updated expectation in `ConversationPane.states.test.tsx` failed first with `Unable to find … You can ask questions once the PDF is ready.`
+
+**Decisions after ARA-086's follow-up (2026-10-10).**
+- **The LLM skip.** ARA-086 skips the LLM metadata step when an upload matches a library paper. The user had asked to keep that step intact, so the lead raised it. The lead recommended keeping the skip: the matched placeholder is absorbed and its metadata discarded, so the call would only cost money. Unmatched PDFs keep the unchanged fallback. The user agreed.
+- **The settings-table workaround.** The lead recommended moving upload-match state out of the prefixed `model_configurations` rows. The reasons:
+  - there are no foreign keys, so orphan rows and dangling redirects can occur;
+  - the library listing uses a string-prefix NOT IN filter;
+  - per-upload state is mixed into the settings table.
+  The user approved ARA-092, which uses migration 0009 after ARA-091's 0008 and comes before ARA-088. The workaround came from the lead's no-migration rule for this round.
