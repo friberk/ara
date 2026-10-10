@@ -1345,3 +1345,21 @@ An Opus agent built it on `feat/ara-095-library-delete-edit`, testing only in it
 - No live provider calls were made.
 - Real concurrent races were not run; the skip-locked path is simulated by deleting the paper with plain SQL.
 - Clicking a saved citation to a deleted paper opens the reader's error notice rather than a page; its excerpt still reads.
+
+**Addition from the user, the same day: a one-time metadata refresh.** The lead found that all 6 papers in a migrated copy of the user's library had no venue. They were saved or read before ARA-086. One upload, with no provider record, was still titled `paper.dvi`. The user asked for a durable refresh that runs once per existing paper. The lead also asked that the edit, lookup and delete pieces be reusable for ARA-097, and that the storage cleanup be callable for a single PDF.
+- **Design.**
+  - `queue_backfill` runs at API startup in `prepare_search`, before re-indexing. Under an identity lock it queues one `metadata` job with `refresh: "backfill"` for each library paper that has a provider record or a ready PDF, 3 s apart. It commits the `model_configurations` row `metadata_backfill` with them, so later startups queue nothing.
+  - Look up again (`refresh: "again"`) takes the same job path.
+  - **Saved papers** read their record again by ID.
+  - **Uploads without a record** have their stored PDF read again by `parse_in_child(..., layout=False)`. The layout model is skipped because both passes extract the metadata alike. The PDF's values replace earlier PDF values and fill missing ones, and the clues are checkpointed (`reread: true`), so a retry never parses twice.
+  - **Precedence.** A backfill keeps ARA-086's rule and also fills empty fields, with a venue counting as empty when no record names one. Look up again replaces every value except manual ones.
+- **Cleanup.** `queue_storage_cleanup(session, documents)` now holds the cleanup enqueue, so ARA-097 can remove one PDF.
+- **Red, then green:**
+  - The backfill tests failed with `ImportError: cannot import name 'queue_backfill'` (five), and the Look up again variant with `assert 0 == 1`: the PDF was not read again. All 6 then passed.
+  - The single-PDF cleanup test failed with `ImportError: cannot import name 'queue_storage_cleanup'`, then passed.
+  - My first version of a test helper deleted every job and hit `documents_ingest_job_id_fkey`; it now deletes only lookups.
+- **Full suite.**
+  - First run: 1 failed and 1115 passed. The failure was `test_integration.py::test_real_redis_worker_canary_end_to_end`: "Real Redis worker did not complete canary within 30 seconds".
+  - It passed alone twice (7 s each). A second full run passed with 1116 in 252.80 s and Ruff clean.
+  - I take it as a timing failure under load, since about 46 test containers were running on the machine; I did not investigate further.
+- **Not verified:** that a re-ingest sees the queued backfill and queues no second lookup. This follows from `queue_lookup`'s existing check of earlier jobs for the document, but no test covers it. The refresh has also not run against the user's library or live catalogs.
