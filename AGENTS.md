@@ -39,4 +39,4 @@ Bootstrap: `python3 scripts/bootstrap.py`. Start: `docker compose up --build`. L
 
 ## Definition of Done
 
-Acceptance met; relevant tests executed successfully; no critical regression; contract/migration docs current; Compose/reload works; data survives restart; issue and genuine agent evidence updated. External fixtures prove deterministic behavior, not live provider access. Source is AGPL-3.0 in the private GitHub repository `friberk/ara` (all branches); `main` deploys after CI passes (ARA-107). No credentials, uploaded PDFs, generated output or private interaction logs in commits.
+Acceptance met; relevant tests executed successfully; no critical regression; contract/migration docs current; Compose/reload works; data survives restart; issue and genuine agent evidence updated. External fixtures prove deterministic behavior, not live provider access. Source is AGPL-3.0 in the public GitHub repository `friberk/ara` (all branches; public since 2026-10-10); `main` deploys after CI passes (ARA-107). No credentials, uploaded PDFs, generated output or private interaction logs in commits.

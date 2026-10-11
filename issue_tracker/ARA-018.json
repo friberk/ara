@@ -17,14 +17,24 @@
   ],
   "status": "in_progress",
   "related_files": [
-    "docs/submission-checklist.md",
     "docs/agent-development-log.md",
-    "docs/verification-final.md"
+    "docs/plans/initial-plan.md",
+    "docs/submission-checklist.md",
+    "docs/verification-final.md",
+    "report/Makefile",
+    "report/figures/",
+    "report/pandoc/",
+    "report/report.md",
+    "report/report.pdf"
   ],
   "commits": [
-    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51"
+    "1390f9c22eb6ff098689dc1a1fb51ca2ce6ddf51",
+    "4880a9b056c1797e164ef3c55559ce65c6e74819",
+    "f8872a714ea06999f35b59538a394e4b4408f52e",
+    "b43343efdcb555b5687ab22931e75f09c7998dc6",
+    "c33e337193276fbea0fa968be085593e224c1d79"
   ],
   "pull_requests": [],
-  "verification": "Actual five-workflow live recording/screenshots retained in ignored local evidence; student-written reflection, publication and Brightspace submission remain pending.",
-  "updated_at": "2026-10-08"
+  "verification": "Demo video recorded under ARA-113. Reflection report written in report/report.md (Overview, Q1-Q5, Conclusion, IEEE references) with screenshots from the real Codex and Claude Code sessions in report/figures/; three Claude Code figures come from copies of their saved transcripts truncated at the pre-compaction point (content verified line by line against the originals, only the session id changed), as their captions state. report/report.pdf is built with pandoc and XeLaTeX via `make -C report`. The planning prompt is committed as docs/plans/initial-plan.md. Repository friberk/ara made public on 2026-10-10 after a secret scan of every branch's history. Remaining: the student's Brightspace submission.",
+  "updated_at": "2026-10-10"
 }
