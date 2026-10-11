@@ -1,0 +1,35 @@
+geometry: margin=1in
+fontsize: 11pt
+linestretch: 1.15
+mainfont: "Georgia"
+sansfont: "Helvetica Neue"
+monofont: "Menlo"
+monofontoptions: "Scale=0.80"
+colorlinks: true
+linkcolor: ece
+urlcolor: ece
+header-includes: |
+  \usepackage{xcolor}
+  \definecolor{ece}{HTML}{1F5673}
+  \definecolor{hdrgrey}{HTML}{7A7A7A}
+  \usepackage{fancyhdr}
+  \pagestyle{fancy}
+  \fancyhf{}
+  \fancyhead[L]{\small\color{hdrgrey}CS 593: AI-Assisted Software Engineering -- Fall 2026}
+  \fancyhead[R]{\small\color{hdrgrey}Berk Cakar}
+  \fancyfoot[C]{\small\color{hdrgrey}\thepage}
+  \renewcommand{\headrulewidth}{0pt}
+  \usepackage{sectsty}
+  \allsectionsfont{\sffamily\color{ece}}
+  \usepackage{fvextra}
+  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\}}
+  \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere}
+  \usepackage{parskip}
+  \usepackage{booktabs}
+  \usepackage{mdframed}
+  \definecolor{shadecolor}{HTML}{F2F4F6}
+  \mdfdefinestyle{codebox}{backgroundcolor=shadecolor,linecolor=shadecolor,linewidth=0.5pt,innerleftmargin=7pt,innerrightmargin=7pt,innertopmargin=5pt,innerbottommargin=5pt,skipabove=8pt,skipbelow=8pt}
+  \makeatletter\@ifundefined{Shaded}{\newenvironment{Shaded}{}{}}{}\makeatother
+  \renewenvironment{Shaded}{\begin{mdframed}[style=codebox]}{\end{mdframed}}
+  \surroundwithmdframed[style=codebox]{verbatim}
+  \usepackage{graphicx}
