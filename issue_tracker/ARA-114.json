@@ -33,7 +33,10 @@
     "docs/agent-development-log.md",
     "tests/infrastructure/test_agent_guides.py"
   ],
-  "commits": [],
+  "commits": [
+    "cd1bd07",
+    "7a71780"
+  ],
   "pull_requests": [],
   "verification": "python3 scripts/test-stack.py test: Ruff passed and 1228 pytest tests passed; the single-file command documented in AGENTS.md passed tests/test_chat_cost.py (4). Infrastructure unittest: 45 OK. Running openapi-typescript against the development API showed it differs from the committed generated.ts (canary route, hidden open-model routes), so AGENTS.md gives CI's ara-e2e command instead of npm run generate:api. All 63 archive branch tips match git rev-parse and are ancestors of main; every local branch is listed. Relative links and anchors in the three files: 0 problems. An independent reviewer compared old and new rule by rule; its findings (merge rule, citation scope, 19 unlisted branches, Definition of Done wording, open-model enable line, retained-weights pointer) were fixed. AGENTS.md: 158 lines, about 12.8 KB. CLAUDE.md first shipped as a symlink, which Claude Code loaded. At the user's request it is now a plain copy: test_agent_guides.py failed against the symlink ('CLAUDE.md must be a copy, not a symlink'), then passed after the copy, and the infrastructure suite ran 46 tests OK.",
   "updated_at": "2026-10-10"
