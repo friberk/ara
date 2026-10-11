@@ -1,0 +1,40 @@
+{
+  "id": "ARA-114",
+  "title": "AGENTS.md overhaul: a conventional agent guide, kept identical in CLAUDE.md for Claude Code",
+  "type": "documentation",
+  "priority": "P2",
+  "description": "User request on 2026-10-10: \"I think our AGENTS.md file is not up to very good repository standards. It feels so random. Can you check the top repositories from GitHub, how they use an AGENTS.md file, the documentation from OpenAI and Anthropic to overhaul, polish our AGENTS.md? It should feel like it belongs to those repos with thousands of stars. At the end, symlink it to CLAUDE.md as well so Claude Code can also pick it up.\" Follow-up: \"Then maintain CLAUDE.md as a copy then, add a rule saying that changes in one of them should be reflected to both. The two files should be kept identical\".",
+  "dependencies": [
+    "ARA-041",
+    "ARA-090",
+    "ARA-112"
+  ],
+  "acceptance_criteria": [
+    "Given the AGENTS.md files of high-star repositories and the agents.md, Codex and Claude Code guidance, when AGENTS.md is read, then it follows their common skeleton: overview, copy-pasteable commands including a narrow test run, repository map, architecture rules, conventions, testing, workflow, boundaries and definition of done.",
+    "Given the previous AGENTS.md, when its rules are compared with the new files, then every standing rule survives in AGENTS.md, docs/open-models-invariants.md or docs/archive-branches.md, and only obsolete history is dropped.",
+    "Given the archive branches, when docs/archive-branches.md lists them, then each tip matches git and each branch is an ancestor of main.",
+    "Given each command AGENTS.md lists, when it is run, then it works as described.",
+    "Given AGENTS.md and CLAUDE.md, when either changes, then both stay byte-for-byte identical, CLAUDE.md is a plain file rather than a symlink, and the rule saying so is at the top of both.",
+    "Given Codex's 32 KiB project-doc budget and Claude Code's 200-line guidance, when AGENTS.md is measured, then it stays within both."
+  ],
+  "test_cases": [
+    "git rev-parse and git merge-base --is-ancestor for every archive branch.",
+    "python3 scripts/test-stack.py test, then the single-file pytest command from AGENTS.md against ara-test.",
+    "openapi-typescript against the development API compared with the committed generated.ts.",
+    "A relative-link and anchor check over the new and changed Markdown files.",
+    "tests/infrastructure/test_agent_guides.py: red against the symlink, green after the copy; cmp AGENTS.md CLAUDE.md; wc -l -c AGENTS.md."
+  ],
+  "status": "completed",
+  "related_files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/open-models-invariants.md",
+    "docs/archive-branches.md",
+    "docs/agent-development-log.md",
+    "tests/infrastructure/test_agent_guides.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "python3 scripts/test-stack.py test: Ruff passed and 1228 pytest tests passed; the single-file command documented in AGENTS.md passed tests/test_chat_cost.py (4). Infrastructure unittest: 45 OK. Running openapi-typescript against the development API showed it differs from the committed generated.ts (canary route, hidden open-model routes), so AGENTS.md gives CI's ara-e2e command instead of npm run generate:api. All 63 archive branch tips match git rev-parse and are ancestors of main; every local branch is listed. Relative links and anchors in the three files: 0 problems. An independent reviewer compared old and new rule by rule; its findings (merge rule, citation scope, 19 unlisted branches, Definition of Done wording, open-model enable line, retained-weights pointer) were fixed. AGENTS.md: 158 lines, about 12.8 KB. CLAUDE.md first shipped as a symlink, which Claude Code loaded. At the user's request it is now a plain copy: test_agent_guides.py failed against the symlink ('CLAUDE.md must be a copy, not a symlink'), then passed after the copy, and the infrastructure suite ran 46 tests OK.",
+  "updated_at": "2026-10-10"
+}
