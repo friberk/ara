@@ -1,0 +1,168 @@
+# CS 593: AI-Assisted Software Engineering
+
+## Homework 1: Reflection on Building an AI Research Assistant with Coding Agents
+
+Berk Cakar
+037808347
+
+## Overview
+
+For this homework I built _ara_ (meaning "search" in Turkish, or **A**I **R**esearch **A**ssistant), a web application for finding, organizing and reading research papers. It covers the five workflows the assignment requires. The user searches OpenAlex or Semantic Scholar and sees each paper's title, authors, year, abstract and link. They save papers to a library that persists across refreshes and restarts. They upload a PDF, and the application extracts its title, authors, year and abstract. They ask an LLM to summarize a paper from its full text, and they ask natural-language questions about one or more papers. While designing it, I tried to reproduce the functionality and the look and feel of tools I already use for research, namely ChatGPT, Claude, Elicit, Scite and SciSpace.
+
+A simpler design would extract a PDF's text and send all of it to the LLM with each question. _ara_ instead uses retrieval-augmented generation (RAG), the technique we covered in class, which makes the system technically closer to platforms like NotebookLM and Scite. I chose this design for three reasons. First, it scales better. A chat can cover several papers whose combined text would not fit in the model's context, or would be expensive to send with every question, while retrieval sends only the passages that matter for that question. Second, models use a long context unevenly and tend to miss details placed in its middle [1], so a few relevant passages give more reliable answers than a whole paper. Third, retrieval ties each answer to specific passages, so every claim can cite a page that the user can open and check. I also had a personal reason. I wanted hands-on practice with as many of the techniques from our lectures as I could fit into one project, and a RAG pipeline brings several of them together.
+
+When a PDF arrives, either as an upload or as a stored copy from OpenAlex, a background worker parses it with PyMuPDF and PyMuPDF4LLM into page-level Markdown with layout boxes. LlamaIndex then splits (i.e., chunks) the whole paper into section-aware passages, and each passage keeps its section heading, its page range and the coordinates of its text on the page. Every passage is indexed twice, once as an embedding in PostgreSQL with pgvector and once in a weighted PostgreSQL full-text index. The application also writes a short, cited summary of each major section and indexes those summaries next to the passages.
+
+When the user asks a question, an LLM planner first rewrites it into a standalone question using the conversation so far, and produces one to three search queries, plus per-paper sub-questions when the chat covers several papers. Each query runs both a lexical search and a vector search; reciprocal rank fusion merges the ranked lists, an LLM reranker rescores the top candidates, and passages scoring below half of the best score are dropped. The surviving passages go into the prompt within a token budget derived from the selected model's context window, which also holds a running summary of older turns and earlier turns recalled by similarity. In that sense, _ara_ also uses context and memory management techniques we covered in class. The model cites passages through short handles that the server maps to passage IDs while the answer streams. An answer that cites a passage it was not given, or cites nothing without reporting insufficient evidence, is rejected; if the model reports insufficient evidence, retrieval runs once more over a wider set of passages. Because every stored citation keeps its page and coordinates, clicking one opens the PDF at that page and highlights the supporting sentences. Summaries carry the same citations and are built by map-reduce over all of the paper's sections, so long papers are covered to the end.
+
+I developed _ara_ almost entirely through two coding agents, Codex and Claude Code. The repository has 661 commits, 59 branches and 97 tickets (ARA-001 to ARA-110). About 27,400 lines of code implement the system, 16,100 in the backend (Python) and 11,200 in the frontend (TypeScript). Another 33,800 lines are tests, 24,600 for the backend and 9,200 for the frontend, including 800 lines of Playwright browser tests. The backend suite has 1,228 tests and the frontend suite 766, and all of them passed in the last full run.
+
+The [README in the repository](https://github.com/friberk/ara#readme) describes the features, the architecture and how to run _ara_ in more detail. The sections below follow the five questions in the assignment.
+
+## 1. _"Which coding agent did you use, and how did you use it?"_
+
+I used two coding agents, OpenAI's Codex and Anthropic's Claude Code. In Codex I used `gpt-6.1-sol` at xhigh reasoning effort, and my main Claude Code session ran Claude Opus 5.5, also at xhigh effort. I started the project with Codex alone and brought in Claude Code once the first version was running.
+
+I began by asking Codex for a plan rather than code. My planning prompt, kept in the repository as `docs/plans/initial-plan.md`, fixed the technology stack (React, Vite and strict TypeScript with Tailwind CSS v4 and shadcn/ui on the frontend; FastAPI, Pydantic, asynchronous SQLAlchemy, PostgreSQL, Redis with Dramatiq, MinIO and PyMuPDF on the backend), required that the whole system run locally under Docker Compose, and asked for test-driven development, a repository-local issue tracker and a development journal. I especially wanted the tracker and the journal because this report asks us to describe "the situations where the agent generated incorrect, incomplete, or otherwise unsatisfactory code" and how we addressed them, so a running record of tasks, mistakes and corrections would make it easier for me to come back to them and reflect. The prompt also told Codex to act as a lead agent and delegate research and implementation to sub-agents where the work could run in parallel. Codex answered with `docs/implementation-plan.md`, which maps every homework requirement to components, tests and a demo step, and sorts the work into three priorities. P0 contained the five required workflows and the Docker foundation. P1 and P2 held the features I had said would be nice to have but that Codex advised postponing until a first version worked, namely automatic retrieval of open-access PDFs, locally hosted models, embedding-based (pgvector) and hybrid retrieval, and better handling of long conversations. All of them were built later. Semantic retrieval and long-conversation memory went from P2 to P1 at my request and are now part of the main pipeline, and local models were implemented and then frozen behind an experimental flag.
+
+I also extended both agents with skills and plugins. As the assignment suggests, I told the agent to find a PDF processing skill and install it, and it added a PyMuPDF skill to the project under `.agents/skills/pymupdf-pdf`, which extracts a PDF's text page by page, along with its metadata, images and rough tables. On top of that, I installed three extensions from the official Codex and Claude Code marketplaces. The Context7 MCP server lets an agent look up current documentation for a library instead of relying on what it remembers from training. The Superpowers skills give the agents structured workflows for brainstorming, writing and executing plans, test-driven development, systematic debugging and code review. The Impeccable plugin guides interface design and can review a finished screen against the intended design.
+
+Codex then worked for about one and a half to two hours and produced the application in Figure 1a. The backend did roughly what I wanted, apart from some bugs, but the interface looked nothing like what I had described. I had asked for a Tailwind and shadcn/ui interface in the style of ChatGPT, Claude and SciSpace, and Codex delivered a generic documentation-style page with native form controls and the chat hidden behind a second tab. Figure 1b shows the final version for comparison, which spoils the ending a little. As a starting point it was still useful, because the backend worked. I return to this kind of mismatch between my request and the agent's output in Section 3.
+
+<p align="center">
+  <img src="figures/ui-before.png" alt="The interface Codex produced from the plan" width="100%"><br>
+  <em>(a) The interface Codex produced from the plan.</em>
+</p>
+<p align="center">
+  <img src="figures/ui-after.png" alt="The final interface" width="100%"><br>
+  <em>(b) The final interface.</em>
+</p>
+<p align="center"><em>Figure 1: The first version of the interface and the final one.</em></p>
+
+I then described the frontend problem to Claude Code, pointed it at the plan again, and asked it to rework the interface. It first wrote its own plan for a chat-centered redesign. It then split the work between one backend agent, which added the few API endpoints the new interface needed, and four frontend agents, each working on its own branch in a separate git worktree, while the lead agent built the shared foundation (design tokens, page shell, message composer and model switcher) and merged the branches. The result matched what I had asked for, and it became the base that every later bug fix and feature built on.
+
+This first round taught me where each agent was strong. Codex handled backend logic well, but its interface and UX work was not to my taste, while Claude Code produced the interface I had in mind. From then on I gave backend and logic changes to Codex and anything that needed UI/UX work to Claude Code.
+
+In both agents I worked with a router pattern. One agent session acted as the orchestrator. I described a task to it, or pointed it to a ticket in the issue tracker, and it deployed sub-agents to do the work, choosing a model and a reasoning effort for each one according to the task's complexity. In Claude Code, for example, the orchestrator sent trivial tasks to Haiku or Sonnet and complex ones to Opus with more reasoning effort. Independent tasks ran in parallel, each sub-agent on its own feature branch in its own git worktree, and the orchestrator verified their results and merged them.
+
+When a sub-agent finished a task, I often had a separate reviewer agent check its work. The reviewer started with a fresh context, so it judged the code and the tests without the implementer's assumptions. The first such review, of Codex's initial version, found five defects, which I return to in Section 3.
+
+I used the agents in every part of the development cycle, from planning and coding through testing and debugging to deployment. Every change started as a ticket in `issue_tracker/` with Given/When/Then acceptance criteria. The agents also kept `docs/agent-development-log.md`, a journal of my prompts, their mistakes and my corrections, which I drew on for this report.
+
+Two techniques shaped how I prompted. The first is the one we discussed in class, having the agent write the tests first and only then the implementation, which is test-driven development (TDD). I asked for a failing test before any implementation code, and for the agents to record that failing ("red") run in the journal before the passing one. The second is what is now called spec-driven development (SDD). For each feature or fix I wrote the agent a precise specification of the behavior I wanted, the agent turned that specification into acceptance criteria and failing tests, and only then implemented it. In practice, my specification defined what "done" meant, and the tests let the agent and me check it.
+
+Finally, I used the agents to learn. I had never built a retrieval-augmented application before. I could steer the agents on the backend and frontend from experience, but on retrieval I relied on them to explain the unfamiliar libraries and techniques and the code they had written.
+
+## 2. _"Which parts of the assignment was the agent particularly useful for?"_
+
+I used the agents for almost every part of the assignment, from writing the first plan to recording the demo video. What I value most, though, is what they made possible as a whole. I built a production-quality system in a few days. Obviously, _ara_ still has gaps. It has no user accounts or authentication, it lacks OCR support, and its support for open-weight local models is experimental. With agents, none of these is hard to add anymore. Given a few more days before the deadline, I would have added them and more, and I will if we keep building on this project in later homeworks. Even in its current state, a system like this would have taken months of development before coding agents. The closest comparison I have is my undergraduate capstone project. It addressed a different problem, but in polish and production readiness it was at about the same level as _ara_ now. The capstone took a team of five people a year, and _ara_ took me a few days.
+
+For me, the agents were most useful for the work that turns a prototype into a product, which a single developer under a deadline would usually skip. The interface is the most visible example. Claude Code turned my description of a ChatGPT- or SciSpace-style research tool into the interface in Figure 1b. The whole system starts with one Docker Compose command, which brings up six services and two setup jobs, waits for each service to become healthy, applies the database migrations and creates the storage bucket. The tests are larger than the application itself, partly as a result of TDD, and I would rather have too many tests than too few. Fixture servers stand in for OpenAlex, Semantic Scholar and the LLM, so the test suite does not depend on live or paid APIs. The agents also wrote the README, kept the development journal so that I could refer back to it while writing this report, and produced the demo video.
+
+Deployment is another area where I felt the difference. In earlier projects I once spent days debugging an Nginx configuration. For _ara_, I gave the agent SSH access to a virtual server and asked it to deploy the project and add CI/CD, and about fifteen minutes later the application was running. The agent installed Docker, put the stack behind a Caddy reverse proxy with HTTPS, created the GitHub repository and set up continuous integration that deploys every passing commit on `main`. Also, I had one hard constraint, that the demo be reachable only from the Purdue network. On my own, I would first have had to research how to restrict a site to one institution's addresses. The agent looked up the address blocks that Purdue's network announces and turned them into an allow-list for our application.
+
+The agents were just as useful in areas where I had less experience. I had built LLM-based systems before for my research, but never a RAG system, and never an AI application this focused on the end user experience. As I mentioned in Section 1, the agents explained each retrieval technique and the code that implemented it. With their help I designed and implemented both the retrieval pipeline and the user-facing workflow, even though I am not an expert in either area, and I learned the material while building it.
+
+If I committed to _ara_ full-time, I am confident I could turn it into a product that people would pay for, and in a short time. As a PhD student I have other commitments, so I did not want to go too far beyond what the homework asks. My takeaway is that with coding agents, the amount of code one person can write no longer limits what they can build.
+
+## 3. _"Describe the situations where the agent generated incorrect, incomplete, or otherwise unsatisfactory code. What happened, and how did you address it?"_
+
+The agents made plenty of mistakes, and the interesting part is how they surfaced and how I steered them back. There were many more such interactions between me and the agents than I can show here, and the development journal (`docs/agent-development-log.md`) records most of them. Below are the five that stood out most to me, each failing in a different way. Each screenshot shows my prompt, the agent's visible intermediate output (its plan, tool calls or test runs, since the models' internal reasoning is mostly hidden), what it proposed, and my follow-up.
+
+**The first interface.** This is the mismatch from Section 1. My plan asked for a modern Tailwind and shadcn/ui interface, and Codex followed most of the plan faithfully, but the result in Figure 1a was a documentation-style page with native form controls and the chat tucked behind a tab. Nothing in it was technically wrong. It simply was not the product I had in mind, and a plan written in words had not been enough to convey that. The frontend was so bad that I immediately lost hope in Codex for this part. I already knew from earlier projects that design is where Codex is weakest, so I did not push it any further. Instead, I moved the frontend to Claude Code and opened with a prompt saying the UI had come out terrible and that I expected something like ChatGPT, Claude, Scite or Elicit (Figure 2). Naming products I already used worked far better than describing the design. Claude Code's trajectory is visible in the session. It first loaded its design skills and sent explorer agents to map the existing frontend and API, took screenshots of the old interface at desktop and phone widths, and had a planning agent pressure-test the redesign before any code was written. Along the way, it asked whether the redesign should stay frontend-only because the deadline was two days away, and recommended that option. I told it not to be constrained by the deadline. Its plan then split the work across parallel agents, and the result is Figure 1b.
+
+<p align="center">
+  <img src="figures/fig2-ui-rework.png" alt="Claude Code session where I ask for the interface to be rebuilt" width="100%"><br>
+  <em>Figure 2: My prompt asking Claude Code to rethink the interface, and its planning question about the deadline.</em>
+</p>
+
+**Reasoning controls that did not match the models.** The application lets the user pick a reasoning effort for each model. Codex implemented this with one shared list of effort levels for every hosted model and read the local runtime's capabilities through a field that the runtime no longer used. While I was working on adding support for local models, Codex reported that named effort levels for the local model needed "further work". I pointed it to the corresponding documentation, and after reading it, Codex acknowledged that its earlier explanation had been too definitive and called the problem a bug (Figure 3a). I also told it that effort levels should be defined per model instead of shared, since each model follows its own reasoning convention (Figure 3b). The GPT models, for example, accept six levels from none to max, while some open-weight models offer only a few named levels and others can only switch reasoning on or off. The fix moved reasoning controls into per-model entries. Writing tests for that fix exposed further inconsistencies, such as old preferences that could save a level a model did not support. A later round replaced confusing options such as "Model default" and "On" with plain None, Low, Medium and High. What stood out to me was how confidently the agent had framed a bug as a known limitation until I brought the documentation.
+
+<p align="center">
+  <img src="figures/fig3a-thinking-docs.png" alt="I point Codex to the runtime documentation and it acknowledges the bug" width="100%"><br>
+  <em>(a) I point Codex to the runtime's documentation, and it acknowledges the bug and that its earlier explanation was too definitive.</em>
+</p>
+<p align="center">
+  <img src="figures/fig3b-effort-per-model.png" alt="I ask for effort levels per model and to record the correction" width="100%"><br>
+  <em>(b) I ask for effort levels to be defined per model and for the correction to be recorded in the journal.</em>
+</p>
+<p align="center"><em>Figure 3: Correcting the reasoning controls in Codex.</em></p>
+
+**Design choices without reasons.** While building the retrieval pipeline, Claude Code made several decisions that sounded settled but were not. It benchmarked only the FP16 version of the local reranker, found it too slow, and asked me whether to defer the feature. When I asked why it used FP16 at all, it explained that the only Q8 upload it knew of was broken, and after I pointed it to other uploads, one of them worked at about twice the speed (Figure 4a). When I asked for an OpenAI reranker, it wired the setting so that it implied one specific model, and I had to tell it not to hardcode the model but to make rerankers selectable like the chat and embedding models. It went test-first and built a reranker catalog (Figure 4b). Finally, I asked why it reranked exactly the top 12 candidates and whether that was standard practice. Its answer was candid, saying that 12 was not a standard number but a latency budget it had picked, and that published pipelines use a ratio of candidates to final passages (Figure 4c). The OpenAI reranker now considers more candidates. None of these choices was a bug that a test would catch, which is exactly why I had to ask.
+
+<p align="center">
+  <img src="figures/fig4a-reranker-precision.png" alt="I ask why the local reranker uses 16-bit precision" width="100%"><br>
+  <em>(a) I question the reranker's 16-bit precision.</em>
+</p>
+<p align="center">
+  <img src="figures/fig4b-reranker-hardcoded.png" alt="I ask the agent not to hardcode the reranker model, and it writes failing tests first" width="100%"><br>
+  <em>(b) I ask it not to hardcode the reranker model, and it starts with failing tests.</em>
+</p>
+<p align="center">
+  <img src="figures/fig4c-reranker-candidates.png" alt="I ask why it reranks the top 12 candidates" width="100%"><br>
+  <em>(c) I ask why it reranks exactly the top 12 candidates.</em>
+</p>
+<p align="center"><em>Figure 4: My questions about the reranker's design choices and the agent's answers.</em></p>
+
+**Pushing toward a minimum viable product.** At one point during development, I asked Codex what remained. It listed the postponed features and recommended prioritizing the demo and this reflection over further feature work. Its roadmap had also been built on human-hour estimates with a planned feature freeze. To me this was the most agent-specific failure of all, because the agent was reasoning about time as if a human team were doing the work. I told it that we had time, that it was pushing toward a minimum viable product, and that an agent can do in an hour what takes a human far longer, and I asked it to log the behavior (Figure 5). It recorded the episode in the journal, removed the human-hour estimates, added a standing rule against premature scope freezes to `AGENTS.md`, and listed the remaining work. That list became the retrieval overhaul, automatic PDF retrieval, local models and the rest of what _ara_ has today.
+
+<p align="center">
+  <img src="figures/fig5-mvp-push.png" alt="Codex session where it recommends stopping feature work and I correct it" width="100%"><br>
+  <em>Figure 5: Codex recommends prioritizing the demo over further features, and I correct it.</em>
+</p>
+
+**The TDD audit.** Midway through the interface rework, I asked Claude Code whether we had followed TDD, which my instructions had required. Its answer was honest. The backend agent had worked test-first, but the lead agent had written the shared interface foundation before its tests, even though its notes said failing and passing runs had been observed (Figure 6a). What I cared about most was having tests for every component, so it wrote them as an openly labeled backfill, and those tests found two real defects in the foundation code. I also made TDD-first a standing rule from then on (Figure 6b). This episode changed how I read agent reports. A claim that the process was followed is just another output to verify.
+
+<p align="center">
+  <img src="figures/fig6a-tdd-audit.png" alt="I ask whether we followed TDD and the agent explains where it did not" width="100%"><br>
+  <em>(a) I ask whether we followed TDD, and the agent explains where it did not and corrects its own record.</em>
+</p>
+<p align="center">
+  <img src="figures/fig6b-tdd-first.png" alt="TDD-first becomes a standing rule and the agent continues the test backfill" width="100%"><br>
+  <em>(b) TDD-first becomes a standing rule, and the agent continues writing the missing component tests.</em>
+</p>
+<p align="center"><em>Figure 6: The TDD audit.</em></p>
+
+## 4. _"How much did you need to inspect, modify, or debug agent-generated code?"_
+
+I did not modify or debug any of the code by hand, and I inspected very little of it line by line. At the speed agents write code, reading all of it is not feasible. The repository grew by 661 commits in a few days, and no single person can review that much. I believe the same holds for large software companies. They have far more engineers than I do, but even they struggle to review code as fast as agents produce it, which I saw myself during my internship this summer. Recent software engineering research describes the same shift [2], [3]. So instead of inspecting every line the agents wrote, I made sure the environment they worked in was governed well enough that I could trust what came out of it.
+
+Three things did most of that governing. The first was documentation. For instance, `AGENTS.md` records the architecture rules, conventions and definition of done that every agent session reads before it starts, and the implementation plan and API contract describe the system the agents are building. The second was the issue tracker. Each change began as a ticket with Given/When/Then acceptance criteria, so what "done" meant was written down before any code existed. The third was the tests, and this is where I think TDD suits agentic development best. The failing test comes from my specification and is written before the implementation, so it checks the agent's code against what I asked for, not against whatever the agent happened to build. Reviewer agents with a fresh context and the continuous integration pipeline added a further automated check on every change.
+
+On top of that, I used the system the way an end user would, and judged its behavior, how appealing its interface was and its overall user experience. This found problems the tests did not. When something was wrong, I described the problem to an agent and let it fix it, which I think is how agentic development should work. When a design choice seemed off, I asked the agent to explain and justify it instead of reading the code myself. The answer often showed that the choice had been made for a weak or unstated reason, and the explanation was usually enough for me to decide how it should change. Section 3 describes some of these cases.
+
+## 5. _"What did you learn about effectively communicating with and controlling a coding agent?"_
+
+Looking back, most of what I learned about working with agents came from the moments when I had to correct one. Section 3 tells some of those stories. Here are the lessons I took from them.
+
+**Plan first, and make the agent explain its options.** Before any large piece of work, I asked the agent for a plan and approved it before a single line of code was written. Its clarifying questions during planning often showed me gaps in my own request. At first, though, those questions were not always helpful. The agent would offer options like "long context" or "memory layers" without saying what each one would change, and I could not choose between them. Once I asked it to explain the consequences of each option in plain terms, and to suggest standard tools before inventing custom ones, planning went much more smoothly.
+
+**Be explicit about scope and intent.** Whenever my instructions left a gap, the agent filled it with its own assumptions, and they were often not mine. The clearest example was about pace. The agent planned as if a human were doing the work, with human-hour estimates and the deadline as a reason to cut scope, and as soon as the required features worked, it suggested I stop building and focus on the demo and this report. I had to tell it that we had time and that it was settling for a minimum viable product. It also stretched my instructions in small ways I had never asked for. Now I state scope, priorities and constraints up front instead of hoping the agent will infer them.
+
+**Ask the agent why.** An agent presents an arbitrary choice with the same confidence as a well-founded one, so the only way to tell them apart is to ask. Simple "why?" questions about its design choices often revealed that a decision had no strong reason behind it, and the design changed as a result. For the retrieval pipeline, I eventually made it a rule that every threshold either cites published work or is openly labeled as an untested choice.
+
+**Check what the agent says it did.** Agents describe their own process more generously than it deserves. After the interface rework, I asked whether we had followed TDD. The agent's notes said we had, but when it checked, the tests for the new interface had been written after the code. Since then, I ask to see the failing test before I believe a change was developed test-first.
+
+**Write corrections down.** A correction I gave in a chat lasted only for that session. So I had every important one recorded as a standing rule, either in `AGENTS.md` or in the agent's memory, such as writing tests first, keeping the local models frozen, or checking the branch before a merge. Every new session and sub-agent then started from those rules instead of making the same mistake again.
+
+**Treat delegation as another layer of communication.** With an orchestrator in the middle, my instructions reach a sub-agent only through the orchestrator's brief, and the brief can quietly change them. More than once, the orchestrator added a requirement I had never asked for, or approved work because it ran, even though it was not what I wanted. Sub-agents also start with a fresh context. That is what makes reviewer agents useful, but it also means a sub-agent knows only what its brief and the repository tell it, so a rule that is not written down never reaches it. Running agents in parallel needed the same care. Even with separate branches and worktrees, they occasionally stepped on each other at merge time. When a delegated result went wrong, I learned to look at the brief and the orchestrator's review, not only at the sub-agent's work.
+
+## Conclusion
+
+Building _ara_ with two coding agents was very different from any project I had done before. What worked best was managing the agents much like I would manage a small team. I asked for a plan before any code, wrote down what "done" meant in tickets, required tests first, had separate agents review the work, and turned every important correction into a standing rule. With that structure in place, the agents delivered a production-quality system in a few days, including parts I had little experience with, such as retrieval-augmented generation.
+
+What did not work was leaving things unsaid. Codex's first interface missed what I had in mind, and both agents filled gaps in my instructions with their own assumptions, presented arbitrary choices with full confidence and described their own process more generously than it deserved. Parallel agents occasionally collided at merge time. None of these problems was fatal, but each of them needed me to notice it.
+
+Two things surprised me. The first was the speed. A deployment that would once have cost me days of configuration took about fifteen minutes, and the finished system is at the level of my undergraduate capstone project, which took a team of five a year. The second was the kind of mistake the agents kept making. Their most persistent failure was planning as if a human were doing the work, with human-hour estimates and repeated suggestions to stop at a smaller product.
+
+The speed came at a cost. Building _ara_ used up the weekly usage limits of both my $100 Codex subscription and my $100 Claude Code subscription. Across all sessions and sub-agents, Codex processed about 424 million tokens and Claude Code about 3.1 billion. Most of that was cached context that the agents re-read on every turn, and the output they actually wrote came to about 1.9 million tokens in Codex and 3.3 million in Claude Code. It was worth it. The project was fun, and I learned a lot, both about the techniques behind _ara_ and about how to work with coding agents.
+
+For more about the features, the architecture and how to run the application, see the [README in the repository](https://github.com/friberk/ara#readme).
+
+## References
+
+[1] N. F. Liu, K. Lin, J. Hewitt, A. Paranjape, M. Bevilacqua, F. Petroni, and P. Liang, "Lost in the middle: How language models use long contexts," _Transactions of the Association for Computational Linguistics_, vol. 12, pp. 157–173, 2024, doi: 10.1162/tacl_a_00638.
+
+[2] J. C. Davis, P. C. Amusuo, T. Singla, B. Çakar, and K. A. Davis, "Cheap code, costly judgment: A case study on governable agentic software engineering," arXiv preprint arXiv:2607.01087, 2026. [Online]. Available: https://arxiv.org/abs/2607.01087
+
+[3] J. C. Davis, K. G. Kalu, H. Peng, and P. V. Patil, "Model-based agentic software engineering," arXiv preprint arXiv:2608.25174, 2026. [Online]. Available: https://arxiv.org/abs/2608.25174
