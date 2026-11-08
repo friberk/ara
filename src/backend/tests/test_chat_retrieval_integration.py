@@ -7,7 +7,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.models.research import ChatMessage
+from app.models.research import ChatMessage, Document, DocumentChunk, Paper
 from tests.support.answers import ask, first_handle, named, parse, use_hosted
 from tests.support.chats import new_chat as chat_with_papers
 from tests.support.evidence import CHUNK_SET, OPENAI, TITLE, seed_structured
@@ -217,6 +217,95 @@ async def test_given_replayed_request_when_streaming_then_nothing_is_retrieved_o
     assert named(events, "message.completed")[0]["retrieval"]["mode"] == "hybrid"
     assert named(events, "message.status") == []
     assert (len(retrievals), len(calls), len(embeddings)) == (1, 1, 1)
+
+
+NEWER_PDF_ONLY = "BM25 recall in the newer PDF is NEWER-PDF-ONLY."
+
+
+async def remove_current_pdf(resources, paper_id) -> None:
+    from app.main import create_app
+
+    app = create_app(resources.settings)
+    app.state.resources = resources
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        removed = await client.delete(f"/api/v1/papers/{paper_id}/pdf")
+    assert removed.status_code == 204, removed.text
+
+
+async def replace_current_pdf(resources, paper_id) -> None:
+    async with resources.sessions() as session, session.begin():
+        newer = Document(
+            id=uuid4(),
+            paper_id=paper_id,
+            status="ready",
+            object_key=f"documents/{uuid4()}.pdf",
+            sha256=uuid4().hex + uuid4().hex,
+            original_filename="newer.pdf",
+            byte_size=10,
+            request_id=uuid4(),
+            page_count=1,
+            chunk_set=CHUNK_SET,
+            parser="pymupdf4llm-layout",
+        )
+        session.add(newer)
+        await session.flush()
+        session.add(
+            DocumentChunk(
+                id=uuid4(),
+                document_id=newer.id,
+                chunk_set=CHUNK_SET,
+                ordinal=0,
+                section_path=["Results"],
+                heading="Results",
+                kind="text",
+                page=1,
+                page_end=1,
+                text=NEWER_PDF_ONLY,
+                context_text=NEWER_PDF_ONLY,
+                bboxes=[[1, 72.0, 90.0, 540.0, 180.0]],
+                token_count=9,
+            )
+        )
+        (await session.get(Paper, paper_id)).active_document_id = newer.id
+
+
+@pytest.mark.parametrize(
+    "change", [remove_current_pdf, replace_current_pdf], ids=["removed", "replaced"]
+)
+async def test_given_a_chat_pinned_to_an_earlier_pdf_when_following_up_then_that_pdf_answers(
+    resources, monkeypatch, embeddings, change
+):
+    """Given a chat whose paper's PDF changed, a follow-up completes from the PDF it pinned."""
+    paper_id, document_id, chunk_ids = await seed_structured(resources)
+    chat_id = await new_chat(resources, paper_id, document_id)
+    calls = []
+    use_hosted(monkeypatch, resources, calls, cite_first)
+    _, events = await ask(resources, chat_id, "How does BM25 recall compare?")
+    assert named(events, "message.completed")
+    await change(resources, paper_id)
+    # A follow-up has history, so the chat's model first rewrites it into a standalone search.
+    rewritten = "BM25 recall compared with dense retrieval"
+    plan = {
+        "standalone_question": rewritten,
+        "search_queries": [rewritten],
+        "needs_paper_evidence": True,
+    }
+    planner = hosted_responses(monkeypatch, resources, lambda body: json.dumps(plan))
+
+    prepared, events = await ask(resources, chat_id, "And how does it hold up?")
+
+    assert not named(events, "message.failed")
+    assert len(planner) == 1
+    (completed,) = named(events, "message.completed")
+    assert completed["grounding"] == "supported"
+    assert completed["retrieval"]["search_queries"] == [rewritten]
+    (cited,) = completed["citations"]
+    assert cited["document_id"] == str(document_id)
+    assert cited["chunk_id"] in {str(chunk_id) for chunk_id in chunk_ids}
+    assert "NEWER-PDF-ONLY" not in calls[-1]["input"][-1]["content"]
+    assert (await stored(resources, prepared.assistant.id)).state == "completed"
 
 
 @pytest.mark.parametrize("output", ["unknown_handle", "foreign_source"])

@@ -114,9 +114,35 @@ async def test_a_refusal_reports_openalexs_own_wait(headers, wait):
         "http://a452eddbbe06eb7d02f4879cee70d29c.r2.cloudflarestorage.com/openalex-pdfs/W123.pdf",
         "https://evil.r2.cloudflarestorage.com/openalex-pdfs/W123.pdf",
         "https://127.0.0.1/private",
+        f"{STORAGE}:8443/openalex-pdfs/W123.pdf",
+        f"{STORAGE}:80/openalex-pdfs/W123.pdf",
+        f"{STORAGE}:99999/openalex-pdfs/W123.pdf",
+        "https://content.openalex.org:8443/works/W456.pdf",
     ],
 )
 async def test_redirects_leave_openalex_only_for_its_storage(location):
+    result, requests, _ = await fetch(response(302, headers={"Location": location}))
+    assert result.outcome == "unsafe_url" and len(requests) == 1
+
+
+async def test_a_storage_link_naming_the_default_port_downloads():
+    def explicit(request):
+        if request.headers["Host"] == "content.openalex.org":
+            return response(302, headers={"Location": f"{STORAGE}:443/openalex-pdfs/W123.pdf"})
+        return response(200, content=PDF, headers={"Content-Type": "application/pdf"})
+
+    result, requests, resolver = await fetch(explicit)
+    assert result.outcome == "downloaded" and len(requests) == 2
+    assert [port for _, port in resolver.calls] == [443, 443]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=httpx.InvalidURL,
+    reason="ARA-120: a redirect with a non-numeric port escapes fetch instead of being refused.",
+)
+async def test_a_redirect_with_a_malformed_port_is_refused():
+    location = f"{STORAGE}:abc/openalex-pdfs/W123.pdf"
     result, requests, _ = await fetch(response(302, headers={"Location": location}))
     assert result.outcome == "unsafe_url" and len(requests) == 1
 

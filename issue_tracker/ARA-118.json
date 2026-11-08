@@ -1,0 +1,26 @@
+{
+  "id": "ARA-118",
+  "title": "A printed year or abstract stays empty after the upload pipeline",
+  "type": "bug",
+  "priority": "P1",
+  "description": "Found by HW2 round 1 (ARA-117) using the user's rule: run the upload pipeline as it ships, with a mocked model and no provider match, and count a bug only if a required field stays empty after that. Two causes. (1) ingestion.py asks the model only when the title or the authors are missing, so a PDF with embedded title and authors never gets a model read of a year or abstract the parser missed. (2) extract_metadata in llm.py keeps an abstract only if it appears verbatim in the extracted text, but two-column page text interleaves the columns, so a correct abstract is dropped. Parser misses alone are not counted as this bug.",
+  "dependencies": [
+    "ARA-117"
+  ],
+  "acceptance_criteria": [
+    "Given a PDF with embedded title and authors and a printed year and abstract the parser does not read, when it is uploaded with a model that reports them and no provider matches, then the paper has that year and abstract.",
+    "Given a two-column PDF whose columns share baselines, when it is uploaded with a model that reports its abstract and no provider matches, then the paper has that abstract.",
+    "Given a model that returns an abstract the paper does not contain, when the upload is processed, then that abstract is still rejected."
+  ],
+  "status": "observed",
+  "related_files": [
+    "src/backend/app/services/ingestion.py",
+    "src/backend/app/integrations/llm.py",
+    "src/backend/app/jobs/pdf_parser.py",
+    "src/backend/tests/test_upload_metadata_pipeline_integration.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Reproduced on 2026-11-08 in ara-hw2-r1-test with --runxfail. title-and-authors-embedded: year None and abstract empty, expected 2023 and the printed abstract. two-column: year 2026 filled, abstract empty. Cause checks by in-memory fault: widening the model gate made only title-and-authors-embedded pass (strict xfail reported as FAILED); disabling the verbatim check made only two-column pass. Tracked by two strict xfail cases in test_upload_metadata_pipeline_integration.py, which will fail when this is fixed so the markers get removed. Not fixed: round 1 changes tests only.",
+  "updated_at": "2026-11-08"
+}

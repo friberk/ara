@@ -1,0 +1,25 @@
+{
+  "id": "ARA-119",
+  "title": "Cancelling after the upload body has arrived still creates the paper",
+  "type": "bug",
+  "priority": "P2",
+  "description": "Logged separately at the user's request during HW2 round 1 (ARA-117), which covers only the client side of Cancel. The browser aborts the transfer, but once the whole body has reached the server the POST /documents handler runs to completion. The Cancel button stays visible until the response arrives, so cancelling in that window leaves a paper and its PDF in the library. Reproduced against the real API in HW2 round 2.",
+  "dependencies": [
+    "ARA-117"
+  ],
+  "acceptance_criteria": [
+    "Given an upload whose body has fully arrived, when the client disconnects before the handler commits, then either no paper is created or the user can see and discard the result.",
+    "Given a client that disconnects mid-body, when the handler reads the form, then nothing is stored."
+  ],
+  "status": "observed",
+  "related_files": [
+    "src/backend/app/routes/documents.py",
+    "src/backend/app/services/uploads.py",
+    "src/frontend/src/components/upload/use-upload.ts",
+    "src/backend/tests/test_upload_disconnect_integration.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Reproduced on 2026-11-08 in ara-hw2-r1-test against the real API: the app ran under real uvicorn, the client was a raw TCP socket, and the database and MinIO were real. A gate held the route after the form was parsed and before anything was written (0 papers, 0 documents at that point), the socket was closed, and the route then went on to add 1 paper and 1 document. Recorded as a strict expected failure, test_a_client_gone_after_sending_the_whole_body_adds_no_paper. Replacing the route in memory with one that watches for the disconnect and cancels the upload made that test pass, reported as a strict XPASS failure, so it fails for the stated reason. The second acceptance criterion already holds: a client gone part way through the body stores nothing, and a client that stays gets its paper (both passing tests over the same socket path). Not fixed. A first attempt at that in-memory fix used request.is_disconnected(), which never reports a disconnect under this app's HTTP middleware. services/chat.py uses the same call, so that was tested separately through the same real-socket method: the call returned False every time, but the provider stream stopped anyway, because Starlette cancels the response on disconnect (test_chat_disconnect_integration.py). That is not a bug in paid generation, and it does not help here, because this route is not a streaming response.",
+  "updated_at": "2026-11-08"
+}

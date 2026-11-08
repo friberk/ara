@@ -2,8 +2,8 @@
 // of its own. Each one was checked by temporarily breaking the behaviour it covers and watching it fail.
 import { textIn } from '@/test/editor'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { queueQuestion } from '@/lib/pending-questions'
-import { json, mockApi, noContent } from '@/test/fetch-routes'
+import { queueQuestion, takeQuestion } from '@/lib/pending-questions'
+import { json, mockApi, noContent, noHistory, noSummaries } from '@/test/fetch-routes'
 import { ask, assistantMessage, chatRow, citation, included, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -22,7 +22,7 @@ function hangingStream(onAbort: () => void) {
 
 test('Given the provider fails mid-answer, Then its reason is shown inline and the answer is marked failed', async () => {
   let failed = false
-  mockApi({
+  mockApi({ ...noSummaries('p1'),
     ...settings,
     'GET /chats': { items: [chatRow('c1')] },
     'GET /chats/c1/messages': () => json({ items: failed ? [userMessage('u1', 'What failed?'), assistantMessage('m1', 'Partial', { state: 'failed' })] : [] }),
@@ -36,7 +36,7 @@ test('Given the provider fails mid-answer, Then its reason is shown inline and t
 
 test('Given an answer citing another document, Then it is rejected with an inline error', async () => {
   const foreign = { ...citation, document_id: 'another-document' }
-  mockApi({
+  mockApi({ ...noHistory('c1'),
     ...settings,
     'GET /chats': { items: [chatRow('c1')] },
     'POST /chats/c1/messages/stream': () => sse([['message.started', { message_id: 'm1' }], ['message.completed', assistantMessage('m1', `Claim.${marker}`, { citations: [foreign] })]]),
@@ -80,9 +80,10 @@ test('Given a selected model that cannot stream, Then the footnote says so and A
 test('Given the open chat, When it is renamed and then deleted from the switcher, Then the API is called and the start opens', async () => {
   let title = 'Research question'
   let deleted = false
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...noHistory('c1'),
     ...settings,
     'GET /chats': () => json({ items: deleted ? [] : [chatRow('c1', { title, message_count: 2, last_question_preview: 'Research question?' })] }),
+    'GET /chats/c1': () => json({ code: 'CHAT_NOT_FOUND', message: 'Chat not found.' }, 404),
     'PATCH /chats/c1': ({ body }) => { title = (body as { title: string }).title; return json({ ...chatRow('c1'), title, title_source: 'manual' }) },
     'DELETE /chats/c1': () => { deleted = true; return noContent() },
   })
@@ -103,7 +104,7 @@ test('Given the open chat, When it is renamed and then deleted from the switcher
 
 test('Given an answer streaming, When another chat is opened, Then that stream is aborted and nothing is resent', async () => {
   let aborted = false
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...noHistory('c1', 'c2'),
     ...settings,
     'GET /chats': { items: [chatRow('c1', { title: 'First chat' }), chatRow('c2', { title: 'Second chat' })] },
     'POST /chats/c1/messages/stream': hangingStream(() => { aborted = true }),
@@ -118,7 +119,8 @@ test('Given an answer streaming, When another chat is opened, Then that stream i
 })
 
 test('Given a queued question for a paper whose PDF is processing, Then it waits in the composer instead of being sent', async () => {
-  const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] } })
+  onTestFinished(() => { takeQuestion('c1') })
+  const { calls } = mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] } })
   queueQuestion('c1', { content: 'Queued while processing', settings: { model: luna.key, reasoning_effort: 'low' } })
   mount('/papers/p1/chats/c1', { value: { ...paper, document_status: 'processing' } })
   await waitFor(() => expect(textIn(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe('Queued while processing'))
@@ -128,7 +130,7 @@ test('Given a queued question for a paper whose PDF is processing, Then it waits
 })
 
 test('Given a chat on an earlier PDF, Then the footnote says which PDF its answers use', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { papers: [included(paper, { document_id: 'd0' })] })] } })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1', { papers: [included(paper, { document_id: 'd0' })] })] } })
   mount('/papers/p1/chats/c1')
   expect(await screen.findByText('This conversation uses an earlier PDF of this paper.')).toBeVisible()
 })

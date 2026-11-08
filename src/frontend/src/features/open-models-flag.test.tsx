@@ -9,7 +9,7 @@ import { SearchIndexPanel } from '@/features/workspace/SearchIndexPanel'
 import { mockApi } from '@/test/fetch-routes'
 import { renderApp, renderWithProviders } from '@/test/render'
 
-const off = { 'GET /features': { open_models: false } }
+const off = { 'GET /features': { open_models: false }, 'GET /metadata/settings': { source: 'openalex' } }
 const on = { 'GET /features': { open_models: true } }
 const disabled = 'Open models are turned off on this server. Choose a hosted model.'
 const searchReason = 'Open models are turned off on this server. Choose a hosted search model.'

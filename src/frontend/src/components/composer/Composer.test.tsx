@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { DraftMention } from '@/lib/mentions'
-import { deletePill, draftIn, editorOf, isEditable, textIn } from '@/test/editor'
+import { deletePill, draftIn, editorOf, isEditable, textIn, typeAndSettle } from '@/test/editor'
 import { Composer, type ComposerProps, type Mention, type MentionTarget } from './Composer'
 
 const title = 'Dense passage retrieval'
@@ -38,7 +38,7 @@ test('Given text, When Enter is pressed, Then the composer submits it; Shift+Ent
   const onSend = vi.fn()
   const user = userEvent.setup()
   render(<Harness onSend={onSend} />)
-  await user.type(field(), 'line one{Shift>}{Enter}{/Shift}line two')
+  await typeAndSettle(user, field(), 'line one{Shift>}{Enter}{/Shift}line two')
   expect(onSend).not.toHaveBeenCalled()
   await user.keyboard('{Enter}')
   expect(onSend).toHaveBeenCalledWith('line one\nline two', [])

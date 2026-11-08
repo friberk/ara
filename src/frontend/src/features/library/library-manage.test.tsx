@@ -152,7 +152,8 @@ test('Given a library row, When Edit details is chosen, Then a dialog edits ever
 })
 
 test('Given a library row, When Look up details again is chosen, Then the lookup is queued', async () => {
-  const { calls } = mockApi({ ...library().routes, 'POST /papers/p1/metadata-lookup': () => json({ id: 'job-1', kind: 'metadata', state: 'queued', stage: 'queued', progress: 0 }, 202) })
+  const lookup = { id: 'job-1', kind: 'metadata', state: 'queued', stage: 'queued', progress: 0, attempts: 0, generation: 1, result: null, error_code: null, error_message: null, available_at: '2026-10-08T12:00:00Z', created_at: '2026-10-08T12:00:00Z', updated_at: '2026-10-08T12:00:00Z', error: null, paper_id: 'p1', paper_title: attention.title }
+  const { calls } = mockApi({ ...library().routes, 'POST /papers/p1/metadata-lookup': () => json(lookup, 202), 'GET /jobs/job-1': lookup })
   const { user } = mount()
   await user.click(within(await rowActions(user, attention.title)).getByRole('menuitem', { name: 'Look up details again' }))
   await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/papers/p1/metadata-lookup')).toBe(true))

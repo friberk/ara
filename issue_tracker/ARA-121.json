@@ -1,0 +1,24 @@
+{
+  "id": "ARA-121",
+  "title": "Malformed provider responses can crash a search or build a broken paper",
+  "type": "bug",
+  "priority": "P1",
+  "description": "Found in HW2 round 2 and accepted by the user. The stated rule: a malformed response from OpenAlex or Semantic Scholar becomes a clear provider error, never a crash or a broken row. Four kinds of response break it. (1) Crash: a non-object `meta` from OpenAlex raises AttributeError in AcademicSearch.search, outside its try block, so the request ends in a 500. (2) Empty identity: an OpenAlex `id` that is empty or has no work part, or an empty Semantic Scholar `paperId`, produces a row with external_id ''. (3) Impossible years: true becomes 1, and 99999 and -3 are kept. (4) Junk continuations: an object next_cursor is turned into text, and a non-numeric Semantic Scholar `next` is offered for Load more and then refused.",
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Given a non-object `meta`, when OpenAlex search returns, then the caller gets a 502 PROVIDER_INVALID_RESPONSE rather than an unhandled error.",
+    "Given a provider record with no usable identity, when it is searched or saved, then the caller gets a 502 and nothing is stored.",
+    "Given a year that is not a plausible publication year, when a record is normalized, then the caller gets a 502.",
+    "Given a continuation of the wrong type for its provider, when a page is returned, then the caller gets a 502 rather than a continuation that cannot be followed."
+  ],
+  "status": "observed",
+  "related_files": [
+    "src/backend/app/integrations/academic.py",
+    "src/backend/tests/test_provider_responses.py",
+    "src/backend/tests/test_provider_save_integration.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Reproduced on 2026-11-08 in ara-hw2-r1-test. With --runxfail, 14 malformed-response cases fail as described: 2 raise AttributeError, 4 build a row with no identity, 5 keep an impossible year and 3 offer a junk continuation. The empty identity was proven through the real save path: POST /api/v1/papers against PostgreSQL stored one paper with external_id '' for each of 3 records. These are 17 strict expected failures. Removing each of the four causes in memory turned exactly its own cases into strict XPASS failures, which shows each test fails for the stated reason. Not fixed.",
+  "updated_at": "2026-11-08"
+}

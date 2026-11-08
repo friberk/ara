@@ -159,7 +159,7 @@ test('Given a phone, When Settings opens, Then the category list shows first and
 
 // The frozen open-models panel (ARA-090) keeps its own copy, so this covers the categories everyone sees.
 test('Given every category, Then no middle dot separates anything in the dialog', async () => {
-  mockApi(base)
+  mockApi({ ...base, 'GET /metadata/settings': { source: 'openalex' }, 'GET /retrieval/settings': { embedding_profile: 'openai-3-large', reranker: null }, 'GET /retrieval/profiles': { items: [], default_profile: 'openai-3-large', rerankers: [] } })
   const { user } = renderApp('/?settings=general')
   const dialog = await screen.findByRole('dialog', { name: 'Settings' })
   await waitFor(() => expect(within(dialog).getAllByRole('tab')).toHaveLength(3))

@@ -2,9 +2,9 @@
 import { toast } from 'sonner'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import type { Citation, Paper } from '@/api/types'
-import { deletePill, isEditable, textIn } from '@/test/editor'
-import { json, mockApi } from '@/test/fetch-routes'
-import { assistantMessage, chatRow, included, luna, mount, paper, paper2, settings, userMessage } from './pane-test-kit'
+import { deletePill, isEditable, textIn, typeThenEnter } from '@/test/editor'
+import { json, mockApi, noHistory } from '@/test/fetch-routes'
+import { assistantMessage, chatRow, included, luna, mount, paper, paper2, paperRoutes, settings, userMessage } from './pane-test-kit'
 
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
 
@@ -69,7 +69,7 @@ test('Given the paper in the URL is removed from the chat, Then the chat reroute
 })
 
 test('Given a multi-paper chat opened from its second paper, Then its URL becomes its first paper', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', both)] }, 'GET /chats/c1/messages': { items: [] } })
+  mockApi({ ...paperRoutes(paper, paper2), ...settings, 'GET /chats': { items: [chatRow('c1', both)] }, 'GET /chats/c1/messages': { items: [] } })
   mount('/papers/p2/chats/c1', { value: paper2, others: [paper] })
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c1'))
   expect(await chips()).toBeVisible()
@@ -87,7 +87,7 @@ test('Given a chat link from a paper it no longer covers, Then the chat is found
 })
 
 test('Given the chat composer, When @ mentions a paper outside the chat, Then it is a pill only while drafting and is sent with the question', async () => {
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...paperRoutes(paper, paper2),
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
     'GET /chats/c1/messages': { items: [] },
@@ -106,7 +106,7 @@ test('Given the chat composer, When @ mentions a paper outside the chat, Then it
   // Not added and not a chip until the question is sent (ARA-096).
   expect(calls.some((call) => call.method === 'POST' && call.path === '/chats/c1/papers')).toBe(false)
   expect(within(await chips()).getAllByRole('listitem')).toHaveLength(2)
-  await user.type(input, 'differ?{Enter}')
+  await typeThenEnter(user, input, 'differ?')
   await waitFor(() => expect(calls.find((call) => call.path === '/chats/c1/messages/stream')?.body).toMatchObject({ content: 'How does Late interaction retrieval differ?' }))
   expect((calls.find((call) => call.path === '/chats/c1/messages/stream')?.body as { mentions: unknown }).mentions).toEqual([{ paper_id: 'p3', label: 'Late interaction retrieval', start: 9, end: 35 }])
   // The sent question shows its pill.
@@ -114,7 +114,7 @@ test('Given the chat composer, When @ mentions a paper outside the chat, Then it
 })
 
 test('Given a pill for a paper outside the chat, When it is deleted before sending, Then the chat is unchanged and nothing is mentioned', async () => {
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...paperRoutes(paper, paper2),
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
     'GET /chats/c1/messages': { items: [] },
@@ -176,7 +176,7 @@ test('Given a chat over two papers and a streamed answer whose citations lack pa
 
 test('Given a new conversation, When a second paper is mentioned with @, Then the first question creates one chat over both and sends its pills', async () => {
   let created = false
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...noHistory('c9'),
     ...settings,
     'GET /chats': () => json({ items: created ? [chatRow('c9', both)] : [] }),
     'GET /papers': { items: [paper, paper2] },
@@ -198,7 +198,7 @@ test('Given a new conversation, When a second paper is mentioned with @, Then th
   await user.type(question, 'or @')
   await user.click(await screen.findByRole('option', { name: /Evidence based research/ }))
   await waitFor(() => expect(textIn(question)).toBe('Dense passage retrieval or Evidence based research '))
-  await user.type(question, 'How do they compare?{Enter}')
+  await typeThenEnter(user, question, 'How do they compare?')
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/chats')?.body).toEqual({ paper_ids: ['p1', 'p2'] }))
   await waitFor(() => expect(screen.getByLabelText('Current path')).toHaveTextContent('/papers/p1/chats/c9'))
   await waitFor(() => expect(calls.find((call) => call.path === '/chats/c9/messages/stream')?.body).toMatchObject({
@@ -222,7 +222,7 @@ test('Given a new conversation, When the only pill of an added paper is deleted,
 
 test('Given a local model selected in a chat over two papers, Then the composer asks for a hosted model before sending', async () => {
   const local = { ...luna, key: 'ifm-local', provider: 'ollama', display_name: 'IFM local', reasoning_efforts: ['default'] }
-  mockApi({
+  mockApi({ ...paperRoutes(paper, paper2),
     'GET /features': { open_models: true },
     'GET /models': { items: [local, luna] },
     'GET /settings': { default_model: local.key, reasoning_effort: 'default' },
@@ -294,7 +294,7 @@ test('Given a paper already in the chat, When its pill is deleted, Then it stays
 })
 
 test('Given the chat composer, When the @ button is used, Then the paper becomes a pill at the end of the question and nothing is added before sending', async () => {
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...paperRoutes(paper, paper2),
     ...settings,
     'GET /chats': { items: [chatRow('c1', both)] },
     'GET /chats/c1/messages': { items: [] },

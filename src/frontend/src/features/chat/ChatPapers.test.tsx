@@ -45,7 +45,7 @@ describe('the row is one line (ARA-110)', () => {
   afterEach(() => { vi.restoreAllMocks(); window.ResizeObserver = originalObserver })
 
   const mountRow = () => {
-    mockApi({})
+    mockApi(Object.fromEntries(five.map((item) => [`GET /papers/${item.id}`, item])))
     return renderWithProviders(<TooltipProvider><ChatPapers papers={five.map((item) => included(item))} onRemove={vi.fn()} /></TooltipProvider>)
   }
 

@@ -4,7 +4,7 @@ import { screen, within } from '@testing-library/react'
 import type { Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noSummaries } from '@/test/fetch-routes'
 import { renderWithProviders } from '@/test/render'
 import { SummaryCard } from '.'
 
@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 test('Given a summary job that fails, Then the reason is shown inline and Generate summary can be tried again', async () => {
   let posts = 0
-  mockApi({
+  mockApi({ ...noSummaries('p1'),
     'GET /models': { items: [luna] },
     'GET /settings': { default_model: luna.key, reasoning_effort: 'low' },
     'POST /papers/p1/summaries': () => { posts++; return json({ job_id: 'j3', summary_id: null }) },

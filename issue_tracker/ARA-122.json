@@ -1,0 +1,43 @@
+{
+  "id": "ARA-122",
+  "title": "HW2 round 2: test from the coverage report, make the API mock strict and measure the final suite",
+  "type": "testing",
+  "priority": "P1",
+  "description": "Second HW2 improvement round. Strategy: start from execution feedback, the coverage report, and rank uncovered lines by what they protect. The user then added expected behaviour for jobs, providers, the upload zone and reader tabs, and required that an undeclared API call fail its test. Test code and issue records only; no application code changed. Tests were frozen before the final measurement and the user's nine held-out faults. Reviewer findings and other weaknesses are recorded in docs/hw2-round-2.md and deliberately not fixed.",
+  "dependencies": [
+    "ARA-117"
+  ],
+  "acceptance_criteria": [
+    "Given a request a test did not declare, apart from the 13 shared background routes in real response shapes, when the test ends, then it fails.",
+    "Given a job that crashes, when it runs, then it retries and fails on the third attempt and never stays stuck; given an unknown kind, it fails permanently; given a lost lease, a running PDF download stops.",
+    "Given a malformed OpenAlex or Semantic Scholar response, when it is handled, then a clear provider error results, and any case where the application falls short is a strict expected failure.",
+    "Given a client that leaves during an upload or an answer, when tested against the real API, then the behaviour is measured and any bug is recorded as a strict expected failure.",
+    "Given each new or strengthened test, when a matching fault is applied, then it fails.",
+    "Given the frozen tests, when measured as in docs/hw2-baseline.md and against the nine held-out faults on the initial and final trees, then the results are recorded, including what did not improve."
+  ],
+  "status": "completed",
+  "related_files": [
+    "docs/hw2-round-2.md",
+    "docs/agent-development-log.md",
+    "issue_tracker/ARA-119.json",
+    "issue_tracker/ARA-121.json",
+    "src/frontend/src/test/fetch-routes.ts",
+    "src/frontend/src/test/fetch-routes.test.ts",
+    "src/frontend/src/test/setup.ts",
+    "src/frontend/src/test/editor.ts",
+    "src/frontend/e2e/workspace.spec.ts",
+    "src/backend/tests/support/live_api.py",
+    "src/backend/tests/test_actor_jobs_integration.py",
+    "src/backend/tests/test_chat_disconnect_integration.py",
+    "src/backend/tests/test_upload_disconnect_integration.py",
+    "src/backend/tests/test_provider_responses.py",
+    "src/backend/tests/test_provider_save_integration.py",
+    "src/backend/tests/test_fulltext_jobs.py"
+  ],
+  "commits": [
+    "95d24d1"
+  ],
+  "pull_requests": [],
+  "verification": "Final measurement on 2026-11-08 in the isolated ara-hw2-r1-test project with the settings in docs/hw2-baseline.md; application source identical to b40405b. Ruff passed. Backend with real services: 1374 passed, 21 xfailed in 331.50 s, 8658/9050 lines (95.67%), 2054/2378 branches (86.38%). Frontend: 803 passed in 95 files, 3189/3323 lines (95.96%), 3485/3968 branches (87.82%), TypeScript and ESLint passing. Playwright: 29 passed twice, each on a fresh database. Infrastructure: 46 OK. Flakiness: Vitest 803 of 803 three times; backend files touched in rounds 1 and 2, 307 passed and 21 xfailed three times. Original faults on whole Vitest: setOpen(true) 1 failed, abort removed 4 failed, fixed request_id 1 failed, old invalid fixture 2 failed. Held-out faults, user-supplied after the freeze and applied to temporary copies with passing controls: 7 of 9 caught on the initial tree (b40405b) and 7 of 9 on the final tree. Faults 1 (abstract order) and 8 (composer submit while busy) were missed on both. Fault 1's first final-tree run stopped at an unrelated order-dependent test, test_startup_refreshes_each_existing_paper_once_and_fixes_a_junk_title; that was not counted as a catch, and the rerun passed 1374 with 21 xfailed. The branch was confirmed unchanged by the experiment. Known weaknesses, including ten reviewer findings, the usage.ts branch regression and that flake, are recorded and not fixed. Live providers were not used. Details in docs/hw2-round-2.md.",
+  "updated_at": "2026-11-08"
+}

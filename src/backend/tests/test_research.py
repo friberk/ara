@@ -21,7 +21,7 @@ def test_provider_overrides_are_rejected_outside_test():
 
 
 @pytest.mark.parametrize("provider", ["openalex", "semantic_scholar"])
-async def test_search_normalizes_nullable_fields_and_paginates(provider):
+async def test_search_normalizes_nullable_fields_and_reports_the_continuation(provider):
     """Given scholarly fixtures, when searched, then nullable metadata and cursors remain honest."""
     from app.core.config import Settings
     from app.integrations.academic import AcademicSearch
@@ -76,11 +76,72 @@ async def test_search_normalizes_nullable_fields_and_paginates(provider):
         page = await AcademicSearch(client, Settings(_env_file=None)).search(
             provider, "retrieval", None, 2
         )
-    assert page.provider == provider and page.total == 3 and page.next_cursor is not None
+    continuation = "next==" if provider == "openalex" else "2"
+    assert page.provider == provider and page.total == 3 and page.next_cursor == continuation
     assert page.items[0].doi == "10.1000/fixture"
     assert page.items[0].abstract == "Grounded research"
     assert page.items[0].authors == ["A. Researcher"] and page.items[0].pdf_url is None
     assert page.items[1].title is None and page.items[1].year is None
+
+
+def openalex_page(work_id, next_cursor):
+    return httpx.Response(
+        200,
+        json={
+            "meta": {"count": 2, "next_cursor": next_cursor},
+            "results": [] if work_id is None else [{"id": f"https://openalex.org/{work_id}"}],
+        },
+    )
+
+
+def semantic_page(paper_id, following):
+    body = {"total": 2, "data": [{"paperId": paper_id, "title": paper_id}]}
+    return httpx.Response(200, json=body if following is None else {**body, "next": following})
+
+
+@pytest.mark.parametrize(
+    ("provider", "parameter", "sent", "ids"),
+    [
+        ("openalex", "cursor", ["*", "token=="], ["W1", "W2"]),
+        ("semantic_scholar", "offset", ["0", "1"], ["first", "second"]),
+    ],
+)
+async def test_following_a_continuation_requests_the_providers_next_page(
+    provider, parameter, sent, ids
+):
+    """Given two provider pages, when the continuation is followed, then page two arrives."""
+    from app.core.config import Settings
+    from app.integrations.academic import AcademicSearch
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        value = request.url.params[parameter]
+        if provider == "openalex":
+            return openalex_page("W1", "token==") if value == "*" else openalex_page("W2", None)
+        return semantic_page("first", 1) if value == "0" else semantic_page("second", None)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        adapter = AcademicSearch(client, Settings(_env_file=None))
+        first = await adapter.search(provider, "retrieval", None, 1)
+        second = await adapter.search(provider, "retrieval", first.next_cursor, 1)
+    assert [request.url.params[parameter] for request in requests] == sent
+    assert [first.items[0].external_id, second.items[0].external_id] == ids
+    assert second.next_cursor is None
+
+
+async def test_an_empty_page_ends_the_results_even_with_a_cursor():
+    """OpenAlex still returns a cursor on its last, empty page; Load more must not chase it."""
+    from app.core.config import Settings
+    from app.integrations.academic import AcademicSearch
+
+    transport = httpx.MockTransport(lambda request: openalex_page(None, "still-here"))
+    async with httpx.AsyncClient(transport=transport) as client:
+        page = await AcademicSearch(client, Settings(_env_file=None)).search(
+            "openalex", "retrieval", "token==", 1
+        )
+    assert page.items == [] and page.next_cursor is None
 
 
 async def test_search_rate_limit_is_actionable_and_invalid_cursor_never_reaches_provider():
@@ -160,6 +221,7 @@ def test_isolated_pdf_parser_preserves_pages_and_nullable_publication_metadata(t
     assert parsed["metadata"]["authors"] == ["Ada Researcher", "Grace Scholar"]
     assert parsed["metadata"]["year"] is None
     assert parsed["metadata"]["doi"] == "10.1000/synthetic"
+    assert parsed["metadata"]["abstract"] == "Grounded retrieval improves accuracy."
 
 
 def test_parser_reports_scanned_encrypted_and_malformed_failures(tmp_path):

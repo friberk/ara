@@ -18,7 +18,7 @@ from test_fulltext_integration import app_client
 
 from app.integrations.openalex_content import ContentDownloader
 from app.models.jobs import BackgroundJob
-from app.models.research import ChatPaper, Document, DocumentUploadRequest
+from app.models.research import ChatPaper, Document, DocumentUploadRequest, Paper
 from app.repositories.jobs import claim, now
 from app.repositories.papers import save_canonical
 from app.schemas.research import SearchResult
@@ -554,6 +554,175 @@ async def test_actor_cancels_fetch_when_lease_is_lost(resources, original_pdf, m
             await task
         except asyncio.CancelledError:
             pass
+
+
+async def test_a_lease_lost_after_renewals_still_stops_the_fetch(
+    resources, original_pdf, monkeypatch
+):
+    """Given a download that has already renewed its lease, losing the lease later stops it."""
+    from app.jobs import actors
+
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    async def stall(_request):
+        started.set()
+        try:
+            await asyncio.sleep(10)
+        finally:
+            stopped.set()
+
+    paper_id, _ = await prepare(resources, original_pdf, response=stall)
+    resources.settings.heartbeat_seconds = 0.05
+    async with app_client(resources) as client:
+        accepted = (
+            await client.post(
+                f"/api/v1/papers/{paper_id}/retrieve-fulltext", json={"request_id": str(uuid4())}
+            )
+        ).json()
+    monkeypatch.setattr(actors, "_resources", resources)
+    task = asyncio.create_task(actors.execute_job.fn.__wrapped__(accepted["job_id"], 1))
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        leased = (await state(resources, UUID(accepted["job_id"]))).lease_expires_at
+        async with asyncio.timeout(2):
+            # noqa: ASYNC110 below -- the lease is a database row, with no event to wait on
+            while (  # noqa: ASYNC110
+                await state(resources, UUID(accepted["job_id"]))
+            ).lease_expires_at <= leased:
+                await asyncio.sleep(0.01)
+        assert not task.done() and not stopped.is_set()
+        async with resources.sessions() as session, session.begin():
+            job = await session.get(BackgroundJob, accepted["job_id"])
+            job.lease_expires_at = now() - timedelta(seconds=1)
+        done, _ = await asyncio.wait([task], timeout=2)
+        assert task in done and stopped.is_set()
+        async with resources.sessions() as session:
+            assert await session.scalar(select(func.count()).select_from(Document)) == 0
+    finally:
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+async def add_document(resources, paper_id, *, status, active=True):
+    async with resources.sessions() as session, session.begin():
+        document = Document(
+            paper_id=paper_id,
+            status=status,
+            object_key=f"originals/{uuid4()}.pdf",
+            sha256=uuid4().hex + uuid4().hex,
+            original_filename="own.pdf",
+            byte_size=10,
+            request_id=uuid4(),
+        )
+        session.add(document)
+        await session.flush()
+        if active:
+            (await session.get(Paper, paper_id)).active_document_id = document.id
+        return document.id
+
+
+async def test_a_pdf_uploaded_before_the_job_runs_is_not_replaced(resources, original_pdf):
+    """Given a PDF attached while the retrieval waited, the job stops without any network."""
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, downloads = await prepare(resources, original_pdf)
+    job_id, generation, token, payload = await enqueue_and_claim(resources, paper_id)
+    document_id = await add_document(resources, paper_id, status="ready")
+    await run_fulltext_job(resources, job_id, generation, token, payload)
+    job = await state(resources, job_id)
+    assert job.state == "completed" and job.result["outcome"] == "superseded"
+    assert job.result["document_id"] == str(document_id)
+    assert resources.lookups == [] and downloads == []
+
+
+async def test_a_pdf_removed_before_the_job_runs_is_not_brought_back(resources, original_pdf):
+    """Given the PDF the request saw removed while it waited, nothing is downloaded or attached."""
+    from app.services.fulltext import run_fulltext_job
+
+    paper_id, downloads = await prepare(resources, original_pdf)
+    await add_document(resources, paper_id, status="failed")
+    job_id, generation, token, payload = await enqueue_and_claim(resources, paper_id)
+    assert payload["expected_active_document_id"] is not None
+    async with resources.sessions() as session, session.begin():
+        (await session.get(Paper, paper_id)).active_document_id = None
+    await run_fulltext_job(resources, job_id, generation, token, payload)
+    job = await state(resources, job_id)
+    assert job.state == "completed" and job.result["outcome"] == "superseded"
+    assert job.result["document_id"] is None
+    assert resources.lookups == [] and downloads == []
+    async with resources.sessions() as session:
+        assert (await session.get(Paper, paper_id)).active_document_id is None
+        assert await session.scalar(select(func.count()).select_from(Document)) == 1
+
+
+async def expire_lease(resources, job_id):
+    async with resources.sessions() as session, session.begin():
+        job = await session.get(BackgroundJob, job_id)
+        job.lease_expires_at = now() - timedelta(seconds=1)
+
+
+@pytest.mark.parametrize(
+    ("stage", "progress", "lookups", "fetches", "stores", "documents"),
+    [
+        pytest.param("discovering_fulltext", 10, 0, 0, 0, 0, id="before-the-lookup"),
+        pytest.param("fetching_pdf", 40, 1, 0, 0, 0, id="before-the-download"),
+        pytest.param("storing_pdf", 75, 1, 1, 0, 0, id="before-storing"),
+        pytest.param("storing_pdf", 90, 1, 1, 1, 1, id="after-storing"),
+    ],
+)
+async def test_a_lease_lost_at_a_checkpoint_stops_all_later_work(
+    resources, original_pdf, monkeypatch, stage, progress, lookups, fetches, stores, documents
+):
+    """Given a lease lost at a checkpoint, nothing later runs and the job is left for recovery."""
+    from app.services import fulltext
+
+    paper_id, downloads = await prepare(resources, original_pdf)
+    job_id, generation, token, payload = await enqueue_and_claim(resources, paper_id)
+    real = fulltext.checkpoint
+
+    async def losing(resources, job_id, generation, token, payload, at, percent):
+        if (at, percent) == (stage, progress):
+            await expire_lease(resources, job_id)
+        return await real(resources, job_id, generation, token, payload, at, percent)
+
+    # Storing and finishing have fences of their own, so only these spies show the step never began.
+    stored, finished = [], []
+    real_store, real_finish = fulltext.ingest_pdf_bytes, fulltext.finish
+
+    async def store(*args, **kwargs):
+        stored.append(kwargs)
+        return await real_store(*args, **kwargs)
+
+    async def finish(*args, **kwargs):
+        finished.append(args)
+        return await real_finish(*args, **kwargs)
+
+    monkeypatch.setattr(fulltext, "checkpoint", losing)
+    monkeypatch.setattr(fulltext, "ingest_pdf_bytes", store)
+    monkeypatch.setattr(fulltext, "finish", finish)
+    await fulltext.run_fulltext_job(resources, job_id, generation, token, payload)
+    job = await state(resources, job_id)
+    assert job.state == "processing" and job.result is None
+    assert (len(resources.lookups), len(downloads)) == (lookups, fetches)
+    assert (len(stored), finished) == (stores, [])
+    async with resources.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(Document)) == documents
+
+
+async def test_finishing_without_the_lease_changes_nothing(resources, original_pdf):
+    """Given a stale worker, its result cannot overwrite the job."""
+    from app.services.fulltext import finish
+
+    paper_id, _ = await prepare(resources, original_pdf)
+    job_id, generation, token, _ = await enqueue_and_claim(resources, paper_id)
+    await expire_lease(resources, job_id)
+    await finish(resources, job_id, generation, token, {"outcome": "not_stored"}, reason="Stale.")
+    job = await state(resources, job_id)
+    assert job.state == "processing" and job.result is None and job.error_code is None
 
 
 @pytest.mark.parametrize("storage_error", [False, True])

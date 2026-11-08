@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { renderApp } from '@/test/render'
 import { mockApi, noContent } from '@/test/fetch-routes'
 import { peekQuestion } from '@/lib/pending-questions'
-import { deletePill, textIn } from '@/test/editor'
+import { deletePill, textIn, typeThenEnter } from '@/test/editor'
 
 const luna = { key: 'gpt-5.6-luna', provider: 'openai', model_id: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', status: 'configured', reasoning_efforts: ['low', 'high'], supports_streaming: true, supports_structured_output: true, context_window: 32000 }
 const readyPaper = { id: 'p1', title: 'Traceable research systems', authors: ['Ada Researcher'], year: 2024, abstract: null, doi: null, sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
@@ -28,9 +28,9 @@ test('Given the home route, Then the workspace navigation and the research compo
 })
 
 test('Given a topic in the home composer, When Enter is pressed, Then the search is recorded and results open', async () => {
-  const { calls } = mockApi({ 'POST /search-history': { ...search, query: 'graph transformers' } })
+  const { calls } = mockApi({ 'GET /search': { provider: 'openalex', items: [], next_cursor: null, total: 0 }, 'POST /search-history': { ...search, query: 'graph transformers' } })
   const { user } = renderApp('/')
-  await user.type(screen.getByRole('textbox', { name: 'Research topic' }), 'graph transformers{Enter}')
+  await typeThenEnter(user, screen.getByRole('textbox', { name: 'Research topic' }), 'graph transformers')
   await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/search-history')).toBe(true))
   expect(calls.find((call) => call.path === '/search-history' && call.method === 'POST')?.body).toEqual({ provider: 'openalex', query: 'graph transformers' })
   await waitFor(() => expect(calls.some((call) => call.path === '/search' && call.url.searchParams.get('q') === 'graph transformers')).toBe(true))

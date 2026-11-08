@@ -1,6 +1,6 @@
 import { isEditable } from '@/test/editor'
 import { screen, waitFor, within } from '@testing-library/react'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noHistory, noSummaries } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
 // Runs against the real content module (ARA-035): inline chips and the source list are named "Source, page N".
 import { assistantMessage, ask, chatRow, citation, included, luna, marker, mount, paper, settings, sse, userMessage } from './pane-test-kit'
@@ -67,7 +67,7 @@ test('Given a streaming answer, When Stop generation is pressed, Then the partia
   let stopped = false
   let generationRequests = 0
   const partial = assistantMessage('m2', 'Partial evidence', { state: 'interrupted' })
-  mockApi({
+  mockApi({ ...noSummaries('p1'),
     ...settings,
     'GET /chats': { items: [chatRow('c2', { title: 'Stop example' })] },
     'GET /chats/c2/messages': () => json({ items: stopped ? [userMessage('u2', 'What is supported?'), partial] : [] }),
@@ -96,7 +96,7 @@ test('Given a streaming answer, When Stop generation is pressed, Then the partia
 })
 
 test('Given a stream that ends without a final event, Then the question is not sent again and the reader is told so', async () => {
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...noHistory('c3'), ...noSummaries('p1'),
     ...settings,
     'GET /chats': { items: [chatRow('c3')] },
     'POST /chats/c3/messages/stream': () => sse([['message.started', { message_id: 'm3' }], ['message.delta', { text: 'Half an answer' }]]),
@@ -136,7 +136,7 @@ test('Given a paper with no chats under StrictMode, When a suggested question is
 })
 
 test('Given a metadata-only paper, Then the composer is disabled and the footnote says how to enable questions', async () => {
-  mockApi(settings)
+  mockApi({ ...settings, ...noSummaries('p1') })
   mount('/papers/p1', { value: { ...paper, document_status: 'metadata_only', active_document_id: null } })
   expect(await screen.findByText('Attach a PDF to ask questions about this paper.')).toBeVisible()
   expect(isEditable(screen.getByRole('textbox', { name: 'Question about this paper' }))).toBe(false)
@@ -146,7 +146,7 @@ test('Given a metadata-only paper, Then the composer is disabled and the footnot
 })
 
 test('Given several chats, When another is chosen in the switcher, Then its URL opens and an earlier PDF is marked', async () => {
-  mockApi({
+  mockApi({ ...noHistory('c1', 'c2'),
     ...settings,
     'GET /chats': { items: [chatRow('c1', { title: 'Research question', last_question_preview: 'What was measured?' }), chatRow('c2', { title: 'Older discussion', papers: [included(paper, { document_id: 'd0' })], last_activity_at: '2026-10-07T12:00:00Z' })] },
   })
@@ -180,7 +180,7 @@ test('Given an answer still processing after a reload, Then the composer waits a
 
 test('Given the history cannot load, Then an inline error offers to try again', async () => {
   let failures = 0
-  mockApi({
+  mockApi({ ...noSummaries('p1'),
     ...settings,
     'GET /chats': { items: [chatRow('c5')] },
     'GET /chats/c5/messages': () => (failures++ === 0 ? json({ code: 'UNAVAILABLE', message: 'The conversation could not load.' }, 503) : json({ items: [userMessage('u5', 'Loaded on retry')] })),
@@ -201,7 +201,7 @@ test('Given a chat created elsewhere and a stale cached chat list, Then the pane
 })
 
 test('Given legacy chats on the default title, Then the switcher names them like the sidebar and still lists empty ones', async () => {
-  mockApi({
+  mockApi({ ...noHistory('c1'),
     ...settings,
     'GET /chats': {
       items: [
@@ -217,7 +217,7 @@ test('Given legacy chats on the default title, Then the switcher names them like
 })
 
 test('Given auto-titled chats, Then a row repeats its question only when a later question differs', async () => {
-  mockApi({
+  mockApi({ ...noHistory('c1'),
     ...settings,
     'GET /chats': {
       items: [
@@ -234,7 +234,7 @@ test('Given auto-titled chats, Then a row repeats its question only when a later
 })
 
 test('Given the open chat uses an earlier PDF, Then the switcher label marks it and says so in its accessible name', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Old PDF chat', papers: [included(paper, { document_id: 'd0' })] })] } })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Old PDF chat', papers: [included(paper, { document_id: 'd0' })] })] } })
   mount('/papers/p1/chats/c1')
   const trigger = await screen.findByRole('button', { name: 'Old PDF chat, earlier PDF' })
   expect(within(trigger).getByText('Earlier PDF')).toBeVisible()

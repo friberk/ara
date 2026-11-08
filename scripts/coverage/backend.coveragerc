@@ -1,0 +1,12 @@
+[run]
+branch = True
+core = ctrace
+source = app
+data_file = /coverage/.coverage.backend-final
+parallel = True
+concurrency = multiprocessing,greenlet,thread
+patch = subprocess
+
+[report]
+precision = 2
+show_missing = True

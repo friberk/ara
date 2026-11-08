@@ -1,0 +1,32 @@
+{
+  "id": "ARA-123",
+  "title": "Ship the HW2 test instructions and a repeatable coverage script",
+  "type": "testing",
+  "priority": "P1",
+  "description": "User request on 2026-11-08: finish everything for HW2 except writing the report. Part 4 needs the final test suite in the repository with the necessary configuration files and instructions for running the tests and reproducing coverage.",
+  "dependencies": [
+    "ARA-115",
+    "ARA-117",
+    "ARA-122"
+  ],
+  "acceptance_criteria": [
+    "Given a checkout with a private .env, when scripts/measure-coverage.py runs, then Ruff, the real-service backend suite and Vitest run with the HW2 source scope and the line and branch totals are printed.",
+    "Given the development project name ara, when the script is asked to use it, then it refuses without running anything.",
+    "Given the README, when a reader follows its test section, then it names where each suite lives and how to install, run and reproduce coverage."
+  ],
+  "status": "completed",
+  "related_files": [
+    "README.md",
+    "scripts/measure-coverage.py",
+    "scripts/coverage/backend.coveragerc",
+    "tests/infrastructure/test_measure_coverage.py",
+    "docs/agent-development-log.md",
+    "docs/archive-branches.md"
+  ],
+  "commits": [
+    "b26ebc8"
+  ],
+  "pull_requests": [],
+  "verification": "Test first: tests/infrastructure/test_measure_coverage.py failed before the script existed (3 failures, 1 error), then 4 passed. End-to-end run of the script on the unchanged final tests in ara-hw2-r1-test: Ruff passed; backend 1374 passed, 21 xfailed in 327.26 s; 8658/9050 lines (95.67%), 2054/2378 branches (86.38%); frontend 803 passed in 95 files, 3189/3323 lines, 3485/3968 branches. These counts equal the frozen ARA-122 measurement. The frontend percentages then switched to Vitest's own figures, which truncate (95.96%, 87.82%). Infrastructure 50 OK: the 46 measured plus these 4, which test the script and are outside both coverage denominators. No application source or application test changed.",
+  "updated_at": "2026-11-08"
+}

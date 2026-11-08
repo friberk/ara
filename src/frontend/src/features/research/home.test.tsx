@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from '@testing-library/react'
 import { renderApp } from '@/test/render'
-import { json, mockApi } from '@/test/fetch-routes'
+import { heldResponse, json, mockApi } from '@/test/fetch-routes'
 
 const history = [
   { id: 's1', provider: 'semantic_scholar', query: 'graph transformers', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T11:00:00Z' },
@@ -65,4 +65,17 @@ test('Given an upload from home fails, Then the reason stays under the composer 
   await user.upload(screen.getByLabelText('PDF file'), pdf())
   expect(await screen.findByRole('alert')).toHaveTextContent('Upload a valid PDF file.')
   expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
+})
+
+test('Given an upload from home in flight, When Cancel is pressed, Then the transfer stops and a late response opens nothing', async () => {
+  const upload = heldResponse(() => json({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }, 202))
+  const { calls } = mockApi({ 'POST /documents': upload.handler })
+  const { user } = renderApp('/')
+  await screen.findByRole('list', { name: 'Suggestions' })
+  await user.upload(screen.getByLabelText('PDF file'), pdf())
+  await user.click(await screen.findByRole('button', { name: 'Cancel upload' }))
+  expect(upload.aborted()).toBe(true)
+  await upload.respond()
+  expect(screen.getByRole('heading', { level: 1, name: 'What are you researching?' })).toBeVisible()
+  expect(calls.some((call) => call.path === '/papers/p1' || call.path === '/jobs/j1')).toBe(false)
 })

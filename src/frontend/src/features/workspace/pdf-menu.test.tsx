@@ -1,7 +1,7 @@
 // The reader's PDF menu (ARA-097): what the file is, and opening, downloading, replacing or removing it.
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import type { Citation } from '@/api/types'
-import { json, mockApi } from '@/test/fetch-routes'
+import { heldResponse, json, mockApi } from '@/test/fetch-routes'
 import { renderApp } from '@/test/render'
 
 vi.mock('./PdfViewer', async () => {
@@ -126,6 +126,57 @@ test('Given earlier versions, When the removal fails, Then the dialog lists them
   ])
   await user.click(within(dialog).getByRole('button', { name: 'Remove PDF' }))
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('Wait for the current answer to finish before removing the PDF.')
+})
+
+const SINGLE_READER = 'The reader goes back to uploading a PDF.'
+const KEPT = 'Conversations that use this PDF keep using it. New questions need a new PDF.'
+
+test.each([
+  ['one PDF no chat uses', { deleted_pdfs: 1, kept_pdfs: 0 }, [SINGLE_READER, 'The PDF is deleted.']],
+  ['one earlier version beside it', { deleted_pdfs: 2, kept_pdfs: 0 }, [SINGLE_READER, 'The PDF and 1 earlier version are deleted.']],
+  ['one unused version while a chat keeps another', { deleted_pdfs: 1, kept_pdfs: 1 }, [SINGLE_READER, KEPT, '1 PDF version no conversation uses is deleted.']],
+  ['two unused versions while a chat keeps another', { deleted_pdfs: 2, kept_pdfs: 1 }, [SINGLE_READER, KEPT, '2 PDF versions no conversation uses are deleted.']],
+  ['several summaries and tasks', { deleted_pdfs: 0, kept_pdfs: 1, summaries: 2, active_jobs: 2 }, [SINGLE_READER, KEPT, '2 summaries are deleted.', '2 background tasks stop.']],
+])('Given %s, When Remove PDF… opens, Then the dialog says exactly what happens', async (_case, change, expected) => {
+  mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-1': document, 'GET /papers/p1/pdf/removal-preview': { ...preview, chats: [], ...change } })
+  const { user } = renderApp('/papers/p1')
+  await user.click(within(await openMenu(user)).getByRole('menuitem', { name: 'Remove PDF…' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Remove this PDF?' })
+  const effects = await within(dialog).findByRole('list', { name: 'What happens' })
+  expect(within(effects).getAllByRole('listitem').map((item) => item.textContent)).toEqual(expected)
+})
+
+const deletes = (calls: { method: string }[]) => calls.filter((call) => call.method === 'DELETE')
+
+test.each([
+  ['Cancel', async (user: ReturnType<typeof renderApp>['user'], dialog: HTMLElement) => user.click(within(dialog).getByRole('button', { name: 'Cancel' }))],
+  ['Escape', async (user: ReturnType<typeof renderApp>['user']) => user.keyboard('{Escape}{Escape}')],
+])('Given the Remove PDF dialog, When %s is used, Then it closes and nothing is removed', async (_way, dismiss) => {
+  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-1': document, 'GET /papers/p1/pdf/removal-preview': preview })
+  const { user } = renderApp('/papers/p1')
+  await user.click(within(await openMenu(user)).getByRole('menuitem', { name: 'Remove PDF…' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Remove this PDF?' })
+  await within(dialog).findByRole('list', { name: 'What happens' })
+  await dismiss(user, dialog)
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+  expect(deletes(calls)).toHaveLength(0)
+  expect(screen.getByText('Showing doc-1')).toBeVisible()
+})
+
+test('Given a removal in progress, When Escape is pressed, Then the dialog stays open until it finishes', async () => {
+  const removal = heldResponse(() => new Response(null, { status: 204 }))
+  const { calls } = mockApi({ 'GET /papers/p1': paper, 'GET /documents/doc-1': document, 'GET /papers/p1/pdf/removal-preview': preview, 'DELETE /papers/p1/pdf': removal.handler })
+  const { user } = renderApp('/papers/p1')
+  await user.click(within(await openMenu(user)).getByRole('menuitem', { name: 'Remove PDF…' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Remove this PDF?' })
+  await within(dialog).findByRole('list', { name: 'What happens' })
+  await user.click(within(dialog).getByRole('button', { name: 'Remove PDF' }))
+  await waitFor(() => expect(deletes(calls)).toHaveLength(1))
+  expect(await within(dialog).findByRole('button', { name: 'Removing…' })).toBeDisabled()
+  expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled()
+  await user.keyboard('{Escape}{Escape}')
+  expect(screen.getByRole('alertdialog', { name: 'Remove this PDF?' })).toBeVisible()
+  await removal.respond()
 })
 
 test('Given Replace PDF…, When a new PDF is uploaded, Then it becomes the active PDF and the reader follows its preparation', async () => {

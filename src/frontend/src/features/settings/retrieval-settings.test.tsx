@@ -13,7 +13,7 @@ const qwen8b: EmbeddingProfile = { ...qwen4b, key: 'qwen3-embed-8b', model_id: '
 const profiles = { items: [openai, small, qwen4b, qwen8b], default_profile: openai.key }
 const saved: RetrievalSettings = { embedding_profile: openai.key, reranker: 'openai-gpt-6-luna' }
 const estimate = { profile: 'openai-3-small', papers: 12, tokens: 481234, price_per_million: 0.02, estimated_cost_usd: 0.0096 }
-const base = { 'GET /retrieval/reindex-estimate': estimate, 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'GET /retrieval/profiles': profiles }
+const base = { 'GET /metadata/settings': { source: 'openalex' }, 'GET /retrieval/reindex-estimate': estimate, 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' }, 'GET /retrieval/profiles': profiles }
 afterEach(() => vi.unstubAllGlobals())
 // Local model tests run with open models on, as the server reports them (ARA-090).
 const openModels = { 'GET /features': { open_models: true } }

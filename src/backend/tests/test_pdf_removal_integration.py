@@ -166,7 +166,7 @@ async def test_removal_detaches_the_pdf_keeps_what_a_chat_uses_and_deletes_the_r
     assert job.payload["paper_titles"] == ["Removed PDF paper"]
 
 
-async def test_older_chats_keep_reading_citing_and_asking_about_their_pdf(resources):
+async def test_older_chats_keep_their_history_passages_and_search_scope(resources):
     """Given a chat over the paper, when its PDF is removed, then the chat still lists it with
     its pinned PDF, its passages, file facts and search scope stay, and nothing marks it."""
     from app.services.chat import chat_scopes

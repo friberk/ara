@@ -1,4 +1,4 @@
-import { textIn } from '@/test/editor'
+import { textIn, typeAndSettle, typeThenEnter } from '@/test/editor'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -31,9 +31,9 @@ function mount(path: string) {
 const page = (items: unknown[], extra: object = {}) => ({ provider: 'openalex', items, next_cursor: null, total: items.length, ...extra })
 
 test('Given search results, When one is saved, Then it is confirmed and can be opened from the row', async () => {
-  const { calls } = mockApi({ 'GET /search': page([hit], { next_cursor: 'page2', total: 40 }), 'POST /papers': paper })
+  const { calls } = mockApi({ 'POST /search-history': { id: 's1', provider: 'openalex', query: 'retrieval', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T09:00:00Z' }, 'GET /search': page([hit], { next_cursor: 'page2', total: 40 }), 'POST /papers': paper })
   const { user } = mount('/search')
-  await user.type(await screen.findByRole('textbox', { name: 'Research topic' }), 'retrieval')
+  await typeAndSettle(user, await screen.findByRole('textbox', { name: 'Research topic' }), 'retrieval')
   await user.click(screen.getByRole('button', { name: 'Search papers' }))
   const row = await screen.findByRole('article', { name: paper.title })
   expect(within(row).getByRole('heading', { level: 2, name: paper.title })).toBeVisible()
@@ -93,7 +93,7 @@ test('Given an unsaved result, When Ask about this paper is chosen, Then it is s
 })
 
 test('Given a provider limit, When searching, Then the busy provider and a retry are shown inline', async () => {
-  mockApi({ 'GET /search': () => json({ code: 'PROVIDER_RATE_LIMITED', message: 'The academic provider is rate limited. Try again shortly.', request_id: 'r1' }, 429) })
+  mockApi({ 'POST /search-history': { id: 's1', provider: 'openalex', query: 'graphs', created_at: '2026-10-08T09:00:00Z', last_searched_at: '2026-10-08T09:00:00Z' }, 'GET /search': () => json({ code: 'PROVIDER_RATE_LIMITED', message: 'The academic provider is rate limited. Try again shortly.', request_id: 'r1' }, 429) })
   const { user } = mount('/search')
   await user.type(await screen.findByRole('textbox', { name: 'Research topic' }), 'graphs')
   await user.click(screen.getByRole('button', { name: 'Search papers' }))
@@ -118,7 +118,7 @@ test('Given a search thread, When the docked composer refines it, Then the searc
   const composer = screen.getByRole('textbox', { name: 'Research topic' })
   expect(textIn(composer)).toBe('graphs')
   await user.clear(composer)
-  await user.type(composer, 'graph neural networks{Enter}')
+  await typeThenEnter(user, composer, 'graph neural networks')
   await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path === '/search-history')?.body).toEqual({ provider: 'openalex', query: 'graph neural networks' }))
   await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent('/search?q=graph+neural+networks&provider=openalex'))
   expect(await screen.findByRole('heading', { level: 1, name: 'graph neural networks' })).toBeVisible()
