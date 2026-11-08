@@ -5,6 +5,12 @@ Measured on November 3, 2026, against application and test commit
 agent-generated HW1 suite before HW2 improvement rounds. No application code,
 tests, dependency manifests or lockfiles were changed for the measurement.
 
+This existing suite serves as HW2's initial suite instead of a newly generated one.
+The instructor was told that the first homework used TDD and so already had a test
+suite, and confirmed that this is acceptable. The journal records test-first work
+and also some labelled test-after cases (ARA-033, for example), so the suite should
+not be described as uniformly test-first.
+
 ## Coverage and execution
 
 Verified initial baseline, including the real-service backend integration tests:
@@ -43,6 +49,8 @@ Backend candidates, based on the final report and source inspection:
 | `app/jobs/actors.py` | 81.19% | 65.62% | Some ingest/summary dispatch and cancellation paths in the actor wrapper |
 | `app/integrations/academic.py` | 84.66% | 79.49% | Malformed provider responses and lookup error/fallback handling |
 | `app/services/fulltext.py` | 88.03% | 74.00% | Some lost-lease, superseded-attachment and deletion-during-retrieval handling |
+| `app/services/metadata.py` | 92.33% | 84.09% | Storage failures while re-reading a PDF; adopting a DOI or authors from a re-read PDF; a job lost or paper deleted during re-read; lookup timeout |
+| `app/core/storage_init.py` | 50.00% | 50.00% | Bucket-creation race and error handling; the `main()` entry point that initializes the private bucket |
 
 The experimental model actors are also lower (64.00% lines, 25.00% branches),
 and remain included in the denominator. Open models remain frozen; these results
@@ -164,10 +172,14 @@ python3 scripts/bootstrap.py
 python3 scripts/test-stack.py test --project-name ara-hw2-test --dry-run
 ```
 
-The measurement runner executes the setup and Ruff steps, then replaces the last
-pytest step with `uv run --frozen --with coverage==7.17.1 --with greenlet==3.5.6 python -m coverage run
+The final measurement replaces the last pytest step with `uv run --frozen --with coverage==7.17.1 --with greenlet==3.5.6 python -m coverage run
 --rcfile=/coverage/backend-docker.coveragerc -m pytest -q`, with `ARA_INTEGRATION=1`
-and the evidence directory mounted at `/coverage`. The configuration is:
+and the evidence directory mounted at `/coverage`. Its runner,
+`measure-backend-final.py`, did not repeat the setup and Ruff steps. It reused the
+stack prepared by the first full run (`measure-backend.py`), whose Ruff step reported
+`All checks passed!` (`backend-without-greenlet-setup.log`). The source did not
+change between those runs. To reproduce from a new stack, run every printed step
+except the last, then the instrumented command. The configuration is:
 
 ```ini
 [run]
@@ -216,7 +228,23 @@ npx --no-install vitest run --coverage --coverage.provider=v8 \
   --coverage.reportOnFailure
 ```
 
+## Independent reproduction
+
+On November 8, 2026, Claude Code followed these instructions from a clean
+`git archive` export of `b40405b`, in a separate `ara-hw2-audit-test` Compose project
+that was removed afterwards. This run included the setup and Ruff steps.
+
+| Check | Result | Compared with the baseline |
+| --- | --- | --- |
+| Ruff | `All checks passed!` | Same result as the first full run |
+| Backend | 1,228 passed in 297.31 s; 8,584/9,050 lines; 2,011/2,378 branches | Covered lines and branches identical in all 94 files; again combined 13 data sets and skipped 35 |
+| Frontend | 766 tests in 94 files passed in 29.61 s; 3,184/3,322 lines; 3,474/3,968 branches | Lines and branches identical |
+| Frontend statements and functions | 4,039/4,310 (93.71%) and 1,333/1,460 (91.30%) | Two fewer of each; the cause was not investigated |
+
+Use lines and branches when comparing later rounds. The logs and reports are under
+the ignored `docs/evidence/generated/hw2-test-review/verification/`.
+
 Keep the initial reports and source scope fixed when comparing later rounds.
-HW2 still requires correctness/fault-detection evaluation and at least two rounds
-of agent-guided test improvement; this measurement does not count as an
-improvement round.
+[The test review](hw2-test-review.md) evaluates correctness and fault detection.
+HW2 still requires at least two rounds of agent-guided test improvement; this
+measurement does not count as an improvement round.
