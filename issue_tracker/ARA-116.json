@@ -1,0 +1,27 @@
+{
+  "id": "ARA-116",
+  "title": "Audit initial HW2 tests for executability, assertions and review findings",
+  "type": "testing",
+  "priority": "P1",
+  "description": "User request on 2026-11-08: verify executable tests and assertions against expected application behavior; review incorrect, redundant and missing cases; record overall impression with 1\u20133 concrete examples for each aspect for the homework report. This is an initial-suite audit, not a test-improvement round.",
+  "dependencies": [
+    "ARA-115"
+  ],
+  "acceptance_criteria": [
+    "Given the initial source/test tree, when its tests are executed or inspected, then record exact commands, results and any unexecuted layers.",
+    "Given HW1 requirements and current intended behavior, when tests are reviewed, then identify 1\u20133 supported examples per assessment aspect with source/test references and a precise explanation of what is and is not proved.",
+    "Given suspected incorrect or redundant tests, when evidence does not establish a defect, then label limitations or overlap instead of inventing findings.",
+    "Given report preparation, when the audit is complete, then save an overall impression and representative examples with real execution evidence."
+  ],
+  "status": "completed",
+  "related_files": [
+    "docs/hw2-test-review.md",
+    "docs/hw2-baseline.md",
+    "issue_tracker/ARA-115.json",
+    "docs/agent-development-log.md"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Fresh unchanged-suite execution on 2026-11-08: backend 1228 passed, no skips, 264.99 s; frontend npm ci then npm run check passed TypeScript, ESLint and 766 tests in 94 files, 34.11 s; Playwright 27 passed in 3.5 min against fresh isolated fixture stack; infrastructure 46 OK in 7.701 s. Confirmed malformed completion fixture through production SSE parser. Ignored diagnostic Vite transforms applied only in memory: one-way expansion survived the named toggle test (1 selected pass), removing upload transport abort survived the selected cancellation test (1 pass), fixed summary UUID survived all 25 summary cases in five files. Initial source/tests/manifests/lockfiles unchanged. Report includes three strong behavioral examples, three incorrect-or-weak examples, two redundancy findings, and three missing checks with references and honest scope. Stale host dependency failure and diagnostic config loading error are recorded. No preexisting application bug established, and no test-improvement round performed. Independent verification by Claude Code on 2026-11-08 from a clean export of b40405b in the removed ara-hw2-audit-test project: Ruff passed; backend 1228 passed in 297.31 s with 8584/9050 lines and 2011/2378 branches, identical in all 94 files; frontend 766 passed in 29.61 s with 3184/3322 lines and 3474/3968 branches. Each of the three injected faults left all 766 frontend tests passing; Playwright was not run against them. Added a flakiness section from recorded runs (backend 5, frontend 3, infrastructure 3, Playwright 1), narrowed the pagination finding to the backend provider client, and recorded the instructor's approval of the existing suite as the HW2 initial suite.",
+  "updated_at": "2026-11-08"
+}
