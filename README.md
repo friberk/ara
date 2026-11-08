@@ -289,7 +289,7 @@ The LLM never sees raw database IDs. It cites short passage handles, and the ser
 │   │       └── models/ repositories/ schemas/
 │   └── frontend/             React app, unit tests and Playwright browser specs
 ├── docker/                   Dockerfiles, the Caddy config and the Ollama runtime
-├── scripts/                  bootstrap, isolated test stack, deploy
+├── scripts/                  bootstrap, isolated test stack, coverage, deploy
 ├── tests/                    infrastructure checks and PDF fixtures
 ├── branding/                 the ara. wordmark
 ├── docs/                     plan, API contract, development journal, reference
@@ -320,6 +320,31 @@ docker compose exec frontend npm run build    # frontend production build
 ```
 
 The backend suite runs against its own throwaway PostgreSQL, Redis and MinIO, so it never touches the actual data. External providers are replaced with recorded fixtures, and any request that tries to reach a real host fails the test. The Playwright browser suite needs a fixture stack of its own, and the [technical reference](docs/reference.md#verify) shows how to bring it up.
+
+### Test suite and coverage
+
+This is the final test suite from Homework 2.
+
+| Suite | Location | Runs against |
+| --- | --- | --- |
+| Backend (pytest) | `src/backend/tests/` | Real PostgreSQL, Redis and MinIO, with recorded provider fixtures |
+| Frontend (Vitest) | `*.test.ts` and `*.test.tsx` under `src/frontend/src/` | A strict API mock that fails on unexpected calls |
+| Browser (Playwright) | `src/frontend/e2e/` | The whole app on a fixture stack |
+| Infrastructure | `tests/infrastructure/` | Compose, deployment and repository rules |
+
+To reproduce the coverage figures you need Docker with Compose, Python 3 and Node 24:
+
+```bash
+python3 scripts/bootstrap.py                              # create a private .env
+python3 scripts/measure-coverage.py                       # Ruff, backend and frontend, with coverage
+python3 -m unittest discover -s tests/infrastructure -v   # infrastructure checks
+```
+
+The script installs the frontend's locked dependencies and its coverage tool, starts its own isolated test stack, and prints the line and branch totals. Add `backend` or `frontend` to run one side, or `--project-name ara-<name>-test` to use another stack. Reports go to the Git-ignored `docs/evidence/generated/coverage/`.
+
+The backend run reports 21 expected failures. They are strict and record four known bugs (ARA-118 to ARA-121), so each one becomes a test failure as soon as its bug is fixed.
+
+The evaluation is written up in the [baseline](docs/hw2-baseline.md), the [test review](docs/hw2-test-review.md), [round 1](docs/hw2-round-1.md) and [round 2](docs/hw2-round-2.md).
 
 ## Deployment
 
