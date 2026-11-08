@@ -20,7 +20,10 @@
     "issue_tracker/ARA-115.json",
     "docs/agent-development-log.md"
   ],
-  "commits": [],
+  "commits": [
+    "fcf0d6a",
+    "69035e6"
+  ],
   "pull_requests": [],
   "verification": "Fresh unchanged-suite execution on 2026-11-08: backend 1228 passed, no skips, 264.99 s; frontend npm ci then npm run check passed TypeScript, ESLint and 766 tests in 94 files, 34.11 s; Playwright 27 passed in 3.5 min against fresh isolated fixture stack; infrastructure 46 OK in 7.701 s. Confirmed malformed completion fixture through production SSE parser. Ignored diagnostic Vite transforms applied only in memory: one-way expansion survived the named toggle test (1 selected pass), removing upload transport abort survived the selected cancellation test (1 pass), fixed summary UUID survived all 25 summary cases in five files. Initial source/tests/manifests/lockfiles unchanged. Report includes three strong behavioral examples, three incorrect-or-weak examples, two redundancy findings, and three missing checks with references and honest scope. Stale host dependency failure and diagnostic config loading error are recorded. No preexisting application bug established, and no test-improvement round performed. Independent verification by Claude Code on 2026-11-08 from a clean export of b40405b in the removed ara-hw2-audit-test project: Ruff passed; backend 1228 passed in 297.31 s with 8584/9050 lines and 2011/2378 branches, identical in all 94 files; frontend 766 passed in 29.61 s with 3184/3322 lines and 3474/3968 branches. Each of the three injected faults left all 766 frontend tests passing; Playwright was not run against them. Added a flakiness section from recorded runs (backend 5, frontend 3, infrastructure 3, Playwright 1), narrowed the pagination finding to the backend provider client, and recorded the instructor's approval of the existing suite as the HW2 initial suite.",
   "updated_at": "2026-11-08"

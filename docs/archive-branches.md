@@ -69,5 +69,6 @@ Merged feature branches are kept as a record of how the project was built, at th
 | | `docs/ara-018-reflection-report` | `f8872a7` | Reflection report (ARA-018). |
 | | `docs/ara-114-agents-md` | `cd1bd07` | AGENTS.md overhaul and the CLAUDE.md copy (ARA-114), merged at `7a71780`. |
 | HW2 baseline | `feat/ara-115-hw2-coverage` | `3e8a6ee` | Initial coverage evaluation, execution problems and report evidence (ARA-115). |
+| HW2 test review | `feat/ara-116-hw2-test-review` | `fcf0d6a` | Initial-suite audit, flakiness record and independent verification (ARA-116), merged at `69035e6`. |
 
 Ignored local configuration and evidence from removed worktrees are kept under `docs/evidence/generated/worktree-archives/`.
