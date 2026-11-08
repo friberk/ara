@@ -37,7 +37,7 @@ test('Given a search in flight, Then skeleton rows are announced as searching th
 
 test('Given Load more is pressed, Then it stays disabled and busy until the next page arrives', async () => {
   const next = deferred()
-  mockApi({ 'GET /search': ({ url }) => (url.searchParams.get('cursor') === 'c2' ? next.promise : json(page([hit], { next_cursor: 'c2', total: 2 }))) })
+  const { calls } = mockApi({ 'GET /search': ({ url }) => (url.searchParams.get('cursor') === 'c2' ? next.promise : json(page([hit], { next_cursor: 'c2', total: 2 }))) })
   const { user } = mount('/search?q=evidence&provider=openalex')
   const more = await screen.findByRole('button', { name: 'Load more' })
   expect(more).toBeEnabled()
@@ -47,6 +47,9 @@ test('Given Load more is pressed, Then it stays disabled and busy until the next
   next.resolve(json(page([{ ...hit, external_id: 'W2', title: 'Second page paper' }], { next_cursor: null, total: 2 })))
   expect(await screen.findByRole('article', { name: 'Second page paper' })).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  const [firstPage, secondPage] = calls.filter((call) => call.path === '/search').map((call) => Object.fromEntries(call.url.searchParams))
+  expect(firstPage).toEqual({ q: 'evidence', provider: 'openalex', limit: '20' })
+  expect(secondPage).toEqual({ q: 'evidence', provider: 'openalex', limit: '20', cursor: 'c2' })
 })
 
 test('Given a result already in the library, When Ask about this paper is chosen, Then its workspace opens without saving again', async () => {

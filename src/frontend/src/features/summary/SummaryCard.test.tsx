@@ -80,14 +80,24 @@ test('Given two summary versions, Then only the latest shows, with no version me
   expect(within(card).getByRole('button', { name: 'Show full summary' })).toBeVisible()
 })
 
-test('Given a long summary, When expanded and collapsed, Then the full text toggles behind one control', async () => {
+// jsdom has no layout, so this checks the control and the inert state; the visual clipping itself is CSS.
+test('Given a stored summary, When expanded and collapsed, Then one control opens the text and closes it again', async () => {
   mockApi({ ...settings, 'GET /papers/p1/summaries': { items: [summary('s1', 'Complete summary text.', '2026-10-08T12:00:00Z')] } })
   const { user } = mount()
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   const toggle = await within(card).findByRole('button', { name: 'Show full summary' })
+  const content = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+  expect(content).toHaveTextContent('Complete summary text.')
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(content).toHaveAttribute('inert')
   await user.click(toggle)
-  expect(within(card).getByRole('button', { name: 'Collapse summary' })).toHaveAttribute('aria-expanded', 'true')
+  expect(within(card).getByRole('button', { name: 'Collapse summary' })).toBe(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(content).not.toHaveAttribute('inert')
+  await user.click(toggle)
+  expect(within(card).getByRole('button', { name: 'Show full summary' })).toBe(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(content).toHaveAttribute('inert')
 })
 
 test('Given a metadata-only paper, When Attach PDF is chosen, Then the upload for this paper opens instead of a disabled action', async () => {
@@ -102,9 +112,12 @@ test('Given a metadata-only paper, When Attach PDF is chosen, Then the upload fo
   expect(within(dialog).getByLabelText('PDF file')).toBeInTheDocument()
 })
 
-test('Given a PDF still processing, Then the summary card waits without offering an upload or a disabled action', async () => {
+test.each([
+  ['no active document yet', null],
+  ['an active document', 'd1'],
+])('Given a PDF still processing with %s, Then the summary card waits without offering an upload or a disabled action', async (_state, activeDocument) => {
   mockApi(settings)
-  mount({ ...paper, document_status: 'processing', active_document_id: null })
+  mount({ ...paper, document_status: 'processing', active_document_id: activeDocument })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()
   expect(within(card).queryByRole('button', { name: /Attach PDF|Generate summary/ })).not.toBeInTheDocument()
@@ -141,6 +154,31 @@ test('Given a summary, When Regenerate summary is clicked, Then a new summary is
   const post = calls.find((call) => call.method === 'POST')
   expect(post?.body).toMatchObject({ model: luna.key, reasoning_effort: 'low' })
   expect((post?.body as { request_id: string }).request_id).toMatch(/^[0-9a-f-]{36}$/)
+})
+
+test('Given a summary generated and then regenerated, Then each request carries its own id', async () => {
+  let generated = 0
+  let finished = false
+  const { calls } = mockApi({
+    ...settings,
+    'GET /papers/p1/summaries': () => json({ items: finished ? [summary('s1', 'First summary.', '2026-10-08T12:01:00Z')] : [] }),
+    'POST /papers/p1/summaries': () => { generated += 1; return json({ job_id: `j${generated}`, summary_id: null }, 202) },
+    'GET /jobs/j1': () => { finished = true; return json(job('j1', 'completed', 'completed', 100)) },
+    'GET /jobs/j2': job('j2', 'processing', 'summarizing', 40),
+  })
+  const { user } = mount()
+  const card = await screen.findByRole('article', { name: 'Paper summary' })
+  const generate = await within(card).findByRole('button', { name: 'Generate summary' })
+  await waitFor(() => expect(generate).toBeEnabled())
+  await user.click(generate)
+  const regenerate = await within(card).findByRole('button', { name: 'Regenerate summary' }, { timeout: 4000 })
+  await waitFor(() => expect(regenerate).toBeEnabled())
+  await user.click(regenerate)
+  await waitFor(() => expect(generated).toBe(2))
+  const [first, second] = calls.filter((call) => call.method === 'POST').map((call) => (call.body as { request_id: string }).request_id)
+  expect(first).toMatch(/^[0-9a-f-]{36}$/)
+  expect(second).toMatch(/^[0-9a-f-]{36}$/)
+  expect(second).not.toBe(first)
 })
 
 test('Given a summary job already running, Then Regenerate summary is disabled', async () => {

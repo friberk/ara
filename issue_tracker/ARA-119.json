@@ -1,0 +1,24 @@
+{
+  "id": "ARA-119",
+  "title": "Cancelling after the upload body has arrived may still create the paper",
+  "type": "bug",
+  "priority": "P2",
+  "description": "Logged separately at the user's request during HW2 round 1 (ARA-117), which covers only the client side of Cancel. The browser aborts the transfer, but once the whole body has reached the server the POST /documents handler runs to completion: it has no disconnect check (request.is_disconnected appears only in services/chat.py). The Cancel button stays visible until the response arrives, so cancelling in that window could leave a paper and an ingest job in the library. This comes from reading the code and has not been reproduced.",
+  "dependencies": [
+    "ARA-117"
+  ],
+  "acceptance_criteria": [
+    "Given an upload whose body has fully arrived, when the client disconnects before the handler commits, then either no paper is created or the user can see and discard the result.",
+    "Given a client that disconnects mid-body, when the handler reads the form, then nothing is stored."
+  ],
+  "status": "planned",
+  "related_files": [
+    "src/backend/app/routes/documents.py",
+    "src/backend/app/services/uploads.py",
+    "src/frontend/src/components/upload/use-upload.ts"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Not yet verified by execution. Source inspection only, 2026-11-08.",
+  "updated_at": "2026-11-08"
+}

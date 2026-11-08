@@ -402,6 +402,40 @@ async def test_given_saved_paper_when_same_work_is_searched_then_hit_carries_sav
     assert requests == ["/works"]
 
 
+async def test_given_a_next_cursor_when_load_more_calls_the_api_then_the_provider_gets_it(
+    resources,
+):
+    """Given two OpenAlex pages, the API's next_cursor reaches the provider unchanged."""
+    sent = []
+
+    def provider(request):
+        sent.append(request.url.params["cursor"])
+        first = request.url.params["cursor"] == "*"
+        return httpx.Response(
+            200,
+            json={
+                "meta": {"count": 2, "next_cursor": "opaque+token==" if first else None},
+                "results": [{"id": f"https://openalex.org/{'W1' if first else 'W2'}"}],
+            },
+        )
+
+    await resources.http.aclose()
+    resources.http = httpx.AsyncClient(transport=httpx.MockTransport(provider))
+    params = {"provider": "openalex", "q": "retrieval", "limit": 1}
+    async with client_for(resources) as client:
+        first = (await client.get("/api/v1/search", params=params)).json()
+        second = await client.get(
+            "/api/v1/search", params={**params, "cursor": first["next_cursor"]}
+        )
+    assert second.status_code == 200, second.text
+    assert sent == ["*", "opaque+token=="]
+    assert first["next_cursor"] == "opaque+token==" and second.json()["next_cursor"] is None
+    assert [item["external_id"] for item in [*first["items"], *second.json()["items"]]] == [
+        "W1",
+        "W2",
+    ]
+
+
 async def test_given_active_summary_job_when_filtering_jobs_then_paper_link_is_returned(
     resources,
 ):

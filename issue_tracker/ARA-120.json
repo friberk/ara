@@ -1,0 +1,22 @@
+{
+  "id": "ARA-120",
+  "title": "A PDF redirect with a non-numeric port escapes the downloader",
+  "type": "bug",
+  "priority": "P3",
+  "description": "Found by HW2 round 1 (ARA-117). ContentDownloader.fetch builds httpx.Request from a redirect target before the transport validates it. A Location such as https://<storage>:abc/x raises httpx.InvalidURL, which is neither httpx.HTTPError nor ValueError, so it leaves fetch instead of returning the unsafe_url outcome. No request is sent, so the rule that PDFs come only from OpenAlex storage on the default port still holds. services/fulltext.py has no handler for it either.",
+  "dependencies": [
+    "ARA-117"
+  ],
+  "acceptance_criteria": [
+    "Given a redirect whose port is not a number, when the PDF is fetched, then the outcome is unsafe_url and no further request is sent."
+  ],
+  "status": "observed",
+  "related_files": [
+    "src/backend/app/integrations/openalex_content.py",
+    "src/backend/tests/test_openalex_content.py"
+  ],
+  "commits": [],
+  "pull_requests": [],
+  "verification": "Reproduced on 2026-11-08 with --runxfail: httpx.InvalidURL: Invalid port: 'abc', raised from openalex_content.py:176. Tracked by the strict xfail test_a_redirect_with_a_malformed_port_is_refused. Not fixed: round 1 changes tests only.",
+  "updated_at": "2026-11-08"
+}

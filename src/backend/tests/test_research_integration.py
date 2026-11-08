@@ -88,6 +88,8 @@ async def test_pdf_upload_child_extraction_original_download_and_paper_isolated_
         paper = (await client.get(f"/api/v1/papers/{references['paper_id']}")).json()
         assert paper["title"] == "Original PDF Title" and paper["authors"] == ["Known Author"]
         assert paper["year"] is None and paper["document_status"] == "ready"
+        assert paper["abstract"] == "Grounded citations refer to physical pages."
+        assert paper["metadata_provenance"]["abstract"] == {"source": "pdf"}
         downloaded = await client.get(f"/api/v1/documents/{references['document_id']}/download")
         assert (
             downloaded.content == original

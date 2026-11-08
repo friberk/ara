@@ -106,7 +106,7 @@ def test_a_page_set_in_one_size_has_no_printed_title_so_the_info_title_stays():
 
 
 def test_xmp_title_beats_a_printed_info_title_and_supplies_creators_venue_and_year():
-    from support.front_matter import AUTHORS, with_xmp, xmp_packet
+    from support.front_matter import with_xmp, xmp_packet
 
     data = with_xmp(
         toolchain_pdf(info_title="Module While You Are Sleeping", stamp=None),
@@ -123,7 +123,6 @@ def test_xmp_title_beats_a_printed_info_title_and_supplies_creators_venue_and_ye
     assert metadata["venue"] == "27th USENIX Security Symposium"
     # The publication date counts; the file's xmp:CreateDate (2026) never does.
     assert metadata["year"] == 2018
-    assert AUTHORS.startswith("Seunghun Han")
 
 
 def test_xmp_junk_title_is_filtered_like_the_info_title():
@@ -149,3 +148,38 @@ def test_malformed_xmp_never_fails_extraction():
     data = with_xmp(toolchain_pdf(stamp=None), "<x:xmpmeta><rdf:RDF><dc:title>unclosed")
     metadata = extracted(data)
     assert metadata["title"] == TITLE and metadata["venue"] is None
+
+
+def one_page(text: str) -> bytes:
+    document = pymupdf.open()
+    document.new_page().insert_text((72, 72), text)
+    data = document.tobytes()
+    document.close()
+    return data
+
+
+@pytest.mark.parametrize(
+    "front_matter",
+    [
+        "Abstract\n{body}\nIntroduction\nThe body starts here.",
+        "ABSTRACT\n{body}\n1 INTRODUCTION\nThe body starts here.",
+        "Abstract\n{body}\n1. Introduction\nThe body starts here.",
+        "Abstract: {body}\nIntroduction\nThe body starts here.",
+    ],
+)
+def test_a_printed_abstract_stops_at_the_introduction(front_matter):
+    body = "Grounded retrieval improves measured accuracy."
+    assert extracted(one_page(front_matter.format(body=body)))["abstract"] == body
+
+
+@pytest.mark.parametrize(
+    ("line", "year"),
+    [
+        ("© 2024 The Authors.", 2024),
+        ("Copyright 2019 ACM.", 2019),
+        ("Published 2021", 2021),
+        ("Publication year: 2022", 2022),
+    ],
+)
+def test_a_printed_publication_year_is_read(line, year):
+    assert extracted(one_page(f"Some Research Paper\n{line}\nBody text."))["year"] == year

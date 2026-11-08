@@ -1,3 +1,4 @@
+import { act } from '@testing-library/react'
 import { vi } from 'vitest'
 
 export function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } }) }
@@ -5,6 +6,19 @@ export function noContent() { return new Response(null, { status: 204 }) }
 
 type Handler = (request: { url: URL; method: string; init?: RequestInit; body: unknown }) => Response | Promise<Response>
 export type Routes = Record<string, Handler | object>
+
+/** A route that stays open until `respond()`, so a test can cancel first and have the server answer afterwards. */
+export function heldResponse(answer: () => Response) {
+  let signal: AbortSignal | null | undefined
+  let release = () => {}
+  const handler: Handler = ({ init }) => { signal = init?.signal; return new Promise<Response>((resolve) => { release = () => resolve(answer()) }) }
+  return {
+    handler,
+    aborted: () => signal?.aborted,
+    /** Answers, then gives the late response time to reach whatever would act on it. */
+    respond: () => act(async () => { release(); await new Promise((resolve) => setTimeout(resolve, 30)) }),
+  }
+}
 
 /**
  * Stubs fetch with "METHOD /path" routes (path without the /api/v1 prefix or query string).

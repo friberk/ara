@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import App from '@/App'
-import { mockApi } from '@/test/fetch-routes'
+import { heldResponse, mockApi } from '@/test/fetch-routes'
 import { testClient } from '@/test/render'
 
 const ready = { id: 'p1', title: 'Attention is all you need', authors: ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit'], year: 2017, abstract: 'The dominant sequence transduction models are based on recurrent networks.', doi: '10.48550/arXiv.1706.03762', sources: [], document_status: 'ready', active_document_id: 'd1', metadata_provenance: {} }
@@ -204,4 +204,18 @@ test('Given an upload in the list, When its processing settles, Then the library
   settled = true
   expect(await within(papers).findByRole('link', { name: /^Fresh title, / }, { timeout: 5000 })).toBeVisible()
   expect(within(papers).getByRole('link', { name: /PDF attached/ })).toBeVisible()
+})
+
+test('Given an upload in the list, When its Cancel is pressed, Then the transfer stops and a late response adds no row', async () => {
+  const upload = heldResponse(() => new Response(JSON.stringify({ paper_id: 'p7', document_id: 'd7', job_id: 'j7', duplicate: false }), { status: 202 }))
+  const { calls } = mockApi({ 'POST /documents': upload.handler })
+  const { user } = mount('/library')
+  await screen.findByRole('heading', { level: 1, name: 'Library' })
+  await user.upload(screen.getByLabelText('PDF files'), pdf('fresh.pdf'))
+  const uploads = await screen.findByRole('list', { name: 'Uploads' })
+  await user.click(within(uploads).getByRole('button', { name: 'Cancel fresh.pdf' }))
+  expect(upload.aborted()).toBe(true)
+  await upload.respond()
+  expect(screen.queryByText('fresh.pdf')).not.toBeInTheDocument()
+  expect(calls.some((call) => call.path === '/jobs/j7')).toBe(false)
 })

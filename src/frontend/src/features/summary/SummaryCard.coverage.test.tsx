@@ -59,14 +59,7 @@ test('Given summaries fail to load, Then the error is inline and Try again loads
   expect(await within(card).findByText('Loaded summary.')).toBeInTheDocument()
 })
 
-// Finish review: a paper without a usable PDF offers the next step (or waits) instead of a disabled action.
-test('Given a PDF still processing, Then the card explains the wait and offers no action', async () => {
-  mount(settings, { ...paper, document_status: 'processing' as const })
-  const card = await screen.findByRole('article', { name: 'Paper summary' })
-  expect(await within(card).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()
-  expect(within(card).queryByRole('button', { name: /Generate summary|Attach PDF/ })).not.toBeInTheDocument()
-})
-
+// Finish review: a paper without a usable PDF offers the next step instead of a disabled action.
 test('Given a failed PDF, Then the card explains why and offers Attach PDF', async () => {
   mount(settings, { ...paper, document_status: 'failed' as const })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
