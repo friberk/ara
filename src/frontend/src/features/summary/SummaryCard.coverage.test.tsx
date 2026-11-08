@@ -4,7 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import type { Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { json, mockApi, type Routes } from '@/test/fetch-routes'
+import { json, mockApi, noSummaries, type Routes } from '@/test/fetch-routes'
 import { renderWithProviders } from '@/test/render'
 import { SummaryCard } from '.'
 
@@ -61,7 +61,7 @@ test('Given summaries fail to load, Then the error is inline and Try again loads
 
 // Finish review: a paper without a usable PDF offers the next step instead of a disabled action.
 test('Given a failed PDF, Then the card explains why and offers Attach PDF', async () => {
-  mount(settings, { ...paper, document_status: 'failed' as const })
+  mount({ ...settings, ...noSummaries('p1') }, { ...paper, document_status: 'failed' as const })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('PDF processing failed. Attach a text-based PDF to generate a summary.')).toBeVisible()
   expect(within(card).getByRole('button', { name: 'Attach PDF' })).toBeEnabled()
@@ -69,14 +69,14 @@ test('Given a failed PDF, Then the card explains why and offers Attach PDF', asy
 })
 
 test('Given a model without structured output, Then Generate summary is disabled with the reason', async () => {
-  mount({ ...settings, 'GET /models': { items: [{ ...luna, supports_structured_output: false }] } }, paper)
+  mount({ ...settings, ...noSummaries('p1'), 'GET /models': { items: [{ ...luna, supports_structured_output: false }] } }, paper)
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('The selected model can’t write summaries. Choose another model in the composer.')).toBeVisible()
   expect(within(card).getByRole('button', { name: 'Generate summary' })).toBeDisabled()
 })
 
 test('Given no summary yet, Then Generate summary shows with no model or effort line', async () => {
-  mount(settings)
+  mount({ ...settings, ...noSummaries('p1') })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   // Waiting for enabled means the models have loaded, so a model line would already be rendered.
   await waitFor(() => expect(within(card).getByRole('button', { name: 'Generate summary' })).toBeEnabled())
@@ -86,6 +86,7 @@ test('Given no summary yet, Then Generate summary shows with no model or effort 
 test('Given a server that ignores the job filters, Then jobs of other papers and finished jobs show no progress here', async () => {
   mount({
     ...settings,
+    ...noSummaries('p1'),
     'GET /jobs': { items: [{ ...job('j8', 'processing'), paper_id: 'another-paper' }, job('j9', 'completed'), { ...job('j10', 'processing'), kind: 'ingest' }] },
   })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
@@ -95,7 +96,7 @@ test('Given a server that ignores the job filters, Then jobs of other papers and
 
 test('Given Generate summary pressed twice quickly, Then only one paid summary is requested', async () => {
   let posts = 0
-  const { user } = mount({ ...settings, 'POST /papers/p1/summaries': () => { posts++; return never() } })
+  const { user } = mount({ ...settings, ...noSummaries('p1'), 'POST /papers/p1/summaries': () => { posts++; return never() } })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   const generate = await within(card).findByRole('button', { name: 'Generate summary' })
   await waitFor(() => expect(generate).toBeEnabled())

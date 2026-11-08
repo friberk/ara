@@ -2,11 +2,12 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
 import { FetchBackedXhr } from './fake-xhr'
+import { failOnUnexpectedRequests } from './fetch-routes'
 
 // Whole-app tests load lazy routes (Markdown, KaTeX, pdf.js) on first use; under a parallel run that can exceed 1s.
 configure({ asyncUtilTimeout: 3000 })
 
-afterEach(() => { cleanup(); window.localStorage.clear(); document.documentElement.className = '' })
+afterEach(() => { cleanup(); window.localStorage.clear(); document.documentElement.className = ''; failOnUnexpectedRequests() })
 
 // jsdom lacks these browser APIs that Radix, the theme provider, the sidebar and the PDF reader rely on.
 if (!window.matchMedia) {

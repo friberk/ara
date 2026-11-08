@@ -3,7 +3,7 @@ import { screen, within } from '@testing-library/react'
 import type { Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noSummaries } from '@/test/fetch-routes'
 import { renderWithProviders } from '@/test/render'
 import { SummaryCard } from '.'
 
@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllGlobals())
 const card = (value: Paper) => <TooltipProvider><GenerationSettingsProvider><SummaryCard paper={value} /></GenerationSettingsProvider></TooltipProvider>
 
 test('Given the PDF is still being retrieved, Then the card says the summary follows it and offers no upload', async () => {
-  mockApi({ ...settings, 'GET /papers/p1/fulltext': { paper_id: 'p1', availability: 'open_copy_reported', locations: [], attempts: [], retrieval_job: { id: 'r1', kind: 'fulltext', state: 'processing', stage: 'fetching_pdf', progress: 40 } } })
+  mockApi({ ...noSummaries('p1'), ...settings, 'GET /papers/p1/fulltext': { paper_id: 'p1', availability: 'open_copy_reported', locations: [], attempts: [], retrieval_job: { id: 'r1', kind: 'fulltext', state: 'processing', stage: 'fetching_pdf', progress: 40 } } })
   renderWithProviders(card({ ...paper, document_status: 'metadata_only', active_document_id: null }))
   const article = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(article).findByText('The summary starts when the PDF is ready.')).toBeVisible()
@@ -26,7 +26,7 @@ test('Given the PDF is still being retrieved, Then the card says the summary fol
 
 test('Given the PDF becomes ready, When the server has queued its summary, Then the card follows it without a click', async () => {
   let ready = false
-  const { calls } = mockApi({ ...settings, 'GET /jobs': () => json({ items: ready ? [job] : [] }), 'GET /jobs/auto': { ...job, state: 'processing', stage: 'summarizing', progress: 30 } })
+  const { calls } = mockApi({ ...noSummaries('p1'), ...settings, 'GET /jobs': () => json({ items: ready ? [job] : [] }), 'GET /jobs/auto': { ...job, state: 'processing', stage: 'summarizing', progress: 30 } })
   const view = renderWithProviders(card({ ...paper, document_status: 'processing' }))
   const article = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(article).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()

@@ -2,7 +2,7 @@
 // e2e/workspace.spec.ts measures the real overflow in a browser.
 import { screen, within } from '@testing-library/react'
 import { mockApi } from '@/test/fetch-routes'
-import { assistantMessage, chatRow, citation, included, marker, mount, paper, paper2, settings, userMessage } from './pane-test-kit'
+import { assistantMessage, chatRow, citation, included, marker, mount, paper, paper2, paperRoutes, settings, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -19,7 +19,7 @@ test('Given an answer with a long link, a long identifier and a wide table, Then
 })
 
 test('Given a chat over several papers, Then the chip row above the thread is opaque', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { papers: [included(paper), included(paper2)] })] }, 'GET /chats/c1/messages': { items: [] } })
+  mockApi({ ...paperRoutes(paper, paper2), ...settings, 'GET /chats': { items: [chatRow('c1', { papers: [included(paper), included(paper2)] })] }, 'GET /chats/c1/messages': { items: [] } })
   mount('/papers/p1/chats/c1')
   expect(await screen.findByRole('list', { name: 'Papers in this conversation' })).toHaveClass('bg-background')
 })

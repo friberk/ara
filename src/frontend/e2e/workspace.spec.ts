@@ -170,6 +170,50 @@ test('Given a narrow screen, then Chat and PDF are segments, the paper header an
   expect(await noHorizontalOverflow(page)).toBeTruthy()
 })
 
+test('Given the reader hidden, when a citation chip is clicked, then the reader reopens at the cited page', async ({ page, request }) => {
+  const paper = await readyPaper(request)
+  await citedSummary(request, paper)
+  await page.goto(`/papers/${paper.id}`)
+  await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Hide reader' }).click()
+  await expect(page.getByRole('button', { name: 'Show reader' })).toBeVisible()
+  // A hidden reader stays mounted to keep its place, but is inert.
+  const hiddenReader = page.locator('[inert] section[aria-label="PDF reader"]')
+  await expect(hiddenReader).toHaveCount(1)
+
+  const { chip, cited } = await firstCitation(page)
+  await chip.click()
+
+  await expect(page.getByRole('button', { name: 'Hide reader' })).toBeVisible()
+  await expect(hiddenReader).toHaveCount(0)
+  await expect(page.getByLabel('Page number')).toHaveValue(String(cited))
+  await expect(page.getByRole('group', { name: `Page ${cited}` }).locator('[data-citation-highlight]').first()).toBeVisible()
+})
+
+test('Given a ready paper, when Replace PDF… uploads a new file, then the reader opens that file as the current PDF', async ({ page, request }) => {
+  const paper = await readyPaper(request)
+  const before = paper.active_document_id
+  await page.goto(`/papers/${paper.id}`)
+  // The reader re-renders its toolbar once the PDF loads, which closes a menu opened before that.
+  await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible({ timeout: 45_000 })
+  await (await pdfMenu(page)).getByRole('menuitem', { name: 'Replace PDF…' }).click()
+  const replace = page.getByRole('dialog', { name: 'Replace the PDF' })
+  const accepted = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/documents')
+  // Identical bytes are deduplicated, so this copy differs by a trailing comment.
+  const copy = Buffer.concat([await readFile(pdfPath), Buffer.from(`\n% e2e ${crypto.randomUUID()}\n`)])
+  await replace.getByLabel('PDF file').setInputFiles({ name: 'research-new-version.pdf', mimeType: 'application/pdf', buffer: copy })
+  await expect(replace).toHaveCount(0)
+  const { document_id: documentId } = await (await accepted).json() as { document_id: string }
+  expect(documentId).not.toBe(before)
+
+  await expect.poll(async () => { const current = await currentPaper(request, paper.id); return [current.active_document_id, current.document_status] }, { timeout: 45_000 }).toEqual([documentId, 'ready'])
+  await expect(page.getByRole('group', { name: 'Page 1' }).locator('canvas')).toBeVisible({ timeout: 45_000 })
+  const menu = await pdfMenu(page)
+  await expect(menu.getByText('research-new-version.pdf')).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Open original' })).toHaveAttribute('href', `/api/v1/documents/${documentId}/download`)
+  await page.keyboard.press('Escape')
+})
+
 test('ARA-097 Given a ready paper, when its PDF is removed from the reader and uploaded again, then the reader returns to upload and then opens the new PDF', async ({ page, request }) => {
   const paper = await readyPaper(request)
   await page.goto(`/papers/${paper.id}`)

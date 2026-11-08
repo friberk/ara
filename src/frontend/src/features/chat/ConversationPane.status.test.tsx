@@ -1,6 +1,6 @@
 // Retrieval progress while an answer is prepared (ARA-078): message.status names the stage before any text arrives.
 import { screen, waitFor, within } from '@testing-library/react'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noHistory } from '@/test/fetch-routes'
 import { ask, assistantMessage, chatRow, mount, settings, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -63,7 +63,7 @@ test('Given an answer being prepared, When status events arrive, Then the reader
 test('Given an insufficient first answer, When the server widens the search, Then the reader sees it searching more widely and the final answer replaces the first (ARA-094)', async () => {
   const stream = controlledStream()
   const answer = assistantMessage('m3', 'Recall at ten is 0.61.')
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
   const { user } = mount('/papers/p1/chats/c1')
   await ask(user, 'What recall at ten?')
   stream.push('message.started', { message_id: 'm3' })
@@ -88,7 +88,7 @@ test('Given an insufficient first answer, When the server widens the search, The
 test('Given a server that sends no status events, Then the answer streams as before', async () => {
   const answer = assistantMessage('m2', 'Plain answer.')
   const stream = controlledStream()
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
   const { user } = mount('/papers/p1/chats/c1')
   await ask(user, 'Anything?')
   stream.push('message.started', { message_id: 'm2' })
@@ -105,7 +105,7 @@ test('Given a server that sends no status events, Then the answer streams as bef
 test('Given background local work holds the runtime, When the waiting status arrives, Then the reader and the live region say the answer is waiting until search starts', async () => {
   const stream = controlledStream()
   const answer = assistantMessage('m3', 'BM25 reached 71.2 recall.')
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': () => stream.response() })
   const { user } = mount('/papers/p1/chats/c1')
   await ask(user, 'What recall did BM25 reach?')
   stream.push('message.started', { message_id: 'm3' })

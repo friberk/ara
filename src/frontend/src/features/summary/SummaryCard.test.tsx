@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import type { Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noSummaries } from '@/test/fetch-routes'
 import { renderWithProviders } from '@/test/render'
 import { SummaryCard } from '.'
 
@@ -102,7 +102,7 @@ test('Given a stored summary, When expanded and collapsed, Then one control open
 
 test('Given a metadata-only paper, When Attach PDF is chosen, Then the upload for this paper opens instead of a disabled action', async () => {
   // Finish review: one clear next action instead of a disabled Generate summary.
-  mockApi(settings)
+  mockApi({ ...settings, ...noSummaries('p1') })
   const { user } = mount({ ...paper, document_status: 'metadata_only', active_document_id: null })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('Attach a PDF to generate a summary.')).toBeVisible()
@@ -116,7 +116,7 @@ test.each([
   ['no active document yet', null],
   ['an active document', 'd1'],
 ])('Given a PDF still processing with %s, Then the summary card waits without offering an upload or a disabled action', async (_state, activeDocument) => {
-  mockApi(settings)
+  mockApi({ ...settings, ...noSummaries('p1') })
   mount({ ...paper, document_status: 'processing', active_document_id: activeDocument })
   const card = await screen.findByRole('article', { name: 'Paper summary' })
   expect(await within(card).findByText('The summary starts automatically when the PDF is ready.')).toBeVisible()

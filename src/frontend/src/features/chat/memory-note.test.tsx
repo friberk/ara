@@ -1,7 +1,7 @@
 // Conversation memory (ARA-078): once earlier messages are summarized, the composer footnote says so and shows the summary.
 import { screen, waitFor, within } from '@testing-library/react'
 import type { ChatMemory } from '@/api/types'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noSummaries } from '@/test/fetch-routes'
 import { ask, assistantMessage, chatRow, luna, mount, settings, sse, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -40,7 +40,7 @@ test('Given no summary yet, Then the usual footnote shows and there is nothing t
 })
 
 test('Given a server that cannot report memory yet, Then the usual footnote shows', async () => {
-  const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': history, 'GET /chats/c1/memory': () => json({ code: 'NOT_IMPLEMENTED', message: 'Not implemented.' }, 501) })
+  const { calls } = mockApi({ ...noSummaries('p1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/c1/messages': history, 'GET /chats/c1/memory': () => json({ code: 'NOT_IMPLEMENTED', message: 'Not implemented.' }, 501) })
   mount('/papers/p1/chats/c1')
   await waitFor(() => expect(calls.some((call) => call.path === '/chats/c1/memory')).toBe(true))
   expect(await screen.findByText(defaultNote)).toBeVisible()

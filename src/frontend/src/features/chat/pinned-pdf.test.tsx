@@ -2,7 +2,7 @@
 // the PDF it pinned, while a new conversation on a paper without a PDF says it needs one.
 import { screen, waitFor } from '@testing-library/react'
 import type { Paper } from '@/api/types'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noSummaries } from '@/test/fetch-routes'
 import { ask, assistantMessage, chatRow, included, mount, paper, settings, sse, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -21,6 +21,7 @@ test.each([
   let answered = false
   const { calls } = mockApi({
     ...settings,
+    ...noSummaries('p1'),
     'GET /chats': { items: [chatRow('c1', { papers: [included(paper, { document_id: 'd1' })], message_count: 2 })] },
     'GET /chats/c1/messages': () => json({ items: answered ? [...history.items, userMessage('u2', 'And the baseline?'), answer] : history.items }),
     'POST /chats/c1/messages/stream': () => { answered = true; return sse([['message.started', { message_id: 'm2' }], ['message.delta', { text: 'Still there.' }], ['message.completed', answer]]) },

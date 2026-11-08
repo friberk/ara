@@ -5,8 +5,10 @@ import { renderApp } from '@/test/render'
 
 afterEach(() => vi.unstubAllGlobals())
 
+const search = { 'GET /retrieval/settings': { embedding_profile: 'openai-3-large', reranker: null }, 'GET /retrieval/profiles': { items: [], default_profile: 'openai-3-large', rerankers: [] } }
+
 test('Given no saved choice, Then Library and search shows OpenAlex as where paper details come from, and what each catalog is', async () => {
-  mockApi({ 'GET /metadata/settings': { source: 'openalex' } })
+  mockApi({ ...search, 'GET /metadata/settings': { source: 'openalex' } })
   renderApp('/?settings=library')
   const section = await screen.findByRole('region', { name: 'Paper details' })
   const choices = await within(section).findByRole('radiogroup', { name: 'Paper details' })
@@ -19,7 +21,7 @@ test('Given no saved choice, Then Library and search shows OpenAlex as where pap
 
 test('Given OpenAlex, When Semantic Scholar is picked, Then the choice is saved at once and stays chosen', async () => {
   let saved = { source: 'openalex' }
-  const { calls } = mockApi({ 'GET /metadata/settings': () => json(saved), 'PUT /metadata/settings': ({ body }) => json(saved = body as typeof saved) })
+  const { calls } = mockApi({ ...search, 'GET /metadata/settings': () => json(saved), 'PUT /metadata/settings': ({ body }) => json(saved = body as typeof saved) })
   const { user } = renderApp('/?settings=library')
   const section = await screen.findByRole('region', { name: 'Paper details' })
   await waitFor(() => expect(within(section).getByRole('radio', { name: 'OpenAlex' })).toBeChecked())
@@ -30,7 +32,7 @@ test('Given OpenAlex, When Semantic Scholar is picked, Then the choice is saved 
 })
 
 test('Given the save fails, Then the saved choice stays selected and the error is shown', async () => {
-  mockApi({ 'GET /metadata/settings': { source: 'openalex' }, 'PUT /metadata/settings': () => json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' }, 500) })
+  mockApi({ ...search, 'GET /metadata/settings': { source: 'openalex' }, 'PUT /metadata/settings': () => json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' }, 500) })
   const { user } = renderApp('/?settings=library')
   const section = await screen.findByRole('region', { name: 'Paper details' })
   await waitFor(() => expect(within(section).getByRole('radio', { name: 'OpenAlex' })).toBeChecked())

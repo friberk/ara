@@ -36,11 +36,15 @@ test('Given saved papers, Then each row links to its workspace with a short cita
 
 const ingest = { kind: 'ingest', state: 'processing', stage: 'processing', progress: 20, attempts: 1, error: null, result: null }
 const pdf = (name: string) => new File([`%PDF-1.4 ${name}`], name, { type: 'application/pdf' })
+const uploaded = (id: string, documentId: string, status = 'processing') => ({ ...ready, id, title: null, authors: [], year: null, abstract: null, doi: null, document_status: status, active_document_id: documentId })
 
 test('Given several PDFs dropped on the library, Then each becomes its own paper with its own progress row', async () => {
   let next = 0
-  const { calls } = mockApi({
+  const { calls } = mockApi({ 'GET /papers': { items: [] },
     'POST /documents': () => { next += 1; return new Response(JSON.stringify(next === 3 ? { paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: true } : { paper_id: `new-${next}`, document_id: `d-${next}`, job_id: `j-${next}`, duplicate: false }), { status: 202, headers: { 'Content-Type': 'application/json' } }) },
+    'GET /papers/new-1': uploaded('new-1', 'd-1'),
+    'GET /papers/new-2': uploaded('new-2', 'd-2', 'ready'),
+    'GET /papers/p1': ready,
     'GET /jobs/j-1': { ...ingest, id: 'j-1' },
     'GET /jobs/j-2': { ...ingest, id: 'j-2', state: 'completed', stage: 'completed', progress: 100 },
     'GET /jobs/j1': { ...ingest, id: 'j1', state: 'completed', stage: 'completed', progress: 100 },
@@ -62,7 +66,7 @@ test('Given several PDFs dropped on the library, Then each becomes its own paper
 })
 
 test('Given the Upload PDF button, Then it opens a picker for several PDFs without a dialog', async () => {
-  const { calls } = mockApi({ 'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }), { status: 202 }), 'GET /jobs/j1': { ...ingest, id: 'j1' } })
+  const { calls } = mockApi({ 'GET /papers/p1': uploaded('p1', 'd1'), 'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }), { status: 202 }), 'GET /jobs/j1': { ...ingest, id: 'j1' } })
   const { user } = mount('/library')
   await screen.findByRole('heading', { level: 1, name: 'Library' })
   const input = screen.getByLabelText('PDF files')
@@ -76,7 +80,7 @@ test('Given the Upload PDF button, Then it opens a picker for several PDFs witho
 })
 
 test('Given an oversized PDF among others, Then only that row explains the limit and the rest upload', async () => {
-  const { calls } = mockApi({ 'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }), { status: 202 }), 'GET /jobs/j1': { ...ingest, id: 'j1' } })
+  const { calls } = mockApi({ 'GET /papers/p1': uploaded('p1', 'd1'), 'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p1', document_id: 'd1', job_id: 'j1', duplicate: false }), { status: 202 }), 'GET /jobs/j1': { ...ingest, id: 'j1' } })
   const { user } = mount('/library')
   await screen.findByRole('heading', { level: 1, name: 'Library' })
   const large = pdf('large.pdf')
@@ -120,7 +124,7 @@ test('Given a filter with no matches, Then the filter can be cleared', async () 
 })
 
 test('Given an empty library, Then searching and uploading are offered', async () => {
-  mockApi({})
+  mockApi({ 'GET /papers': { items: [] },})
   const { user } = mount('/library')
   expect(await screen.findByRole('heading', { name: 'Your library is empty' })).toBeVisible()
   expect(within(screen.getByRole('main')).getByRole('link', { name: 'Search papers' })).toHaveAttribute('href', '/')
@@ -138,7 +142,7 @@ test('Given an upload still being read, Then its row is named by its file until 
 })
 
 test('Given an uploaded PDF that is readable while its details are looked up, Then its row says Ready and notes the lookup', async () => {
-  mockApi({
+  mockApi({ 'GET /papers/p5': uploaded('p5', 'd5', 'ready'),
     'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p5', document_id: 'd5', job_id: 'j5', duplicate: false }), { status: 202 }),
     'GET /jobs/j5': { ...ingest, id: 'j5', state: 'completed', stage: 'completed', progress: 100 },
     'GET /jobs': ({ url }) => new Response(JSON.stringify({ items: url.searchParams.get('kind') === 'metadata' ? [{ ...ingest, id: 'm5', kind: 'metadata', state: 'queued', stage: 'retry_wait', paper_id: 'p5' }] : [] })),
@@ -191,7 +195,7 @@ test('Given uploads still waiting for a choice from an earlier visit, Then the l
 
 test('Given an upload in the list, When its processing settles, Then the library list refreshes without a reload', async () => {
   let settled = false
-  mockApi({
+  mockApi({ 'GET /papers/p7': () => new Response(JSON.stringify(uploaded('p7', 'd7', settled ? 'ready' : 'processing'))),
     'POST /documents': () => new Response(JSON.stringify({ paper_id: 'p7', document_id: 'd7', job_id: 'j7', duplicate: false }), { status: 202 }),
     'GET /jobs/j7': () => new Response(JSON.stringify({ ...ingest, id: 'j7', ...(settled ? { state: 'completed', stage: 'completed', progress: 100 } : {}) })),
     'GET /papers': () => new Response(JSON.stringify({ items: [{ ...ready, id: 'p7', title: settled ? 'Fresh title' : null, file_name: 'fresh.pdf', document_status: settled ? 'ready' : 'processing' }] })),

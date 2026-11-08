@@ -1,6 +1,6 @@
 // ARA-104: the pane's top row. Title on the left (its menu holds only Rename and Delete), then Chat history and New conversation.
 import { screen, waitFor, within } from '@testing-library/react'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noHistory } from '@/test/fetch-routes'
 import { chatRow, included, mount, paper, settings } from './pane-test-kit'
 
 afterEach(() => vi.useRealTimers())
@@ -11,7 +11,7 @@ const openHistory = async (user: ReturnType<typeof mount>['user']) => {
 }
 
 test('Given a saved chat, Then the top row has the title, Chat history and New conversation, and no verbose label', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Research question' })] } })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Research question' })] } })
   const { user } = mount('/papers/p1/chats/c1')
   const row = (await screen.findByRole('button', { name: 'Research question' })).parentElement as HTMLElement
   expect(within(row).getByRole('button', { name: 'Chat history' })).toBeVisible()
@@ -22,7 +22,7 @@ test('Given a saved chat, Then the top row has the title, Chat history and New c
 })
 
 test('Given a saved chat, When its title is pressed, Then the menu offers only Rename and Delete', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Research question' })] } })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'Research question' })] } })
   const { user } = mount('/papers/p1/chats/c1')
   await user.click(await screen.findByRole('button', { name: 'Research question' }))
   const menu = await screen.findByRole('menu')
@@ -40,7 +40,7 @@ test('Given a new unsaved conversation, Then its title is plain text with no men
 test('Given chats of different ages, When Chat history opens, Then rows run newest first with compact relative times and exact titles', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-08T15:00:00Z'))
-  mockApi({
+  mockApi({ ...noHistory('c1'),
     ...settings,
     'GET /chats': { items: [
       chatRow('c1', { title: 'Just now chat', last_activity_at: '2026-10-08T14:59:40Z' }),
@@ -61,7 +61,7 @@ test('Given chats of different ages, When Chat history opens, Then rows run newe
 })
 
 test('Given several chats, Then the open one is marked and an earlier PDF keeps its badge', async () => {
-  mockApi({
+  mockApi({ ...noHistory('c1'),
     ...settings,
     'GET /chats': { items: [chatRow('c1', { title: 'Research question', last_question_preview: 'What was measured?' }), chatRow('c2', { title: 'Older discussion', papers: [included(paper, { document_id: 'd0' })] })] },
   })
@@ -74,7 +74,7 @@ test('Given several chats, Then the open one is marked and an earlier PDF keeps 
 })
 
 test('Given the history, When a row is chosen, Then its chat opens and the popover closes', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'First chat' }), chatRow('c2', { title: 'Second chat' })] } })
+  mockApi({ ...noHistory('c1', 'c2'), ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'First chat' }), chatRow('c2', { title: 'Second chat' })] } })
   const { user } = mount('/papers/p1/chats/c1')
   const history = await openHistory(user)
   await user.click(within(history).getByRole('option', { name: /Second chat/ }))
@@ -83,7 +83,7 @@ test('Given the history, When a row is chosen, Then its chat opens and the popov
 })
 
 test('Given the history, When arrow keys and Enter are used, Then the keyboard opens a chat and focus returns to Chat history on Escape', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'First chat' }), chatRow('c2', { title: 'Second chat' })] } })
+  mockApi({ ...noHistory('c1', 'c2'), ...settings, 'GET /chats': { items: [chatRow('c1', { title: 'First chat' }), chatRow('c2', { title: 'Second chat' })] } })
   const { user } = mount('/papers/p1/chats/c1')
   await openHistory(user)
   await user.keyboard('{ArrowDown}{Enter}')
@@ -95,7 +95,7 @@ test('Given the history, When arrow keys and Enter are used, Then the keyboard o
 })
 
 test('Given no chats, Then the history says "No chats yet"', async () => {
-  mockApi(settings)
+  mockApi({ ...settings, 'GET /chats': { items: [] } })
   const { user } = mount('/papers/p1')
   expect(await within(await openHistory(user)).findByText('No chats yet')).toBeVisible()
 })

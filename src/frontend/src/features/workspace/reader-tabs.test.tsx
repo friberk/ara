@@ -27,6 +27,7 @@ vi.mock('@/features/chat', async () => {
           <button type="button" onClick={() => showSource(dense(4))}>Cite page 4 of the second paper</button>
           <button type="button" onClick={() => showSource(dense(6))}>Cite page 6 of the second paper</button>
           <button type="button" onClick={() => showSource(own)}>Cite page 2 of this paper</button>
+          <button type="button" onClick={() => showSource({ chunk_id: 'chunk-t', document_id: 'doc-3', paper_id: 'p3', page: 1, excerpt: 'Third paper.' })}>Cite the third paper</button>
         </section>
       )
     },
@@ -91,4 +92,30 @@ test('Given two reader tabs, When tabs are closed, Then any tab can be closed ex
   await user.click(screen.getByRole('button', { name: 'Cite page 2 of this paper' }))
   await waitFor(() => expect(within(tabs).getAllByRole('tab')).toHaveLength(2))
   expect(visibleViewer()).toHaveTextContent('Showing doc-1 at page 2')
+})
+
+describe('closing the active tab', () => {
+  const third = { ...base, id: 'p3', title: 'Third study', authors: ['Grace Scholar'], year: 2021, active_document_id: 'doc-3' }
+
+  test.each([
+    ['first', 'Author 2024', ['Karpukhin 2020', 'Scholar 2021'], 'Karpukhin 2020', 'doc-2'],
+    ['middle', 'Karpukhin 2020', ['Author 2024', 'Scholar 2021'], 'Scholar 2021', 'doc-3'],
+    ['last', 'Scholar 2021', ['Author 2024', 'Karpukhin 2020'], 'Karpukhin 2020', 'doc-2'],
+  ])('Given three tabs and the %s one active, When it is closed, Then its neighbor opens', async (_place, closing, remaining, neighbor, document) => {
+    mockApi({ 'GET /papers/p1': paper, 'GET /papers/p2': second, 'GET /papers/p3': third })
+    const { user } = renderApp('/papers/p1')
+    await screen.findByText('Showing doc-1')
+    await user.click(screen.getByRole('button', { name: 'Cite page 4 of the second paper' }))
+    const tabs = await screen.findByRole('tablist', { name: 'Open PDFs' })
+    await user.click(screen.getByRole('button', { name: 'Cite the third paper' }))
+    await waitFor(() => expect(within(tabs).getAllByRole('tab')).toHaveLength(3))
+    await user.click(within(tabs).getByRole('tab', { name: closing }))
+    await waitFor(() => expect(within(tabs).getByRole('tab', { name: closing })).toHaveAttribute('aria-selected', 'true'))
+
+    await user.click(within(tabs).getByRole('button', { name: `Close ${closing}` }))
+
+    await waitFor(() => expect(within(tabs).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(remaining))
+    await waitFor(() => expect(within(tabs).getByRole('tab', { name: neighbor })).toHaveAttribute('aria-selected', 'true'))
+    expect(visibleViewer()).toHaveTextContent(`Showing ${document}`)
+  })
 })

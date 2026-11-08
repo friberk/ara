@@ -1,9 +1,9 @@
 // Test-after coverage (ARA-036 TDD audit): behaviour that shipped before any test covered it. Each test was
 // confirmed by breaking the behaviour it covers, watching the test fail, and restoring the code.
-import { isEditable, textIn } from '@/test/editor'
+import { isEditable, textIn, typeThenEnter } from '@/test/editor'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { testClient } from '@/test/render'
-import { json, mockApi } from '@/test/fetch-routes'
+import { json, mockApi, noHistory, noSummaries } from '@/test/fetch-routes'
 import { queryKeys } from '@/lib/query-keys'
 import { queueQuestion } from '@/lib/pending-questions'
 import { ask, assistantMessage, chatRow, included, mount, paper, settings, userMessage } from './pane-test-kit'
@@ -29,18 +29,18 @@ function controlledStream() {
 const never = () => new Promise<Response>(() => {})
 
 test('Given a question sent with Enter, Then one answer is requested and the composer clears', async () => {
-  const { calls } = mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': controlledStream().handler })
+  const { calls } = mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': controlledStream().handler })
   const { user } = mount('/papers/p1/chats/c1')
   const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
   await waitFor(() => expect(isEditable(input)).toBe(true))
-  await user.type(input, 'Sent with Enter{Enter}')
+  await typeThenEnter(user, input, 'Sent with Enter')
   await waitFor(() => expect(calls.filter((call) => call.path === '/chats/c1/messages/stream')).toHaveLength(1))
   expect(textIn(input)).toBe('')
 })
 
 test('Given an answer starting, Then it reads "Preparing a response…" and screen readers hear it start and finish', async () => {
   const stream = controlledStream()
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': stream.handler })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': stream.handler })
   const { user } = mount('/papers/p1/chats/c1')
   await ask(user, 'Anything?')
   const pending = await screen.findByRole('article', { name: 'Assistant message' })
@@ -74,7 +74,7 @@ test('Given the history refetches mid-stream, Then the question shows once and t
 
 test('Given streaming text, Then the thread follows it near the bottom and holds still once the reader scrolls up', async () => {
   const stream = controlledStream()
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': stream.handler })
+  mockApi({ ...noHistory('c1'), ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'POST /chats/c1/messages/stream': stream.handler })
   const { user } = mount('/papers/p1/chats/c1')
   const thread = await screen.findByRole('region', { name: 'Conversation' })
   let top = 0
@@ -130,6 +130,7 @@ test('Given the chat list fails, Then the pane shows the error inline and Try ag
   mockApi({
     ...settings,
     'GET /chats': () => (failures++ === 0 ? json({ code: 'UNAVAILABLE', message: 'Conversations could not load.' }, 503) : json({ items: [chatRow('c1')] })),
+    'GET /chats/c1': () => json({ code: 'UNAVAILABLE', message: 'Conversations could not load.' }, 503),
     'GET /chats/c1/messages': { items: [userMessage('u1', 'Back again')] },
   })
   const { user } = mount('/papers/p1/chats/c1')
@@ -139,7 +140,7 @@ test('Given the chat list fails, Then the pane shows the error inline and Try ag
 })
 
 test('Given a chat URL that is not in the list, Then the pane says so and offers a new conversation', async () => {
-  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] } })
+  mockApi({ ...settings, 'GET /chats': { items: [chatRow('c1')] }, 'GET /chats/deleted-chat': () => json({ code: 'CHAT_NOT_FOUND', message: 'Chat not found.' }, 404) })
   const { user } = mount('/papers/p1/chats/deleted-chat')
   expect(await screen.findByRole('heading', { name: 'Conversation not found' })).toBeVisible()
   const buttons = screen.getAllByRole('button', { name: 'New conversation' })
@@ -155,7 +156,7 @@ test('Given a paper whose PDF failed, Then the composer explains how to enable q
 })
 
 test('Given the server refuses a new chat, Then the reason is shown inline', async () => {
-  mockApi({ ...settings, 'POST /chats': () => json({ code: 'PAPER_NOT_READY', message: '“Evidence based research” needs a processed PDF before you can ask about it.' }, 409) })
+  mockApi({ ...noSummaries('p1'), ...settings, 'POST /chats': () => json({ code: 'PAPER_NOT_READY', message: '“Evidence based research” needs a processed PDF before you can ask about it.' }, 409) })
   const { user } = mount('/papers/p1')
   await ask(user, 'Can I start?')
   expect(await screen.findByRole('alert')).toHaveTextContent('“Evidence based research” needs a processed PDF before you can ask about it.')
@@ -163,7 +164,7 @@ test('Given the server refuses a new chat, Then the reason is shown inline', asy
 
 test('Given a new chat, Then its thread opens and asks at once, without waiting for the chat list to refetch', async () => {
   let listCalls = 0
-  const { calls } = mockApi({
+  const { calls } = mockApi({ ...noHistory('c9'),
     ...settings,
     'GET /chats': () => (listCalls++ === 0 ? json({ items: [] }) : never()),
     'POST /chats': () => json({ id: 'c9', paper_id: 'p1', papers: [included(paper)], title: 'Paper discussion', title_source: 'default', created_at: '2026-10-08T12:00:00Z' }, 201),

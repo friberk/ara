@@ -1,6 +1,20 @@
 import { act, fireEvent } from '@testing-library/react'
 import type { Editor } from '@tiptap/core'
+import type { UserEvent } from '@testing-library/user-event'
 import { toDraft } from '@/components/composer/editor'
+
+/**
+ * Types into a composer and returns once React has committed the draft. Submitting reads the committed draft, so on a
+ * busy test run user-event's next zero-delay timer could otherwise beat the last keystroke's render.
+ */
+export async function typeAndSettle(user: UserEvent, composer: HTMLElement, text: string) {
+  await act(async () => { await user.type(composer, text) })
+}
+
+export async function typeThenEnter(user: UserEvent, composer: HTMLElement, text: string) {
+  await typeAndSettle(user, composer, text)
+  await user.keyboard('{Enter}')
+}
 
 /** The TipTap editor behind a composer's textbox; ProseMirror keeps it on its DOM node (ARA-096). */
 export function editorOf(element: HTMLElement): Editor {

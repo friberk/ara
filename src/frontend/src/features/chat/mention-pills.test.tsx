@@ -2,16 +2,16 @@
 // may be cited by its answer.
 import { screen, waitFor, within } from '@testing-library/react'
 import type { Citation, Paper } from '@/api/types'
-import { isEditable } from '@/test/editor'
+import { isEditable, typeThenEnter } from '@/test/editor'
 import { json, mockApi } from '@/test/fetch-routes'
-import { assistantMessage, chatRow, included, mount, paper, paper2, settings, sse, userMessage } from './pane-test-kit'
+import { assistantMessage, chatRow, included, mount, paper, paper2, paperRoutes, settings, sse, userMessage } from './pane-test-kit'
 
 afterEach(() => vi.unstubAllGlobals())
 
 const title = 'Dense passage retrieval'
 
 test('Given saved questions, When history renders, Then their mentions are pills named by their label and described by the citation, with no remove button; older questions stay plain text', async () => {
-  mockApi({
+  mockApi({ ...paperRoutes(paper),
     ...settings,
     'GET /chats': { items: [chatRow('c1', { papers: [included(paper), included(paper2)] })] },
     'GET /chats/c1/messages': {
@@ -43,7 +43,7 @@ test('Given saved questions, When history renders, Then their mentions are pills
 test('Given a question that mentions a paper outside the chat, When its answer cites that paper, Then the answer is accepted', async () => {
   const cited: Citation = { chunk_id: '22222222-2222-4222-8222-222222222222', document_id: 'd2', paper_id: 'p2', page: 4, excerpt: 'Dense recall is 0.79.' }
   let papers = [included(paper)]
-  mockApi({
+  mockApi({ ...paperRoutes(paper),
     ...settings,
     'GET /chats': () => json({ items: [chatRow('c1', { papers })] }),
     'GET /chats/c1/messages': { items: [] },
@@ -60,7 +60,7 @@ test('Given a question that mentions a paper outside the chat, When its answer c
   await user.type(input, 'What does @')
   await user.click(await screen.findByRole('option', { name: /Dense passage retrieval/ }))
   await within(input).findByRole('group', { name: title })
-  await user.type(input, 'report?{Enter}')
+  await typeThenEnter(user, input, 'report?')
   const reply = await screen.findByRole('article', { name: 'Assistant message' })
   await waitFor(() => expect(reply).toHaveTextContent('Dense recall is 0.79'))
   expect(screen.queryByText(/source outside/)).not.toBeInTheDocument()

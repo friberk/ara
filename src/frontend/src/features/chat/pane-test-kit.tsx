@@ -8,7 +8,7 @@ import type { Citation, Paper } from '@/api/types'
 import { GenerationSettingsProvider } from '@/components/composer/generation-settings'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkspaceContext, type WorkspaceContextValue } from '@/features/workspace/workspace-context'
-import { isEditable } from '@/test/editor'
+import { isEditable, typeAndSettle } from '@/test/editor'
 import { testClient } from '@/test/render'
 import { CurrentPath, PaneRoute } from './pane-test-routes'
 
@@ -19,6 +19,8 @@ export const paper2: Paper = { id: 'p2', title: 'Dense passage retrieval', autho
 export function included(source: Paper, overrides: Record<string, unknown> = {}) {
   return { paper_id: source.id, document_id: source.active_document_id ?? `${source.id}-pdf`, title: source.title, first_author: source.authors[0] ?? null, year: source.year, added_at: '2026-10-08T10:00:00Z', ...overrides }
 }
+/** Declares the papers a chat's pills or chips look up. */
+export const paperRoutes = (...papers: Paper[]) => Object.fromEntries(papers.map((item) => [`GET /papers/${item.id}`, item]))
 export const settings = { 'GET /models': { items: [luna] }, 'GET /settings': { default_model: luna.key, reasoning_effort: 'low' } }
 export const citation: Citation = { chunk_id: '12345678-1234-1234-1234-123456789abc', document_id: 'd1', page: 2, excerpt: 'A measured result from the document.' }
 export const marker = `[source:${citation.chunk_id}]`
@@ -64,6 +66,6 @@ export function mount(path: string, { value = paper, others = [], workspace = wo
 export async function ask(user: ReturnType<typeof userEvent.setup>, question: string) {
   const input = await screen.findByRole('textbox', { name: 'Question about this paper' })
   await waitFor(() => expect(isEditable(input)).toBe(true))
-  await user.type(input, question)
+  await typeAndSettle(user, input, question)
   await user.click(screen.getByRole('button', { name: 'Ask question' }))
 }

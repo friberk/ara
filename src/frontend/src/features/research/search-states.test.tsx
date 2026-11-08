@@ -53,11 +53,13 @@ test('Given Load more is pressed, Then it stays disabled and busy until the next
 })
 
 test('Given a result already in the library, When Ask about this paper is chosen, Then its workspace opens without saving again', async () => {
-  const { calls } = mockApi({ 'GET /search': page([{ ...hit, saved_paper_id: 'p9' }]) })
+  const saved = { id: 'p9', title: hit.title, authors: hit.authors, year: hit.year, abstract: null, doi: null, sources: [], document_status: 'metadata_only', active_document_id: null, metadata_provenance: {} }
+  const { calls } = mockApi({ 'GET /search': page([{ ...hit, saved_paper_id: 'p9' }]), 'GET /papers/p9': saved })
   const { user } = mount('/search?q=evidence&provider=openalex')
   const row = await screen.findByRole('article', { name: hit.title })
   await user.click(within(row).getByRole('button', { name: 'Ask about this paper' }))
-  await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(/^\/papers\/p9$/))
+  expect(await screen.findByRole('heading', { level: 1, name: hit.title })).toBeVisible()
+  expect(screen.getByLabelText('Location')).toHaveTextContent(/^\/papers\/p9$/)
   expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
 })
 
