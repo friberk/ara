@@ -49,7 +49,9 @@
     "issue_tracker/ARA-119.json",
     "issue_tracker/ARA-120.json"
   ],
-  "commits": [],
+  "commits": [
+    "60fd8ec"
+  ],
   "pull_requests": [],
   "verification": "Final measurement on 2026-11-08 in the isolated ara-hw2-r1-test project with the settings in docs/hw2-baseline.md; application source identical to b40405b. Ruff passed. Backend with real services: 1281 passed, 3 xfailed in 317.78 s, 8611/9050 lines (95.15%), 2028/2378 branches (85.28%), 13 data sets combined and 35 skipped (initial: 1228 passed, 8584 lines, 2011 branches). Frontend: 772 passed in 94 files, 3186/3322 lines (95.90%), 3474/3968 branches (87.55%), with TypeScript and ESLint passing (initial: 766, 3184 lines, 3474 branches). Playwright on a fresh database: 27 passed in 3.6 min. Infrastructure: 46 OK. Whole Vitest under each fault on the final tree: setOpen(true) 1 failed and 771 passed; upload abort removed 4 failed and 768 passed; fixed summary request_id 1 failed and 771 passed; old invalid chat fixture 2 failed and 770 passed. Earlier targeted faults, each caught: port 7, cursor ignored 3, empty-page cursor 1, route drops cursor 1, chat scope uses active PDF 2, summary request ID ignored 1, values not saved 4, model values not merged 1, parser abstract 4, parser year 4, nine re-read faults, three summary-card faults, XMP authors 1, and four E2E-03 field faults through a changed parser in the real worker. A targeted coverage run confirmed every listed metadata.py line executes. Three strict xfails record ARA-118 (2) and ARA-120 (1). Not improved or worse: frontend branch coverage unchanged, most baseline uncovered paths untouched, backend run 21.32 s slower, the reader's Replace PDF browser path lost. Faults were known in advance and hand-picked, so no mutation score is claimed. Live providers were not used. Details in docs/hw2-round-1.md.",
   "updated_at": "2026-11-08"
